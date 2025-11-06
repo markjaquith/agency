@@ -31,7 +31,7 @@ const commands: Record<string, Command> = {
         console.log(prHelp);
         return;
       }
-      await pr({ branch: args[0], silent: options.silent });
+      await pr({ branch: args[0], silent: options.silent, force: options.force });
     },
     help: prHelp,
   },
@@ -121,6 +121,10 @@ try {
       silent: {
         type: "boolean",
         short: "s",
+      },
+      force: {
+        type: "boolean",
+        short: "f",
       },
     },
     strict: false,

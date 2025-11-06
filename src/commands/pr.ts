@@ -1,8 +1,11 @@
 import { isInsideGitRepo, getGitRoot } from "../utils/git";
+import { loadConfig } from "../config";
+import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch";
 
 export interface PrOptions {
   branch?: string;
   silent?: boolean;
+  force?: boolean;
 }
 
 async function getCurrentBranch(gitRoot: string): Promise<string> {
@@ -117,7 +120,7 @@ async function createOrResetBranch(gitRoot: string, sourceBranch: string, target
 }
 
 export async function pr(options: PrOptions = {}): Promise<void> {
-  const { silent = false } = options;
+  const { silent = false, force = false } = options;
   const log = silent ? () => {} : console.log;
   
   // Check if in a git repository
@@ -135,9 +138,26 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     throw new Error("git-filter-repo is not installed. Please install it via Homebrew: brew install git-filter-repo");
   }
   
+  // Load config
+  const config = await loadConfig();
+  
   try {
     // Get current branch
     const currentBranch = await getCurrentBranch(gitRoot);
+    
+    // Check if current branch looks like a PR branch already
+    const possibleSourceBranch = extractSourceBranch(currentBranch, config.prBranch);
+    if (possibleSourceBranch && !force) {
+      // Check if the possible source branch exists
+      const sourceExists = await branchExists(gitRoot, possibleSourceBranch);
+      if (sourceExists) {
+        throw new Error(
+          `Current branch '${currentBranch}' appears to be a PR branch for '${possibleSourceBranch}'.\n` +
+          `Creating a PR branch from a PR branch is likely a mistake.\n` +
+          `Use --force to override this check.`
+        );
+      }
+    }
     
     // Find the base branch this was created from
     const baseBranch = await getBaseBranch(gitRoot, currentBranch);
@@ -149,8 +169,8 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     // Get the merge-base (where the branch diverged)
     const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch);
     
-    // Determine PR branch name
-    const prBranch = options.branch || `${currentBranch}--PR`;
+    // Determine PR branch name using config pattern
+    const prBranch = options.branch || makePrBranchName(currentBranch, config.prBranch);
     
     log(`Creating PR branch: ${prBranch}`);
     log(`Base branch: ${baseBranch}`);
@@ -209,15 +229,31 @@ Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo
 
 Arguments:
-  branch            Target branch name (defaults to current branch + '--PR')
+  branch            Target branch name (defaults to pattern from config)
 
 Options:
   -h, --help        Show this help message
   -s, --silent      Suppress output messages
+  -f, --force       Force PR branch creation even if current branch looks like a PR branch
+
+Configuration:
+  ~/.config/agency/agency.json can contain:
+  {
+    "prBranch": "%branch%--PR"  // Pattern for PR branch names
+  }
+  
+  Use %branch% as placeholder for source branch name.
+  If %branch% is not present, pattern is treated as a suffix.
+  
+  Examples:
+    "%branch%--PR" -> feature-foo becomes feature-foo--PR
+    "PR/%branch%" -> feature-foo becomes PR/feature-foo
+    "--PR" -> feature-foo becomes feature-foo--PR
 
 Examples:
   agency pr                      # Create PR branch with default name
   agency pr feature-pr           # Create PR branch with custom name
+  agency pr --force              # Force creation even from a PR branch
   agency pr --silent             # Create PR branch without output
   agency pr --help               # Show this help message
 
@@ -226,5 +262,5 @@ Notes:
   - AGENTS.md and CLAUDE.md are removed from history using git-filter-repo
   - Original branch is never modified
   - If PR branch exists, it will be deleted and recreated
-  - Uses --force flag (be careful with this command!)
+  - Command will refuse to create PR branch from a PR branch unless --force is used
 `;

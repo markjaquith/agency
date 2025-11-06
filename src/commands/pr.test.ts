@@ -53,6 +53,9 @@ describe("pr command", () => {
     originalCwd = process.cwd();
     process.chdir(tempDir);
     
+    // Set config path to non-existent file to use defaults
+    process.env.AGENCY_CONFIG_PATH = join(tempDir, "non-existent-config.json");
+    
     // Check if git-filter-repo is available
     hasGitFilterRepo = await isGitFilterRepoAvailable();
     
@@ -100,6 +103,7 @@ describe("pr command", () => {
   
   afterEach(async () => {
     process.chdir(originalCwd);
+    delete process.env.AGENCY_CONFIG_PATH;
     await cleanupTempDir(tempDir);
   });
   
