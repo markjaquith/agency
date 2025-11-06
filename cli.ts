@@ -19,7 +19,7 @@ const commands: Record<string, Command> = {
         console.log(initHelp);
         return;
       }
-      await init({ path: args[0] });
+      await init({ path: args[0], silent: options.silent });
     },
     help: initHelp,
   },
@@ -117,6 +117,10 @@ try {
       help: {
         type: "boolean",
         short: "h",
+      },
+      silent: {
+        type: "boolean",
+        short: "s",
       },
     },
     strict: false,

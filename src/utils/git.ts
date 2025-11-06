@@ -1,4 +1,5 @@
 import { resolve } from "path";
+import { realpath } from "fs/promises";
 
 /**
  * Check if a directory is inside a git repository
@@ -46,12 +47,13 @@ export async function getGitRoot(path: string): Promise<string | null> {
  * Check if a path is the root of a git repository
  */
 export async function isGitRoot(path: string): Promise<boolean> {
-  const absolutePath = resolve(path);
+  const absolutePath = await realpath(resolve(path));
   const gitRoot = await getGitRoot(absolutePath);
   
   if (!gitRoot) {
     return false;
   }
   
-  return resolve(gitRoot) === absolutePath;
+  const gitRootReal = await realpath(gitRoot);
+  return gitRootReal === absolutePath;
 }

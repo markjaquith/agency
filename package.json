@@ -9,6 +9,9 @@
   "bin": {
     "agency": "./cli.ts"
   },
+  "scripts": {
+    "test": "bun test"
+  },
   "exports": {
     ".": {
       "import": "./index.ts",

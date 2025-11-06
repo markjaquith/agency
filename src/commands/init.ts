@@ -3,9 +3,14 @@ import { isInsideGitRepo, getGitRoot, isGitRoot } from "../utils/git";
 
 export interface InitOptions {
   path?: string;
+  silent?: boolean;
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
+  const { silent = false } = options;
+  const log = silent ? () => {} : console.log;
+  const error = silent ? () => {} : console.error;
+  
   let targetPath: string;
   
   if (options.path) {
@@ -13,20 +18,20 @@ export async function init(options: InitOptions = {}): Promise<void> {
     targetPath = resolve(options.path);
     
     if (!(await isGitRoot(targetPath))) {
-      console.error("ⓘ Error: The specified path is not the root of a git repository.");
-      console.error("   Please provide a path to the top-level directory of a git checkout.");
+      error("ⓘ Error: The specified path is not the root of a git repository.");
+      error("   Please provide a path to the top-level directory of a git checkout.");
       throw new Error("Not a git repository root");
     }
   } else {
     // If no path provided, use git root of current directory
     if (!(await isInsideGitRepo(process.cwd()))) {
-      console.error("ⓘ Not in a git repository. Please run this command inside a git repo.");
+      error("ⓘ Not in a git repository. Please run this command inside a git repo.");
       throw new Error("Not in a git repository");
     }
     
     const gitRoot = await getGitRoot(process.cwd());
     if (!gitRoot) {
-      console.error("ⓘ Failed to determine the root of the git repository.");
+      error("ⓘ Failed to determine the root of the git repository.");
       throw new Error("Could not find git root");
     }
     
@@ -42,24 +47,24 @@ export async function init(options: InitOptions = {}): Promise<void> {
     const agentsFile = Bun.file(agentsPath);
     if (!(await agentsFile.exists())) {
       await Bun.write(agentsPath, "");
-      console.log(`Created ${agentsPath}`);
+      log(`Created ${agentsPath}`);
     } else {
-      console.log(`ⓘ AGENTS.md already exists at ${agentsPath}`);
+      log(`ⓘ AGENTS.md already exists at ${agentsPath}`);
     }
     
     // Create CLAUDE.md with @AGENTS.md content if it doesn't exist
     const claudeFile = Bun.file(claudePath);
     if (!(await claudeFile.exists())) {
       await Bun.write(claudePath, "@AGENTS.md");
-      console.log(`Created ${claudePath}`);
+      log(`Created ${claudePath}`);
     } else {
-      console.log(`ⓘ CLAUDE.md already exists at ${claudePath}`);
+      log(`ⓘ CLAUDE.md already exists at ${claudePath}`);
     }
     
-    console.log("\nInitialization complete!");
-  } catch (error) {
-    console.error("Error during initialization:", error);
-    throw error;
+    log("\nInitialization complete!");
+  } catch (err) {
+    error("Error during initialization:", err);
+    throw err;
   }
 }
 
@@ -77,10 +82,12 @@ Arguments:
 
 Options:
   -h, --help        Show this help message
+  -s, --silent      Suppress output messages
 
 Examples:
   agency init                    # Initialize in current git repo root
   agency init ./my-project       # Initialize in specified git repo root
+  agency init --silent           # Initialize without output
   agency init --help             # Show this help message
 
 Notes:
