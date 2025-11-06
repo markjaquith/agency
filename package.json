@@ -6,6 +6,9 @@
   "author": "Mark Jaquith",
   "module": "index.ts",
   "type": "module",
+  "bin": {
+    "agency": "./cli.ts"
+  },
   "exports": {
     ".": {
       "import": "./index.ts",
@@ -14,6 +17,7 @@
   },
   "files": [
     "index.ts",
+    "cli.ts",
     "README.md",
     "LICENSE"
   ],
