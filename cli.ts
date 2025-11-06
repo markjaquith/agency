@@ -2,6 +2,7 @@
 
 import { parseArgs } from "util";
 import { init, help as initHelp } from "./src/commands/init";
+import { eject, help as ejectHelp } from "./src/commands/eject";
 import { pr, help as prHelp } from "./src/commands/pr";
 import type { Command } from "./src/types";
 
@@ -22,6 +23,18 @@ const commands: Record<string, Command> = {
       await init({ path: args[0], silent: options.silent });
     },
     help: initHelp,
+  },
+  eject: {
+    name: "eject",
+    description: "Remove AGENTS.md and CLAUDE.md from git tracking",
+    run: async (args: string[], options: Record<string, any>) => {
+      if (options.help) {
+        console.log(ejectHelp);
+        return;
+      }
+      await eject({ path: args[0], silent: options.silent });
+    },
+    help: ejectHelp,
   },
   pr: {
     name: "pr",
@@ -45,6 +58,7 @@ Usage: agency <command> [options]
 
 Commands:
   init [path]       Initialize AGENTS.md and CLAUDE.md files
+  eject [path]      Remove AGENTS.md and CLAUDE.md from git tracking
   pr [branch]       Create a PR branch without AGENTS.md/CLAUDE.md
 
 Global Options:
@@ -53,7 +67,7 @@ Global Options:
 
 Examples:
   agency init                    # Initialize in current directory
-  agency init ./my-project       # Initialize in specified directory
+  agency eject                   # Remove files from git tracking
   agency init --help             # Show help for init command
   agency --version               # Show version number
 
