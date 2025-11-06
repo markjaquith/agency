@@ -179,7 +179,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     await createOrResetBranch(gitRoot, currentBranch, prBranch);
     
     // Run git-filter-repo to remove files from history on the PR branch
-    // Only filter commits after the merge-base
+    // Use --refs to only rewrite the current branch (PR branch)
     const proc = Bun.spawn([
       "git",
       "filter-repo",
@@ -187,8 +187,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
       "--path", "CLAUDE.md",
       "--invert-paths",
       "--force",
-      "--refs", "HEAD",
-      `^${mergeBase}`
+      "--refs", prBranch,
     ], {
       cwd: gitRoot,
       stdout: "pipe",
