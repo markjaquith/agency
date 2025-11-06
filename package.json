@@ -18,6 +18,7 @@
   "files": [
     "index.ts",
     "cli.ts",
+    "src",
     "README.md",
     "LICENSE"
   ],
