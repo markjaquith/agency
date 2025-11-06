@@ -55,8 +55,6 @@ export async function init(options: InitOptions = {}): Promise<void> {
     } else {
       log(`ⓘ CLAUDE.md already exists at ${claudePath}`);
     }
-    
-    log("\nInitialization complete!");
   } catch (err) {
     // Re-throw errors for CLI handler to display
     throw err;
