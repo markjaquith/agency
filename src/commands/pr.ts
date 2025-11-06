@@ -43,6 +43,52 @@ async function checkGitFilterRepo(): Promise<boolean> {
   return proc.exitCode === 0;
 }
 
+async function getBaseBranch(gitRoot: string, currentBranch: string): Promise<string | null> {
+  // Try to find the upstream branch
+  const upstreamProc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", `${currentBranch}@{upstream}`], {
+    cwd: gitRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  
+  await upstreamProc.exited;
+  
+  if (upstreamProc.exitCode === 0) {
+    const upstream = await new Response(upstreamProc.stdout).text();
+    return upstream.trim();
+  }
+  
+  // Try common base branches in order
+  const commonBases = ["origin/main", "origin/master", "main", "master"];
+  
+  for (const base of commonBases) {
+    const exists = await branchExists(gitRoot, base);
+    if (exists) {
+      return base;
+    }
+  }
+  
+  return null;
+}
+
+async function getMergeBase(gitRoot: string, branch1: string, branch2: string): Promise<string> {
+  const proc = Bun.spawn(["git", "merge-base", branch1, branch2], {
+    cwd: gitRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  
+  await proc.exited;
+  
+  if (proc.exitCode !== 0) {
+    const stderr = await new Response(proc.stderr).text();
+    throw new Error(`Failed to find merge base: ${stderr}`);
+  }
+  
+  const output = await new Response(proc.stdout).text();
+  return output.trim();
+}
+
 async function createOrResetBranch(gitRoot: string, sourceBranch: string, targetBranch: string): Promise<void> {
   const exists = await branchExists(gitRoot, targetBranch);
   
@@ -93,10 +139,22 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     // Get current branch
     const currentBranch = await getCurrentBranch(gitRoot);
     
+    // Find the base branch this was created from
+    const baseBranch = await getBaseBranch(gitRoot, currentBranch);
+    
+    if (!baseBranch) {
+      throw new Error("Could not determine base branch. Tried: origin/main, origin/master, main, master");
+    }
+    
+    // Get the merge-base (where the branch diverged)
+    const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch);
+    
     // Determine PR branch name
     const prBranch = options.branch || `${currentBranch}--PR`;
     
     log(`Creating PR branch: ${prBranch}`);
+    log(`Base branch: ${baseBranch}`);
+    log(`Filtering commits since: ${mergeBase.substring(0, 7)}`);
     
     // Create or reset PR branch from current branch
     await createOrResetBranch(gitRoot, currentBranch, prBranch);
@@ -104,6 +162,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     log("Filtering branch to remove AGENTS.md and CLAUDE.md from history...");
     
     // Run git-filter-repo to remove files from history on the PR branch
+    // Only filter commits after the merge-base
     const proc = Bun.spawn([
       "git",
       "filter-repo",
@@ -112,7 +171,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
       "--invert-paths",
       "--force",
       "--refs", "HEAD",
-      "^origin/main"
+      `^${mergeBase}`
     ], {
       cwd: gitRoot,
       stdout: silent ? "pipe" : "inherit",
