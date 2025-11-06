@@ -1,0 +1,35 @@
+{
+  "name": "@markjaquith/agency",
+  "version": "0.1.1",
+  "description": "Manages personal agents files",
+  "license": "MIT",
+  "author": "Mark Jaquith",
+  "module": "index.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.ts",
+      "types": "./index.ts"
+    }
+  },
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "agents",
+    "bun",
+    "typescript",
+    "personal-agents"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
