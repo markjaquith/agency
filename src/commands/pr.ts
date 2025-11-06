@@ -174,12 +174,9 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     
     log(`Creating PR branch: ${prBranch}`);
     log(`Base branch: ${baseBranch}`);
-    log(`Filtering commits since: ${mergeBase.substring(0, 7)}`);
     
     // Create or reset PR branch from current branch
     await createOrResetBranch(gitRoot, currentBranch, prBranch);
-    
-    log("Filtering branch to remove AGENTS.md and CLAUDE.md from history...");
     
     // Run git-filter-repo to remove files from history on the PR branch
     // Only filter commits after the merge-base
@@ -194,8 +191,8 @@ export async function pr(options: PrOptions = {}): Promise<void> {
       `^${mergeBase}`
     ], {
       cwd: gitRoot,
-      stdout: silent ? "pipe" : "inherit",
-      stderr: silent ? "pipe" : "inherit",
+      stdout: "pipe",
+      stderr: "pipe",
     });
     
     await proc.exited;
@@ -204,11 +201,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
       throw new Error("git-filter-repo failed");
     }
     
-    log(`\n✓ PR branch ${prBranch} is ready!`);
-    log(`  Current branch: ${prBranch}`);
-    log(`  AGENTS.md and CLAUDE.md have been removed from this branch's history`);
-    log(`  Your original ${currentBranch} branch is untouched`);
-    log(`  You can now push this branch and create a pull request.`);
+    log(`✓ PR branch ${prBranch} is ready!`);
     
   } catch (err) {
     // Re-throw errors for CLI handler to display
