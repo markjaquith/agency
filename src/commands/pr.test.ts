@@ -195,6 +195,35 @@ describe("pr command", () => {
       expect(files).toContain("test.txt");
     });
     
+    test("removes AGENTS.md and CLAUDE.md from PR branch", async () => {
+      if (!hasGitFilterRepo) {
+        console.log("Skipping test: git-filter-repo not installed");
+        return;
+      }
+      
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
+      await createCommit(tempDir, "Feature commit");
+      
+      // Create PR branch
+      await pr({ silent: true });
+      
+      // Check that AGENTS.md and CLAUDE.md do NOT exist on PR branch
+      const files = await getGitOutput(tempDir, ["ls-files"]);
+      expect(files).not.toContain("AGENTS.md");
+      expect(files).not.toContain("CLAUDE.md");
+      
+      // But test.txt should still exist
+      expect(files).toContain("test.txt");
+      
+      // Verify they're not in the git history either
+      const agentsHistory = await getGitOutput(tempDir, ["log", "--all", "--oneline", "--", "AGENTS.md"]);
+      const claudeHistory = await getGitOutput(tempDir, ["log", "--all", "--oneline", "--", "CLAUDE.md"]);
+      
+      // They should only exist in history of other branches, not feature--PR
+      const prLog = await getGitOutput(tempDir, ["log", "--oneline", "feature--PR", "--", "AGENTS.md"]);
+      expect(prLog.trim()).toBe("");
+    });
+    
     test("original branch remains untouched", async () => {
       if (!hasGitFilterRepo) {
         console.log("Skipping test: git-filter-repo not installed");
