@@ -23,7 +23,7 @@ async function createCommit(cwd: string, message: string): Promise<void> {
   // Create a test file and commit it
   await Bun.write(join(cwd, "test.txt"), message);
   await Bun.spawn(["git", "add", "test.txt"], { cwd }).exited;
-  await Bun.spawn(["git", "commit", "-m", message], { cwd }).exited;
+  await Bun.spawn(["git", "commit", "--no-verify", "-m", message], { cwd }).exited;
 }
 
 async function isGitFilterRepoAvailable(): Promise<boolean> {
@@ -63,7 +63,7 @@ describe("pr command", () => {
     // Initialize AGENTS.md and CLAUDE.md
     await init({ silent: true });
     await Bun.spawn(["git", "add", "AGENTS.md", "CLAUDE.md"], { cwd: tempDir }).exited;
-    await Bun.spawn(["git", "commit", "-m", "Add AGENTS.md and CLAUDE.md"], { cwd: tempDir }).exited;
+    await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md and CLAUDE.md"], { cwd: tempDir }).exited;
     
     // Set up origin/main for git-filter-repo
     await Bun.spawn(["git", "remote", "add", "origin", tempDir], { cwd: tempDir }).exited;

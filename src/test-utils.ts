@@ -44,6 +44,11 @@ export async function initGitRepo(path: string): Promise<void> {
   await Bun.spawn(["git", "config", "user.name", "Test User"], {
     cwd: path,
   }).exited;
+  
+  // Disable all git hooks for this repo
+  await Bun.spawn(["git", "config", "core.hooksPath", "/dev/null"], {
+    cwd: path,
+  }).exited;
 }
 
 /**
