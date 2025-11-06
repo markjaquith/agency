@@ -44,7 +44,7 @@ const commands: Record<string, Command> = {
         console.log(prHelp);
         return;
       }
-      await pr({ branch: args[0] });
+      await pr({ branch: args[0], silent: options.silent });
     },
     help: prHelp,
   },
