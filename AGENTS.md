@@ -120,3 +120,19 @@ It is meant to be used in projects where you don't own the `AGENTS.md` or `CLAUD
 
 - `agency init [path]`: Initializes a new `AGENTS.md` and `CLAUDE.md` (symlink) file at the specified path. If no path is provided, it defaults to the current directory.
 - `agency pr [branch]`: Creates or updates a branch that is based on the current branch. By default will be the current branch with a suffix of `--PR`. This branch will have the `AGENTS.md` and `CLAUDE.md` files filtered out so that no changes/creation of them shows up in the PR.
+
+## Error Handling
+
+Commands should throw errors with descriptive messages. The CLI handler (cli.ts) is responsible for displaying errors to the user with the "ⓘ" prefix. Commands should NOT call console.error() directly - they should just throw Error objects with clear messages.
+
+Example:
+```typescript
+// In command file - DON'T do this:
+console.error("ⓘ Not in a git repository");
+throw new Error("Not in a git repository");
+
+// Instead, do this:
+throw new Error("Not in a git repository. Please run this command inside a git repo.");
+```
+
+The CLI handler will catch the error and display: `ⓘ Not in a git repository. Please run this command inside a git repo.`

@@ -73,24 +73,20 @@ async function createOrResetBranch(gitRoot: string, sourceBranch: string, target
 export async function pr(options: PrOptions = {}): Promise<void> {
   const { silent = false } = options;
   const log = silent ? () => {} : console.log;
-  const error = silent ? () => {} : console.error;
   
   // Check if in a git repository
   if (!(await isInsideGitRepo(process.cwd()))) {
-    error("ⓘ Not in a git repository. Please run this command inside a git repo.");
-    throw new Error("Not in a git repository");
+    throw new Error("Not in a git repository. Please run this command inside a git repo.");
   }
   
   const gitRoot = await getGitRoot(process.cwd());
   if (!gitRoot) {
-    error("ⓘ Failed to determine the root of the git repository.");
-    throw new Error("Could not find git root");
+    throw new Error("Failed to determine the root of the git repository.");
   }
   
   // Check if git-filter-repo is installed
   if (!(await checkGitFilterRepo())) {
-    error("ⓘ git-filter-repo is not installed. Please install it via Homebrew: brew install git-filter-repo");
-    throw new Error("git-filter-repo not installed");
+    throw new Error("git-filter-repo is not installed. Please install it via Homebrew: brew install git-filter-repo");
   }
   
   try {
@@ -126,11 +122,6 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     await proc.exited;
     
     if (proc.exitCode !== 0) {
-      const stderr = silent ? await new Response(proc.stderr).text() : "";
-      error("ⓘ Failed to filter repository");
-      if (silent && stderr) {
-        error(stderr);
-      }
       throw new Error("git-filter-repo failed");
     }
     
@@ -141,7 +132,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     log(`  You can now push this branch and create a pull request.`);
     
   } catch (err) {
-    error("Error creating PR branch:", err);
+    // Re-throw errors for CLI handler to display
     throw err;
   }
 }

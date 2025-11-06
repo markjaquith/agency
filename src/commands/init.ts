@@ -9,7 +9,6 @@ export interface InitOptions {
 export async function init(options: InitOptions = {}): Promise<void> {
   const { silent = false } = options;
   const log = silent ? () => {} : console.log;
-  const error = silent ? () => {} : console.error;
   
   let targetPath: string;
   
@@ -18,21 +17,17 @@ export async function init(options: InitOptions = {}): Promise<void> {
     targetPath = resolve(options.path);
     
     if (!(await isGitRoot(targetPath))) {
-      error("ⓘ Error: The specified path is not the root of a git repository.");
-      error("   Please provide a path to the top-level directory of a git checkout.");
-      throw new Error("Not a git repository root");
+      throw new Error("The specified path is not the root of a git repository. Please provide a path to the top-level directory of a git checkout.");
     }
   } else {
     // If no path provided, use git root of current directory
     if (!(await isInsideGitRepo(process.cwd()))) {
-      error("ⓘ Not in a git repository. Please run this command inside a git repo.");
-      throw new Error("Not in a git repository");
+      throw new Error("Not in a git repository. Please run this command inside a git repo.");
     }
     
     const gitRoot = await getGitRoot(process.cwd());
     if (!gitRoot) {
-      error("ⓘ Failed to determine the root of the git repository.");
-      throw new Error("Could not find git root");
+      throw new Error("Failed to determine the root of the git repository.");
     }
     
     targetPath = gitRoot;
@@ -63,7 +58,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
     
     log("\nInitialization complete!");
   } catch (err) {
-    error("Error during initialization:", err);
+    // Re-throw errors for CLI handler to display
     throw err;
   }
 }

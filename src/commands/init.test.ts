@@ -108,11 +108,11 @@ describe("init command", () => {
       await initGitRepo(tempDir);
       const subdir = await createSubdir(tempDir, "subdir");
       
-      expect(init({ path: subdir, silent: true })).rejects.toThrow("Not a git repository root");
+      expect(init({ path: subdir, silent: true })).rejects.toThrow("not the root of a git repository");
     });
     
     test("throws error when path is not a git repository at all", async () => {
-      expect(init({ path: tempDir, silent: true })).rejects.toThrow("Not a git repository root");
+      expect(init({ path: tempDir, silent: true })).rejects.toThrow("not the root of a git repository");
     });
     
     test("resolves relative paths correctly", async () => {
