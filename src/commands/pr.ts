@@ -33,14 +33,30 @@ async function branchExists(gitRoot: string, branch: string): Promise<boolean> {
   return proc.exitCode === 0;
 }
 
-async function checkoutBranch(gitRoot: string, branch: string, create: boolean = false, force: boolean = false): Promise<void> {
-  const args = create 
-    ? ["git", "checkout", "-b", branch] 
-    : force 
-      ? ["git", "checkout", "-f", branch]
-      : ["git", "checkout", branch];
-      
-  const proc = Bun.spawn(args, {
+async function checkGitFilterRepo(): Promise<boolean> {
+  const proc = Bun.spawn(["which", "git-filter-repo"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  
+  await proc.exited;
+  return proc.exitCode === 0;
+}
+
+async function createOrResetBranch(gitRoot: string, sourceBranch: string, targetBranch: string): Promise<void> {
+  const exists = await branchExists(gitRoot, targetBranch);
+  
+  if (exists) {
+    // Delete and recreate the branch
+    await Bun.spawn(["git", "branch", "-D", targetBranch], {
+      cwd: gitRoot,
+      stdout: "pipe",
+      stderr: "pipe",
+    }).exited;
+  }
+  
+  // Create new branch from source
+  const proc = Bun.spawn(["git", "checkout", "-b", targetBranch, sourceBranch], {
     cwd: gitRoot,
     stdout: "pipe",
     stderr: "pipe",
@@ -50,76 +66,7 @@ async function checkoutBranch(gitRoot: string, branch: string, create: boolean =
   
   if (proc.exitCode !== 0) {
     const stderr = await new Response(proc.stderr).text();
-    throw new Error(`Failed to checkout branch: ${stderr}`);
-  }
-}
-
-async function cherryPickCommits(gitRoot: string, baseBranch: string, targetBranch: string): Promise<void> {
-  // Get commits that are in targetBranch but not in baseBranch
-  const proc = Bun.spawn(["git", "log", "--pretty=format:%H", `${baseBranch}..${targetBranch}`], {
-    cwd: gitRoot,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  
-  await proc.exited;
-  
-  if (proc.exitCode !== 0) {
-    return; // No commits to cherry-pick
-  }
-  
-  const output = await new Response(proc.stdout).text();
-  const commits = output.trim().split("\n").filter(c => c).reverse(); // Oldest first
-  
-  for (const commit of commits) {
-    const cherryProc = Bun.spawn(["git", "cherry-pick", commit], {
-      cwd: gitRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    
-    await cherryProc.exited;
-    
-    if (cherryProc.exitCode !== 0) {
-      // If cherry-pick fails, try to continue
-      await Bun.spawn(["git", "cherry-pick", "--abort"], {
-        cwd: gitRoot,
-      }).exited;
-    }
-  }
-}
-
-async function removeFilesFromBranch(gitRoot: string): Promise<void> {
-  // Remove AGENTS.md and CLAUDE.md if they exist
-  const files = ["AGENTS.md", "CLAUDE.md"];
-  
-  for (const file of files) {
-    const proc = Bun.spawn(["git", "rm", "--cached", "-f", file], {
-      cwd: gitRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    
-    await proc.exited;
-    // Ignore errors - file might not exist
-  }
-  
-  // Commit the removal if there are changes
-  const statusProc = Bun.spawn(["git", "diff", "--cached", "--quiet"], {
-    cwd: gitRoot,
-  });
-  
-  await statusProc.exited;
-  
-  if (statusProc.exitCode !== 0) {
-    // There are staged changes
-    const commitProc = Bun.spawn(["git", "commit", "-m", "Remove AGENTS.md and CLAUDE.md"], {
-      cwd: gitRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    
-    await commitProc.exited;
+    throw new Error(`Failed to create branch: ${stderr}`);
   }
 }
 
@@ -140,6 +87,12 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     throw new Error("Could not find git root");
   }
   
+  // Check if git-filter-repo is installed
+  if (!(await checkGitFilterRepo())) {
+    error("ⓘ git-filter-repo is not installed. Please install it via Homebrew: brew install git-filter-repo");
+    throw new Error("git-filter-repo not installed");
+  }
+  
   try {
     // Get current branch
     const currentBranch = await getCurrentBranch(gitRoot);
@@ -149,40 +102,42 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     
     log(`Creating PR branch: ${prBranch}`);
     
-    // Check if PR branch already exists
-    const prBranchExists = await branchExists(gitRoot, prBranch);
+    // Create or reset PR branch from current branch
+    await createOrResetBranch(gitRoot, currentBranch, prBranch);
     
-    if (prBranchExists) {
-      log(`PR branch ${prBranch} already exists, updating it...`);
-      
-      // Checkout PR branch
-      await checkoutBranch(gitRoot, prBranch);
-      
-      // Reset to the base (assuming main)
-      const resetProc = Bun.spawn(["git", "reset", "--hard", "main"], {
-        cwd: gitRoot,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      
-      await resetProc.exited;
-      
-      // Cherry-pick commits from current branch
-      await cherryPickCommits(gitRoot, "main", currentBranch);
-    } else {
-      // Create new PR branch from main
-      await checkoutBranch(gitRoot, "main", false, true); // Force checkout main
-      await checkoutBranch(gitRoot, prBranch, true);
-      
-      // Cherry-pick commits from current branch
-      await cherryPickCommits(gitRoot, "main", currentBranch);
+    log("Filtering branch to remove AGENTS.md and CLAUDE.md from history...");
+    
+    // Run git-filter-repo to remove files from history on the PR branch
+    const proc = Bun.spawn([
+      "git",
+      "filter-repo",
+      "--path", "AGENTS.md",
+      "--path", "CLAUDE.md",
+      "--invert-paths",
+      "--force",
+      "--refs", "HEAD",
+      "^origin/main"
+    ], {
+      cwd: gitRoot,
+      stdout: silent ? "pipe" : "inherit",
+      stderr: silent ? "pipe" : "inherit",
+    });
+    
+    await proc.exited;
+    
+    if (proc.exitCode !== 0) {
+      const stderr = silent ? await new Response(proc.stderr).text() : "";
+      error("ⓘ Failed to filter repository");
+      if (silent && stderr) {
+        error(stderr);
+      }
+      throw new Error("git-filter-repo failed");
     }
-    
-    // Remove AGENTS.md and CLAUDE.md from the PR branch
-    await removeFilesFromBranch(gitRoot);
     
     log(`\n✓ PR branch ${prBranch} is ready!`);
     log(`  Current branch: ${prBranch}`);
+    log(`  AGENTS.md and CLAUDE.md have been removed from this branch's history`);
+    log(`  Your original ${currentBranch} branch is untouched`);
     log(`  You can now push this branch and create a pull request.`);
     
   } catch (err) {
@@ -194,11 +149,14 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 export const help = `
 Usage: agency pr [branch] [options]
 
-Create a PR branch based on the current branch without AGENTS.md/CLAUDE.md.
+Create a PR branch from the current branch with AGENTS.md and CLAUDE.md removed from history.
 
-This command creates or updates a branch that mirrors your current branch but
-with AGENTS.md and CLAUDE.md removed from git tracking. This allows you to
-create pull requests without these personal files.
+This command creates a new branch (or recreates it if it exists) based on your current
+branch, then uses git-filter-repo to remove AGENTS.md and CLAUDE.md from the branch's
+history. Your original branch remains completely untouched.
+
+Prerequisites:
+  - git-filter-repo must be installed: brew install git-filter-repo
 
 Arguments:
   branch            Target branch name (defaults to current branch + '--PR')
@@ -214,8 +172,9 @@ Examples:
   agency pr --help               # Show this help message
 
 Notes:
-  - PR branch is created from main branch
-  - Commits from current branch are cherry-picked
-  - AGENTS.md and CLAUDE.md are removed in a final commit
-  - If PR branch exists, it will be updated
+  - PR branch is created from your current branch (not main)
+  - AGENTS.md and CLAUDE.md are removed from history using git-filter-repo
+  - Original branch is never modified
+  - If PR branch exists, it will be deleted and recreated
+  - Uses --force flag (be careful with this command!)
 `;
