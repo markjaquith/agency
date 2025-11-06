@@ -3,6 +3,8 @@
 import { parseArgs } from "util";
 import { init, help as initHelp } from "./src/commands/init";
 import { pr, help as prHelp } from "./src/commands/pr";
+import { source, help as sourceHelp } from "./src/commands/source";
+import { switchBranch, help as switchHelp } from "./src/commands/switch";
 import type { Command } from "./src/types";
 
 // Read version from package.json
@@ -35,6 +37,30 @@ const commands: Record<string, Command> = {
     },
     help: prHelp,
   },
+  source: {
+    name: "source",
+    description: "Switch back to source branch from PR branch",
+    run: async (args: string[], options: Record<string, any>) => {
+      if (options.help) {
+        console.log(sourceHelp);
+        return;
+      }
+      await source({ silent: options.silent });
+    },
+    help: sourceHelp,
+  },
+  switch: {
+    name: "switch",
+    description: "Toggle between source and PR branch",
+    run: async (args: string[], options: Record<string, any>) => {
+      if (options.help) {
+        console.log(switchHelp);
+        return;
+      }
+      await switchBranch({ silent: options.silent });
+    },
+    help: switchHelp,
+  },
 };
 
 function showMainHelp() {
@@ -46,6 +72,8 @@ Usage: agency <command> [options]
 Commands:
   init [path]       Initialize AGENTS.md and CLAUDE.md files
   pr [branch]       Create a PR branch without AGENTS.md/CLAUDE.md
+  source            Switch back to source branch from PR branch
+  switch            Toggle between source and PR branch
 
 Global Options:
   -h, --help        Show help for a command
@@ -54,6 +82,8 @@ Global Options:
 Examples:
   agency init                    # Initialize in current directory
   agency pr                      # Create PR branch from current branch
+  agency source                  # Switch from PR branch to source branch
+  agency switch                  # Toggle between source and PR branch
   agency init --help             # Show help for init command
   agency --version               # Show version number
 
