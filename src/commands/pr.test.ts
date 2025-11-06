@@ -22,8 +22,16 @@ async function getCurrentBranch(cwd: string): Promise<string> {
 async function createCommit(cwd: string, message: string): Promise<void> {
   // Create a test file and commit it
   await Bun.write(join(cwd, "test.txt"), message);
-  await Bun.spawn(["git", "add", "test.txt"], { cwd }).exited;
-  await Bun.spawn(["git", "commit", "--no-verify", "-m", message], { cwd }).exited;
+  await Bun.spawn(["git", "add", "test.txt"], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  }).exited;
+  await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  }).exited;
 }
 
 async function isGitFilterRepoAvailable(): Promise<boolean> {
@@ -57,17 +65,37 @@ describe("pr command", () => {
     // Rename master to main if needed
     const currentBranch = await getCurrentBranch(tempDir);
     if (currentBranch === "master") {
-      await Bun.spawn(["git", "branch", "-m", "main"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "branch", "-m", "main"], {
+        cwd: tempDir,
+        stdout: "pipe",
+        stderr: "pipe",
+      }).exited;
     }
     
     // Initialize AGENTS.md and CLAUDE.md
     await init({ silent: true });
-    await Bun.spawn(["git", "add", "AGENTS.md", "CLAUDE.md"], { cwd: tempDir }).exited;
-    await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md and CLAUDE.md"], { cwd: tempDir }).exited;
+    await Bun.spawn(["git", "add", "AGENTS.md", "CLAUDE.md"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    }).exited;
+    await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md and CLAUDE.md"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    }).exited;
     
     // Set up origin/main for git-filter-repo
-    await Bun.spawn(["git", "remote", "add", "origin", tempDir], { cwd: tempDir }).exited;
-    await Bun.spawn(["git", "fetch", "origin"], { cwd: tempDir }).exited;
+    await Bun.spawn(["git", "remote", "add", "origin", tempDir], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    }).exited;
+    await Bun.spawn(["git", "fetch", "origin"], {
+      cwd: tempDir,
+      stdout: "pipe",
+      stderr: "pipe",
+    }).exited;
   });
   
   afterEach(async () => {
@@ -82,7 +110,7 @@ describe("pr command", () => {
         return;
       }
       
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       expect(pr({ silent: true })).rejects.toThrow("git-filter-repo not installed");
@@ -95,7 +123,7 @@ describe("pr command", () => {
       }
       
       // Create a feature branch
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       // Create PR branch
@@ -116,7 +144,7 @@ describe("pr command", () => {
         return;
       }
       
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       await pr({ branch: "custom-pr", silent: true });
@@ -134,7 +162,7 @@ describe("pr command", () => {
         return;
       }
       
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       // Should complete without throwing
@@ -151,7 +179,7 @@ describe("pr command", () => {
         return;
       }
       
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       await pr({ silent: true });
@@ -169,14 +197,14 @@ describe("pr command", () => {
         return;
       }
       
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       // Create PR branch
       await pr({ silent: true });
       
       // Switch back to feature branch
-      await Bun.spawn(["git", "checkout", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       
       // Check that AGENTS.md and CLAUDE.md still exist on original branch
       const files = await getGitOutput(tempDir, ["ls-files"]);
@@ -203,7 +231,7 @@ describe("pr command", () => {
         return;
       }
       
-      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir }).exited;
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
       const logs: string[] = [];
