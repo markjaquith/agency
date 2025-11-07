@@ -174,15 +174,13 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     // Determine PR branch name using config pattern
     const prBranch = options.branch || makePrBranchName(currentBranch, config.prBranch);
     
-    log(`Creating PR branch: ${prBranch}`);
-    log(`Base branch: ${baseBranch}`);
+    log(`Creating ${prBranch} from ${currentBranch}...`);
     
     // Create or reset PR branch from current branch
     await createOrResetBranch(gitRoot, currentBranch, prBranch);
     
      // Run git-filter-repo to remove files from history on the PR branch
      // Use --refs to only rewrite the current branch (PR branch)
-     log("Running git-filter-repo to remove AGENTS.md and CLAUDE.md from history...");
      
      // Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
      // See: https://github.com/newren/git-filter-repo/issues/512
@@ -214,7 +212,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
        throw new Error(`git-filter-repo failed: ${stderr}`);
      }
     
-    log(`✓ PR branch ${prBranch} is ready!`);
+    log(`Created ${prBranch} from ${currentBranch}`);
     
   } catch (err) {
     // Re-throw errors for CLI handler to display
