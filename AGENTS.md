@@ -118,8 +118,10 @@ It is meant to be used in projects where you don't own the `AGENTS.md` or `CLAUD
 
 ## Commands
 
-- `agency init [path]`: Initializes a new `AGENTS.md` and `CLAUDE.md` (symlink) file at the specified path. If no path is provided, it defaults to the current directory.
-- `agency pr [branch]`: Creates or updates a branch that is based on the current branch. By default will be the current branch with a suffix of `--PR`. This branch will have the `AGENTS.md` and `CLAUDE.md` files filtered out so that no changes/creation of them shows up in the PR.
+- `agency init [path]`: Initializes `AGENTS.md` and `CLAUDE.md` files using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
+- `agency use [template]`: Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
+- `agency save`: Saves current `AGENTS.md` and `CLAUDE.md` files back to the configured template directory.
+- `agency pr [branch]`: Creates a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
 
 ## Error Handling
 

@@ -6,6 +6,7 @@ import { pr, help as prHelp } from "./src/commands/pr";
 import { save, help as saveHelp } from "./src/commands/save";
 import { source, help as sourceHelp } from "./src/commands/source";
 import { switchBranch, help as switchHelp } from "./src/commands/switch";
+import { use, help as useHelp } from "./src/commands/use";
 import type { Command } from "./src/types";
 
 // Read version from package.json
@@ -65,7 +66,7 @@ const commands: Record<string, Command> = {
   switch: {
     name: "switch",
     description: "Toggle between source and PR branch",
-    run: async (args: string[], options: Record<string, any>) => {
+    run: async (_args: string[], options: Record<string, any>) => {
       if (options.help) {
         console.log(switchHelp);
         return;
@@ -73,6 +74,18 @@ const commands: Record<string, Command> = {
       await switchBranch({ silent: options.silent, verbose: options.verbose });
     },
     help: switchHelp,
+  },
+  use: {
+    name: "use",
+    description: "Set template for this repository",
+    run: async (args: string[], options: Record<string, any>) => {
+      if (options.help) {
+        console.log(useHelp);
+        return;
+      }
+      await use({ template: args[0] || options.template, silent: options.silent, verbose: options.verbose });
+    },
+    help: useHelp,
   },
 };
 
@@ -84,6 +97,7 @@ Usage: agency <command> [options]
 
 Commands:
   init [path]       Initialize AGENTS.md and CLAUDE.md files
+  use [template]    Set template for this repository
   save              Save current files to configured template
   pr [branch]       Create a PR branch without AGENTS.md/CLAUDE.md
   source            Switch back to source branch from PR branch
@@ -102,6 +116,8 @@ Command Options:
 Examples:
   agency init                    # Initialize in current directory
   agency init --template=work    # Initialize with specific template
+  agency use                     # Interactively select template
+  agency use work                # Set template to 'work'
   agency save                    # Save files to template
   agency pr                      # Create PR branch from current branch
   agency pr --verbose            # Create PR branch with detailed output
