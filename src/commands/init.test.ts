@@ -34,7 +34,7 @@ describe("init command", () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true);
       expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true);
@@ -44,7 +44,7 @@ describe("init command", () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       const content = await readFile(join(tempDir, "AGENTS.md"));
       expect(content).toBe("");
@@ -54,7 +54,7 @@ describe("init command", () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       const content = await readFile(join(tempDir, "CLAUDE.md"));
       expect(content).toBe("@AGENTS.md");
@@ -65,7 +65,7 @@ describe("init command", () => {
       const subdir = await createSubdir(tempDir, "subdir");
       process.chdir(subdir);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true);
       expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true);
@@ -80,7 +80,7 @@ describe("init command", () => {
       const existingContent = "# Existing content";
       await Bun.write(join(tempDir, "AGENTS.md"), existingContent);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       const content = await readFile(join(tempDir, "AGENTS.md"));
       expect(content).toBe(existingContent);
@@ -93,7 +93,7 @@ describe("init command", () => {
       const existingContent = "# Existing content";
       await Bun.write(join(tempDir, "CLAUDE.md"), existingContent);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       const content = await readFile(join(tempDir, "CLAUDE.md"));
       expect(content).toBe(existingContent);
@@ -110,7 +110,7 @@ describe("init command", () => {
     test("creates files at specified git root", async () => {
       await initGitRepo(tempDir);
       
-      await init({ path: tempDir, silent: true });
+      await init({ path: tempDir, silent: true, template: "test" });
       
       expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true);
       expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true);
@@ -132,7 +132,7 @@ describe("init command", () => {
       const subdir = await createSubdir(tempDir, "subdir");
       process.chdir(subdir);
       
-      await init({ path: "..", silent: true });
+      await init({ path: "..", silent: true, template: "test" });
       
       expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true);
       expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true);
@@ -149,7 +149,7 @@ describe("init command", () => {
       const originalLog = console.log;
       console.log = (...args: any[]) => logs.push(args.join(" "));
       
-      await init({ silent: true });
+      await init({ silent: true, template: "test" });
       
       console.log = originalLog;
       
@@ -167,7 +167,7 @@ describe("init command", () => {
       const originalLog = console.log;
       console.log = (...args: any[]) => logs.push(args.join(" "));
       
-      await init({ silent: false });
+      await init({ silent: false, template: "test" });
       
       console.log = originalLog;
       
@@ -176,7 +176,7 @@ describe("init command", () => {
     });
   });
   
-  describe("config directory source files", () => {
+  describe("template-based source files", () => {
     let configDir: string;
     let originalEnv: string | undefined;
     
@@ -197,37 +197,47 @@ describe("init command", () => {
       await cleanupTempDir(configDir);
     });
     
-    test("uses AGENTS.md from config directory if it exists", async () => {
+    test("uses AGENTS.md from template directory if it exists", async () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      const sourceContent = "# Custom AGENTS.md content\nThis is from config dir";
-      await Bun.write(join(configDir, "AGENTS.md"), sourceContent);
+      // Create template with custom content
+      const templateDir = join(configDir, "templates", "custom");
+      await Bun.spawn(["mkdir", "-p", templateDir], { stdout: "pipe", stderr: "pipe" }).exited;
       
-      await init({ silent: true });
+      const sourceContent = "# Custom AGENTS.md content\nThis is from template";
+      await Bun.write(join(templateDir, "AGENTS.md"), sourceContent);
+      await Bun.write(join(templateDir, "CLAUDE.md"), "@AGENTS.md");
+      
+      await init({ silent: true, template: "custom" });
       
       const content = await readFile(join(tempDir, "AGENTS.md"));
       expect(content).toBe(sourceContent);
     });
     
-    test("uses CLAUDE.md from config directory if it exists", async () => {
+    test("uses CLAUDE.md from template directory if it exists", async () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      const sourceContent = "# Custom CLAUDE.md content\n@AGENTS.md\nExtra instructions";
-      await Bun.write(join(configDir, "CLAUDE.md"), sourceContent);
+      // Create template with custom content
+      const templateDir = join(configDir, "templates", "custom");
+      await Bun.spawn(["mkdir", "-p", templateDir], { stdout: "pipe", stderr: "pipe" }).exited;
       
-      await init({ silent: true });
+      const sourceContent = "# Custom CLAUDE.md content\n@AGENTS.md\nExtra instructions";
+      await Bun.write(join(templateDir, "AGENTS.md"), "");
+      await Bun.write(join(templateDir, "CLAUDE.md"), sourceContent);
+      
+      await init({ silent: true, template: "custom" });
       
       const content = await readFile(join(tempDir, "CLAUDE.md"));
       expect(content).toBe(sourceContent);
     });
     
-    test("uses default content when config directory files don't exist", async () => {
+    test("uses default content when template doesn't exist yet", async () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      await init({ silent: true });
+      await init({ silent: true, template: "new-template" });
       
       const agentsContent = await readFile(join(tempDir, "AGENTS.md"));
       const claudeContent = await readFile(join(tempDir, "CLAUDE.md"));
@@ -236,21 +246,26 @@ describe("init command", () => {
       expect(claudeContent).toBe("@AGENTS.md");
     });
     
-    test("mixes config and default content when only some files exist", async () => {
+    test("creates template files automatically on first use", async () => {
       await initGitRepo(tempDir);
       process.chdir(tempDir);
       
-      const customAgentsContent = "# Custom AGENTS.md";
-      await Bun.write(join(configDir, "AGENTS.md"), customAgentsContent);
-      // Don't create CLAUDE.md in config dir
+      await init({ silent: true, template: "auto-created" });
       
-      await init({ silent: true });
+      // Template should have been created
+      const templateDir = join(configDir, "templates", "auto-created");
+      const templateAgents = await readFile(join(templateDir, "AGENTS.md"));
+      const templateClaude = await readFile(join(templateDir, "CLAUDE.md"));
       
+      expect(templateAgents).toBe("");
+      expect(templateClaude).toBe("@AGENTS.md");
+      
+      // Files in repo should match template
       const agentsContent = await readFile(join(tempDir, "AGENTS.md"));
       const claudeContent = await readFile(join(tempDir, "CLAUDE.md"));
       
-      expect(agentsContent).toBe(customAgentsContent);
-      expect(claudeContent).toBe("@AGENTS.md"); // default
+      expect(agentsContent).toBe("");
+      expect(claudeContent).toBe("@AGENTS.md");
     });
   });
 });

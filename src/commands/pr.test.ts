@@ -78,7 +78,7 @@ describe("pr command", () => {
     }
     
     // Initialize AGENTS.md and CLAUDE.md
-    await init({ silent: true });
+    await init({ silent: true, template: "test" });
     await Bun.spawn(["git", "add", "AGENTS.md", "CLAUDE.md"], {
       cwd: tempDir,
       stdout: "pipe",

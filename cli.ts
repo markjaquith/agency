@@ -3,6 +3,7 @@
 import { parseArgs } from "util";
 import { init, help as initHelp } from "./src/commands/init";
 import { pr, help as prHelp } from "./src/commands/pr";
+import { save, help as saveHelp } from "./src/commands/save";
 import { source, help as sourceHelp } from "./src/commands/source";
 import { switchBranch, help as switchHelp } from "./src/commands/switch";
 import type { Command } from "./src/types";
@@ -21,7 +22,7 @@ const commands: Record<string, Command> = {
         console.log(initHelp);
         return;
       }
-      await init({ path: args[0], silent: options.silent, verbose: options.verbose });
+      await init({ path: args[0], silent: options.silent, verbose: options.verbose, template: options.template });
     },
     help: initHelp,
   },
@@ -36,6 +37,18 @@ const commands: Record<string, Command> = {
       await pr({ branch: args[0], silent: options.silent, force: options.force, verbose: options.verbose });
     },
     help: prHelp,
+  },
+  save: {
+    name: "save",
+    description: "Save current files to configured template",
+    run: async (_args: string[], options: Record<string, any>) => {
+      if (options.help) {
+        console.log(saveHelp);
+        return;
+      }
+      await save({ silent: options.silent, verbose: options.verbose });
+    },
+    help: saveHelp,
   },
   source: {
     name: "source",
@@ -71,6 +84,7 @@ Usage: agency <command> [options]
 
 Commands:
   init [path]       Initialize AGENTS.md and CLAUDE.md files
+  save              Save current files to configured template
   pr [branch]       Create a PR branch without AGENTS.md/CLAUDE.md
   source            Switch back to source branch from PR branch
   switch            Toggle between source and PR branch
@@ -83,9 +97,12 @@ Command Options:
   -s, --silent      Suppress output messages
   -f, --force       Force operation (pr command only)
   -v, --verbose     Show verbose output including detailed debugging info
+  -t, --template    Specify template name (init command only)
 
 Examples:
   agency init                    # Initialize in current directory
+  agency init --template=work    # Initialize with specific template
+  agency save                    # Save files to template
   agency pr                      # Create PR branch from current branch
   agency pr --verbose            # Create PR branch with detailed output
   agency source                  # Switch from PR branch to source branch
@@ -165,6 +182,10 @@ try {
       verbose: {
         type: "boolean",
         short: "v",
+      },
+      template: {
+        type: "string",
+        short: "t",
       },
     },
     strict: false,
