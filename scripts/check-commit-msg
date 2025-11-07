@@ -1,0 +1,19 @@
+#!/bin/sh
+# vim: ft=sh
+
+# Regex to match Conventional Commits
+regex='^(feat|fix|chore|docs|style|refactor|perf|test)(\(.+\))?: .+'
+
+msg_file="$1"
+msg=$(head -n1 "$msg_file")
+
+if ! echo "$msg" | grep -qE "$regex"; then
+  echo "❌ Commit message does not follow Conventional Commits:"
+  echo "——————"
+	echo $msg
+  echo "——————"
+  echo
+  echo "Expected: <type>(<scope>): <description>"
+  echo "Example: feat(cli): add support for config files"
+  exit 1
+fi

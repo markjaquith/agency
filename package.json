@@ -12,7 +12,9 @@
   "scripts": {
     "test": "bun test",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "pushable": "./scripts/pushable",
+    "check-commit-msg": "./scripts/check-commit-msg"
   },
   "exports": {
     ".": {

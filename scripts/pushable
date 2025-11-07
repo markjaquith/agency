@@ -1,0 +1,196 @@
+#!/usr/bin/env bun
+
+import { spawn, ChildProcess } from "child_process"
+import readline from "readline"
+
+interface Task {
+	name: string
+	command: string
+	args: string[]
+	color: string
+}
+
+interface TaskResult {
+	task: string
+	success: boolean
+	duration: string
+	output?: string
+}
+
+interface RunningTaskInfo {
+	task: Task
+	lineOffset: number
+}
+
+type TaskStatus = "pending" | "running" | "passed" | "failed"
+
+const tasks: Task[] = [
+	{
+		name: "format",
+		command: "bun",
+		args: ["run", "format:check"],
+		color: "\x1b[36m",
+	}, // cyan
+	{ name: "test", command: "bun", args: ["test"], color: "\x1b[33m" }, // yellow
+]
+
+const reset = "\x1b[0m"
+const checkmark = "✓"
+const cross = "✗"
+
+// Spinner frames
+const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+// Calculate max name length for padding
+const maxNameLength = Math.max(...tasks.map((t) => t.name.length))
+
+// Track running tasks and their spinners
+const runningTasks = new Map<string, RunningTaskInfo>()
+let spinnerInterval: NodeJS.Timeout | null = null
+
+function formatTaskLine(
+	task: Task,
+	status: TaskStatus,
+	duration: string | null = null,
+	frame: string | null = null,
+): string {
+	const paddedName = task.name.padEnd(maxNameLength)
+
+	if (status === "pending") {
+		return `${task.color}${paddedName}${reset}`
+	} else if (status === "running") {
+		return `${task.color}${paddedName}${reset} ${frame || spinnerFrames[0]}`
+	} else if (status === "passed") {
+		return `${task.color}${paddedName}${reset} ${checkmark} ${duration}s`
+	} else if (status === "failed") {
+		return `${task.color}${paddedName}${reset} ${cross} ${duration}s`
+	}
+	return ""
+}
+
+function updateTaskLine(
+	task: Task,
+	lineOffset: number,
+	status: TaskStatus,
+	duration: string | null = null,
+	frame: string | null = null,
+): void {
+	// Move cursor up to the task's line
+	readline.moveCursor(process.stdout, 0, -lineOffset)
+	// Move cursor to beginning of line
+	readline.cursorTo(process.stdout, 0)
+	// Clear the entire line
+	readline.clearLine(process.stdout, 0)
+	// Write the new content
+	process.stdout.write(formatTaskLine(task, status, duration, frame))
+	// Move cursor back down
+	readline.moveCursor(process.stdout, 0, lineOffset)
+}
+
+function startSpinner(): void {
+	let frameIndex = 0
+	spinnerInterval = setInterval(() => {
+		const frame = spinnerFrames[frameIndex]
+		frameIndex = (frameIndex + 1) % spinnerFrames.length
+
+		runningTasks.forEach((taskInfo) => {
+			updateTaskLine(taskInfo.task, taskInfo.lineOffset, "running", null, frame)
+		})
+	}, 80)
+}
+
+function stopSpinner(): void {
+	if (spinnerInterval) {
+		clearInterval(spinnerInterval)
+		spinnerInterval = null
+	}
+}
+
+async function runTask(task: Task, index: number): Promise<TaskResult> {
+	return new Promise((resolve) => {
+		const startTime = Date.now()
+		let output = ""
+
+		// Calculate line offset and add to running tasks
+		const lineOffset = tasks.length - index
+		runningTasks.set(task.name, { task, lineOffset })
+
+		// Start spinner if this is the first running task
+		if (runningTasks.size === 1) {
+			startSpinner()
+		}
+
+		// Initial update to show first spinner frame
+		updateTaskLine(task, lineOffset, "running", null, spinnerFrames[0])
+
+		const proc: ChildProcess = spawn(task.command, task.args, {
+			env: { ...process.env, FORCE_COLOR: "1" },
+		})
+
+		proc.stdout?.on("data", (data: Buffer) => {
+			output += data.toString()
+		})
+
+		proc.stderr?.on("data", (data: Buffer) => {
+			output += data.toString()
+		})
+
+		proc.on("close", (code: number | null) => {
+			const duration = ((Date.now() - startTime) / 1000).toFixed(2)
+
+			// Remove from running tasks
+			runningTasks.delete(task.name)
+
+			// Stop spinner if no more running tasks
+			if (runningTasks.size === 0) {
+				stopSpinner()
+			}
+
+			if (code === 0) {
+				updateTaskLine(task, lineOffset, "passed", duration)
+				resolve({ task: task.name, success: true, duration })
+			} else {
+				updateTaskLine(task, lineOffset, "failed", duration)
+				resolve({ task: task.name, success: false, duration, output })
+			}
+		})
+	})
+}
+
+async function main(): Promise<void> {
+	// Hide cursor
+	process.stdout.write("\x1b[?25l")
+
+	// Print initial state for all tasks (just the colored brackets)
+	tasks.forEach((task) => {
+		console.log(formatTaskLine(task, "pending"))
+	})
+
+	// Run all tasks concurrently
+	const results = await Promise.all(
+		tasks.map((task, index) => runTask(task, index)),
+	)
+
+	// Show cursor again
+	process.stdout.write("\x1b[?25h")
+
+	// Move to a new line after all tasks
+	console.log("")
+
+	// Print failures with their output
+	const failures = results.filter((r) => !r.success)
+	if (failures.length > 0) {
+		failures.forEach((r) => {
+			const task = tasks.find((t) => t.name === r.task)
+			if (task) {
+				console.log(`${task.color}${task.name} Output:${reset}`)
+				console.log(r.output)
+			}
+		})
+		process.exit(1)
+	} else {
+		process.exit(0)
+	}
+}
+
+main().catch(console.error)
