@@ -137,7 +137,11 @@ export async function pr(options: PrOptions = {}): Promise<void> {
   
   // Check if git-filter-repo is installed
   if (!(await checkGitFilterRepo())) {
-    throw new Error("git-filter-repo is not installed. Please install it via Homebrew: brew install git-filter-repo");
+    const isMac = process.platform === "darwin";
+    const installInstructions = isMac
+      ? "Please install it via Homebrew: brew install git-filter-repo"
+      : "Please install it using your package manager. See: https://github.com/newren/git-filter-repo/blob/main/INSTALL.md";
+    throw new Error(`git-filter-repo is not installed. ${installInstructions}`);
   }
   
   // Load config

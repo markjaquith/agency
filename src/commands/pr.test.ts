@@ -117,7 +117,7 @@ describe("pr command", () => {
       await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       await createCommit(tempDir, "Feature commit");
       
-      expect(pr({ silent: true })).rejects.toThrow("git-filter-repo not installed");
+      expect(pr({ silent: true })).rejects.toThrow("git-filter-repo is not installed");
     });
     
     test("creates PR branch with default name", async () => {
