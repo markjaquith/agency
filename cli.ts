@@ -21,7 +21,7 @@ const commands: Record<string, Command> = {
         console.log(initHelp);
         return;
       }
-      await init({ path: args[0], silent: options.silent });
+      await init({ path: args[0], silent: options.silent, verbose: options.verbose });
     },
     help: initHelp,
   },
@@ -33,7 +33,7 @@ const commands: Record<string, Command> = {
         console.log(prHelp);
         return;
       }
-      await pr({ branch: args[0], silent: options.silent, force: options.force });
+      await pr({ branch: args[0], silent: options.silent, force: options.force, verbose: options.verbose });
     },
     help: prHelp,
   },
@@ -45,7 +45,7 @@ const commands: Record<string, Command> = {
         console.log(sourceHelp);
         return;
       }
-      await source({ silent: options.silent });
+      await source({ silent: options.silent, verbose: options.verbose });
     },
     help: sourceHelp,
   },
@@ -57,7 +57,7 @@ const commands: Record<string, Command> = {
         console.log(switchHelp);
         return;
       }
-      await switchBranch({ silent: options.silent });
+      await switchBranch({ silent: options.silent, verbose: options.verbose });
     },
     help: switchHelp,
   },
@@ -79,9 +79,15 @@ Global Options:
   -h, --help        Show help for a command
   -v, --version     Show version number
 
+Command Options:
+  -s, --silent      Suppress output messages
+  -f, --force       Force operation (pr command only)
+  -v, --verbose     Show verbose output including detailed debugging info
+
 Examples:
   agency init                    # Initialize in current directory
   agency pr                      # Create PR branch from current branch
+  agency pr --verbose            # Create PR branch with detailed output
   agency source                  # Switch from PR branch to source branch
   agency switch                  # Toggle between source and PR branch
   agency init --help             # Show help for init command
@@ -155,6 +161,10 @@ try {
       force: {
         type: "boolean",
         short: "f",
+      },
+      verbose: {
+        type: "boolean",
+        short: "v",
       },
     },
     strict: false,

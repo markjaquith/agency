@@ -4,6 +4,7 @@ import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch";
 
 export interface SwitchOptions {
   silent?: boolean;
+  verbose?: boolean;
 }
 
 async function getCurrentBranch(gitRoot: string): Promise<string> {
@@ -50,8 +51,9 @@ async function checkoutBranch(gitRoot: string, branch: string): Promise<void> {
 }
 
 export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
-  const { silent = false } = options;
+  const { silent = false, verbose = false } = options;
   const log = silent ? () => {} : console.log;
+  const verboseLog = verbose && !silent ? console.log : () => {};
   
   // Check if in a git repository
   if (!(await isInsideGitRepo(process.cwd()))) {
@@ -116,10 +118,12 @@ corresponding PR branch:
 Options:
   -h, --help        Show this help message
   -s, --silent      Suppress output messages
+  -v, --verbose     Show verbose output
 
 Examples:
   agency switch                  # Toggle between branches
   agency switch --silent         # Switch without output
+  agency switch --verbose        # Switch with verbose output
 
 Notes:
   - Target branch must exist

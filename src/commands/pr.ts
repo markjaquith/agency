@@ -6,6 +6,7 @@ export interface PrOptions {
   branch?: string;
   silent?: boolean;
   force?: boolean;
+  verbose?: boolean;
 }
 
 async function getCurrentBranch(gitRoot: string): Promise<string> {
@@ -120,8 +121,9 @@ async function createOrResetBranch(gitRoot: string, sourceBranch: string, target
 }
 
 export async function pr(options: PrOptions = {}): Promise<void> {
-  const { silent = false, force = false } = options;
+  const { silent = false, force = false, verbose = false } = options;
   const log = silent ? () => {} : console.log;
+  const verboseLog = verbose && !silent ? console.log : () => {};
   
   // Check if in a git repository
   if (!(await isInsideGitRepo(process.cwd()))) {
@@ -178,27 +180,39 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     // Create or reset PR branch from current branch
     await createOrResetBranch(gitRoot, currentBranch, prBranch);
     
-    // Run git-filter-repo to remove files from history on the PR branch
-    // Use --refs to only rewrite the current branch (PR branch)
-    const proc = Bun.spawn([
-      "git",
-      "filter-repo",
-      "--path", "AGENTS.md",
-      "--path", "CLAUDE.md",
-      "--invert-paths",
-      "--force",
-      "--refs", prBranch,
-    ], {
-      cwd: gitRoot,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    
-    await proc.exited;
-    
-    if (proc.exitCode !== 0) {
-      throw new Error("git-filter-repo failed");
-    }
+     // Run git-filter-repo to remove files from history on the PR branch
+     // Use --refs to only rewrite the current branch (PR branch)
+     log("Running git-filter-repo to remove AGENTS.md and CLAUDE.md from history...");
+     
+     // Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
+     // See: https://github.com/newren/git-filter-repo/issues/512
+     const env = { ...process.env, GIT_CONFIG_GLOBAL: "" };
+     
+     const proc = Bun.spawn([
+       "git",
+       "filter-repo",
+       "--path", "AGENTS.md",
+       "--path", "CLAUDE.md",
+       "--invert-paths",
+       "--force",
+       "--refs", prBranch,
+     ], {
+       cwd: gitRoot,
+       stdout: verbose ? "inherit" : "pipe",
+       stderr: "pipe",
+       env,
+     });
+     
+     await proc.exited;
+     
+     if (verbose) {
+       verboseLog("git-filter-repo completed");
+     }
+     
+     if (proc.exitCode !== 0) {
+       const stderr = await new Response(proc.stderr).text();
+       throw new Error(`git-filter-repo failed: ${stderr}`);
+     }
     
     log(`✓ PR branch ${prBranch} is ready!`);
     
@@ -227,6 +241,7 @@ Options:
   -h, --help        Show this help message
   -s, --silent      Suppress output messages
   -f, --force       Force PR branch creation even if current branch looks like a PR branch
+  -v, --verbose     Show verbose output including git-filter-repo execution details
 
 Configuration:
   ~/.config/agency/agency.json can contain:
@@ -246,6 +261,7 @@ Examples:
   agency pr                      # Create PR branch with default name
   agency pr feature-pr           # Create PR branch with custom name
   agency pr --force              # Force creation even from a PR branch
+  agency pr --verbose            # Create PR branch with verbose debugging output
   agency pr --silent             # Create PR branch without output
   agency pr --help               # Show this help message
 
@@ -255,4 +271,5 @@ Notes:
   - Original branch is never modified
   - If PR branch exists, it will be deleted and recreated
   - Command will refuse to create PR branch from a PR branch unless --force is used
+  - Use --verbose to debug git-filter-repo if it fails
 `;

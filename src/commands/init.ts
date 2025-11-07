@@ -4,11 +4,13 @@ import { isInsideGitRepo, getGitRoot, isGitRoot } from "../utils/git";
 export interface InitOptions {
   path?: string;
   silent?: boolean;
+  verbose?: boolean;
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
-  const { silent = false } = options;
+  const { silent = false, verbose = false } = options;
   const log = silent ? () => {} : console.log;
+  const verboseLog = verbose && !silent ? console.log : () => {};
   
   let targetPath: string;
   
@@ -76,11 +78,13 @@ Arguments:
 Options:
   -h, --help        Show this help message
   -s, --silent      Suppress output messages
+  -v, --verbose     Show verbose output
 
 Examples:
   agency init                    # Initialize in current git repo root
   agency init ./my-project       # Initialize in specified git repo root
   agency init --silent           # Initialize without output
+  agency init --verbose          # Initialize with verbose output
   agency init --help             # Show this help message
 
 Notes:
