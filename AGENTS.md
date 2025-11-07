@@ -141,3 +141,37 @@ throw new Error(
 ```
 
 The CLI handler will catch the error and display: `ⓘ Not in a git repository. Please run this command inside a git repo.`
+
+## Commit Messages
+
+All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) format:
+
+```
+<type>(<scope>): <description>
+```
+
+**Types:**
+
+- `feat`: A new feature
+- `fix`: A bug fix
+- `refactor`: Code changes that neither fix a bug nor add a feature
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks (dependencies, tooling, etc.)
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, missing semicolons, etc.)
+- `perf`: Performance improvements
+- `ci`: CI/CD configuration changes
+
+**Scope (optional):** The area of the codebase affected (e.g., `cli`, `pr`, `init`, `use`)
+
+**Examples:**
+
+- `feat(pr): add support for custom branch patterns`
+- `fix(init): handle missing template directory`
+- `test: add tests for source command`
+- `chore: update dependencies`
+
+The repository has validation scripts:
+
+- `scripts/check-commit-msg` - Validates commit messages locally
+- GitHub Actions workflow validates PR titles
