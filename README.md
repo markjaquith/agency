@@ -17,7 +17,7 @@ npm install @markjaquith/agency
 ## Usage
 
 ```typescript
-import "@markjaquith/agency";
+import "@markjaquith/agency"
 ```
 
 ## Requirements

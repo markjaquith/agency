@@ -1,0 +1,14 @@
+{
+	"semi": false,
+	"useTabs": true,
+	"trailingComma": "all",
+	"overrides": [
+		{
+			"files": "package.json",
+			"options": {
+				"useTabs": false,
+				"tabWidth": 2
+			}
+		}
+	]
+}

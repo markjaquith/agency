@@ -128,13 +128,16 @@ It is meant to be used in projects where you don't own the `AGENTS.md` or `CLAUD
 Commands should throw errors with descriptive messages. The CLI handler (cli.ts) is responsible for displaying errors to the user with the "ⓘ" prefix. Commands should NOT call console.error() directly - they should just throw Error objects with clear messages.
 
 Example:
+
 ```typescript
 // In command file - DON'T do this:
-console.error("ⓘ Not in a git repository");
-throw new Error("Not in a git repository");
+console.error("ⓘ Not in a git repository")
+throw new Error("Not in a git repository")
 
 // Instead, do this:
-throw new Error("Not in a git repository. Please run this command inside a git repo.");
+throw new Error(
+	"Not in a git repository. Please run this command inside a git repo.",
+)
 ```
 
 The CLI handler will catch the error and display: `ⓘ Not in a git repository. Please run this command inside a git repo.`

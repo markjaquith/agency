@@ -1,197 +1,197 @@
-import { test, expect, describe, beforeEach, afterEach } from "bun:test";
-import { join } from "path";
-import { switchBranch } from "./switch";
-import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils";
+import { test, expect, describe, beforeEach, afterEach } from "bun:test"
+import { join } from "path"
+import { switchBranch } from "./switch"
+import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
 
 async function getGitOutput(cwd: string, args: string[]): Promise<string> {
-  const proc = Bun.spawn(["git", ...args], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  await proc.exited;
-  return await new Response(proc.stdout).text();
+	const proc = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+	return await new Response(proc.stdout).text()
 }
 
 async function getCurrentBranch(cwd: string): Promise<string> {
-  const output = await getGitOutput(cwd, ["branch", "--show-current"]);
-  return output.trim();
+	const output = await getGitOutput(cwd, ["branch", "--show-current"])
+	return output.trim()
 }
 
 async function createCommit(cwd: string, message: string): Promise<void> {
-  await Bun.write(join(cwd, "test.txt"), message);
-  await Bun.spawn(["git", "add", "test.txt"], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  }).exited;
-  await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  }).exited;
+	await Bun.write(join(cwd, "test.txt"), message)
+	await Bun.spawn(["git", "add", "test.txt"], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+	await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
 }
 
 async function createBranch(cwd: string, branchName: string): Promise<void> {
-  await Bun.spawn(["git", "checkout", "-b", branchName], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  }).exited;
+	await Bun.spawn(["git", "checkout", "-b", branchName], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
 }
 
 async function checkoutBranch(cwd: string, branchName: string): Promise<void> {
-  await Bun.spawn(["git", "checkout", branchName], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  }).exited;
+	await Bun.spawn(["git", "checkout", branchName], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
 }
 
 describe("switch command", () => {
-  let tempDir: string;
-  let originalCwd: string;
+	let tempDir: string
+	let originalCwd: string
 
-  beforeEach(async () => {
-    tempDir = await createTempDir();
-    originalCwd = process.cwd();
-    process.chdir(tempDir);
+	beforeEach(async () => {
+		tempDir = await createTempDir()
+		originalCwd = process.cwd()
+		process.chdir(tempDir)
 
-    // Set config path to non-existent file to use defaults
-    process.env.AGENCY_CONFIG_PATH = join(tempDir, "non-existent-config.json");
+		// Set config path to non-existent file to use defaults
+		process.env.AGENCY_CONFIG_PATH = join(tempDir, "non-existent-config.json")
 
-    // Initialize git repo
-    await initGitRepo(tempDir);
-    await createCommit(tempDir, "Initial commit");
+		// Initialize git repo
+		await initGitRepo(tempDir)
+		await createCommit(tempDir, "Initial commit")
 
-    // Rename to main if needed
-    const currentBranch = await getCurrentBranch(tempDir);
-    if (currentBranch === "master") {
-      await Bun.spawn(["git", "branch", "-m", "main"], {
-        cwd: tempDir,
-        stdout: "pipe",
-        stderr: "pipe",
-      }).exited;
-    }
-  });
+		// Rename to main if needed
+		const currentBranch = await getCurrentBranch(tempDir)
+		if (currentBranch === "master") {
+			await Bun.spawn(["git", "branch", "-m", "main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+		}
+	})
 
-  afterEach(async () => {
-    process.chdir(originalCwd);
-    delete process.env.AGENCY_CONFIG_PATH;
-    await cleanupTempDir(tempDir);
-  });
+	afterEach(async () => {
+		process.chdir(originalCwd)
+		delete process.env.AGENCY_CONFIG_PATH
+		await cleanupTempDir(tempDir)
+	})
 
-  describe("basic functionality", () => {
-    test("switches from PR branch to source branch", async () => {
-      // Create a PR branch
-      await createBranch(tempDir, "main--PR");
+	describe("basic functionality", () => {
+		test("switches from PR branch to source branch", async () => {
+			// Create a PR branch
+			await createBranch(tempDir, "main--PR")
 
-      // Run switch command
-      await switchBranch({ silent: true });
+			// Run switch command
+			await switchBranch({ silent: true })
 
-      // Should be on main now
-      const currentBranch = await getCurrentBranch(tempDir);
-      expect(currentBranch).toBe("main");
-    });
+			// Should be on main now
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("main")
+		})
 
-    test("switches from source branch to PR branch", async () => {
-      // Create a PR branch first
-      await createBranch(tempDir, "main--PR");
+		test("switches from source branch to PR branch", async () => {
+			// Create a PR branch first
+			await createBranch(tempDir, "main--PR")
 
-      // Go back to main
-      await checkoutBranch(tempDir, "main");
+			// Go back to main
+			await checkoutBranch(tempDir, "main")
 
-      // Run switch command
-      await switchBranch({ silent: true });
+			// Run switch command
+			await switchBranch({ silent: true })
 
-      // Should be on main--PR now
-      const currentBranch = await getCurrentBranch(tempDir);
-      expect(currentBranch).toBe("main--PR");
-    });
+			// Should be on main--PR now
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("main--PR")
+		})
 
-    test("toggles back and forth", async () => {
-      // Create a PR branch
-      await createBranch(tempDir, "main--PR");
+		test("toggles back and forth", async () => {
+			// Create a PR branch
+			await createBranch(tempDir, "main--PR")
 
-      // Switch to main
-      await switchBranch({ silent: true });
-      expect(await getCurrentBranch(tempDir)).toBe("main");
+			// Switch to main
+			await switchBranch({ silent: true })
+			expect(await getCurrentBranch(tempDir)).toBe("main")
 
-      // Switch back to main--PR
-      await switchBranch({ silent: true });
-      expect(await getCurrentBranch(tempDir)).toBe("main--PR");
+			// Switch back to main--PR
+			await switchBranch({ silent: true })
+			expect(await getCurrentBranch(tempDir)).toBe("main--PR")
 
-      // And back to main
-      await switchBranch({ silent: true });
-      expect(await getCurrentBranch(tempDir)).toBe("main");
-    });
+			// And back to main
+			await switchBranch({ silent: true })
+			expect(await getCurrentBranch(tempDir)).toBe("main")
+		})
 
-    test("works with custom PR branch pattern", async () => {
-      // Create custom config
-      const configPath = join(tempDir, "custom-config.json");
-      await Bun.write(configPath, JSON.stringify({ prBranch: "PR/%branch%" }));
-      process.env.AGENCY_CONFIG_PATH = configPath;
+		test("works with custom PR branch pattern", async () => {
+			// Create custom config
+			const configPath = join(tempDir, "custom-config.json")
+			await Bun.write(configPath, JSON.stringify({ prBranch: "PR/%branch%" }))
+			process.env.AGENCY_CONFIG_PATH = configPath
 
-      // Create feature branch and its PR branch
-      await createBranch(tempDir, "feature");
-      await createCommit(tempDir, "Feature work");
-      await createBranch(tempDir, "PR/feature");
+			// Create feature branch and its PR branch
+			await createBranch(tempDir, "feature")
+			await createCommit(tempDir, "Feature work")
+			await createBranch(tempDir, "PR/feature")
 
-      // Switch to feature
-      await switchBranch({ silent: true });
-      expect(await getCurrentBranch(tempDir)).toBe("feature");
+			// Switch to feature
+			await switchBranch({ silent: true })
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
-      // Switch back to PR/feature
-      await switchBranch({ silent: true });
-      expect(await getCurrentBranch(tempDir)).toBe("PR/feature");
-    });
-  });
+			// Switch back to PR/feature
+			await switchBranch({ silent: true })
+			expect(await getCurrentBranch(tempDir)).toBe("PR/feature")
+		})
+	})
 
-  describe("error handling", () => {
-    test("throws error when PR branch doesn't exist", async () => {
-      // We're on main, and main--PR doesn't exist
-      await expect(switchBranch({ silent: true })).rejects.toThrow(
-        "PR branch 'main--PR' does not exist"
-      );
-    });
+	describe("error handling", () => {
+		test("throws error when PR branch doesn't exist", async () => {
+			// We're on main, and main--PR doesn't exist
+			await expect(switchBranch({ silent: true })).rejects.toThrow(
+				"PR branch 'main--PR' does not exist",
+			)
+		})
 
-    test("throws error when source branch doesn't exist", async () => {
-      // Create PR branch but delete source
-      await createBranch(tempDir, "feature--PR");
-      // We never created 'feature', so it doesn't exist
+		test("throws error when source branch doesn't exist", async () => {
+			// Create PR branch but delete source
+			await createBranch(tempDir, "feature--PR")
+			// We never created 'feature', so it doesn't exist
 
-      await expect(switchBranch({ silent: true })).rejects.toThrow(
-        "Source branch 'feature' does not exist"
-      );
-    });
+			await expect(switchBranch({ silent: true })).rejects.toThrow(
+				"Source branch 'feature' does not exist",
+			)
+		})
 
-    test("throws error when not in a git repository", async () => {
-      const nonGitDir = await createTempDir();
-      process.chdir(nonGitDir);
+		test("throws error when not in a git repository", async () => {
+			const nonGitDir = await createTempDir()
+			process.chdir(nonGitDir)
 
-      await expect(switchBranch({ silent: true })).rejects.toThrow(
-        "Not in a git repository"
-      );
+			await expect(switchBranch({ silent: true })).rejects.toThrow(
+				"Not in a git repository",
+			)
 
-      await cleanupTempDir(nonGitDir);
-    });
-  });
+			await cleanupTempDir(nonGitDir)
+		})
+	})
 
-  describe("silent mode", () => {
-    test("silent flag suppresses output", async () => {
-      await createBranch(tempDir, "main--PR");
+	describe("silent mode", () => {
+		test("silent flag suppresses output", async () => {
+			await createBranch(tempDir, "main--PR")
 
-      // Capture output
-      const originalLog = console.log;
-      let logCalled = false;
-      console.log = () => {
-        logCalled = true;
-      };
+			// Capture output
+			const originalLog = console.log
+			let logCalled = false
+			console.log = () => {
+				logCalled = true
+			}
 
-      await switchBranch({ silent: true });
+			await switchBranch({ silent: true })
 
-      console.log = originalLog;
-      expect(logCalled).toBe(false);
-    });
-  });
-});
+			console.log = originalLog
+			expect(logCalled).toBe(false)
+		})
+	})
+})

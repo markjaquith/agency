@@ -10,7 +10,9 @@
     "agency": "./cli.ts"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "exports": {
     ".": {
@@ -32,7 +34,8 @@
     "personal-agents"
   ],
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "prettier": "^3.6.2"
   },
   "peerDependencies": {
     "typescript": "^5"

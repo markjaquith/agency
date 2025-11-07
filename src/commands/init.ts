@@ -1,148 +1,164 @@
-import { resolve, join } from "path";
-import { isInsideGitRepo, getGitRoot, isGitRoot, getGitConfig, setGitConfig } from "../utils/git";
-import { getConfigDir } from "../config";
-import { MANAGED_FILES } from "../types";
-import { prompt, sanitizeTemplateName } from "../utils/prompt";
-import { getTemplateDir, createTemplateDir } from "../utils/template";
+import { resolve, join } from "path"
+import {
+	isInsideGitRepo,
+	getGitRoot,
+	isGitRoot,
+	getGitConfig,
+	setGitConfig,
+} from "../utils/git"
+import { getConfigDir } from "../config"
+import { MANAGED_FILES } from "../types"
+import { prompt, sanitizeTemplateName } from "../utils/prompt"
+import { getTemplateDir, createTemplateDir } from "../utils/template"
 
 export interface InitOptions {
-  path?: string;
-  silent?: boolean;
-  verbose?: boolean;
-  template?: string;
+	path?: string
+	silent?: boolean
+	verbose?: boolean
+	template?: string
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
-  const { silent = false, verbose = false } = options;
-  const log = silent ? () => {} : console.log;
-  const verboseLog = verbose && !silent ? console.log : () => {};
-  
-  let targetPath: string;
-  
-  if (options.path) {
-    // If path is provided, validate it's a git repository root
-    targetPath = resolve(options.path);
-    
-    if (!(await isGitRoot(targetPath))) {
-      throw new Error("The specified path is not the root of a git repository. Please provide a path to the top-level directory of a git checkout.");
-    }
-  } else {
-    // If no path provided, use git root of current directory
-    if (!(await isInsideGitRepo(process.cwd()))) {
-      throw new Error("Not in a git repository. Please run this command inside a git repo.");
-    }
-    
-    const gitRoot = await getGitRoot(process.cwd());
-    if (!gitRoot) {
-      throw new Error("Failed to determine the root of the git repository.");
-    }
-    
-    targetPath = gitRoot;
-  }
-  
-  const configDir = getConfigDir();
-  
-  try {
-    // Get or prompt for template name
-    let templateName = options.template || await getGitConfig("agency.template", targetPath);
-    let needsSaveToConfig = false;
-    
-    if (!templateName) {
-      // Prompt for template name if not in silent mode
-      if (silent) {
-        throw new Error("No template configured. Run without --silent to configure, or use --template flag.");
-      }
-      
-      log("No template configured for this repository.");
-      const answer = await prompt("Template name: ");
-      
-      if (!answer) {
-        throw new Error("Template name is required.");
-      }
-      
-      templateName = sanitizeTemplateName(answer);
-      verboseLog(`Sanitized template name: ${templateName}`);
-      needsSaveToConfig = true;
-    } else if (options.template) {
-      // Template was provided via option, not from git config
-      const existingTemplate = await getGitConfig("agency.template", targetPath);
-      if (existingTemplate !== options.template) {
-        needsSaveToConfig = true;
-      }
-      verboseLog(`Using template: ${templateName}`);
-    } else {
-      verboseLog(`Using template: ${templateName}`);
-    }
-    
-    // Create template directory if it doesn't exist
-    const templateDir = getTemplateDir(templateName);
-    await createTemplateDir(templateName);
-    
-    // Check if template is new (doesn't have any files yet)
-    const templateAgents = Bun.file(join(templateDir, "AGENTS.md"));
-    if (!(await templateAgents.exists())) {
-      log(`✓ Created template '${templateName}'`);
-      
-      // Copy default content to template for each managed file
-      for (const managedFile of MANAGED_FILES) {
-        const templateFilePath = join(templateDir, managedFile.name);
-        const templateFile = Bun.file(templateFilePath);
-        
-        if (!(await templateFile.exists())) {
-          const defaultContent = managedFile.defaultContent ?? "";
-          await Bun.write(templateFilePath, defaultContent);
-          verboseLog(`Created ${templateFilePath} with default content`);
-        }
-      }
-    }
-    
-    // Save template name to git config if needed
-    if (needsSaveToConfig) {
-      await setGitConfig("agency.template", templateName, targetPath);
-      log(`✓ Set agency.template = ${templateName}`);
-    }
-    
-    // Process each managed file
-    for (const managedFile of MANAGED_FILES) {
-      const targetFilePath = resolve(targetPath, managedFile.name);
-      const targetFile = Bun.file(targetFilePath);
-      
-      if (await targetFile.exists()) {
-        log(`ⓘ ${managedFile.name} already exists at ${targetFilePath}`);
-        continue;
-      }
-      
-      let content: string;
-      
-      // Try template directory first
-      const templateFilePath = join(getTemplateDir(templateName), managedFile.name);
-      const templateFile = Bun.file(templateFilePath);
-      
-      if (await templateFile.exists()) {
-        content = await templateFile.text();
-        verboseLog(`Using template file from ${templateFilePath}`);
-      } else {
-        // Fall back to config directory root (backward compatibility)
-        const sourceFilePath = join(configDir, managedFile.name);
-        const sourceFile = Bun.file(sourceFilePath);
-        
-        if (await sourceFile.exists()) {
-          content = await sourceFile.text();
-          verboseLog(`Using source file from ${sourceFilePath}`);
-        } else {
-          // Use default content
-          content = managedFile.defaultContent ?? "";
-          verboseLog(`Using default content for ${managedFile.name}`);
-        }
-      }
-      
-      await Bun.write(targetFilePath, content);
-      log(`✓ Created ${managedFile.name} from '${templateName}' template`);
-    }
-  } catch (err) {
-    // Re-throw errors for CLI handler to display
-    throw err;
-  }
+	const { silent = false, verbose = false } = options
+	const log = silent ? () => {} : console.log
+	const verboseLog = verbose && !silent ? console.log : () => {}
+
+	let targetPath: string
+
+	if (options.path) {
+		// If path is provided, validate it's a git repository root
+		targetPath = resolve(options.path)
+
+		if (!(await isGitRoot(targetPath))) {
+			throw new Error(
+				"The specified path is not the root of a git repository. Please provide a path to the top-level directory of a git checkout.",
+			)
+		}
+	} else {
+		// If no path provided, use git root of current directory
+		if (!(await isInsideGitRepo(process.cwd()))) {
+			throw new Error(
+				"Not in a git repository. Please run this command inside a git repo.",
+			)
+		}
+
+		const gitRoot = await getGitRoot(process.cwd())
+		if (!gitRoot) {
+			throw new Error("Failed to determine the root of the git repository.")
+		}
+
+		targetPath = gitRoot
+	}
+
+	const configDir = getConfigDir()
+
+	try {
+		// Get or prompt for template name
+		let templateName =
+			options.template || (await getGitConfig("agency.template", targetPath))
+		let needsSaveToConfig = false
+
+		if (!templateName) {
+			// Prompt for template name if not in silent mode
+			if (silent) {
+				throw new Error(
+					"No template configured. Run without --silent to configure, or use --template flag.",
+				)
+			}
+
+			log("No template configured for this repository.")
+			const answer = await prompt("Template name: ")
+
+			if (!answer) {
+				throw new Error("Template name is required.")
+			}
+
+			templateName = sanitizeTemplateName(answer)
+			verboseLog(`Sanitized template name: ${templateName}`)
+			needsSaveToConfig = true
+		} else if (options.template) {
+			// Template was provided via option, not from git config
+			const existingTemplate = await getGitConfig("agency.template", targetPath)
+			if (existingTemplate !== options.template) {
+				needsSaveToConfig = true
+			}
+			verboseLog(`Using template: ${templateName}`)
+		} else {
+			verboseLog(`Using template: ${templateName}`)
+		}
+
+		// Create template directory if it doesn't exist
+		const templateDir = getTemplateDir(templateName)
+		await createTemplateDir(templateName)
+
+		// Check if template is new (doesn't have any files yet)
+		const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
+		if (!(await templateAgents.exists())) {
+			log(`✓ Created template '${templateName}'`)
+
+			// Copy default content to template for each managed file
+			for (const managedFile of MANAGED_FILES) {
+				const templateFilePath = join(templateDir, managedFile.name)
+				const templateFile = Bun.file(templateFilePath)
+
+				if (!(await templateFile.exists())) {
+					const defaultContent = managedFile.defaultContent ?? ""
+					await Bun.write(templateFilePath, defaultContent)
+					verboseLog(`Created ${templateFilePath} with default content`)
+				}
+			}
+		}
+
+		// Save template name to git config if needed
+		if (needsSaveToConfig) {
+			await setGitConfig("agency.template", templateName, targetPath)
+			log(`✓ Set agency.template = ${templateName}`)
+		}
+
+		// Process each managed file
+		for (const managedFile of MANAGED_FILES) {
+			const targetFilePath = resolve(targetPath, managedFile.name)
+			const targetFile = Bun.file(targetFilePath)
+
+			if (await targetFile.exists()) {
+				log(`ⓘ ${managedFile.name} already exists at ${targetFilePath}`)
+				continue
+			}
+
+			let content: string
+
+			// Try template directory first
+			const templateFilePath = join(
+				getTemplateDir(templateName),
+				managedFile.name,
+			)
+			const templateFile = Bun.file(templateFilePath)
+
+			if (await templateFile.exists()) {
+				content = await templateFile.text()
+				verboseLog(`Using template file from ${templateFilePath}`)
+			} else {
+				// Fall back to config directory root (backward compatibility)
+				const sourceFilePath = join(configDir, managedFile.name)
+				const sourceFile = Bun.file(sourceFilePath)
+
+				if (await sourceFile.exists()) {
+					content = await sourceFile.text()
+					verboseLog(`Using source file from ${sourceFilePath}`)
+				} else {
+					// Use default content
+					content = managedFile.defaultContent ?? ""
+					verboseLog(`Using default content for ${managedFile.name}`)
+				}
+			}
+
+			await Bun.write(targetFilePath, content)
+			log(`✓ Created ${managedFile.name} from '${templateName}' template`)
+		}
+	} catch (err) {
+		// Re-throw errors for CLI handler to display
+		throw err
+	}
 }
 
 export const help = `
@@ -187,4 +203,4 @@ Notes:
   - The specified path (if provided) must be a git repository root
   - Templates are stored per-repository in .git/config (not committed)
   - Use --template flag to override saved template or skip prompt
-`;
+`
