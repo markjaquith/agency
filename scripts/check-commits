@@ -1,0 +1,63 @@
+#!/usr/bin/env bun
+
+import { execSync } from "child_process"
+
+// Regex to match Conventional Commits
+const regex = /^(feat|fix|chore|docs|style|refactor|perf|test|ci)(\(.+\))?: .+/
+
+try {
+	// Get commits that are ahead of origin/main (or just HEAD if no remote)
+	let commits: string[]
+	try {
+		const output = execSync("git log origin/main..HEAD --format=%s", {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		})
+		commits = output.trim().split("\n").filter(Boolean)
+	} catch {
+		// If origin/main doesn't exist, just check the last commit
+		try {
+			const output = execSync("git log -1 --format=%s", {
+				encoding: "utf-8",
+				stdio: ["pipe", "pipe", "pipe"],
+			})
+			commits = output.trim().split("\n").filter(Boolean)
+		} catch {
+			// No commits yet
+			commits = []
+		}
+	}
+
+	if (commits.length === 0) {
+		// No commits to check
+		process.exit(0)
+	}
+
+	// Check each commit
+	const invalidCommits: string[] = []
+	commits.forEach((msg) => {
+		if (!regex.test(msg)) {
+			invalidCommits.push(msg)
+		}
+	})
+
+	if (invalidCommits.length > 0) {
+		console.error("❌ Found commits that don't follow Conventional Commits:")
+		console.error("——————")
+		invalidCommits.forEach((msg) => {
+			console.error(`  ${msg}`)
+		})
+		console.error("——————")
+		console.error()
+		console.error("Expected: <type>(<scope>): <description>")
+		console.error("Example: feat(cli): add support for config files")
+		process.exit(1)
+	}
+
+	process.exit(0)
+} catch (error) {
+	if (error instanceof Error) {
+		console.error(error.message)
+	}
+	process.exit(1)
+}

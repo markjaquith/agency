@@ -26,6 +26,12 @@ type TaskStatus = "pending" | "running" | "passed" | "failed"
 
 const tasks: Task[] = [
 	{
+		name: "commits",
+		command: "./scripts/check-commits",
+		args: [],
+		color: "\x1b[35m",
+	}, // magenta
+	{
 		name: "format",
 		command: "bun",
 		args: ["run", "format:check"],
