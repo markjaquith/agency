@@ -1,5 +1,7 @@
-import { resolve } from "path";
+import { resolve, join } from "path";
 import { isInsideGitRepo, getGitRoot, isGitRoot } from "../utils/git";
+import { getConfigDir } from "../config";
+import { MANAGED_FILES } from "../types";
 
 export interface InitOptions {
   path?: string;
@@ -35,27 +37,36 @@ export async function init(options: InitOptions = {}): Promise<void> {
     targetPath = gitRoot;
   }
   
-  // Create AGENTS.md file
-  const agentsPath = resolve(targetPath, "AGENTS.md");
-  const claudePath = resolve(targetPath, "CLAUDE.md");
+  const configDir = getConfigDir();
   
   try {
-    // Create blank AGENTS.md if it doesn't exist
-    const agentsFile = Bun.file(agentsPath);
-    if (!(await agentsFile.exists())) {
-      await Bun.write(agentsPath, "");
-      log(`Created ${agentsPath}`);
-    } else {
-      log(`ⓘ AGENTS.md already exists at ${agentsPath}`);
-    }
-    
-    // Create CLAUDE.md with @AGENTS.md content if it doesn't exist
-    const claudeFile = Bun.file(claudePath);
-    if (!(await claudeFile.exists())) {
-      await Bun.write(claudePath, "@AGENTS.md");
-      log(`Created ${claudePath}`);
-    } else {
-      log(`ⓘ CLAUDE.md already exists at ${claudePath}`);
+    // Process each managed file
+    for (const managedFile of MANAGED_FILES) {
+      const targetFilePath = resolve(targetPath, managedFile.name);
+      const targetFile = Bun.file(targetFilePath);
+      
+      if (await targetFile.exists()) {
+        log(`ⓘ ${managedFile.name} already exists at ${targetFilePath}`);
+        continue;
+      }
+      
+      // Check if source file exists in config directory
+      const sourceFilePath = join(configDir, managedFile.name);
+      const sourceFile = Bun.file(sourceFilePath);
+      
+      let content: string;
+      if (await sourceFile.exists()) {
+        // Use source file from config directory
+        content = await sourceFile.text();
+        verboseLog(`Using source file from ${sourceFilePath}`);
+      } else {
+        // Use default content
+        content = managedFile.defaultContent ?? "";
+        verboseLog(`Using default content for ${managedFile.name}`);
+      }
+      
+      await Bun.write(targetFilePath, content);
+      log(`Created ${targetFilePath}`);
     }
   } catch (err) {
     // Re-throw errors for CLI handler to display

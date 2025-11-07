@@ -55,6 +55,8 @@ describe("pr command", () => {
     
     // Set config path to non-existent file to use defaults
     process.env.AGENCY_CONFIG_PATH = join(tempDir, "non-existent-config.json");
+    // Set config dir to temp dir to avoid picking up user's config files
+    process.env.AGENCY_CONFIG_DIR = await createTempDir();
     
     // Check if git-filter-repo is available
     hasGitFilterRepo = await isGitFilterRepoAvailable();
@@ -104,6 +106,10 @@ describe("pr command", () => {
   afterEach(async () => {
     process.chdir(originalCwd);
     delete process.env.AGENCY_CONFIG_PATH;
+    if (process.env.AGENCY_CONFIG_DIR) {
+      await cleanupTempDir(process.env.AGENCY_CONFIG_DIR);
+      delete process.env.AGENCY_CONFIG_DIR;
+    }
     await cleanupTempDir(tempDir);
   });
   
@@ -195,7 +201,7 @@ describe("pr command", () => {
       expect(files).toContain("test.txt");
     });
     
-    test("removes AGENTS.md and CLAUDE.md from PR branch", async () => {
+    test("preserves AGENTS.md and CLAUDE.md from main when not modified on feature branch", async () => {
       if (!hasGitFilterRepo) {
         console.log("Skipping test: git-filter-repo not installed");
         return;
@@ -207,21 +213,81 @@ describe("pr command", () => {
       // Create PR branch
       await pr({ silent: true });
       
-      // Check that AGENTS.md and CLAUDE.md do NOT exist on PR branch
+      // Check that AGENTS.md and CLAUDE.md still exist (since they came from main and weren't modified)
       const files = await getGitOutput(tempDir, ["ls-files"]);
-      expect(files).not.toContain("AGENTS.md");
-      expect(files).not.toContain("CLAUDE.md");
+      expect(files).toContain("AGENTS.md");
+      expect(files).toContain("CLAUDE.md");
       
-      // But test.txt should still exist
+      // And test.txt should still exist
       expect(files).toContain("test.txt");
+    });
+    
+    test("reverts AGENTS.md modifications to main version on PR branch", async () => {
+      if (!hasGitFilterRepo) {
+        console.log("Skipping test: git-filter-repo not installed");
+        return;
+      }
       
-      // Verify they're not in the git history either
-      const agentsHistory = await getGitOutput(tempDir, ["log", "--all", "--oneline", "--", "AGENTS.md"]);
-      const claudeHistory = await getGitOutput(tempDir, ["log", "--all", "--oneline", "--", "CLAUDE.md"]);
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
       
-      // They should only exist in history of other branches, not feature--PR
-      const prLog = await getGitOutput(tempDir, ["log", "--oneline", "feature--PR", "--", "AGENTS.md"]);
-      expect(prLog.trim()).toBe("");
+      // Modify AGENTS.md on feature branch
+      await Bun.write(join(tempDir, "AGENTS.md"), "# Modified by feature branch\n");
+      await Bun.spawn(["git", "add", "AGENTS.md"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
+      await Bun.spawn(["git", "commit", "--no-verify", "-m", "Modify AGENTS.md"], { cwd: tempDir, stdout: "pipe", stderr: "pipe" }).exited;
+      
+      await createCommit(tempDir, "Feature commit");
+      
+      // Get the original content from main
+      const mainAgentsContent = await Bun.file(join(tempDir, "AGENTS.md")).text();
+      expect(mainAgentsContent).toContain("Modified by feature branch");
+      
+      // Create PR branch
+      await pr({ silent: true });
+      
+      // AGENTS.md should exist but be reverted to empty (the state from main before feature branch)
+      const files = await getGitOutput(tempDir, ["ls-files"]);
+      expect(files).toContain("AGENTS.md");
+      
+      const prAgentsContent = await Bun.file(join(tempDir, "AGENTS.md")).text();
+      expect(prAgentsContent).toBe(""); // Should be reverted to main's original empty state
+    });
+    
+    test("removes AGENTS.md when it was added only on feature branch", async () => {
+      if (!hasGitFilterRepo) {
+        console.log("Skipping test: git-filter-repo not installed");
+        return;
+      }
+      
+      // Start fresh without AGENTS.md on main
+      const freshDir = await createTempDir();
+      await initGitRepo(freshDir);
+      await createCommit(freshDir, "Initial commit");
+      
+      // Rename to main
+      const currentBranch = await getCurrentBranch(freshDir);
+      if (currentBranch === "master") {
+        await Bun.spawn(["git", "branch", "-m", "main"], { cwd: freshDir, stdout: "pipe", stderr: "pipe" }).exited;
+      }
+      
+      // Set up origin for filter-repo
+      await Bun.spawn(["git", "remote", "add", "origin", freshDir], { cwd: freshDir, stdout: "pipe", stderr: "pipe" }).exited;
+      await Bun.spawn(["git", "fetch", "origin"], { cwd: freshDir, stdout: "pipe", stderr: "pipe" }).exited;
+      
+      // Create feature branch and add AGENTS.md
+      await Bun.spawn(["git", "checkout", "-b", "feature"], { cwd: freshDir, stdout: "pipe", stderr: "pipe" }).exited;
+      await Bun.write(join(freshDir, "AGENTS.md"), "# Feature only\n");
+      await Bun.spawn(["git", "add", "AGENTS.md"], { cwd: freshDir, stdout: "pipe", stderr: "pipe" }).exited;
+      await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md"], { cwd: freshDir, stdout: "pipe", stderr: "pipe" }).exited;
+      
+      // Create PR branch
+      process.chdir(freshDir);
+      await pr({ silent: true });
+      
+      // AGENTS.md should NOT exist (it was removed)
+      const files = await getGitOutput(freshDir, ["ls-files"]);
+      expect(files).not.toContain("AGENTS.md");
+      
+      await cleanupTempDir(freshDir);
     });
     
     test("original branch remains untouched", async () => {

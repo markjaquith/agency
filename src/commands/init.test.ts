@@ -6,14 +6,26 @@ import { createTempDir, cleanupTempDir, initGitRepo, createSubdir, fileExists, r
 describe("init command", () => {
   let tempDir: string;
   let originalCwd: string;
+  let originalConfigDir: string | undefined;
   
   beforeEach(async () => {
     tempDir = await createTempDir();
     originalCwd = process.cwd();
+    originalConfigDir = process.env.AGENCY_CONFIG_DIR;
+    // Use a temp config dir to avoid interference from user's actual config
+    process.env.AGENCY_CONFIG_DIR = await createTempDir();
   });
   
   afterEach(async () => {
     process.chdir(originalCwd);
+    if (originalConfigDir !== undefined) {
+      process.env.AGENCY_CONFIG_DIR = originalConfigDir;
+    } else {
+      delete process.env.AGENCY_CONFIG_DIR;
+    }
+    if (process.env.AGENCY_CONFIG_DIR && process.env.AGENCY_CONFIG_DIR !== originalConfigDir) {
+      await cleanupTempDir(process.env.AGENCY_CONFIG_DIR);
+    }
     await cleanupTempDir(tempDir);
   });
   
@@ -161,6 +173,84 @@ describe("init command", () => {
       
       expect(logs.length).toBeGreaterThan(0);
       expect(logs.some(log => log.includes("Created"))).toBe(true);
+    });
+  });
+  
+  describe("config directory source files", () => {
+    let configDir: string;
+    let originalEnv: string | undefined;
+    
+    beforeEach(async () => {
+      // Create a temporary config directory
+      configDir = await createTempDir();
+      originalEnv = process.env.AGENCY_CONFIG_DIR;
+      process.env.AGENCY_CONFIG_DIR = configDir;
+    });
+    
+    afterEach(async () => {
+      // Restore original env
+      if (originalEnv !== undefined) {
+        process.env.AGENCY_CONFIG_DIR = originalEnv;
+      } else {
+        delete process.env.AGENCY_CONFIG_DIR;
+      }
+      await cleanupTempDir(configDir);
+    });
+    
+    test("uses AGENTS.md from config directory if it exists", async () => {
+      await initGitRepo(tempDir);
+      process.chdir(tempDir);
+      
+      const sourceContent = "# Custom AGENTS.md content\nThis is from config dir";
+      await Bun.write(join(configDir, "AGENTS.md"), sourceContent);
+      
+      await init({ silent: true });
+      
+      const content = await readFile(join(tempDir, "AGENTS.md"));
+      expect(content).toBe(sourceContent);
+    });
+    
+    test("uses CLAUDE.md from config directory if it exists", async () => {
+      await initGitRepo(tempDir);
+      process.chdir(tempDir);
+      
+      const sourceContent = "# Custom CLAUDE.md content\n@AGENTS.md\nExtra instructions";
+      await Bun.write(join(configDir, "CLAUDE.md"), sourceContent);
+      
+      await init({ silent: true });
+      
+      const content = await readFile(join(tempDir, "CLAUDE.md"));
+      expect(content).toBe(sourceContent);
+    });
+    
+    test("uses default content when config directory files don't exist", async () => {
+      await initGitRepo(tempDir);
+      process.chdir(tempDir);
+      
+      await init({ silent: true });
+      
+      const agentsContent = await readFile(join(tempDir, "AGENTS.md"));
+      const claudeContent = await readFile(join(tempDir, "CLAUDE.md"));
+      
+      expect(agentsContent).toBe("");
+      expect(claudeContent).toBe("@AGENTS.md");
+    });
+    
+    test("mixes config and default content when only some files exist", async () => {
+      await initGitRepo(tempDir);
+      process.chdir(tempDir);
+      
+      const customAgentsContent = "# Custom AGENTS.md";
+      await Bun.write(join(configDir, "AGENTS.md"), customAgentsContent);
+      // Don't create CLAUDE.md in config dir
+      
+      await init({ silent: true });
+      
+      const agentsContent = await readFile(join(tempDir, "AGENTS.md"));
+      const claudeContent = await readFile(join(tempDir, "CLAUDE.md"));
+      
+      expect(agentsContent).toBe(customAgentsContent);
+      expect(claudeContent).toBe("@AGENTS.md"); // default
     });
   });
 });

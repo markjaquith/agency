@@ -1,6 +1,7 @@
 import { isInsideGitRepo, getGitRoot } from "../utils/git";
 import { loadConfig } from "../config";
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch";
+import { MANAGED_FILES } from "../types";
 
 export interface PrOptions {
   branch?: string;
@@ -47,6 +48,24 @@ async function checkGitFilterRepo(): Promise<boolean> {
   return proc.exitCode === 0;
 }
 
+async function getDefaultRemoteBranch(gitRoot: string): Promise<string | null> {
+  // Check what origin/HEAD points to
+  const proc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], {
+    cwd: gitRoot,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  
+  await proc.exited;
+  
+  if (proc.exitCode === 0) {
+    const output = await new Response(proc.stdout).text();
+    return output.trim();
+  }
+  
+  return null;
+}
+
 async function getBaseBranch(gitRoot: string, currentBranch: string): Promise<string | null> {
   // Try to find the upstream branch
   const upstreamProc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", `${currentBranch}@{upstream}`], {
@@ -60,6 +79,12 @@ async function getBaseBranch(gitRoot: string, currentBranch: string): Promise<st
   if (upstreamProc.exitCode === 0) {
     const upstream = await new Response(upstreamProc.stdout).text();
     return upstream.trim();
+  }
+  
+  // Check what the actual default remote branch is
+  const defaultRemote = await getDefaultRemoteBranch(gitRoot);
+  if (defaultRemote && await branchExists(gitRoot, defaultRemote)) {
+    return defaultRemote;
   }
   
   // Try common base branches in order
@@ -172,8 +197,12 @@ export async function pr(options: PrOptions = {}): Promise<void> {
       throw new Error("Could not determine base branch. Tried: origin/main, origin/master, main, master");
     }
     
+    verboseLog(`Using base branch: ${baseBranch}`);
+    
     // Get the merge-base (where the branch diverged)
     const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch);
+    
+    verboseLog(`Branch diverged at commit: ${mergeBase}`);
     
     // Determine PR branch name using config pattern
     const prBranch = options.branch || makePrBranchName(currentBranch, config.prBranch);
@@ -184,21 +213,27 @@ export async function pr(options: PrOptions = {}): Promise<void> {
     await createOrResetBranch(gitRoot, currentBranch, prBranch);
     
      // Run git-filter-repo to remove files from history on the PR branch
-     // Use --refs to only rewrite the current branch (PR branch)
+     // Use --refs with a range to only rewrite commits since the merge-base
+     // This preserves the state of managed files as they were on the base branch,
+     // while removing any modifications made on the feature branch
+     
+     verboseLog(`Filtering managed files from commits in range: ${mergeBase.substring(0, 8)}..${prBranch}`);
+     verboseLog(`Files will revert to their state at merge-base (base branch: ${baseBranch})`);
      
      // Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
      // See: https://github.com/newren/git-filter-repo/issues/512
      const env = { ...process.env, GIT_CONFIG_GLOBAL: "" };
      
-     const proc = Bun.spawn([
-       "git",
-       "filter-repo",
-       "--path", "AGENTS.md",
-       "--path", "CLAUDE.md",
-       "--invert-paths",
-       "--force",
-       "--refs", prBranch,
-     ], {
+      const filterRepoArgs = [
+        "git",
+        "filter-repo",
+        ...MANAGED_FILES.flatMap(f => ["--path", f.name]),
+        "--invert-paths",
+        "--force",
+        "--refs", `${mergeBase}..${prBranch}`,
+      ];
+      
+      const proc = Bun.spawn(filterRepoArgs, {
        cwd: gitRoot,
        stdout: verbose ? "inherit" : "pipe",
        stderr: "pipe",
@@ -227,11 +262,23 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 export const help = `
 Usage: agency pr [branch] [options]
 
-Create a PR branch from the current branch with AGENTS.md and CLAUDE.md removed from history.
+Create a PR branch from the current branch with managed files (AGENTS.md, CLAUDE.md)
+reverted to their state on the base branch.
 
 This command creates a new branch (or recreates it if it exists) based on your current
-branch, then uses git-filter-repo to remove AGENTS.md and CLAUDE.md from the branch's
-history. Your original branch remains completely untouched.
+branch, then uses git-filter-repo to revert AGENTS.md and CLAUDE.md to their state at
+the point where your branch diverged from the base branch (main/master). Your original
+branch remains completely untouched.
+
+Behavior:
+  - If these files existed on the base branch: They are reverted to that version
+  - If these files did NOT exist on base branch: They are completely removed
+  - Only commits since the branch diverged are rewritten
+  - This allows you to layer feature-specific instructions on top of base instructions
+    during development, then remove those modifications when creating a PR
+
+The command intelligently detects your repository's default branch (main or master) by
+checking origin/HEAD, then finds the merge-base where your branch diverged.
 
 Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo
@@ -269,9 +316,13 @@ Examples:
 
 Notes:
   - PR branch is created from your current branch (not main)
-  - AGENTS.md and CLAUDE.md are removed from history using git-filter-repo
+  - Only commits since the branch diverged are rewritten (uses merge-base range)
+  - Managed files are reverted to their merge-base state (or removed if they didn't exist)
+  - Only commits since divergence that touched these files will have different hashes
+  - All commits from the base branch remain unchanged (shared history is preserved)
   - Original branch is never modified
   - If PR branch exists, it will be deleted and recreated
   - Command will refuse to create PR branch from a PR branch unless --force is used
+  - Use --verbose to see which base branch and merge-base commit are detected
   - Use --verbose to debug git-filter-repo if it fails
 `;

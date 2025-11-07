@@ -10,12 +10,20 @@ const DEFAULT_CONFIG: AgencyConfig = {
   prBranch: "%branch%--PR",
 };
 
+export function getConfigDir(): string {
+  // Allow override for testing
+  if (process.env.AGENCY_CONFIG_DIR) {
+    return process.env.AGENCY_CONFIG_DIR;
+  }
+  return join(homedir(), ".config", "agency");
+}
+
 function getConfigPath(): string {
   // Allow override for testing
   if (process.env.AGENCY_CONFIG_PATH) {
     return process.env.AGENCY_CONFIG_PATH;
   }
-  return join(homedir(), ".config", "agency", "agency.json");
+  return join(getConfigDir(), "agency.json");
 }
 
 export async function loadConfig(configPath?: string): Promise<AgencyConfig> {
