@@ -127,6 +127,68 @@ describe("init command", () => {
 		})
 	})
 
+	describe("opencode.json support", () => {
+		test("creates opencode.json at git root", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await init({ silent: true, template: "test" })
+
+			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(true)
+		})
+
+		test("creates opencode.json with default content", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await init({ silent: true, template: "test" })
+
+			const content = await readFile(join(tempDir, "opencode.json"))
+			const parsed = JSON.parse(content)
+
+			expect(parsed.$schema).toBe("https://opencode.ai/config.json")
+			expect(parsed.instructions).toEqual(["TASK.md"])
+		})
+
+		test("does not overwrite existing opencode.json", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			const existingContent = JSON.stringify({
+				custom: "config",
+			})
+			await Bun.write(join(tempDir, "opencode.json"), existingContent)
+
+			await init({ silent: true, template: "test" })
+
+			const content = await readFile(join(tempDir, "opencode.json"))
+			expect(content).toBe(existingContent)
+		})
+
+		test("uses opencode.json from template directory if it exists", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			const configDir = process.env.AGENCY_CONFIG_DIR!
+			const templateDir = join(configDir, "templates", "custom-template")
+			await Bun.spawn(["mkdir", "-p", templateDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const customConfig = JSON.stringify({
+				$schema: "https://opencode.ai/config.json",
+				instructions: ["CUSTOM.md"],
+			})
+			await Bun.write(join(templateDir, "opencode.json"), customConfig)
+
+			await init({ silent: true, template: "custom-template" })
+
+			const content = await readFile(join(tempDir, "opencode.json"))
+			expect(content).toBe(customConfig)
+		})
+	})
+
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
 			await initGitRepo(tempDir)

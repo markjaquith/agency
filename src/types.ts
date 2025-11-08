@@ -13,4 +13,15 @@ export interface ManagedFile {
 // Files managed by agency
 export const MANAGED_FILES: ManagedFile[] = [
 	{ name: "AGENTS.md", defaultContent: "" },
+	{
+		name: "opencode.json",
+		defaultContent: JSON.stringify(
+			{
+				$schema: "https://opencode.ai/config.json",
+				instructions: ["TASK.md"],
+			},
+			null,
+			2,
+		),
+	},
 ]
