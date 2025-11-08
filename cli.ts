@@ -4,6 +4,7 @@ import { parseArgs } from "util"
 import { init, help as initHelp } from "./src/commands/init"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { save, help as saveHelp } from "./src/commands/save"
+import { setBase, help as setBaseHelp } from "./src/commands/set-base"
 import { source, help as sourceHelp } from "./src/commands/source"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { use, help as useHelp } from "./src/commands/use"
@@ -124,6 +125,27 @@ const commands: Record<string, Command> = {
 		},
 		help: mergeHelp,
 	},
+	"set-base": {
+		name: "set-base",
+		description: "Set default base branch for current branch",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(setBaseHelp)
+				return
+			}
+			if (!args[0]) {
+				throw new Error(
+					"Base branch argument is required. Usage: agency set-base <base-branch>",
+				)
+			}
+			await setBase({
+				baseBranch: args[0],
+				silent: options.silent,
+				verbose: options.verbose,
+			})
+		},
+		help: setBaseHelp,
+	},
 }
 
 function showMainHelp() {
@@ -137,6 +159,7 @@ Commands:
    use [template]         Set template for this repository
    save <file|dir> ...    Save files/dirs to configured template
    pr [base-branch]       Create a PR branch without AGENTS.md
+   set-base <branch>      Set default base branch for current branch
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
   merge                  Merge PR branch into base branch
@@ -162,6 +185,7 @@ Examples:
   agency pr                      # Create PR branch (prompts for base branch)
   agency pr origin/main          # Create PR branch using origin/main as base
   agency pr --verbose            # Create PR branch with detailed output
+  agency set-base origin/main    # Set default base branch to origin/main
   agency source                  # Switch from PR branch to source branch
   agency switch                  # Toggle between source and PR branch
   agency merge                   # Merge PR branch into base branch

@@ -391,6 +391,7 @@ Base Branch Selection:
   3. Interactive prompt with smart suggestions (origin/main, origin/master, etc.)
   
   Once selected, the base branch is saved to git config for future runs.
+  You can change the saved base branch using: agency set-base <new-base-branch>
 
 Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo
