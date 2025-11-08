@@ -5,6 +5,9 @@ import {
 	isGitRoot,
 	getGitConfig,
 	setGitConfig,
+	getCurrentBranch,
+	isFeatureBranch,
+	createBranch,
 } from "../utils/git"
 import { getConfigDir } from "../config"
 import { MANAGED_FILES } from "../types"
@@ -21,6 +24,7 @@ export interface InitOptions {
 	verbose?: boolean
 	template?: string
 	task?: string
+	branch?: string
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
@@ -58,6 +62,28 @@ export async function init(options: InitOptions = {}): Promise<void> {
 	const configDir = getConfigDir()
 
 	try {
+		// Check if we're on a feature branch
+		const currentBranch = await getCurrentBranch(targetPath)
+		verboseLog(`Current branch: ${currentBranch}`)
+		const isFeature = await isFeatureBranch(currentBranch, targetPath)
+		verboseLog(`Is feature branch: ${isFeature}`)
+
+		if (!isFeature) {
+			// If a branch name was provided, create it
+			if (options.branch) {
+				await createBranch(options.branch, targetPath)
+				log(`✓ Created and switched to branch '${options.branch}'`)
+			} else {
+				// Otherwise, fail with a helpful error message
+				throw new Error(
+					`You're currently on '${currentBranch}', which appears to be your main branch.\n` +
+						`To initialize on a feature branch, either:\n` +
+						`  1. Switch to an existing feature branch first, then run 'agency init'\n` +
+						`  2. Provide a new branch name: 'agency init <branch-name>'`,
+				)
+			}
+		}
+
 		// Get or prompt for template name
 		let templateName =
 			options.template || (await getGitConfig("agency.template", targetPath))
@@ -203,9 +229,14 @@ export async function init(options: InitOptions = {}): Promise<void> {
 }
 
 export const help = `
-Usage: agency init [path] [options]
+Usage: agency init [branch-name] [options]
 
 Initialize AGENTS.md file in a git repository using templates.
+
+IMPORTANT: This command must be run on a feature branch, not the main branch.
+If you're on the main branch, you must either:
+  1. Switch to an existing feature branch first, then run 'agency init'
+  2. Provide a branch name: 'agency init <branch-name>'
 
 When no path is provided, initializes files at the root of the current git
 repository. When a path is provided, it must be the root directory of a git
@@ -216,20 +247,24 @@ creates a template directory at ~/.config/agency/templates/{name}/ and saves
 the template name to .git/config for future use.
 
 Arguments:
-  path              Path to git repository root (defaults to current repo root)
+  branch-name       Create and switch to this branch before initializing
+  path              Path to git repository root (if it contains / or .)
 
 Options:
   -h, --help        Show this help message
   -s, --silent      Suppress output messages
   -v, --verbose     Show verbose output
   -t, --template    Specify template name (skips prompt)
+  -b, --branch      Branch name to create (alternative to positional arg)
 
 Examples:
-  agency init                    # Initialize with interactive template prompt
-  agency init --template=work    # Initialize with specific template
-  agency init ./my-project       # Initialize in specified git repo root
-  agency init --verbose          # Initialize with verbose output
-  agency init --help             # Show this help message
+  agency init                        # Initialize on current feature branch
+  agency init my-feature             # Create 'my-feature' branch and initialize
+  agency init --template=work        # Initialize with specific template
+  agency init ./my-project           # Initialize in specified git repo root
+  agency init feat/new --template=work  # Create branch with specific template
+  agency init --verbose              # Initialize with verbose output
+  agency init --help                 # Show this help message
 
 Template Workflow:
   1. First run: Prompted for template name (e.g., "work")

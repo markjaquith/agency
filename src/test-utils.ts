@@ -49,6 +49,19 @@ export async function initGitRepo(path: string): Promise<void> {
 	await Bun.spawn(["git", "config", "core.hooksPath", "/dev/null"], {
 		cwd: path,
 	}).exited
+
+	// Create an initial commit so the branch actually exists
+	await Bun.write(join(path, ".gitkeep"), "")
+	await Bun.spawn(["git", "add", ".gitkeep"], {
+		cwd: path,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+	await Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+		cwd: path,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
 }
 
 /**

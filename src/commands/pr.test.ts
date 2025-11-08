@@ -82,6 +82,13 @@ describe("pr command", () => {
 			}).exited
 		}
 
+		// Create a feature branch so init doesn't fail
+		await Bun.spawn(["git", "checkout", "-b", "test-feature"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
 		// Initialize AGENTS.md
 		await init({ silent: true, template: "test" })
 		await Bun.spawn(["git", "add", "AGENTS.md"], {

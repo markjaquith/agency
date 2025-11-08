@@ -43,7 +43,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-save" })
+		await init({ silent: true, template: "test-save", branch: "test-feature" })
 
 		// Modify the files
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Modified content")
@@ -65,7 +65,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-no-files" })
+		await init({ silent: true, template: "test-no-files", branch: "test-feature" })
 
 		await expect(save({ files: [], silent: true })).rejects.toThrow(
 			"No files specified",
@@ -94,7 +94,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-partial" })
+		await init({ silent: true, template: "test-partial", branch: "test-feature" })
 
 		// Remove AGENTS.md (just to test skipping behavior)
 		const rmProc = Bun.spawn(["rm", join(tempDir, "AGENTS.md")], {
@@ -123,7 +123,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-dir" })
+		await init({ silent: true, template: "test-dir", branch: "test-feature" })
 
 		// Create a directory with files
 		const docsDir = join(tempDir, "docs")
@@ -151,7 +151,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-task" })
+		await init({ silent: true, template: "test-task", branch: "test-feature" })
 
 		// Create a TASK.md with the {task} placeholder
 		await Bun.write(join(tempDir, "TASK.md"), "{task}\n\n## Notes")
@@ -173,7 +173,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-task-invalid" })
+		await init({ silent: true, template: "test-task-invalid", branch: "test-feature" })
 
 		// Create a TASK.md without the {task} placeholder
 		await Bun.write(
@@ -192,7 +192,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-task-subdir" })
+		await init({ silent: true, template: "test-task-subdir", branch: "test-feature" })
 
 		// Create a TASK.md in a subdirectory with the {task} placeholder
 		const subdir = join(tempDir, "projects")
@@ -215,7 +215,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-task-subdir-invalid" })
+		await init({ silent: true, template: "test-task-subdir-invalid", branch: "test-feature" })
 
 		// Create a TASK.md in a subdirectory without the {task} placeholder
 		const subdir = join(tempDir, "projects")
