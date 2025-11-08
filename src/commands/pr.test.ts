@@ -298,12 +298,12 @@ describe("pr command", () => {
 			// Create PR branch
 			await pr({ silent: true })
 
-			// AGENTS.md should exist but be reverted to empty (the state from main before feature branch)
+			// AGENTS.md should exist but be reverted to default content (the state from main before feature branch)
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).toContain("AGENTS.md")
 
 			const prAgentsContent = await Bun.file(join(tempDir, "AGENTS.md")).text()
-			expect(prAgentsContent).toBe("") // Should be reverted to main's original empty state
+			expect(prAgentsContent).toContain("TASK.md") // Should be reverted to main's default content
 		})
 
 		test("removes AGENTS.md when it was added only on feature branch", async () => {

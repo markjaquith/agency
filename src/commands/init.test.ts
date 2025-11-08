@@ -49,14 +49,15 @@ describe("init command", () => {
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
 
-		test("creates AGENTS.md as blank file", async () => {
+		test("creates AGENTS.md with default content", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
 			await init({ silent: true, template: "test" })
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
-			expect(content).toBe("")
+			expect(content).toContain("TASK.md")
+			expect(content).toContain("should be kept updated")
 		})
 
 		test("creates file at git root even when run from subdirectory", async () => {
@@ -199,14 +200,25 @@ describe("init command", () => {
 			expect(await fileExists(join(tempDir, "TASK.md"))).toBe(true)
 		})
 
-		test("creates TASK.md as blank file", async () => {
+		test("creates TASK.md with placeholder when no task provided", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
 			await init({ silent: true, template: "test" })
 
 			const content = await readFile(join(tempDir, "TASK.md"))
-			expect(content).toBe("")
+			expect(content).toContain("{task}")
+		})
+
+		test("creates TASK.md with task description when provided", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await init({ silent: true, template: "test", task: "Build new feature" })
+
+			const content = await readFile(join(tempDir, "TASK.md"))
+			expect(content).toContain("Build new feature")
+			expect(content).not.toContain("{task}")
 		})
 
 		test("does not overwrite existing TASK.md", async () => {
@@ -270,7 +282,8 @@ describe("init command", () => {
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await init({ silent: false, template: "test" })
+			// Provide task to avoid interactive prompt
+			await init({ silent: false, template: "test", task: "Test task" })
 
 			console.log = originalLog
 
@@ -328,7 +341,7 @@ describe("init command", () => {
 
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
 
-			expect(agentsContent).toBe("")
+			expect(agentsContent).toContain("TASK.md")
 		})
 
 		test("creates template files automatically on first use", async () => {
@@ -341,12 +354,12 @@ describe("init command", () => {
 			const templateDir = join(configDir, "templates", "auto-created")
 			const templateAgents = await readFile(join(templateDir, "AGENTS.md"))
 
-			expect(templateAgents).toBe("")
+			expect(templateAgents).toContain("TASK.md")
 
 			// Files in repo should match template
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
 
-			expect(agentsContent).toBe("")
+			expect(agentsContent).toContain("TASK.md")
 		})
 	})
 })

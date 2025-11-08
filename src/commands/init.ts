@@ -16,6 +16,7 @@ export interface InitOptions {
 	silent?: boolean
 	verbose?: boolean
 	template?: string
+	task?: string
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
@@ -115,6 +116,25 @@ export async function init(options: InitOptions = {}): Promise<void> {
 			log(`✓ Set agency.template = ${templateName}`)
 		}
 
+		// Prompt for task if TASK.md will be created
+		let taskDescription: string | undefined
+		const taskMdPath = resolve(targetPath, "TASK.md")
+		const taskMdFile = Bun.file(taskMdPath)
+		if (!(await taskMdFile.exists())) {
+			if (options.task) {
+				taskDescription = options.task
+				verboseLog(`Using task from option: ${taskDescription}`)
+			} else if (!silent) {
+				taskDescription = await prompt("Task description: ")
+				if (!taskDescription) {
+					log(
+						"ⓘ Skipping task description (TASK.md will use default placeholder)",
+					)
+					taskDescription = undefined
+				}
+			}
+		}
+
 		// Process each managed file
 		for (const managedFile of MANAGED_FILES) {
 			const targetFilePath = resolve(targetPath, managedFile.name)
@@ -150,6 +170,12 @@ export async function init(options: InitOptions = {}): Promise<void> {
 					content = managedFile.defaultContent ?? ""
 					verboseLog(`Using default content for ${managedFile.name}`)
 				}
+			}
+
+			// Replace {task} placeholder in TASK.md if task description was provided
+			if (managedFile.name === "TASK.md" && taskDescription) {
+				content = content.replace("{task}", taskDescription)
+				verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
 			}
 
 			await Bun.write(targetFilePath, content)
