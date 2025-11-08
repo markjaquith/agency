@@ -1,9 +1,12 @@
 import { createInterface } from "node:readline"
 
 /**
- * Prompt the user for input
+ * Prompt the user for input with optional default value
  */
-export async function prompt(question: string): Promise<string> {
+export async function prompt(
+	question: string,
+	defaultValue?: string,
+): Promise<string> {
 	const rl = createInterface({
 		input: process.stdin,
 		output: process.stdout,
@@ -14,6 +17,12 @@ export async function prompt(question: string): Promise<string> {
 			rl.close()
 			resolve(answer.trim())
 		})
+
+		// If a default value is provided, pre-fill it in the prompt
+		// This allows the user to backspace and delete it
+		if (defaultValue) {
+			rl.write(defaultValue)
+		}
 	})
 }
 

@@ -43,7 +43,7 @@ See \`TASK.md\` for the current task description and progress.
 	},
 	{
 		name: "TASK.md",
-		defaultContent: `# {task}
+		defaultContent: `{task}
 
 ## Tasks
 

@@ -1,4 +1,4 @@
-import { resolve, join } from "path"
+import { resolve, join, basename } from "path"
 import {
 	isInsideGitRepo,
 	getGitRoot,
@@ -9,7 +9,11 @@ import {
 import { getConfigDir } from "../config"
 import { MANAGED_FILES } from "../types"
 import { prompt, sanitizeTemplateName } from "../utils/prompt"
-import { getTemplateDir, createTemplateDir } from "../utils/template"
+import {
+	getTemplateDir,
+	createTemplateDir,
+	templateExists,
+} from "../utils/template"
 
 export interface InitOptions {
 	path?: string
@@ -68,7 +72,18 @@ export async function init(options: InitOptions = {}): Promise<void> {
 			}
 
 			log("No template configured for this repository.")
-			const answer = await prompt("Template name: ")
+
+			// Suggest directory name as default if no template exists with that name
+			let defaultTemplateName: string | undefined
+			const dirName = basename(targetPath)
+			const sanitizedDirName = sanitizeTemplateName(dirName)
+
+			if (sanitizedDirName && !(await templateExists(sanitizedDirName))) {
+				defaultTemplateName = sanitizedDirName
+				verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
+			}
+
+			const answer = await prompt("Template name: ", defaultTemplateName)
 
 			if (!answer) {
 				throw new Error("Template name is required.")
