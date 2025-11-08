@@ -25,26 +25,10 @@ const commands: Record<string, Command> = {
 				console.log(initHelp)
 				return
 			}
-			// args[0] can be either a path or a branch name
-			// If it looks like a path (contains / or \ or .), treat it as path
-			// Otherwise treat it as a branch name
-			let path: string | undefined
-			let branch: string | undefined = options.branch
-
-			if (args[0]) {
-				if (
-					args[0].includes("/") ||
-					args[0].includes("\\") ||
-					args[0].includes(".")
-				) {
-					path = args[0]
-				} else {
-					branch = args[0]
-				}
-			}
+			// args[0] is always treated as a branch name
+			const branch = args[0] || options.branch
 
 			await init({
-				path,
 				branch,
 				silent: options.silent,
 				verbose: options.verbose,

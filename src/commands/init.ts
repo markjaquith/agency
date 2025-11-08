@@ -282,9 +282,7 @@ When creating a new branch, you'll be prompted to select a base branch (e.g.,
 main, develop) to branch from. This selection is saved to .git/config for
 future use.
 
-When no path is provided, initializes files at the root of the current git
-repository. When a path is provided, it must be the root directory of a git
-repository.
+Initializes files at the root of the current git repository.
 
 On first run in a repository, you'll be prompted for a template name. This
 creates a template directory at ~/.config/agency/templates/{name}/ and saves
@@ -292,7 +290,6 @@ the template name to .git/config for future use.
 
 Arguments:
   branch-name       Create and switch to this branch before initializing
-  path              Path to git repository root (if it contains / or .)
 
 Options:
   -h, --help        Show this help message
@@ -304,8 +301,8 @@ Options:
 Examples:
   agency init                        # Initialize on current feature branch
   agency init my-feature             # Create 'my-feature' branch and initialize
+  agency init feat/new-feature       # Create branch with slashes in name
   agency init --template=work        # Initialize with specific template
-  agency init ./my-project           # Initialize in specified git repo root
   agency init feat/new --template=work  # Create branch with specific template
   agency init --verbose              # Initialize with verbose output
   agency init --help                 # Show this help message
@@ -327,7 +324,6 @@ Branch Creation:
 Notes:
   - Files are created at the git repository root, not the current directory
   - If files already exist, they will not be overwritten
-  - The specified path (if provided) must be a git repository root
   - Templates are stored per-repository in .git/config (not committed)
   - Use --template flag to override saved template or skip prompt
 `
