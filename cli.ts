@@ -54,13 +54,17 @@ const commands: Record<string, Command> = {
 	},
 	save: {
 		name: "save",
-		description: "Save current files to configured template",
-		run: async (_args: string[], options: Record<string, any>) => {
+		description: "Save files to configured template",
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(saveHelp)
 				return
 			}
-			await save({ silent: options.silent, verbose: options.verbose })
+			await save({
+				files: args,
+				silent: options.silent,
+				verbose: options.verbose,
+			})
 		},
 		help: saveHelp,
 	},
@@ -113,29 +117,31 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
-  init [path]       Initialize AGENTS.md and CLAUDE.md files
-  use [template]    Set template for this repository
-  save              Save current files to configured template
-  pr [base-branch]  Create a PR branch without AGENTS.md/CLAUDE.md
-  source            Switch back to source branch from PR branch
-  switch            Toggle between source and PR branch
+  init [path]            Initialize AGENTS.md and CLAUDE.md files
+  use [template]         Set template for this repository
+  save <file|dir> ...    Save files/dirs to configured template
+  pr [base-branch]       Create a PR branch without AGENTS.md/CLAUDE.md
+  source                 Switch back to source branch from PR branch
+  switch                 Toggle between source and PR branch
 
 Global Options:
-  -h, --help        Show help for a command
-  -v, --version     Show version number
+  -h, --help             Show help for a command
+  -v, --version          Show version number
 
 Command Options:
-  -s, --silent      Suppress output messages
-  -f, --force       Force operation (pr command only)
-  -v, --verbose     Show verbose output including detailed debugging info
-  -t, --template    Specify template name (init command only)
+  -s, --silent           Suppress output messages
+  -f, --force            Force operation (pr command only)
+  -v, --verbose          Show verbose output including detailed debugging info
+  -t, --template         Specify template name (init command only)
 
 Examples:
   agency init                    # Initialize in current directory
   agency init --template=work    # Initialize with specific template
   agency use                     # Interactively select template
   agency use work                # Set template to 'work'
-  agency save                    # Save files to template
+  agency save AGENTS.md          # Save specific file to template
+  agency save src/ docs/         # Save directories to template
+  agency save .                  # Save current directory contents
   agency pr                      # Create PR branch (prompts for base branch)
   agency pr origin/main          # Create PR branch using origin/main as base
   agency pr --verbose            # Create PR branch with detailed output
@@ -146,7 +152,7 @@ Examples:
 
 For more information about a command, run:
   agency <command> --help
-`)
+	`)
 }
 
 // Parse global arguments
