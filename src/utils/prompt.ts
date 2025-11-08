@@ -28,3 +28,32 @@ export function sanitizeTemplateName(name: string): string {
 		.replace(/^-|-$/g, "")
 		.toLowerCase()
 }
+
+/**
+ * Prompt for base branch selection with smart defaults
+ */
+export async function promptForBaseBranch(
+	suggestions: string[],
+): Promise<string> {
+	console.log("\nAvailable base branch options:")
+	suggestions.forEach((branch, index) => {
+		console.log(`  ${index + 1}. ${branch}`)
+	})
+
+	const answer = await prompt(
+		`\nSelect base branch (1-${suggestions.length}) or enter custom branch name: `,
+	)
+
+	// Check if it's a number selection
+	const selection = parseInt(answer, 10)
+	if (!isNaN(selection) && selection >= 1 && selection <= suggestions.length) {
+		const selected = suggestions[selection - 1]
+		if (!selected) {
+			throw new Error("Invalid selection")
+		}
+		return selected
+	}
+
+	// Otherwise treat as custom branch name
+	return answer.trim()
+}

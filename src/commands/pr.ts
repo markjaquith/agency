@@ -1,10 +1,17 @@
-import { isInsideGitRepo, getGitRoot } from "../utils/git"
+import {
+	isInsideGitRepo,
+	getGitRoot,
+	getBaseBranchConfig,
+	setBaseBranchConfig,
+} from "../utils/git"
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { MANAGED_FILES } from "../types"
+import { promptForBaseBranch } from "../utils/prompt"
 
 export interface PrOptions {
 	branch?: string
+	baseBranch?: string
 	silent?: boolean
 	force?: boolean
 	verbose?: boolean
@@ -69,8 +76,44 @@ async function getDefaultRemoteBranch(gitRoot: string): Promise<string | null> {
 async function getBaseBranch(
 	gitRoot: string,
 	currentBranch: string,
-): Promise<string | null> {
-	// Try to find the upstream branch
+	providedBaseBranch?: string,
+	silent: boolean = false,
+): Promise<string> {
+	// If explicitly provided, use it
+	if (providedBaseBranch) {
+		// Verify it exists
+		if (!(await branchExists(gitRoot, providedBaseBranch))) {
+			throw new Error(
+				`Provided base branch '${providedBaseBranch}' does not exist`,
+			)
+		}
+		return providedBaseBranch
+	}
+
+	// Check if we have a saved base branch in git config
+	const savedBaseBranch = await getBaseBranchConfig(currentBranch, gitRoot)
+	if (savedBaseBranch && (await branchExists(gitRoot, savedBaseBranch))) {
+		return savedBaseBranch
+	}
+
+	// Build list of suggestions
+	const suggestions: string[] = []
+
+	// Check what the actual default remote branch is
+	const defaultRemote = await getDefaultRemoteBranch(gitRoot)
+	if (defaultRemote && (await branchExists(gitRoot, defaultRemote))) {
+		suggestions.push(defaultRemote)
+	}
+
+	// Try common base branches in order
+	const commonBases = ["origin/main", "origin/master", "main", "master"]
+	for (const base of commonBases) {
+		if (!suggestions.includes(base) && (await branchExists(gitRoot, base))) {
+			suggestions.push(base)
+		}
+	}
+
+	// Try to find the upstream branch (but don't trust it if it's the same as current)
 	const upstreamProc = Bun.spawn(
 		["git", "rev-parse", "--abbrev-ref", `${currentBranch}@{upstream}`],
 		{
@@ -79,31 +122,43 @@ async function getBaseBranch(
 			stderr: "pipe",
 		},
 	)
-
 	await upstreamProc.exited
-
 	if (upstreamProc.exitCode === 0) {
 		const upstream = await new Response(upstreamProc.stdout).text()
-		return upstream.trim()
-	}
-
-	// Check what the actual default remote branch is
-	const defaultRemote = await getDefaultRemoteBranch(gitRoot)
-	if (defaultRemote && (await branchExists(gitRoot, defaultRemote))) {
-		return defaultRemote
-	}
-
-	// Try common base branches in order
-	const commonBases = ["origin/main", "origin/master", "main", "master"]
-
-	for (const base of commonBases) {
-		const exists = await branchExists(gitRoot, base)
-		if (exists) {
-			return base
+		const upstreamTrimmed = upstream.trim()
+		// Only add upstream if it's not the current branch itself
+		if (
+			upstreamTrimmed !== `origin/${currentBranch}` &&
+			!suggestions.includes(upstreamTrimmed)
+		) {
+			suggestions.push(upstreamTrimmed)
 		}
 	}
 
-	return null
+	if (suggestions.length === 0) {
+		throw new Error(
+			"Could not find any base branches. Please specify one explicitly with: agency pr <base-branch>",
+		)
+	}
+
+	// If in silent mode or only one option, use the first suggestion
+	if (silent || suggestions.length === 1) {
+		const firstSuggestion = suggestions[0]
+		if (!firstSuggestion) {
+			throw new Error("No base branch suggestions available")
+		}
+		return firstSuggestion
+	}
+
+	// Prompt user to select
+	const selectedBase = await promptForBaseBranch(suggestions)
+
+	// Verify the selected branch exists
+	if (!(await branchExists(gitRoot, selectedBase))) {
+		throw new Error(`Selected base branch '${selectedBase}' does not exist`)
+	}
+
+	return selectedBase
 }
 
 async function getMergeBase(
@@ -213,15 +268,24 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		}
 
 		// Find the base branch this was created from
-		const baseBranch = await getBaseBranch(gitRoot, currentBranch)
-
-		if (!baseBranch) {
-			throw new Error(
-				"Could not determine base branch. Tried: origin/main, origin/master, main, master",
-			)
-		}
+		const baseBranch = await getBaseBranch(
+			gitRoot,
+			currentBranch,
+			options.baseBranch,
+			silent,
+		)
 
 		verboseLog(`Using base branch: ${baseBranch}`)
+
+		// Save the base branch to git config for future runs
+		if (!options.baseBranch) {
+			// Only save if it was auto-detected or prompted, not if explicitly provided each time
+			const savedBaseBranch = await getBaseBranchConfig(currentBranch, gitRoot)
+			if (!savedBaseBranch || savedBaseBranch !== baseBranch) {
+				await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
+				verboseLog(`Saved base branch '${baseBranch}' to git config`)
+			}
+		}
 
 		// Get the merge-base (where the branch diverged)
 		const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch)
@@ -303,15 +367,15 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 }
 
 export const help = `
-Usage: agency pr [branch] [options]
+Usage: agency pr [base-branch] [options]
 
 Create a PR branch from the current branch with managed files (AGENTS.md, CLAUDE.md)
 reverted to their state on the base branch.
 
 This command creates a new branch (or recreates it if it exists) based on your current
 branch, then uses git-filter-repo to revert AGENTS.md and CLAUDE.md to their state at
-the point where your branch diverged from the base branch (main/master). Your original
-branch remains completely untouched.
+the point where your branch diverged from the base branch. Your original branch remains
+completely untouched.
 
 Behavior:
   - If these files existed on the base branch: They are reverted to that version
@@ -320,16 +384,23 @@ Behavior:
   - This allows you to layer feature-specific instructions on top of base instructions
     during development, then remove those modifications when creating a PR
 
-The command intelligently detects your repository's default branch (main or master) by
-checking origin/HEAD, then finds the merge-base where your branch diverged.
+Base Branch Selection:
+  The command determines the base branch in this order:
+  1. Explicitly provided base-branch argument
+  2. Previously saved base branch from git config (agency.pr.<branch>.baseBranch)
+  3. Interactive prompt with smart suggestions (origin/main, origin/master, etc.)
+  
+  Once selected, the base branch is saved to git config for future runs.
 
 Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo
 
 Arguments:
-  branch            Target branch name (defaults to pattern from config)
+  base-branch       Base branch to compare against (e.g., origin/main)
+                    If not provided, will use saved config or prompt interactively
 
 Options:
+  -b, --branch      Custom name for PR branch (defaults to pattern from config)
   -h, --help        Show this help message
   -s, --silent      Suppress output messages
   -f, --force       Force PR branch creation even if current branch looks like a PR branch
@@ -350,15 +421,17 @@ Configuration:
     "--PR" -> feature-foo becomes feature-foo--PR
 
 Examples:
-  agency pr                      # Create PR branch with default name
-  agency pr feature-pr           # Create PR branch with custom name
-  agency pr --force              # Force creation even from a PR branch
-  agency pr --verbose            # Create PR branch with verbose debugging output
-  agency pr --silent             # Create PR branch without output
-  agency pr --help               # Show this help message
+  agency pr                          # Prompt for base branch (first time) or use saved
+  agency pr origin/main              # Explicitly use origin/main as base branch
+  agency pr origin/main --branch=pr  # Use origin/main and custom PR branch name
+  agency pr --force                  # Force creation even from a PR branch
+  agency pr --verbose                # Create PR branch with verbose debugging output
+  agency pr --silent                 # Create PR branch without output
+  agency pr --help                   # Show this help message
 
 Notes:
-  - PR branch is created from your current branch (not main)
+  - PR branch is created from your current branch (not the base)
+  - Base branch is saved to git config after first selection
   - Only commits since the branch diverged are rewritten (uses merge-base range)
   - Managed files are reverted to their merge-base state (or removed if they didn't exist)
   - Only commits since divergence that touched these files will have different hashes

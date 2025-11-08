@@ -106,3 +106,26 @@ export async function setGitConfig(
 		throw new Error(`Failed to set git config ${key}: ${stderr}`)
 	}
 }
+
+/**
+ * Get the configured base branch for a given feature branch
+ */
+export async function getBaseBranchConfig(
+	featureBranch: string,
+	gitRoot: string,
+): Promise<string | null> {
+	const key = `agency.pr.${featureBranch}.baseBranch`
+	return await getGitConfig(key, gitRoot)
+}
+
+/**
+ * Set the base branch configuration for a given feature branch
+ */
+export async function setBaseBranchConfig(
+	featureBranch: string,
+	baseBranch: string,
+	gitRoot: string,
+): Promise<void> {
+	const key = `agency.pr.${featureBranch}.baseBranch`
+	await setGitConfig(key, baseBranch, gitRoot)
+}

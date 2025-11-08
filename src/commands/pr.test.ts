@@ -449,6 +449,44 @@ describe("pr command", () => {
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature--PR")
 		})
+
+		test("accepts explicit base branch argument", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Feature commit")
+
+			// Create PR branch with explicit base branch
+			await pr({ baseBranch: "main", silent: true })
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature--PR")
+		})
+
+		test("throws error if provided base branch does not exist", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Feature commit")
+
+			expect(pr({ baseBranch: "nonexistent", silent: true })).rejects.toThrow(
+				"does not exist",
+			)
+		})
 	})
 
 	describe("error handling", () => {

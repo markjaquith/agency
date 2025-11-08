@@ -43,7 +43,8 @@ const commands: Record<string, Command> = {
 				return
 			}
 			await pr({
-				branch: args[0],
+				baseBranch: args[0],
+				branch: options.branch,
 				silent: options.silent,
 				force: options.force,
 				verbose: options.verbose,
@@ -115,7 +116,7 @@ Commands:
   init [path]       Initialize AGENTS.md and CLAUDE.md files
   use [template]    Set template for this repository
   save              Save current files to configured template
-  pr [branch]       Create a PR branch without AGENTS.md/CLAUDE.md
+  pr [base-branch]  Create a PR branch without AGENTS.md/CLAUDE.md
   source            Switch back to source branch from PR branch
   switch            Toggle between source and PR branch
 
@@ -135,7 +136,8 @@ Examples:
   agency use                     # Interactively select template
   agency use work                # Set template to 'work'
   agency save                    # Save files to template
-  agency pr                      # Create PR branch from current branch
+  agency pr                      # Create PR branch (prompts for base branch)
+  agency pr origin/main          # Create PR branch using origin/main as base
   agency pr --verbose            # Create PR branch with detailed output
   agency source                  # Switch from PR branch to source branch
   agency switch                  # Toggle between source and PR branch
@@ -218,6 +220,10 @@ try {
 			template: {
 				type: "string",
 				short: "t",
+			},
+			branch: {
+				type: "string",
+				short: "b",
 			},
 		},
 		strict: false,
