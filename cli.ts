@@ -7,6 +7,7 @@ import { save, help as saveHelp } from "./src/commands/save"
 import { source, help as sourceHelp } from "./src/commands/source"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { use, help as useHelp } from "./src/commands/use"
+import { merge, help as mergeHelp } from "./src/commands/merge"
 import type { Command } from "./src/types"
 
 // Read version from package.json
@@ -111,6 +112,18 @@ const commands: Record<string, Command> = {
 		},
 		help: useHelp,
 	},
+	merge: {
+		name: "merge",
+		description: "Merge PR branch into base branch",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(mergeHelp)
+				return
+			}
+			await merge({ silent: options.silent, verbose: options.verbose })
+		},
+		help: mergeHelp,
+	},
 }
 
 function showMainHelp() {
@@ -126,6 +139,7 @@ Commands:
    pr [base-branch]       Create a PR branch without AGENTS.md
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
+  merge                  Merge PR branch into base branch
 
 Global Options:
   -h, --help             Show help for a command
@@ -150,6 +164,8 @@ Examples:
   agency pr --verbose            # Create PR branch with detailed output
   agency source                  # Switch from PR branch to source branch
   agency switch                  # Toggle between source and PR branch
+  agency merge                   # Merge PR branch into base branch
+  agency merge --verbose         # Merge with detailed output
   agency init --help             # Show help for init command
   agency --version               # Show version number
 
