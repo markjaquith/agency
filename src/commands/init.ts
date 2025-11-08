@@ -8,10 +8,18 @@ import {
 	getCurrentBranch,
 	isFeatureBranch,
 	createBranch,
+	getSuggestedBaseBranches,
+	getMainBranchConfig,
+	findMainBranch,
+	setMainBranchConfig,
 } from "../utils/git"
 import { getConfigDir } from "../config"
 import { MANAGED_FILES } from "../types"
-import { prompt, sanitizeTemplateName } from "../utils/prompt"
+import {
+	prompt,
+	sanitizeTemplateName,
+	promptForBaseBranch,
+} from "../utils/prompt"
 import {
 	getTemplateDir,
 	createTemplateDir,
@@ -71,8 +79,40 @@ export async function init(options: InitOptions = {}): Promise<void> {
 		if (!isFeature) {
 			// If a branch name was provided, create it
 			if (options.branch) {
-				await createBranch(options.branch, targetPath)
-				log(`✓ Created and switched to branch '${options.branch}'`)
+				// Get or prompt for base branch
+				let baseBranch: string | undefined =
+					(await getMainBranchConfig(targetPath)) ||
+					(await findMainBranch(targetPath)) ||
+					undefined
+
+				// If no base branch is configured and not in silent mode, prompt for it
+				if (!baseBranch && !silent) {
+					const suggestions = await getSuggestedBaseBranches(targetPath)
+					if (suggestions.length > 0) {
+						baseBranch = await promptForBaseBranch(suggestions)
+						verboseLog(`Selected base branch: ${baseBranch}`)
+
+						// Save the main branch config if it's not already set
+						const mainBranchConfig = await getMainBranchConfig(targetPath)
+						if (!mainBranchConfig) {
+							await setMainBranchConfig(baseBranch, targetPath)
+							log(`✓ Set main branch to '${baseBranch}'`)
+						}
+					} else {
+						throw new Error(
+							"Could not find any base branches. Please ensure your repository has at least one branch.",
+						)
+					}
+				} else if (!baseBranch && silent) {
+					throw new Error(
+						"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
+					)
+				}
+
+				await createBranch(options.branch, targetPath, baseBranch)
+				log(
+					`✓ Created and switched to branch '${options.branch}'${baseBranch ? ` based on '${baseBranch}'` : ""}`,
+				)
 			} else {
 				// Otherwise, fail with a helpful error message
 				throw new Error(
@@ -238,6 +278,10 @@ If you're on the main branch, you must either:
   1. Switch to an existing feature branch first, then run 'agency init'
   2. Provide a branch name: 'agency init <branch-name>'
 
+When creating a new branch, you'll be prompted to select a base branch (e.g.,
+main, develop) to branch from. This selection is saved to .git/config for
+future use.
+
 When no path is provided, initializes files at the root of the current git
 repository. When a path is provided, it must be the root directory of a git
 repository.
@@ -272,6 +316,13 @@ Template Workflow:
   3. Template name saved to .git/config (agency.template = work)
   4. Subsequent runs: Automatically uses saved template
   5. Use 'agency save' to update template with local changes
+
+Branch Creation:
+  1. When creating a new branch, you're prompted to select a base branch
+  2. Suggested options include: main, master, develop, staging (if they exist)
+  3. You can select from suggestions or enter a custom branch name
+  4. Selection is saved to .git/config (agency.mainBranch) for future use
+  5. In --silent mode, a base branch must already be configured
 
 Notes:
   - Files are created at the git repository root, not the current directory

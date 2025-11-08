@@ -270,13 +270,61 @@ export async function isFeatureBranch(
 }
 
 /**
- * Create a new branch from the current branch
+ * Get suggested base branches for creating a new branch
+ * Returns common base branches like main, master, develop that exist in the repo
+ */
+export async function getSuggestedBaseBranches(
+	gitRoot: string,
+): Promise<string[]> {
+	const suggestions: string[] = []
+
+	// Get the main branch from config or find it
+	let mainBranch = await getMainBranchConfig(gitRoot)
+	if (!mainBranch) {
+		mainBranch = await findMainBranch(gitRoot)
+	}
+	if (mainBranch) {
+		suggestions.push(mainBranch)
+	}
+
+	// Check for other common base branches
+	const commonBases = ["develop", "development", "staging"]
+	for (const base of commonBases) {
+		if (await branchExists(gitRoot, base)) {
+			// Don't add if it's already in suggestions
+			if (!suggestions.includes(base)) {
+				suggestions.push(base)
+			}
+		}
+	}
+
+	// Get current branch as a suggestion too
+	try {
+		const currentBranch = await getCurrentBranch(gitRoot)
+		if (currentBranch && !suggestions.includes(currentBranch)) {
+			suggestions.push(currentBranch)
+		}
+	} catch {
+		// Ignore if we can't get current branch
+	}
+
+	return suggestions
+}
+
+/**
+ * Create a new branch from a base branch
  */
 export async function createBranch(
 	branchName: string,
 	gitRoot: string,
+	baseBranch?: string,
 ): Promise<void> {
-	const proc = Bun.spawn(["git", "checkout", "-b", branchName], {
+	const args = ["git", "checkout", "-b", branchName]
+	if (baseBranch) {
+		args.push(baseBranch)
+	}
+
+	const proc = Bun.spawn(args, {
 		cwd: gitRoot,
 		stdout: "pipe",
 		stderr: "pipe",
