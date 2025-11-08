@@ -189,6 +189,60 @@ describe("init command", () => {
 		})
 	})
 
+	describe("TASK.md support", () => {
+		test("creates TASK.md at git root", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await init({ silent: true, template: "test" })
+
+			expect(await fileExists(join(tempDir, "TASK.md"))).toBe(true)
+		})
+
+		test("creates TASK.md as blank file", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await init({ silent: true, template: "test" })
+
+			const content = await readFile(join(tempDir, "TASK.md"))
+			expect(content).toBe("")
+		})
+
+		test("does not overwrite existing TASK.md", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			const existingContent = "# Existing TASK"
+			await Bun.write(join(tempDir, "TASK.md"), existingContent)
+
+			await init({ silent: true, template: "test" })
+
+			const content = await readFile(join(tempDir, "TASK.md"))
+			expect(content).toBe(existingContent)
+		})
+
+		test("uses TASK.md from template directory if it exists", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			const configDir = process.env.AGENCY_CONFIG_DIR!
+			const templateDir = join(configDir, "templates", "custom-template")
+			await Bun.spawn(["mkdir", "-p", templateDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const customTask = "# Custom Task Content"
+			await Bun.write(join(templateDir, "TASK.md"), customTask)
+
+			await init({ silent: true, template: "custom-template" })
+
+			const content = await readFile(join(tempDir, "TASK.md"))
+			expect(content).toBe(customTask)
+		})
+	})
+
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
 			await initGitRepo(tempDir)

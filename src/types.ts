@@ -24,4 +24,5 @@ export const MANAGED_FILES: ManagedFile[] = [
 			2,
 		),
 	},
+	{ name: "TASK.md", defaultContent: "" },
 ]
