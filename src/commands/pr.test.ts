@@ -400,6 +400,55 @@ describe("pr command", () => {
 			expect(files).toContain("AGENTS.md")
 			expect(files).toContain("CLAUDE.md")
 		})
+
+		test("works correctly when run multiple times (cleans up filter-repo state)", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Modify AGENTS.md on feature branch
+			await Bun.write(
+				join(tempDir, "AGENTS.md"),
+				"# Modified by feature branch\n",
+			)
+			await Bun.spawn(["git", "add", "AGENTS.md"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await Bun.spawn(
+				["git", "commit", "--no-verify", "-m", "Modify AGENTS.md"],
+				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
+			).exited
+
+			// Run pr command first time
+			await pr({ silent: true })
+
+			// Switch back to feature branch
+			await Bun.spawn(["git", "checkout", "feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Make another commit
+			await createCommit(tempDir, "Another feature commit")
+
+			// Run pr command second time - this would trigger the "already_ran" prompt
+			// without the cleanup code
+			await pr({ silent: true })
+
+			// Should complete successfully without interactive prompts
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature--PR")
+		})
 	})
 
 	describe("error handling", () => {

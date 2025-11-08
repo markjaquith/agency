@@ -249,6 +249,20 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 			`Files will revert to their state at merge-base (base branch: ${baseBranch})`,
 		)
 
+		// Clean up .git/filter-repo directory to avoid interactive prompts
+		// about continuing from a previous run
+		const filterRepoDir = `${gitRoot}/.git/filter-repo`
+		try {
+			await Bun.spawn(["rm", "-rf", filterRepoDir], {
+				cwd: gitRoot,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			verboseLog("Cleaned up previous git-filter-repo state")
+		} catch {
+			// Ignore errors if directory doesn't exist
+		}
+
 		// Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
 		// See: https://github.com/newren/git-filter-repo/issues/512
 		const env = { ...process.env, GIT_CONFIG_GLOBAL: "" }
