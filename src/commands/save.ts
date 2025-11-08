@@ -151,7 +151,7 @@ Options:
   -v, --verbose     Show verbose output
 
 Examples:
-  agency save AGENTS.md CLAUDE.md    # Save specific files
+   agency save AGENTS.md              # Save specific file
   agency save .config                # Save entire directory
   agency save src/                   # Save src directory to template
   agency save AGENTS.md docs/        # Save file and directory

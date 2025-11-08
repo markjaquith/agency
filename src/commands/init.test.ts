@@ -40,14 +40,13 @@ describe("init command", () => {
 	})
 
 	describe("without path argument", () => {
-		test("creates AGENTS.md and CLAUDE.md at git root", async () => {
+		test("creates AGENTS.md at git root", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
 			await init({ silent: true, template: "test" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
-			expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true)
 		})
 
 		test("creates AGENTS.md as blank file", async () => {
@@ -60,17 +59,7 @@ describe("init command", () => {
 			expect(content).toBe("")
 		})
 
-		test("creates CLAUDE.md with @AGENTS.md content", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await init({ silent: true, template: "test" })
-
-			const content = await readFile(join(tempDir, "CLAUDE.md"))
-			expect(content).toBe("@AGENTS.md")
-		})
-
-		test("creates files at git root even when run from subdirectory", async () => {
+		test("creates file at git root even when run from subdirectory", async () => {
 			await initGitRepo(tempDir)
 			const subdir = await createSubdir(tempDir, "subdir")
 			process.chdir(subdir)
@@ -78,9 +67,7 @@ describe("init command", () => {
 			await init({ silent: true, template: "test" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
-			expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true)
 			expect(await fileExists(join(subdir, "AGENTS.md"))).toBe(false)
-			expect(await fileExists(join(subdir, "CLAUDE.md"))).toBe(false)
 		})
 
 		test("does not overwrite existing AGENTS.md", async () => {
@@ -96,19 +83,6 @@ describe("init command", () => {
 			expect(content).toBe(existingContent)
 		})
 
-		test("does not overwrite existing CLAUDE.md", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			const existingContent = "# Existing content"
-			await Bun.write(join(tempDir, "CLAUDE.md"), existingContent)
-
-			await init({ silent: true, template: "test" })
-
-			const content = await readFile(join(tempDir, "CLAUDE.md"))
-			expect(content).toBe(existingContent)
-		})
-
 		test("throws error when not in a git repository", async () => {
 			process.chdir(tempDir)
 
@@ -119,13 +93,12 @@ describe("init command", () => {
 	})
 
 	describe("with path argument", () => {
-		test("creates files at specified git root", async () => {
+		test("creates file at specified git root", async () => {
 			await initGitRepo(tempDir)
 
 			await init({ path: tempDir, silent: true, template: "test" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
-			expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true)
 		})
 
 		test("throws error when path is not a git repository root", async () => {
@@ -151,7 +124,6 @@ describe("init command", () => {
 			await init({ path: "..", silent: true, template: "test" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
-			expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true)
 		})
 	})
 
@@ -171,7 +143,6 @@ describe("init command", () => {
 
 			expect(logs.length).toBe(0)
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
-			expect(await fileExists(join(tempDir, "CLAUDE.md"))).toBe(true)
 		})
 
 		test("without silent flag produces output", async () => {
@@ -226,33 +197,10 @@ describe("init command", () => {
 
 			const sourceContent = "# Custom AGENTS.md content\nThis is from template"
 			await Bun.write(join(templateDir, "AGENTS.md"), sourceContent)
-			await Bun.write(join(templateDir, "CLAUDE.md"), "@AGENTS.md")
 
 			await init({ silent: true, template: "custom" })
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
-			expect(content).toBe(sourceContent)
-		})
-
-		test("uses CLAUDE.md from template directory if it exists", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			// Create template with custom content
-			const templateDir = join(configDir, "templates", "custom")
-			await Bun.spawn(["mkdir", "-p", templateDir], {
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-
-			const sourceContent =
-				"# Custom CLAUDE.md content\n@AGENTS.md\nExtra instructions"
-			await Bun.write(join(templateDir, "AGENTS.md"), "")
-			await Bun.write(join(templateDir, "CLAUDE.md"), sourceContent)
-
-			await init({ silent: true, template: "custom" })
-
-			const content = await readFile(join(tempDir, "CLAUDE.md"))
 			expect(content).toBe(sourceContent)
 		})
 
@@ -263,10 +211,8 @@ describe("init command", () => {
 			await init({ silent: true, template: "new-template" })
 
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
-			const claudeContent = await readFile(join(tempDir, "CLAUDE.md"))
 
 			expect(agentsContent).toBe("")
-			expect(claudeContent).toBe("@AGENTS.md")
 		})
 
 		test("creates template files automatically on first use", async () => {
@@ -278,17 +224,13 @@ describe("init command", () => {
 			// Template should have been created
 			const templateDir = join(configDir, "templates", "auto-created")
 			const templateAgents = await readFile(join(templateDir, "AGENTS.md"))
-			const templateClaude = await readFile(join(templateDir, "CLAUDE.md"))
 
 			expect(templateAgents).toBe("")
-			expect(templateClaude).toBe("@AGENTS.md")
 
 			// Files in repo should match template
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
-			const claudeContent = await readFile(join(tempDir, "CLAUDE.md"))
 
 			expect(agentsContent).toBe("")
-			expect(claudeContent).toBe("@AGENTS.md")
 		})
 	})
 })

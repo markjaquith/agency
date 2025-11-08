@@ -82,21 +82,18 @@ describe("pr command", () => {
 			}).exited
 		}
 
-		// Initialize AGENTS.md and CLAUDE.md
+		// Initialize AGENTS.md
 		await init({ silent: true, template: "test" })
-		await Bun.spawn(["git", "add", "AGENTS.md", "CLAUDE.md"], {
+		await Bun.spawn(["git", "add", "AGENTS.md"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
 		}).exited
-		await Bun.spawn(
-			["git", "commit", "--no-verify", "-m", "Add AGENTS.md and CLAUDE.md"],
-			{
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			},
-		).exited
+		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
 
 		// Set up origin/main for git-filter-repo
 		await Bun.spawn(["git", "remote", "add", "origin", tempDir], {
@@ -239,7 +236,7 @@ describe("pr command", () => {
 			expect(files).toContain("test.txt")
 		})
 
-		test("preserves AGENTS.md and CLAUDE.md from main when not modified on feature branch", async () => {
+		test("preserves AGENTS.md from main when not modified on feature branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -255,10 +252,9 @@ describe("pr command", () => {
 			// Create PR branch
 			await pr({ silent: true })
 
-			// Check that AGENTS.md and CLAUDE.md still exist (since they came from main and weren't modified)
+			// Check that AGENTS.md still exist (since they came from main and weren't modified)
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).toContain("AGENTS.md")
-			expect(files).toContain("CLAUDE.md")
 
 			// And test.txt should still exist
 			expect(files).toContain("test.txt")
@@ -395,10 +391,9 @@ describe("pr command", () => {
 				stderr: "pipe",
 			}).exited
 
-			// Check that AGENTS.md and CLAUDE.md still exist on original branch
+			// Check that AGENTS.md still exist on original branch
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).toContain("AGENTS.md")
-			expect(files).toContain("CLAUDE.md")
 		})
 
 		test("works correctly when run multiple times (cleans up filter-repo state)", async () => {

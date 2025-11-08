@@ -13,5 +13,4 @@ export interface ManagedFile {
 // Files managed by agency
 export const MANAGED_FILES: ManagedFile[] = [
 	{ name: "AGENTS.md", defaultContent: "" },
-	{ name: "CLAUDE.md", defaultContent: "@AGENTS.md" },
 ]

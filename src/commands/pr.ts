@@ -369,17 +369,17 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 export const help = `
 Usage: agency pr [base-branch] [options]
 
-Create a PR branch from the current branch with managed files (AGENTS.md, CLAUDE.md)
+Create a PR branch from the current branch with managed files (AGENTS.md)
 reverted to their state on the base branch.
 
 This command creates a new branch (or recreates it if it exists) based on your current
-branch, then uses git-filter-repo to revert AGENTS.md and CLAUDE.md to their state at
+branch, then uses git-filter-repo to revert AGENTS.md to its state at
 the point where your branch diverged from the base branch. Your original branch remains
 completely untouched.
 
 Behavior:
-  - If these files existed on the base branch: They are reverted to that version
-  - If these files did NOT exist on base branch: They are completely removed
+   - If this file existed on the base branch: It is reverted to that version
+   - If this file did NOT exist on base branch: It is completely removed
   - Only commits since the branch diverged are rewritten
   - This allows you to layer feature-specific instructions on top of base instructions
     during development, then remove those modifications when creating a PR

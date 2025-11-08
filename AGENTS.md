@@ -112,15 +112,15 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 # Agency
 
-This is a CLI tool called `agency` that helps you set up and manage `AGENTS.md` and `CLAUDE.md` files in your projects. It provides commands to initialize, save, eject, and templatize these files.
+This is a CLI tool called `agency` that helps you set up and manage `AGENTS.md` files in your projects. It provides commands to initialize, save, and templatize these files.
 
-It is meant to be used in projects where you don't own the `AGENTS.md` or `CLAUDE.md` files, but you want to apply certain configurations or templates to them. For instance, when working on a specific feature branch, you would have your `AGENTS.md` template that describes your specific requirements for working this this project as well as layering on your instructions for the feature you're building. That way, LLM agents that read `AGENTS.md` or `CLAUDE.md` will immediately understand the context of your work and how to assist you.
+It is meant to be used in projects where you don't own the `AGENTS.md` file, but you want to apply certain configurations or templates to it. For instance, when working on a specific feature branch, you would have your `AGENTS.md` template that describes your specific requirements for working this this project as well as layering on your instructions for the feature you're building. That way, LLM agents that read `AGENTS.md` will immediately understand the context of your work and how to assist you.
 
 ## Commands
 
-- `agency init [path]`: Initializes `AGENTS.md` and `CLAUDE.md` files using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
+- `agency init [path]`: Initializes `AGENTS.md` file using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
 - `agency use [template]`: Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
-- `agency save`: Saves current `AGENTS.md` and `CLAUDE.md` files back to the configured template directory.
+- `agency save`: Saves current `AGENTS.md` file back to the configured template directory.
 - `agency pr [branch]`: Creates a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
 
 ## Error Handling

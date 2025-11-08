@@ -19,7 +19,7 @@ const VERSION = packageJson.version
 const commands: Record<string, Command> = {
 	init: {
 		name: "init",
-		description: "Initialize AGENTS.md and CLAUDE.md files",
+		description: "Initialize AGENTS.md file",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(initHelp)
@@ -36,7 +36,7 @@ const commands: Record<string, Command> = {
 	},
 	pr: {
 		name: "pr",
-		description: "Create a PR branch without AGENTS.md/CLAUDE.md",
+		description: "Create a PR branch without AGENTS.md",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(prHelp)
@@ -117,10 +117,10 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
-  init [path]            Initialize AGENTS.md and CLAUDE.md files
-  use [template]         Set template for this repository
-  save <file|dir> ...    Save files/dirs to configured template
-  pr [base-branch]       Create a PR branch without AGENTS.md/CLAUDE.md
+   init [path]            Initialize AGENTS.md file
+   use [template]         Set template for this repository
+   save <file|dir> ...    Save files/dirs to configured template
+   pr [base-branch]       Create a PR branch without AGENTS.md
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
 

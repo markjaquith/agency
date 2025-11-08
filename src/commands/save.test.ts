@@ -47,22 +47,17 @@ describe("save command", () => {
 
 		// Modify the files
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Modified content")
-		await Bun.write(join(tempDir, "CLAUDE.md"), "# Modified CLAUDE")
 
 		// Save specific files to template
-		await save({ files: ["AGENTS.md", "CLAUDE.md"], silent: true })
+		await save({ files: ["AGENTS.md"], silent: true })
 
 		// Check template files were updated
 		const configDir = process.env.AGENCY_CONFIG_DIR!
 		const templateAgents = await readFile(
 			join(configDir, "templates", "test-save", "AGENTS.md"),
 		)
-		const templateClaude = await readFile(
-			join(configDir, "templates", "test-save", "CLAUDE.md"),
-		)
 
 		expect(templateAgents).toBe("# Modified content")
-		expect(templateClaude).toBe("# Modified CLAUDE")
 	})
 
 	test("throws error when no files specified", async () => {
@@ -101,26 +96,26 @@ describe("save command", () => {
 		// Initialize with template
 		await init({ silent: true, template: "test-partial" })
 
-		// Remove CLAUDE.md
-		const rmProc = Bun.spawn(["rm", join(tempDir, "CLAUDE.md")], {
+		// Remove AGENTS.md (just to test skipping behavior)
+		const rmProc = Bun.spawn(["rm", join(tempDir, "AGENTS.md")], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
 		})
 		await rmProc.exited
 
-		// Modify AGENTS.md
-		await Bun.write(join(tempDir, "AGENTS.md"), "# Only agents")
+		// Modify a different file that exists
+		await Bun.write(join(tempDir, "test.txt"), "# Test content")
 
-		// Save should succeed with both files specified
-		await save({ files: ["AGENTS.md", "CLAUDE.md"], silent: true })
+		// Save should succeed but skip the missing file
+		await save({ files: ["AGENTS.md", "test.txt"], silent: true })
 
-		// Check only AGENTS.md was updated
+		// Check test.txt was updated
 		const configDir = process.env.AGENCY_CONFIG_DIR!
-		const templateAgents = await readFile(
-			join(configDir, "templates", "test-partial", "AGENTS.md"),
+		const testContent = await readFile(
+			join(configDir, "templates", "test-partial", "test.txt"),
 		)
-		expect(templateAgents).toBe("# Only agents")
+		expect(testContent).toBe("# Test content")
 	})
 
 	test("saves directories recursively", async () => {

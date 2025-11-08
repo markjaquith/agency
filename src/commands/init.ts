@@ -164,7 +164,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
 export const help = `
 Usage: agency init [path] [options]
 
-Initialize AGENTS.md and CLAUDE.md files in a git repository using templates.
+Initialize AGENTS.md file in a git repository using templates.
 
 When no path is provided, initializes files at the root of the current git
 repository. When a path is provided, it must be the root directory of a git
