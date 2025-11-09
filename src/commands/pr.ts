@@ -3,6 +3,8 @@ import {
 	getGitRoot,
 	getBaseBranchConfig,
 	setBaseBranchConfig,
+	branchExists,
+	getCurrentBranch,
 } from "../utils/git"
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
@@ -15,34 +17,6 @@ export interface PrOptions {
 	silent?: boolean
 	force?: boolean
 	verbose?: boolean
-}
-
-async function getCurrentBranch(gitRoot: string): Promise<string> {
-	const proc = Bun.spawn(["git", "branch", "--show-current"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		throw new Error("Failed to get current branch")
-	}
-
-	const output = await new Response(proc.stdout).text()
-	return output.trim()
-}
-
-async function branchExists(gitRoot: string, branch: string): Promise<boolean> {
-	const proc = Bun.spawn(["git", "rev-parse", "--verify", branch], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-	return proc.exitCode === 0
 }
 
 async function checkGitFilterRepo(): Promise<boolean> {
