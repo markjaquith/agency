@@ -3,13 +3,12 @@
 import { parseArgs } from "util"
 import { init, help as initHelp } from "./src/commands/init"
 import { pr, help as prHelp } from "./src/commands/pr"
-import { save, help as saveHelp } from "./src/commands/save"
 import { setBase, help as setBaseHelp } from "./src/commands/set-base"
 import { source, help as sourceHelp } from "./src/commands/source"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
-import { use, help as useHelp } from "./src/commands/use"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { taskEdit, help as taskEditHelp } from "./src/commands/task"
+import { template, help as templateHelp } from "./src/commands/template"
 import type { Command } from "./src/types"
 
 // Read version from package.json
@@ -58,21 +57,23 @@ const commands: Record<string, Command> = {
 		},
 		help: prHelp,
 	},
-	save: {
-		name: "save",
-		description: "Save files to configured template",
+	template: {
+		name: "template",
+		description: "Template management commands",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
-				console.log(saveHelp)
+				console.log(templateHelp)
 				return
 			}
-			await save({
-				files: args,
+			await template({
+				subcommand: args[0],
+				args: args.slice(1),
 				silent: options.silent,
 				verbose: options.verbose,
+				template: options.template,
 			})
 		},
-		help: saveHelp,
+		help: templateHelp,
 	},
 	source: {
 		name: "source",
@@ -98,22 +99,7 @@ const commands: Record<string, Command> = {
 		},
 		help: switchHelp,
 	},
-	use: {
-		name: "use",
-		description: "Set template for this repository",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(useHelp)
-				return
-			}
-			await use({
-				template: args[0] || options.template,
-				silent: options.silent,
-				verbose: options.verbose,
-			})
-		},
-		help: useHelp,
-	},
+
 	merge: {
 		name: "merge",
 		description: "Merge PR branch into base branch",
@@ -179,8 +165,7 @@ Usage: agency <command> [options]
 
 Commands:
    init [path]            Initialize AGENTS.md file
-   use [template]         Set template for this repository
-   save <file|dir> ...    Save files/dirs to configured template
+   template <subcommand>  Template management commands
    pr [base-branch]       Create a PR branch without AGENTS.md
    set-base <branch>      Set default base branch for current branch
    task <subcommand>      Task management commands
@@ -199,24 +184,25 @@ Command Options:
   -t, --template         Specify template name (init command only)
 
 Examples:
-  agency init                    # Initialize in current directory
-  agency init --template=work    # Initialize with specific template
-  agency use                     # Interactively select template
-  agency use work                # Set template to 'work'
-  agency save AGENTS.md          # Save specific file to template
-  agency save src/ docs/         # Save directories to template
-  agency save .                  # Save current directory contents
-  agency pr                      # Create PR branch (prompts for base branch)
-  agency pr origin/main          # Create PR branch using origin/main as base
-  agency pr --verbose            # Create PR branch with detailed output
-  agency set-base origin/main    # Set default base branch to origin/main
-  agency task edit               # Open TASK.md in system editor
-  agency source                  # Switch from PR branch to source branch
-  agency switch                  # Toggle between source and PR branch
-  agency merge                   # Merge PR branch into base branch
-  agency merge --verbose         # Merge with detailed output
-  agency init --help             # Show help for init command
-  agency --version               # Show version number
+  agency init                         # Initialize in current directory
+  agency init --template=work         # Initialize with specific template
+  agency template use                 # Interactively select template
+  agency template use work            # Set template to 'work'
+  agency template save AGENTS.md      # Save specific file to template
+  agency template save src/ docs/     # Save directories to template
+  agency template save .              # Save current directory contents
+  agency pr                           # Create PR branch (prompts for base branch)
+  agency pr origin/main               # Create PR branch using origin/main as base
+  agency pr --verbose                 # Create PR branch with detailed output
+  agency set-base origin/main         # Set default base branch to origin/main
+  agency task edit                    # Open TASK.md in system editor
+  agency source                       # Switch from PR branch to source branch
+  agency switch                       # Toggle between source and PR branch
+  agency merge                        # Merge PR branch into base branch
+  agency merge --verbose              # Merge with detailed output
+  agency init --help                  # Show help for init command
+  agency template --help              # Show help for template command
+  agency --version                    # Show version number
 
 For more information about a command, run:
   agency <command> --help

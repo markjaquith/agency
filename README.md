@@ -20,13 +20,13 @@ npm install @markjaquith/agency
 
 Initialize `AGENTS.md` file using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
 
-### `agency use [template]`
+### `agency template use [template]`
 
 Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
 
-### `agency save [files...]`
+### `agency template save [files...]`
 
-Save current `AGENTS.md` file back to the configured template directory.
+Save files back to the configured template directory.
 
 ### `agency pr [base-branch]`
 
