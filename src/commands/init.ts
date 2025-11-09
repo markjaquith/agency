@@ -16,7 +16,7 @@ import {
 	gitCommit,
 } from "../utils/git"
 import { getConfigDir } from "../config"
-import { MANAGED_FILES, initializeManagedFiles } from "../types"
+import { initializeManagedFiles } from "../types"
 import {
 	prompt,
 	sanitizeTemplateName,

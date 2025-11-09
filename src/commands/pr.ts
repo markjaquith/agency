@@ -6,7 +6,7 @@ import {
 } from "../utils/git"
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
-import { MANAGED_FILES, initializeManagedFiles } from "../types"
+import { initializeManagedFiles } from "../types"
 import { promptForBaseBranch } from "../utils/prompt"
 
 export interface PrOptions {

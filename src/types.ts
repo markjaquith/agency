@@ -30,6 +30,27 @@ async function loadTemplateContent(fileName: string): Promise<string> {
 
 	// Return inline defaults as fallback
 	const defaults: Record<string, string> = {
+		"AGENCY.md": `# Agency
+
+Agency is a CLI tool for managing \`AGENTS.md\`, \`TASK.md\`, and \`opencode.json\` files in git repositories. It helps coordinate work across multiple branches and templates.
+
+## Key Commands
+
+- \`agency init\` - Initialize template files on a feature branch
+- \`agency save\` - Save current file versions back to a template
+- \`agency use\` - Switch to a different template
+- \`agency pr\` - Create a PR branch with managed files reverted to their merge-base state
+- \`agency switch\` - Toggle between feature and PR branches
+- \`agency source\` - Get the path to a template's source directory
+- \`agency set-base\` - Update the saved base branch for PR creation
+
+## Features
+
+- **Template-based workflow** - Reusable templates stored in \`~/.config/agency/templates/\`
+- **Git integration** - Saves template configuration in \`.git/config\`
+- **PR branch management** - Automatically creates clean PR branches without local modifications
+- **Multi-file support** - Manages AGENTS.md, TASK.md, and opencode.json
+`,
 		"AGENTS.md": `# Agent Instructions
 
 ## TASK.md
@@ -54,7 +75,7 @@ See \`TASK.md\` for the current task description and progress.
 		"opencode.json": JSON.stringify(
 			{
 				$schema: "https://opencode.ai/config.json",
-				instructions: ["TASK.md"],
+				instructions: ["AGENCY.md", "TASK.md"],
 			},
 			null,
 			2,
@@ -71,7 +92,12 @@ See \`TASK.md\` for the current task description and progress.
 export async function initializeManagedFiles(): Promise<ManagedFile[]> {
 	const files: ManagedFile[] = []
 
-	for (const fileName of ["AGENTS.md", "opencode.json", "TASK.md"]) {
+	for (const fileName of [
+		"AGENCY.md",
+		"AGENTS.md",
+		"opencode.json",
+		"TASK.md",
+	]) {
 		const content = await loadTemplateContent(fileName)
 		files.push({
 			name: fileName,
