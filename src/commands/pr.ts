@@ -6,7 +6,7 @@ import {
 } from "../utils/git"
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
-import { MANAGED_FILES } from "../types"
+import { MANAGED_FILES, initializeManagedFiles } from "../types"
 import { promptForBaseBranch } from "../utils/prompt"
 
 export interface PrOptions {
@@ -218,6 +218,9 @@ async function createOrResetBranch(
 }
 
 export async function pr(options: PrOptions = {}): Promise<void> {
+	// Initialize MANAGED_FILES from template files
+	const managedFiles = await initializeManagedFiles()
+
 	const { silent = false, force = false, verbose = false } = options
 	const log = silent ? () => {} : console.log
 	const verboseLog = verbose && !silent ? console.log : () => {}
@@ -334,7 +337,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		const filterRepoArgs = [
 			"git",
 			"filter-repo",
-			...MANAGED_FILES.flatMap((f) => ["--path", f.name]),
+			...managedFiles.flatMap((f) => ["--path", f.name]),
 			"--invert-paths",
 			"--force",
 			"--refs",

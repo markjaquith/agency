@@ -16,7 +16,7 @@ import {
 	gitCommit,
 } from "../utils/git"
 import { getConfigDir } from "../config"
-import { MANAGED_FILES } from "../types"
+import { MANAGED_FILES, initializeManagedFiles } from "../types"
 import {
 	prompt,
 	sanitizeTemplateName,
@@ -38,6 +38,9 @@ export interface InitOptions {
 }
 
 export async function init(options: InitOptions = {}): Promise<void> {
+	// Initialize MANAGED_FILES from template files
+	const managedFiles = await initializeManagedFiles()
+
 	const { silent = false, verbose = false } = options
 	const log = silent ? () => {} : console.log
 	const verboseLog = verbose && !silent ? console.log : () => {}
@@ -182,7 +185,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
 			log(`✓ Created template '${templateName}'`)
 
 			// Copy default content to template for each managed file
-			for (const managedFile of MANAGED_FILES) {
+			for (const managedFile of managedFiles) {
 				const templateFilePath = join(templateDir, managedFile.name)
 				const templateFile = Bun.file(templateFilePath)
 
@@ -220,7 +223,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
 		}
 
 		// Process each managed file
-		for (const managedFile of MANAGED_FILES) {
+		for (const managedFile of managedFiles) {
 			const targetFilePath = resolve(targetPath, managedFile.name)
 			const targetFile = Bun.file(targetFilePath)
 

@@ -26,6 +26,7 @@
     "index.ts",
     "cli.ts",
     "src",
+    "templates",
     "README.md",
     "LICENSE"
   ],
