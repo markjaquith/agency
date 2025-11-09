@@ -151,17 +151,29 @@ export async function getCurrentBranch(gitRoot: string): Promise<string> {
 }
 
 /**
- * Check if a branch exists locally
+ * Check if a branch exists (local or remote)
  */
 export async function branchExists(
 	gitRoot: string,
 	branch: string,
 ): Promise<boolean> {
-	// Strip remote prefix if present to check local branch
-	const localBranch = branch.replace(/^origin\//, "")
+	// Check if it's a remote branch (e.g., origin/main)
+	if (branch.includes("/")) {
+		const proc = Bun.spawn(
+			["git", "show-ref", "--verify", "--quiet", `refs/remotes/${branch}`],
+			{
+				cwd: gitRoot,
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		)
+		await proc.exited
+		return proc.exitCode === 0
+	}
 
+	// Check for local branch
 	const proc = Bun.spawn(
-		["git", "show-ref", "--verify", "--quiet", `refs/heads/${localBranch}`],
+		["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
 		{
 			cwd: gitRoot,
 			stdout: "pipe",
