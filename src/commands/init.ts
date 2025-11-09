@@ -12,6 +12,8 @@ import {
 	getMainBranchConfig,
 	findMainBranch,
 	setMainBranchConfig,
+	gitAdd,
+	gitCommit,
 } from "../utils/git"
 import { getConfigDir } from "../config"
 import { MANAGED_FILES } from "../types"
@@ -68,6 +70,7 @@ export async function init(options: InitOptions = {}): Promise<void> {
 	}
 
 	const configDir = getConfigDir()
+	const createdFiles: string[] = []
 
 	try {
 		// Check if we're on a feature branch
@@ -260,7 +263,21 @@ export async function init(options: InitOptions = {}): Promise<void> {
 			}
 
 			await Bun.write(targetFilePath, content)
+			createdFiles.push(managedFile.name)
 			log(`✓ Created ${managedFile.name} from '${templateName}' template`)
+		}
+
+		// Git add and commit the created files
+		if (createdFiles.length > 0) {
+			try {
+				await gitAdd(createdFiles, targetPath)
+				await gitCommit("chore: agency init", targetPath)
+				log(`✓ Committed ${createdFiles.length} file(s)`)
+			} catch (err) {
+				// If commit fails, it might be because there are no changes (e.g., files already staged)
+				// We can ignore this error and let the user handle it manually
+				verboseLog(`Failed to commit: ${err}`)
+			}
 		}
 	} catch (err) {
 		// Re-throw errors for CLI handler to display

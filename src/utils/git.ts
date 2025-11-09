@@ -337,3 +337,42 @@ export async function createBranch(
 		throw new Error(`Failed to create branch: ${stderr}`)
 	}
 }
+
+/**
+ * Stage files for commit
+ */
+export async function gitAdd(files: string[], gitRoot: string): Promise<void> {
+	const proc = Bun.spawn(["git", "add", ...files], {
+		cwd: gitRoot,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+
+	await proc.exited
+
+	if (proc.exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`Failed to stage files: ${stderr}`)
+	}
+}
+
+/**
+ * Create a git commit
+ */
+export async function gitCommit(
+	message: string,
+	gitRoot: string,
+): Promise<void> {
+	const proc = Bun.spawn(["git", "commit", "-m", message], {
+		cwd: gitRoot,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+
+	await proc.exited
+
+	if (proc.exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`Failed to commit: ${stderr}`)
+	}
+}
