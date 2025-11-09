@@ -9,6 +9,7 @@ import { source, help as sourceHelp } from "./src/commands/source"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { use, help as useHelp } from "./src/commands/use"
 import { merge, help as mergeHelp } from "./src/commands/merge"
+import { taskEdit, help as taskEditHelp } from "./src/commands/task"
 import type { Command } from "./src/types"
 
 // Read version from package.json
@@ -146,6 +147,28 @@ const commands: Record<string, Command> = {
 		},
 		help: setBaseHelp,
 	},
+	task: {
+		name: "task",
+		description: "Task management commands",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(taskEditHelp)
+				return
+			}
+			const subcommand = args[0]
+			if (subcommand === "edit") {
+				await taskEdit({
+					silent: options.silent,
+					verbose: options.verbose,
+				})
+			} else {
+				throw new Error(
+					`Unknown task subcommand '${subcommand}'. Available: edit`,
+				)
+			}
+		},
+		help: taskEditHelp,
+	},
 }
 
 function showMainHelp() {
@@ -160,6 +183,7 @@ Commands:
    save <file|dir> ...    Save files/dirs to configured template
    pr [base-branch]       Create a PR branch without AGENTS.md
    set-base <branch>      Set default base branch for current branch
+   task <subcommand>      Task management commands
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
   merge                  Merge PR branch into base branch
@@ -186,6 +210,7 @@ Examples:
   agency pr origin/main          # Create PR branch using origin/main as base
   agency pr --verbose            # Create PR branch with detailed output
   agency set-base origin/main    # Set default base branch to origin/main
+  agency task edit               # Open TASK.md in system editor
   agency source                  # Switch from PR branch to source branch
   agency switch                  # Toggle between source and PR branch
   agency merge                   # Merge PR branch into base branch
