@@ -107,17 +107,17 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 
 			verboseLog(`Configured base branch: ${configuredBase}`)
 
-			// Verify base branch exists (handles both local and remote refs)
-			const baseExists = await branchExists(gitRoot, configuredBase)
-			if (!baseExists) {
-				throw new Error(
-					`Base branch '${configuredBase}' does not exist.\n` +
-						`You may need to pull from origin or checkout the branch first.`,
-				)
-			}
-
 			// For git operations (checkout/merge), use local branch name
 			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
+
+			// Verify local base branch exists
+			const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
+			if (!baseExists) {
+				throw new Error(
+					`Base branch '${baseBranchToMergeInto}' does not exist locally.\n` +
+						`You may need to checkout the branch first or update your base branch configuration.`,
+				)
+			}
 
 			prBranchToMerge = currentBranch
 		} else {
@@ -149,17 +149,17 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 
 			verboseLog(`Configured base branch: ${configuredBase}`)
 
-			// Verify base branch exists (handles both local and remote refs)
-			const baseExists = await branchExists(gitRoot, configuredBase)
-			if (!baseExists) {
-				throw new Error(
-					`Base branch '${configuredBase}' does not exist.\n` +
-						`You may need to pull from origin or checkout the branch first.`,
-				)
-			}
-
 			// For git operations (checkout/merge), use local branch name
 			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
+
+			// Verify local base branch exists
+			const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
+			if (!baseExists) {
+				throw new Error(
+					`Base branch '${baseBranchToMergeInto}' does not exist locally.\n` +
+						`You may need to checkout the branch first or update your base branch configuration.`,
+				)
+			}
 
 			prBranchToMerge = prBranch
 		}
