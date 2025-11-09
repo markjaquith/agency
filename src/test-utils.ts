@@ -50,6 +50,18 @@ export async function initGitRepo(path: string): Promise<void> {
 		cwd: path,
 	}).exited
 
+	// Set the default branch name to 'main' for consistency
+	await Bun.spawn(["git", "config", "init.defaultBranch", "main"], {
+		cwd: path,
+	}).exited
+
+	// Rename the initial branch to 'main' if it's not already
+	await Bun.spawn(["git", "branch", "-M", "main"], {
+		cwd: path,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+
 	// Create an initial commit so the branch actually exists
 	await Bun.write(join(path, ".gitkeep"), "")
 	await Bun.spawn(["git", "add", ".gitkeep"], {

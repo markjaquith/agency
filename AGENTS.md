@@ -178,7 +178,6 @@ The repository has validation scripts:
 - `scripts/check-commit-msg` - Validates commit messages locally
 - GitHub Actions workflow validates PR titles
 
-
 ## Formatting before committing
 
 Before committing changes, run the following command to format the code:
