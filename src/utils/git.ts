@@ -158,7 +158,9 @@ export async function branchExists(
 	branch: string,
 ): Promise<boolean> {
 	// Check if it's a remote branch (e.g., origin/main)
-	if (branch.includes("/")) {
+	// Remote branches start with a remote name like origin/, upstream/, etc.
+	const remotePattern = /^(origin|upstream|fork)\//
+	if (remotePattern.test(branch)) {
 		const proc = Bun.spawn(
 			["git", "show-ref", "--verify", "--quiet", `refs/remotes/${branch}`],
 			{

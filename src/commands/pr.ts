@@ -9,7 +9,6 @@ import {
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { initializeManagedFiles } from "../types"
-import { promptForBaseBranch } from "../utils/prompt"
 
 export interface PrOptions {
 	branch?: string
@@ -51,7 +50,6 @@ async function getBaseBranch(
 	gitRoot: string,
 	currentBranch: string,
 	providedBaseBranch?: string,
-	silent: boolean = false,
 ): Promise<string> {
 	// If explicitly provided, use it
 	if (providedBaseBranch) {
@@ -70,69 +68,24 @@ async function getBaseBranch(
 		return savedBaseBranch
 	}
 
-	// Build list of suggestions
-	const suggestions: string[] = []
-
-	// Check what the actual default remote branch is
+	// Try to auto-detect the default remote branch
 	const defaultRemote = await getDefaultRemoteBranch(gitRoot)
 	if (defaultRemote && (await branchExists(gitRoot, defaultRemote))) {
-		suggestions.push(defaultRemote)
+		return defaultRemote
 	}
 
 	// Try common base branches in order
 	const commonBases = ["origin/main", "origin/master", "main", "master"]
 	for (const base of commonBases) {
-		if (!suggestions.includes(base) && (await branchExists(gitRoot, base))) {
-			suggestions.push(base)
+		if (await branchExists(gitRoot, base)) {
+			return base
 		}
 	}
 
-	// Try to find the upstream branch (but don't trust it if it's the same as current)
-	const upstreamProc = Bun.spawn(
-		["git", "rev-parse", "--abbrev-ref", `${currentBranch}@{upstream}`],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
+	// Could not auto-detect, require explicit specification
+	throw new Error(
+		"Could not auto-detect base branch. Please specify one explicitly with: agency pr <base-branch>",
 	)
-	await upstreamProc.exited
-	if (upstreamProc.exitCode === 0) {
-		const upstream = await new Response(upstreamProc.stdout).text()
-		const upstreamTrimmed = upstream.trim()
-		// Only add upstream if it's not the current branch itself
-		if (
-			upstreamTrimmed !== `origin/${currentBranch}` &&
-			!suggestions.includes(upstreamTrimmed)
-		) {
-			suggestions.push(upstreamTrimmed)
-		}
-	}
-
-	if (suggestions.length === 0) {
-		throw new Error(
-			"Could not find any base branches. Please specify one explicitly with: agency pr <base-branch>",
-		)
-	}
-
-	// If in silent mode or only one option, use the first suggestion
-	if (silent || suggestions.length === 1) {
-		const firstSuggestion = suggestions[0]
-		if (!firstSuggestion) {
-			throw new Error("No base branch suggestions available")
-		}
-		return firstSuggestion
-	}
-
-	// Prompt user to select
-	const selectedBase = await promptForBaseBranch(suggestions)
-
-	// Verify the selected branch exists
-	if (!(await branchExists(gitRoot, selectedBase))) {
-		throw new Error(`Selected base branch '${selectedBase}' does not exist`)
-	}
-
-	return selectedBase
 }
 
 async function getMergeBase(
@@ -163,14 +116,34 @@ async function createOrResetBranch(
 	targetBranch: string,
 ): Promise<void> {
 	const exists = await branchExists(gitRoot, targetBranch)
+	const currentBranch = await getCurrentBranch(gitRoot)
 
 	if (exists) {
-		// Delete and recreate the branch
-		await Bun.spawn(["git", "branch", "-D", targetBranch], {
+		// If we're currently on the target branch, switch away first
+		if (currentBranch === targetBranch) {
+			const switchProc = Bun.spawn(["git", "checkout", sourceBranch], {
+				cwd: gitRoot,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await switchProc.exited
+			if (switchProc.exitCode !== 0) {
+				const stderr = await new Response(switchProc.stderr).text()
+				throw new Error(`Failed to switch away from branch: ${stderr}`)
+			}
+		}
+
+		// Delete the existing branch
+		const deleteProc = Bun.spawn(["git", "branch", "-D", targetBranch], {
 			cwd: gitRoot,
 			stdout: "pipe",
 			stderr: "pipe",
-		}).exited
+		})
+		await deleteProc.exited
+		if (deleteProc.exitCode !== 0) {
+			const stderr = await new Response(deleteProc.stderr).text()
+			throw new Error(`Failed to delete branch: ${stderr}`)
+		}
 	}
 
 	// Create new branch from source
@@ -249,7 +222,6 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 			gitRoot,
 			currentBranch,
 			options.baseBranch,
-			silent,
 		)
 
 		verboseLog(`Using base branch: ${baseBranch}`)
