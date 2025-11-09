@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
-import { init } from "../commands/init"
+import { task } from "../commands/task"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -10,7 +10,7 @@ import {
 	readFile,
 } from "../test-utils"
 
-describe("init command", () => {
+describe("task command", () => {
 	let tempDir: string
 	let originalCwd: string
 	let originalConfigDir: string | undefined
@@ -44,7 +44,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -53,7 +53,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toContain("TASK.md")
@@ -65,7 +65,7 @@ describe("init command", () => {
 			const subdir = await createSubdir(tempDir, "subdir")
 			process.chdir(subdir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 			expect(await fileExists(join(subdir, "AGENTS.md"))).toBe(false)
@@ -78,7 +78,7 @@ describe("init command", () => {
 			const existingContent = "# Existing content"
 			await Bun.write(join(tempDir, "AGENTS.md"), existingContent)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toBe(existingContent)
@@ -87,7 +87,7 @@ describe("init command", () => {
 		test("throws error when not in a git repository", async () => {
 			process.chdir(tempDir)
 
-			await expect(init({ silent: true })).rejects.toThrow(
+			await expect(task({ silent: true })).rejects.toThrow(
 				"Not in a git repository",
 			)
 		})
@@ -97,7 +97,7 @@ describe("init command", () => {
 		test("creates file at specified git root", async () => {
 			await initGitRepo(tempDir)
 
-			await init({
+			await task({
 				path: tempDir,
 				silent: true,
 				template: "test",
@@ -111,13 +111,13 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			const subdir = await createSubdir(tempDir, "subdir")
 
-			expect(init({ path: subdir, silent: true })).rejects.toThrow(
+			expect(task({ path: subdir, silent: true })).rejects.toThrow(
 				"not the root of a git repository",
 			)
 		})
 
 		test("throws error when path is not a git repository at all", async () => {
-			expect(init({ path: tempDir, silent: true })).rejects.toThrow(
+			expect(task({ path: tempDir, silent: true })).rejects.toThrow(
 				"not the root of a git repository",
 			)
 		})
@@ -127,7 +127,7 @@ describe("init command", () => {
 			const subdir = await createSubdir(tempDir, "subdir")
 			process.chdir(subdir)
 
-			await init({
+			await task({
 				path: "..",
 				silent: true,
 				template: "test",
@@ -143,7 +143,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(true)
 		})
@@ -152,7 +152,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			const parsed = JSON.parse(content)
@@ -170,7 +170,7 @@ describe("init command", () => {
 			})
 			await Bun.write(join(tempDir, "opencode.json"), existingContent)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			expect(content).toBe(existingContent)
@@ -193,7 +193,7 @@ describe("init command", () => {
 			})
 			await Bun.write(join(templateDir, "opencode.json"), customConfig)
 
-			await init({
+			await task({
 				silent: true,
 				template: "custom-template",
 				branch: "test-feature",
@@ -209,7 +209,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			expect(await fileExists(join(tempDir, "TASK.md"))).toBe(true)
 		})
@@ -218,7 +218,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "TASK.md"))
 			expect(content).toContain("{task}")
@@ -228,7 +228,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({
+			await task({
 				silent: true,
 				template: "test",
 				task: "Build new feature",
@@ -247,7 +247,7 @@ describe("init command", () => {
 			const existingContent = "# Existing TASK"
 			await Bun.write(join(tempDir, "TASK.md"), existingContent)
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "TASK.md"))
 			expect(content).toBe(existingContent)
@@ -267,7 +267,7 @@ describe("init command", () => {
 			const customTask = "# Custom Task Content"
 			await Bun.write(join(templateDir, "TASK.md"), customTask)
 
-			await init({
+			await task({
 				silent: true,
 				template: "custom-template",
 				branch: "test-feature",
@@ -288,7 +288,7 @@ describe("init command", () => {
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			console.log = originalLog
 
@@ -313,7 +313,7 @@ describe("init command", () => {
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
 			// Provide task to avoid interactive prompt
-			await init({
+			await task({
 				silent: false,
 				template: "test",
 				task: "Test task",
@@ -332,7 +332,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await expect(init({ silent: true, template: "test" })).rejects.toThrow(
+			await expect(task({ silent: true, template: "test" })).rejects.toThrow(
 				"main branch",
 			)
 		})
@@ -341,7 +341,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({ silent: true, template: "test", branch: "my-feature" })
+			await task({ silent: true, template: "test", branch: "my-feature" })
 
 			// Verify we're now on the new branch
 			const proc = Bun.spawn(["git", "branch", "--show-current"], {
@@ -369,7 +369,7 @@ describe("init command", () => {
 			}).exited
 
 			// Should succeed without needing branch option
-			await init({ silent: true, template: "test", branch: "test-feature" })
+			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -410,7 +410,7 @@ describe("init command", () => {
 			const sourceContent = "# Custom AGENTS.md content\nThis is from template"
 			await Bun.write(join(templateDir, "AGENTS.md"), sourceContent)
 
-			await init({ silent: true, template: "custom", branch: "test-feature" })
+			await task({ silent: true, template: "custom", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toBe(sourceContent)
@@ -420,9 +420,9 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({
+			await task({
 				silent: true,
-				template: "new-template",
+				template: "custom-template",
 				branch: "test-feature",
 			})
 
@@ -435,7 +435,7 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			await init({
+			await task({
 				silent: true,
 				template: "auto-created",
 				branch: "test-feature",

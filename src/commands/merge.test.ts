@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
 import { merge } from "./merge"
 import { pr } from "./pr"
-import { init } from "./init"
+import { task } from "./task"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
 
 async function getGitOutput(cwd: string, args: string[]): Promise<string> {
@@ -108,7 +108,7 @@ describe("merge command", () => {
 		}).exited
 
 		// Initialize AGENTS.md on feature branch
-		await init({ silent: true, template: "test" })
+		await task({ silent: true, template: "test" })
 		await Bun.spawn(["git", "add", "AGENTS.md"], {
 			cwd: tempDir,
 			stdout: "pipe",

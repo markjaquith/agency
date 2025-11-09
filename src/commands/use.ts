@@ -44,7 +44,7 @@ export async function use(options: UseOptions = {}): Promise<void> {
 
 		if (templates.length === 0) {
 			log("No templates found in ~/.config/agency/templates/")
-			log("Run 'agency init' to create a template.")
+			log("Run 'agency task' to create a template.")
 			return
 		}
 
@@ -97,7 +97,7 @@ Set the template to use for this repository.
 
 When no template name is provided, shows an interactive list of available
 templates to choose from. The template name is saved to .git/config
-(agency.template) and will be used by subsequent 'agency init' commands.
+(agency.template) and will be used by subsequent 'agency task' commands.
 
 Arguments:
   template          Template name to use (optional, prompts if not provided)
@@ -116,7 +116,7 @@ Examples:
 
 Notes:
   - Template must exist in ~/.config/agency/templates/{name}/
-  - Run 'agency init' to create new templates
+  - Run 'agency task' to create new templates
   - Template name is saved to .git/config (not committed)
-  - Use 'agency init' after changing template to create/update files
+  - Use 'agency task' after changing template to create/update files
 `

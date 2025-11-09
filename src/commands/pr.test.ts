@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
 import { pr } from "../commands/pr"
-import { init } from "../commands/init"
+import { task } from "../commands/task"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -90,7 +90,7 @@ describe("pr command", () => {
 		}).exited
 
 		// Initialize AGENTS.md
-		await init({ silent: true, template: "test" })
+		await task({ silent: true, template: "test" })
 		await Bun.spawn(["git", "add", "AGENTS.md"], {
 			cwd: tempDir,
 			stdout: "pipe",

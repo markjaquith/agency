@@ -16,9 +16,13 @@ npm install @markjaquith/agency
 
 ## Commands
 
-### `agency init [path]`
+### `agency task [branch-name]`
 
-Initialize `AGENTS.md` file using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
+Initialize `AGENTS.md` and `TASK.md` files using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
+
+### `agency task edit`
+
+Open `TASK.md` in the system editor for editing.
 
 ### `agency template use [template]`
 

@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
 import { save } from "./save"
-import { init } from "./init"
+import { task } from "./task"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -43,7 +43,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-save", branch: "test-feature" })
+		await task({ silent: true, template: "test-save", branch: "test-feature" })
 
 		// Modify the files
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Modified content")
@@ -65,7 +65,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({
+		await task({
 			silent: true,
 			template: "test-no-files",
 			branch: "test-feature",
@@ -98,7 +98,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({
+		await task({
 			silent: true,
 			template: "test-partial",
 			branch: "test-feature",
@@ -131,7 +131,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-dir", branch: "test-feature" })
+		await task({ silent: true, template: "test-dir", branch: "test-feature" })
 
 		// Create a directory with files
 		const docsDir = join(tempDir, "docs")
@@ -159,7 +159,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({ silent: true, template: "test-task", branch: "test-feature" })
+		await task({ silent: true, template: "test-task", branch: "test-feature" })
 
 		// Create a TASK.md with the {task} placeholder
 		await Bun.write(join(tempDir, "TASK.md"), "{task}\n\n## Notes")
@@ -181,7 +181,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({
+		await task({
 			silent: true,
 			template: "test-task-invalid",
 			branch: "test-feature",
@@ -204,7 +204,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({
+		await task({
 			silent: true,
 			template: "test-task-subdir",
 			branch: "test-feature",
@@ -231,7 +231,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await init({
+		await task({
 			silent: true,
 			template: "test-task-subdir-invalid",
 			branch: "test-feature",

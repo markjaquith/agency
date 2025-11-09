@@ -70,7 +70,7 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 	const templateName = await getGitConfig("agency.template", gitRoot)
 	if (!templateName) {
 		throw new Error(
-			"No template configured for this repository. Run 'agency init' first.",
+			"No template configured for this repository. Run 'agency task' first.",
 		)
 	}
 
@@ -171,7 +171,7 @@ Examples:
   agency save --help                 # Show this help message
 
 Notes:
-  - Requires agency.template to be set (run 'agency init' first)
+  - Requires agency.template to be set (run 'agency task' first)
   - At least one file or directory must be specified
   - Files are saved to ~/.config/agency/templates/{template-name}/
   - Existing template files will be overwritten

@@ -1,7 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
-import { taskEdit } from "./task"
-import { init } from "./init"
+import { taskEdit, task } from "./task"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -67,7 +66,7 @@ describe("task edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await init({ silent: true, template: "test-task", branch: "test-feature" })
+		await task({ silent: true, template: "test-task", branch: "test-feature" })
 
 		// Use a mock editor that just exits successfully
 		process.env.EDITOR = "true" // 'true' is a command that always exits with code 0
@@ -81,7 +80,7 @@ describe("task edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await init({ silent: true, template: "test-task", branch: "test-feature" })
+		await task({ silent: true, template: "test-task", branch: "test-feature" })
 
 		// Use 'true' command which exits successfully without doing anything
 		process.env.EDITOR = "true"
@@ -95,7 +94,7 @@ describe("task edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await init({ silent: true, template: "test-task", branch: "test-feature" })
+		await task({ silent: true, template: "test-task", branch: "test-feature" })
 
 		// Set VISUAL to 'true' and EDITOR to 'false'
 		// If VISUAL is used (correct), it should succeed
@@ -112,7 +111,7 @@ describe("task edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await init({ silent: true, template: "test-task", branch: "test-feature" })
+		await task({ silent: true, template: "test-task", branch: "test-feature" })
 
 		// Clear VISUAL to ensure EDITOR is used
 		delete process.env.VISUAL

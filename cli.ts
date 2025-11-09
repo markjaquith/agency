@@ -1,13 +1,12 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "util"
-import { init, help as initHelp } from "./src/commands/init"
+import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { setBase, help as setBaseHelp } from "./src/commands/set-base"
 import { source, help as sourceHelp } from "./src/commands/source"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { merge, help as mergeHelp } from "./src/commands/merge"
-import { taskEdit, help as taskEditHelp } from "./src/commands/task"
 import { template, help as templateHelp } from "./src/commands/template"
 import type { Command } from "./src/types"
 
@@ -19,26 +18,6 @@ const VERSION = packageJson.version
 
 // Define commands
 const commands: Record<string, Command> = {
-	init: {
-		name: "init",
-		description: "Initialize AGENTS.md file",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(initHelp)
-				return
-			}
-			// args[0] is always treated as a branch name
-			const branch = args[0] || options.branch
-
-			await init({
-				branch,
-				silent: options.silent,
-				verbose: options.verbose,
-				template: options.template,
-			})
-		},
-		help: initHelp,
-	},
 	pr: {
 		name: "pr",
 		description: "Create a PR branch without AGENTS.md",
@@ -138,7 +117,7 @@ const commands: Record<string, Command> = {
 		description: "Task management commands",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
-				console.log(taskEditHelp)
+				console.log(taskHelp)
 				return
 			}
 			const subcommand = args[0]
@@ -148,12 +127,18 @@ const commands: Record<string, Command> = {
 					verbose: options.verbose,
 				})
 			} else {
-				throw new Error(
-					`Unknown task subcommand '${subcommand}'. Available: edit`,
-				)
+				// Default behavior: initialize (no subcommand or branch name)
+				const branch = subcommand || options.branch
+				await task({
+					branch,
+					silent: options.silent,
+					verbose: options.verbose,
+					template: options.template,
+					task: options.task,
+				})
 			}
 		},
-		help: taskEditHelp,
+		help: taskHelp,
 	},
 }
 
@@ -164,11 +149,11 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
-   init [path]            Initialize AGENTS.md file
+   task [branch]          Initialize AGENTS.md and TASK.md files
+   task edit              Open TASK.md in system editor
    template <subcommand>  Template management commands
    pr [base-branch]       Create a PR branch without AGENTS.md
    set-base <branch>      Set default base branch for current branch
-   task <subcommand>      Task management commands
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
   merge                  Merge PR branch into base branch
@@ -181,11 +166,13 @@ Command Options:
   -s, --silent           Suppress output messages
   -f, --force            Force operation (pr command only)
   -v, --verbose          Show verbose output including detailed debugging info
-  -t, --template         Specify template name (init command only)
+  -t, --template         Specify template name (task command only)
 
 Examples:
-  agency init                         # Initialize in current directory
-  agency init --template=work         # Initialize with specific template
+  agency task                         # Initialize in current directory
+  agency task --template=work         # Initialize with specific template
+  agency task my-feature              # Create 'my-feature' branch and initialize
+  agency task edit                    # Open TASK.md in system editor
   agency template use                 # Interactively select template
   agency template use work            # Set template to 'work'
   agency template save AGENTS.md      # Save specific file to template
@@ -195,12 +182,11 @@ Examples:
   agency pr origin/main               # Create PR branch using origin/main as base
   agency pr --verbose                 # Create PR branch with detailed output
   agency set-base origin/main         # Set default base branch to origin/main
-  agency task edit                    # Open TASK.md in system editor
   agency source                       # Switch from PR branch to source branch
   agency switch                       # Toggle between source and PR branch
   agency merge                        # Merge PR branch into base branch
   agency merge --verbose              # Merge with detailed output
-  agency init --help                  # Show help for init command
+  agency task --help                  # Show help for task command
   agency template --help              # Show help for template command
   agency --version                    # Show version number
 
