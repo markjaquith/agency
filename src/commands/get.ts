@@ -3,6 +3,7 @@ import {
 	getGitRoot,
 	getBaseBranchConfig,
 	getCurrentBranch,
+	getGitConfig,
 } from "../utils/git"
 
 export interface GetOptions {
@@ -12,6 +13,11 @@ export interface GetOptions {
 }
 
 export interface GetBaseOptions {
+	silent?: boolean
+	verbose?: boolean
+}
+
+export interface GetTemplateOptions {
 	silent?: boolean
 	verbose?: boolean
 }
@@ -49,6 +55,37 @@ export async function getBase(options: GetBaseOptions): Promise<void> {
 	log(baseBranch)
 }
 
+export async function getTemplate(options: GetTemplateOptions): Promise<void> {
+	const { silent = false, verbose = false } = options
+	const log = silent ? () => {} : console.log
+	const verboseLog = verbose && !silent ? console.log : () => {}
+
+	// Check if in a git repository
+	if (!(await isInsideGitRepo(process.cwd()))) {
+		throw new Error(
+			"Not in a git repository. Please run this command inside a git repo.",
+		)
+	}
+
+	const gitRoot = await getGitRoot(process.cwd())
+	if (!gitRoot) {
+		throw new Error("Failed to determine the root of the git repository.")
+	}
+
+	verboseLog(`Git root: ${gitRoot}`)
+
+	// Get the template configuration
+	const template = await getGitConfig("agency.template", gitRoot)
+
+	if (!template) {
+		throw new Error(
+			"No template configured for this repository. Use 'agency set template <name>' to set one.",
+		)
+	}
+
+	log(template)
+}
+
 export async function get(options: GetOptions): Promise<void> {
 	const { subcommand, silent = false, verbose = false } = options
 
@@ -64,9 +101,16 @@ export async function get(options: GetOptions): Promise<void> {
 			})
 			break
 		}
+		case "template": {
+			await getTemplate({
+				silent,
+				verbose,
+			})
+			break
+		}
 		default:
 			throw new Error(
-				`Unknown subcommand '${subcommand}'. Available subcommands: base`,
+				`Unknown subcommand '${subcommand}'. Available subcommands: base, template`,
 			)
 	}
 }
@@ -78,6 +122,7 @@ Get various configuration options for the current branch.
 
 Subcommands:
   base              Get the configured base branch for the current feature branch
+  template          Get the configured template for the current repository
 
 Options:
   -h, --help        Show this help message
@@ -87,9 +132,12 @@ Options:
 Examples:
   agency get base               # Get the base branch for current branch
   agency get base -v            # Get base branch with verbose output
+  agency get template           # Get the template for current repository
+  agency get template -v        # Get template with verbose output
 
 Notes:
-  - This command reads the base branch configuration from .git/config
-  - If no base branch is configured, an error will be shown
+  - This command reads configuration from .git/config
+  - If no configuration is found, an error will be shown
   - Use 'agency set base <branch>' to configure a base branch
+  - Use 'agency set template <name>' to configure a template
 `

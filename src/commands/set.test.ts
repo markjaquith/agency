@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { set, setBase } from "./set"
+import { set, setBase, setTemplate } from "./set"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-import { getBaseBranchConfig } from "../utils/git"
+import { getBaseBranchConfig, getGitConfig } from "../utils/git"
 import { join } from "path"
 
 describe("set", () => {
@@ -234,5 +234,55 @@ describe("set", () => {
 				silent: true,
 			}),
 		).rejects.toThrow("Base branch argument is required")
+	})
+
+	test("sets template for repository", async () => {
+		await setTemplate({
+			template: "work",
+			silent: true,
+		})
+
+		// Verify it was saved
+		const savedTemplate = await getGitConfig("agency.template", testDir)
+		expect(savedTemplate).toBe("work")
+	})
+
+	test("updates existing template configuration", async () => {
+		// Set initial template
+		await setTemplate({
+			template: "work",
+			silent: true,
+		})
+
+		// Update to different template
+		await setTemplate({
+			template: "client",
+			silent: true,
+		})
+
+		// Verify it was updated
+		const savedTemplate = await getGitConfig("agency.template", testDir)
+		expect(savedTemplate).toBe("client")
+	})
+
+	test("set command with template subcommand works", async () => {
+		await set({
+			subcommand: "template",
+			args: ["personal"],
+			silent: true,
+		})
+
+		const savedTemplate = await getGitConfig("agency.template", testDir)
+		expect(savedTemplate).toBe("personal")
+	})
+
+	test("set template throws error without template argument", async () => {
+		await expect(
+			set({
+				subcommand: "template",
+				args: [],
+				silent: true,
+			}),
+		).rejects.toThrow("Template name argument is required")
 	})
 })

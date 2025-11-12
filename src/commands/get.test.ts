@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { get, getBase } from "./get"
+import { get, getBase, getTemplate } from "./get"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-import { setBaseBranchConfig } from "../utils/git"
+import { setBaseBranchConfig, setGitConfig } from "../utils/git"
 import { join } from "path"
 
 describe("get", () => {
@@ -92,5 +92,33 @@ describe("get", () => {
 				silent: true,
 			}),
 		).rejects.toThrow("Unknown subcommand")
+	})
+
+	test("gets template for current repository", async () => {
+		// Set template
+		await setGitConfig("agency.template", "work", testDir)
+
+		// Get template - should not throw
+		await getTemplate({
+			silent: true,
+		})
+	})
+
+	test("throws error if template not configured", async () => {
+		await expect(
+			getTemplate({
+				silent: true,
+			}),
+		).rejects.toThrow("No template configured")
+	})
+
+	test("get command with template subcommand works", async () => {
+		await setGitConfig("agency.template", "client", testDir)
+
+		// Should not throw
+		await get({
+			subcommand: "template",
+			silent: true,
+		})
 	})
 })
