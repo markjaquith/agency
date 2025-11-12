@@ -185,3 +185,44 @@ Before committing changes, run the following command to format the code:
 ```sh
 bun format
 ```
+
+## Help Documentation Policy
+
+Keep help text concise and focused. Avoid verbose examples that demonstrate standard CLI patterns.
+
+**Guidelines:**
+
+1. **Don't show standard flag examples** - Flags like `--help`, `--silent`, `--verbose`, and `--version` are self-explanatory and don't need examples
+2. **Limit examples to 1-3 per command** - Show only the most common use cases that demonstrate core functionality
+3. **Avoid redundancy** - If a flag is documented in the Options section, don't also show it in every example
+4. **Focus on what's unique** - Examples should demonstrate the command's specific behavior, not generic CLI usage
+
+**Bad (too verbose):**
+
+```
+Examples:
+  agency switch                  # Toggle between branches
+  agency switch --silent         # Switch without output
+  agency switch --verbose        # Switch with verbose output
+  agency switch --help           # Show this help message
+```
+
+**Good (concise):**
+
+```
+Example:
+  agency switch                  # Toggle between branches
+```
+
+**When to show options in examples:**
+
+- Command-specific flags that change behavior significantly (e.g., `--force`, `--template`)
+- Non-obvious flag combinations
+- Flags that users commonly need (e.g., setting a base branch)
+
+**Review checklist when adding help text:**
+
+- [ ] Does each example demonstrate unique functionality?
+- [ ] Have I removed examples for `--help`, `--silent`, `--verbose`, `--version`?
+- [ ] Are there more than 3 examples? (If yes, can I reduce it?)
+- [ ] Would a user understand the command with fewer examples?
