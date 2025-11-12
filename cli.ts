@@ -184,26 +184,14 @@ Command Options:
 
 Examples:
   agency task                         # Initialize in current directory
-  agency task --template=work         # Initialize with specific template
   agency task my-feature              # Create 'my-feature' branch and initialize
   agency task edit                    # Open TASK.md in system editor
-  agency template use                 # Interactively select template
-  agency template use work            # Set template to 'work'
   agency template save AGENTS.md      # Save specific file to template
-  agency template save src/ docs/     # Save directories to template
-  agency template save .              # Save current directory contents
   agency pr                           # Create PR branch (prompts for base branch)
   agency pr origin/main               # Create PR branch using origin/main as base
-  agency pr --verbose                 # Create PR branch with detailed output
-  agency set base origin/main         # Set default base branch to origin/main
-  agency get base                     # Get the configured base branch
   agency source                       # Switch from PR branch to source branch
   agency switch                       # Toggle between source and PR branch
   agency merge                        # Merge PR branch into base branch
-  agency merge --verbose              # Merge with detailed output
-  agency task --help                  # Show help for task command
-  agency template --help              # Show help for template command
-  agency --version                    # Show version number
 
 For more information about a command, run:
   agency <command> --help
