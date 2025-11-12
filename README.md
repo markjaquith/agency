@@ -44,13 +44,6 @@ Set various configuration options for the current branch.
 
 - `agency set base <branch>` - Set the default base branch for the current feature branch
 
-**Examples:**
-
-```bash
-agency set base origin/main  # Set base branch to origin/main
-agency set base develop      # Set base branch to develop
-```
-
 ### `agency get <subcommand>`
 
 Get various configuration options for the current branch.
@@ -58,12 +51,6 @@ Get various configuration options for the current branch.
 **Subcommands:**
 
 - `agency get base` - Get the configured base branch for the current feature branch
-
-**Examples:**
-
-```bash
-agency get base  # Display the configured base branch
-```
 
 ### `agency switch`
 
