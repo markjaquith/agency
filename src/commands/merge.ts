@@ -135,7 +135,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			}
 
 			// Run 'agency pr' to create/update the PR branch
-			log(`Creating PR branch ${prBranch}...`)
+			verboseLog(`Creating PR branch ${prBranch}...`)
 			await pr({ silent, verbose })
 
 			// Get the base branch from config
@@ -165,16 +165,14 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 		}
 
 		// Now switch to the base branch
-		log(`Switching to ${baseBranchToMergeInto}...`)
+		verboseLog(`Switching to ${baseBranchToMergeInto}...`)
 		await checkoutBranch(gitRoot, baseBranchToMergeInto)
 
 		// Merge the PR branch
-		log(`Merging ${prBranchToMerge} into ${baseBranchToMergeInto}...`)
+		verboseLog(`Merging ${prBranchToMerge} into ${baseBranchToMergeInto}...`)
 		await mergeBranch(gitRoot, prBranchToMerge, verbose)
 
-		log(
-			`✓ Successfully merged ${prBranchToMerge} into ${baseBranchToMergeInto}`,
-		)
+		log(`✓ Merged ${prBranchToMerge} into ${baseBranchToMergeInto}`)
 	} catch (err) {
 		// Re-throw errors for CLI handler to display
 		throw err
