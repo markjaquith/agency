@@ -136,7 +136,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 
 			// Run 'agency pr' to create/update the PR branch
 			verboseLog(`Creating PR branch ${prBranch}...`)
-			await pr({ silent, verbose })
+			await pr({ silent: true, verbose })
 
 			// Get the base branch from config
 			const configuredBase = await getBaseBranchConfig(currentBranch, gitRoot)
