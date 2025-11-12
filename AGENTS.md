@@ -178,6 +178,18 @@ The repository has validation scripts:
 - `scripts/check-commit-msg` - Validates commit messages locally
 - GitHub Actions workflow validates PR titles
 
+## Installing Development Version
+
+To install the development version of this CLI tool globally:
+
+```sh
+bun link
+```
+
+This registers the package so the `agency` command is available system-wide. After running `bun link`, you can use the `agency` command from anywhere.
+
+**Note:** Do NOT use `bun i -g .` as it causes a dependency loop error in Bun.
+
 ## Formatting before committing
 
 Before committing changes, run the following command to format the code:
