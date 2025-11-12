@@ -87,6 +87,27 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		const isFeature = await isFeatureBranch(currentBranch, targetPath)
 		verboseLog(`Is feature branch: ${isFeature}`)
 
+		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
+		let taskDescription: string | undefined
+		if (!isFeature && options.branch) {
+			const taskMdPath = resolve(targetPath, "TASK.md")
+			const taskMdFile = Bun.file(taskMdPath)
+			if (!(await taskMdFile.exists())) {
+				if (options.task) {
+					taskDescription = options.task
+					verboseLog(`Using task from option: ${taskDescription}`)
+				} else if (!silent) {
+					taskDescription = await prompt("Task description: ")
+					if (!taskDescription) {
+						log(
+							"ⓘ Skipping task description (TASK.md will use default placeholder)",
+						)
+						taskDescription = undefined
+					}
+				}
+			}
+		}
+
 		if (!isFeature) {
 			// If a branch name was provided, create it
 			if (options.branch) {
@@ -208,21 +229,22 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			log(`✓ Set agency.template = ${templateName}`)
 		}
 
-		// Prompt for task if TASK.md will be created
-		let taskDescription: string | undefined
-		const taskMdPath = resolve(targetPath, "TASK.md")
-		const taskMdFile = Bun.file(taskMdPath)
-		if (!(await taskMdFile.exists())) {
-			if (options.task) {
-				taskDescription = options.task
-				verboseLog(`Using task from option: ${taskDescription}`)
-			} else if (!silent) {
-				taskDescription = await prompt("Task description: ")
-				if (!taskDescription) {
-					log(
-						"ⓘ Skipping task description (TASK.md will use default placeholder)",
-					)
-					taskDescription = undefined
+		// Prompt for task if TASK.md will be created (only if not already prompted earlier)
+		if (taskDescription === undefined) {
+			const taskMdPath = resolve(targetPath, "TASK.md")
+			const taskMdFile = Bun.file(taskMdPath)
+			if (!(await taskMdFile.exists())) {
+				if (options.task) {
+					taskDescription = options.task
+					verboseLog(`Using task from option: ${taskDescription}`)
+				} else if (!silent) {
+					taskDescription = await prompt("Task description: ")
+					if (!taskDescription) {
+						log(
+							"ⓘ Skipping task description (TASK.md will use default placeholder)",
+						)
+						taskDescription = undefined
+					}
 				}
 			}
 		}
