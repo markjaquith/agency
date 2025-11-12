@@ -351,10 +351,7 @@ Arguments:
 
 Options:
   -b, --branch      Custom name for PR branch (defaults to pattern from config)
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
   -f, --force       Force PR branch creation even if current branch looks like a PR branch
-  -v, --verbose     Show verbose output including git-filter-repo execution details
 
 Configuration:
   ~/.config/agency/agency.json can contain:
@@ -373,11 +370,7 @@ Configuration:
 Examples:
   agency pr                          # Prompt for base branch (first time) or use saved
   agency pr origin/main              # Explicitly use origin/main as base branch
-  agency pr origin/main --branch=pr  # Use origin/main and custom PR branch name
   agency pr --force                  # Force creation even from a PR branch
-  agency pr --verbose                # Create PR branch with verbose debugging output
-  agency pr --silent                 # Create PR branch without output
-  agency pr --help                   # Show this help message
 
 Notes:
   - PR branch is created from your current branch (not the base)
@@ -389,6 +382,4 @@ Notes:
   - Original branch is never modified
   - If PR branch exists, it will be deleted and recreated
   - Command will refuse to create PR branch from a PR branch unless --force is used
-  - Use --verbose to see which base branch and merge-base commit are detected
-  - Use --verbose to debug git-filter-repo if it fails
 `

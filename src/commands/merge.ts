@@ -204,16 +204,8 @@ Prerequisites:
   - Base branch must exist locally
   - For source branches: Must have a corresponding PR branch or be able to create one
 
-Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output including git merge details
-
-Examples:
+Example:
   agency merge                   # From source branch: creates PR branch then merges
-  agency merge                   # From PR branch: merges directly into base
-  agency merge --verbose         # Merge with detailed output
-  agency merge --silent          # Merge without output
 
 Notes:
   - The command determines the base branch from git config (agency.pr.<branch>.baseBranch)

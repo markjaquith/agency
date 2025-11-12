@@ -121,18 +121,9 @@ Subcommands:
   base <branch>       Set the default base branch for the current feature branch
   template <name>     Set the template for the current repository
 
-Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output
-
 Examples:
   agency set base origin/main       # Set base branch to origin/main
-  agency set base main              # Set base branch to main
-  agency set base develop           # Set base branch to develop
-  agency set base origin/main -v    # Set base branch with verbose output
   agency set template work          # Set template to 'work'
-  agency set template client        # Set template to 'client'
 
 Notes:
   - The base branch must exist in the repository

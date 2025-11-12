@@ -116,15 +116,8 @@ corresponding PR branch:
   - If on a PR branch (e.g., main--PR), switches to source (main)
   - If on a source branch (e.g., main), switches to PR branch (main--PR)
 
-Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output
-
-Examples:
+Example:
   agency switch                  # Toggle between branches
-  agency switch --silent         # Switch without output
-  agency switch --verbose        # Switch with verbose output
 
 Notes:
   - Target branch must exist

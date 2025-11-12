@@ -105,15 +105,8 @@ Switch back to the source branch from a PR branch.
 This command extracts the source branch name from your current PR branch name
 using the configured pattern, and switches back to it.
 
-Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output
-
-Examples:
+Example:
   agency source                  # From main--PR, switch to main
-  agency source --silent         # Switch without output
-  agency source --verbose        # Switch with verbose output
 
 Notes:
   - Must be run from a PR branch

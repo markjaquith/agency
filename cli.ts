@@ -155,11 +155,6 @@ Usage: agency edit [options]
 
 Open TASK.md in the system editor for editing.
 
-Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output
-
 Notes:
   - Requires TASK.md to exist (run 'agency task' first)
   - Respects VISUAL and EDITOR environment variables
@@ -167,9 +162,8 @@ Notes:
   - On other platforms, defaults to 'vim'
   - The command waits for the editor to close before returning
 
-Examples:
+Example:
   agency edit                   # Open TASK.md in default editor
-  EDITOR=nano agency edit       # Use nano as the editor
 				`)
 				return
 			}
@@ -212,13 +206,8 @@ Command Options:
 Examples:
   agency task                         # Initialize in current directory
   agency task my-feature              # Create 'my-feature' branch and initialize
-  agency edit                         # Open TASK.md in system editor
-  agency template save AGENTS.md      # Save specific file to template
   agency pr                           # Create PR branch (prompts for base branch)
-  agency pr origin/main               # Create PR branch using origin/main as base
-  agency source                       # Switch from PR branch to source branch
   agency switch                       # Toggle between source and PR branch
-  agency merge                        # Merge PR branch into base branch
 
 For more information about a command, run:
   agency <command> --help

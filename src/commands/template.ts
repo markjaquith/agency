@@ -8,16 +8,10 @@ Subcommands:
   use [template]         Set template for this repository
   save <file|dir> ...    Save files/dirs to configured template
 
-Options:
-  -s, --silent           Suppress output messages
-  -v, --verbose          Show verbose output including detailed debugging info
-
 Examples:
   agency template use                    # Interactively select template
   agency template use work               # Set template to 'work'
   agency template save AGENTS.md         # Save specific file to template
-  agency template save src/ docs/        # Save directories to template
-  agency template save .                 # Save current directory contents
 
 For more information about a subcommand, run:
   agency template <subcommand> --help

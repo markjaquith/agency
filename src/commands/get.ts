@@ -124,16 +124,9 @@ Subcommands:
   base              Get the configured base branch for the current feature branch
   template          Get the configured template for the current repository
 
-Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output
-
 Examples:
   agency get base               # Get the base branch for current branch
-  agency get base -v            # Get base branch with verbose output
   agency get template           # Get the template for current repository
-  agency get template -v        # Get template with verbose output
 
 Notes:
   - This command reads configuration from .git/config

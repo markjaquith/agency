@@ -397,20 +397,13 @@ Arguments:
   branch-name       Create and switch to this branch before initializing
 
 Options:
-  -h, --help        Show this help message
-  -s, --silent      Suppress output messages
-  -v, --verbose     Show verbose output
   -t, --template    Specify template name (skips prompt)
   -b, --branch      Branch name to create (alternative to positional arg)
 
 Examples:
   agency task                        # Initialize on current feature branch
   agency task my-feature             # Create 'my-feature' branch and initialize
-  agency task feat/new-feature       # Create branch with slashes in name
   agency task --template=work        # Initialize with specific template
-  agency task feat/new --template=work  # Create branch with specific template
-  agency task --verbose              # Initialize with verbose output
-  agency task --help                 # Show this help message
 
 Template Workflow:
   1. First run: Prompted for template name (e.g., "work")
