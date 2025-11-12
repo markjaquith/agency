@@ -245,8 +245,6 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		const prBranch =
 			options.branch || makePrBranchName(currentBranch, config.prBranch)
 
-		log(`Creating ${prBranch} from ${currentBranch}...`)
-
 		// Create or reset PR branch from current branch
 		await createOrResetBranch(gitRoot, currentBranch, prBranch)
 

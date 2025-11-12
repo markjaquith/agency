@@ -136,7 +136,7 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 			await Bun.write(dir + "/.gitkeep", "")
 
 			await Bun.write(templateFilePath, content)
-			log(`✓ Saved ${filePath} to '${templateName}' template`)
+			verboseLog(`Saved ${filePath} to '${templateName}' template`)
 		}
 	} catch (err) {
 		// Re-throw errors for CLI handler to display

@@ -81,13 +81,8 @@ export async function use(options: UseOptions = {}): Promise<void> {
 
 	verboseLog(`Setting template to: ${templateName}`)
 
-	try {
-		// Set the template in git config
-		await setGitConfig("agency.template", templateName, gitRoot)
-		log(`✓ Set agency.template = ${templateName}`)
-	} catch (err) {
-		throw err
-	}
+	// Set the template in git config
+	await setGitConfig("agency.template", templateName, gitRoot)
 }
 
 export const help = `

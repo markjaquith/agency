@@ -56,8 +56,6 @@ export async function setBase(options: SetBaseOptions): Promise<void> {
 
 	// Save the base branch configuration
 	await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
-
-	log(`Set base branch for '${currentBranch}' to '${baseBranch}' in git config`)
 }
 
 export async function setTemplate(options: SetTemplateOptions): Promise<void> {
