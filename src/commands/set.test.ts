@@ -1,10 +1,10 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { setBase } from "./set-base"
+import { set, setBase } from "./set"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
 import { getBaseBranchConfig } from "../utils/git"
 import { join } from "path"
 
-describe("set-base", () => {
+describe("set", () => {
 	let testDir: string
 	let originalCwd: string
 
@@ -188,5 +188,51 @@ describe("set-base", () => {
 
 		expect(feature1Base).toBe("main")
 		expect(feature2Base).toBe("develop")
+	})
+
+	test("set command with base subcommand works", async () => {
+		await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			cwd: testDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		await set({
+			subcommand: "base",
+			args: ["main"],
+			silent: true,
+		})
+
+		const savedBase = await getBaseBranchConfig("feature", testDir)
+		expect(savedBase).toBe("main")
+	})
+
+	test("set command throws error without subcommand", async () => {
+		await expect(
+			set({
+				args: [],
+				silent: true,
+			}),
+		).rejects.toThrow("Subcommand is required")
+	})
+
+	test("set command throws error with unknown subcommand", async () => {
+		await expect(
+			set({
+				subcommand: "unknown",
+				args: [],
+				silent: true,
+			}),
+		).rejects.toThrow("Unknown subcommand")
+	})
+
+	test("set base throws error without branch argument", async () => {
+		await expect(
+			set({
+				subcommand: "base",
+				args: [],
+				silent: true,
+			}),
+		).rejects.toThrow("Base branch argument is required")
 	})
 })

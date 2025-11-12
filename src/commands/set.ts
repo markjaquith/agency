@@ -6,6 +6,13 @@ import {
 	getCurrentBranch,
 } from "../utils/git"
 
+export interface SetOptions {
+	subcommand?: string
+	args: string[]
+	silent?: boolean
+	verbose?: boolean
+}
+
 export interface SetBaseOptions {
 	baseBranch: string
 	silent?: boolean
@@ -46,18 +53,41 @@ export async function setBase(options: SetBaseOptions): Promise<void> {
 	log(`Set base branch for '${currentBranch}' to '${baseBranch}' in git config`)
 }
 
+export async function set(options: SetOptions): Promise<void> {
+	const { subcommand, args, silent = false, verbose = false } = options
+
+	if (!subcommand) {
+		throw new Error("Subcommand is required. Usage: agency set <subcommand>")
+	}
+
+	switch (subcommand) {
+		case "base": {
+			if (!args[0]) {
+				throw new Error(
+					"Base branch argument is required. Usage: agency set base <base-branch>",
+				)
+			}
+			await setBase({
+				baseBranch: args[0],
+				silent,
+				verbose,
+			})
+			break
+		}
+		default:
+			throw new Error(
+				`Unknown subcommand '${subcommand}'. Available subcommands: base`,
+			)
+	}
+}
+
 export const help = `
-Usage: agency set-base <base-branch> [options]
+Usage: agency set <subcommand> [options]
 
-Set the default base branch for the current feature branch. This is used
-by 'agency pr' to determine which branch to create the PR from.
+Set various configuration options for the current branch.
 
-When you run 'agency pr' for the first time, it will prompt you to select
-a base branch and save your choice. Use this command to update that saved
-base branch preference.
-
-Arguments:
-  base-branch       Base branch to use (e.g., origin/main, main, develop)
+Subcommands:
+  base <branch>     Set the default base branch for the current feature branch
 
 Options:
   -h, --help        Show this help message
@@ -65,10 +95,10 @@ Options:
   -v, --verbose     Show verbose output
 
 Examples:
-  agency set-base origin/main       # Set base branch to origin/main
-  agency set-base main              # Set base branch to main
-  agency set-base develop           # Set base branch to develop
-  agency set-base origin/main -v    # Set base branch with verbose output
+  agency set base origin/main       # Set base branch to origin/main
+  agency set base main              # Set base branch to main
+  agency set base develop           # Set base branch to develop
+  agency set base origin/main -v    # Set base branch with verbose output
 
 Notes:
   - The base branch must exist in the repository

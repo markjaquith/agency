@@ -36,6 +36,35 @@ Save files back to the configured template directory.
 
 Create a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
 
+### `agency set <subcommand>`
+
+Set various configuration options for the current branch.
+
+**Subcommands:**
+
+- `agency set base <branch>` - Set the default base branch for the current feature branch
+
+**Examples:**
+
+```bash
+agency set base origin/main  # Set base branch to origin/main
+agency set base develop      # Set base branch to develop
+```
+
+### `agency get <subcommand>`
+
+Get various configuration options for the current branch.
+
+**Subcommands:**
+
+- `agency get base` - Get the configured base branch for the current feature branch
+
+**Examples:**
+
+```bash
+agency get base  # Display the configured base branch
+```
+
 ### `agency switch`
 
 Toggle between source branch and PR branch. If on a PR branch (e.g., `main--PR`), switches to source branch (e.g., `main`). If on source branch, switches to PR branch. PR branch must exist first.
