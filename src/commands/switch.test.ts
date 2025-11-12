@@ -151,7 +151,7 @@ describe("switch command", () => {
 		test("throws error when PR branch doesn't exist", async () => {
 			// We're on main, and main--PR doesn't exist
 			await expect(switchBranch({ silent: true })).rejects.toThrow(
-				"PR branch 'main--PR' does not exist",
+				/PR branch .* does not exist/,
 			)
 		})
 
@@ -161,7 +161,7 @@ describe("switch command", () => {
 			// We never created 'feature', so it doesn't exist
 
 			await expect(switchBranch({ silent: true })).rejects.toThrow(
-				"Source branch 'feature' does not exist",
+				/Source branch .* does not exist/,
 			)
 		})
 

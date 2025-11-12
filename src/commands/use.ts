@@ -6,6 +6,7 @@ import {
 } from "../utils/git"
 import { listTemplates } from "../utils/template"
 import { prompt } from "../utils/prompt"
+import highlight from "../utils/colors"
 
 export interface UseOptions {
 	template?: string
@@ -51,13 +52,13 @@ export async function use(options: UseOptions = {}): Promise<void> {
 		// Show current template if set
 		const currentTemplate = await getGitConfig("agency.template", gitRoot)
 		if (currentTemplate) {
-			log(`Current template: ${currentTemplate}`)
+			log(`Current template: ${highlight.template(currentTemplate)}`)
 		}
 
 		log("\nAvailable templates:")
 		templates.forEach((t, i) => {
 			const current = t === currentTemplate ? " (current)" : ""
-			log(`  ${i + 1}. ${t}${current}`)
+			log(`  ${highlight.value(i + 1)}. ${highlight.template(t)}${current}`)
 		})
 
 		const answer = await prompt("\nTemplate name (or number): ")

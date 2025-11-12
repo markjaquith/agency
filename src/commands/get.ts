@@ -5,6 +5,7 @@ import {
 	getCurrentBranch,
 	getGitConfig,
 } from "../utils/git"
+import highlight from "../utils/colors"
 
 export interface GetOptions {
 	subcommand?: string
@@ -41,14 +42,14 @@ export async function getBase(options: GetBaseOptions): Promise<void> {
 
 	// Get current branch
 	const currentBranch = await getCurrentBranch(gitRoot)
-	verboseLog(`Current branch: ${currentBranch}`)
+	verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
 	// Get the base branch configuration
 	const baseBranch = await getBaseBranchConfig(currentBranch, gitRoot)
 
 	if (!baseBranch) {
 		throw new Error(
-			`No base branch configured for '${currentBranch}'. Use 'agency set base <branch>' to set one.`,
+			`No base branch configured for ${highlight.branch(currentBranch)}. Use 'agency set base <branch>' to set one.`,
 		)
 	}
 

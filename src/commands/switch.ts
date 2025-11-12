@@ -1,6 +1,7 @@
 import { isInsideGitRepo, getGitRoot } from "../utils/git"
 import { loadConfig } from "../config"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
+import highlight from "../utils/colors"
 
 export interface SwitchOptions {
 	silent?: boolean
@@ -81,11 +82,13 @@ export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
 			// We're on a PR branch, switch to source
 			const exists = await branchExists(gitRoot, sourceBranch)
 			if (!exists) {
-				throw new Error(`Source branch '${sourceBranch}' does not exist`)
+				throw new Error(
+					`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+				)
 			}
 
 			await checkoutBranch(gitRoot, sourceBranch)
-			log(`✓ Switched to source branch: ${sourceBranch}`)
+			log(`✓ Switched to source branch: ${highlight.branch(sourceBranch)}`)
 		} else {
 			// We're on a source branch, switch to PR branch
 			const prBranch = makePrBranchName(currentBranch, config.prBranch)
@@ -93,12 +96,12 @@ export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
 			const exists = await branchExists(gitRoot, prBranch)
 			if (!exists) {
 				throw new Error(
-					`PR branch '${prBranch}' does not exist. Run 'agency pr' to create it.`,
+					`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
 				)
 			}
 
 			await checkoutBranch(gitRoot, prBranch)
-			log(`✓ Switched to PR branch: ${prBranch}`)
+			log(`✓ Switched to PR branch: ${highlight.branch(prBranch)}`)
 		}
 	} catch (err) {
 		// Re-throw errors for CLI handler to display

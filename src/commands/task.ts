@@ -27,6 +27,7 @@ import {
 	createTemplateDir,
 	templateExists,
 } from "../utils/template"
+import highlight from "../utils/colors"
 
 export interface TaskOptions {
 	path?: string
@@ -83,7 +84,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 	try {
 		// Check if we're on a feature branch
 		const currentBranch = await getCurrentBranch(targetPath)
-		verboseLog(`Current branch: ${currentBranch}`)
+		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 		const isFeature = await isFeatureBranch(currentBranch, targetPath)
 		verboseLog(`Is feature branch: ${isFeature}`)
 
@@ -143,12 +144,12 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 				await createBranch(options.branch, targetPath, baseBranch)
 				log(
-					`✓ Created and switched to branch '${options.branch}'${baseBranch ? ` based on '${baseBranch}'` : ""}`,
+					`✓ Created and switched to branch ${highlight.branch(options.branch)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
 				)
 			} else {
 				// Otherwise, fail with a helpful error message
 				throw new Error(
-					`You're currently on '${currentBranch}', which appears to be your main branch.\n` +
+					`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
 						`To initialize on a feature branch, either:\n` +
 						`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
 						`  2. Provide a new branch name: 'agency task <branch-name>'`,
@@ -208,7 +209,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		// Check if template is new (doesn't have any files yet)
 		const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
 		if (!(await templateAgents.exists())) {
-			log(`✓ Created template '${templateName}'`)
+			log(`✓ Created template ${highlight.template(templateName)}`)
 
 			// Copy default content to template for each managed file
 			for (const managedFile of managedFiles) {
@@ -226,7 +227,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		// Save template name to git config if needed
 		if (needsSaveToConfig) {
 			await setGitConfig("agency.template", templateName, targetPath)
-			log(`✓ Set agency.template = ${templateName}`)
+			log(
+				`✓ Set ${highlight.setting("agency.template")} = ${highlight.template(templateName)}`,
+			)
 		}
 
 		// Prompt for task if TASK.md will be created (only if not already prompted earlier)
@@ -255,7 +258,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			const targetFile = Bun.file(targetFilePath)
 
 			if (await targetFile.exists()) {
-				log(`ⓘ ${managedFile.name} already exists at ${targetFilePath}`)
+				log(
+					`ⓘ ${highlight.file(managedFile.name)} already exists at ${highlight.file(targetFilePath)}`,
+				)
 				continue
 			}
 
@@ -294,7 +299,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 			await Bun.write(targetFilePath, content)
 			createdFiles.push(managedFile.name)
-			log(`✓ Created ${managedFile.name} from '${templateName}' template`)
+			log(
+				`✓ Created ${highlight.file(managedFile.name)} from ${highlight.template(templateName)} template`,
+			)
 		}
 
 		// Git add and commit the created files
@@ -302,7 +309,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			try {
 				await gitAdd(createdFiles, targetPath)
 				await gitCommit("chore: agency task", targetPath)
-				log(`✓ Committed ${createdFiles.length} file(s)`)
+				log(`✓ Committed ${highlight.value(createdFiles.length)} file(s)`)
 			} catch (err) {
 				// If commit fails, it might be because there are no changes (e.g., files already staged)
 				// We can ignore this error and let the user handle it manually

@@ -1,6 +1,7 @@
 import { resolve, join, dirname, basename } from "path"
 import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
 import { getTemplateDir } from "../utils/template"
+import highlight from "../utils/colors"
 
 export interface SaveOptions {
 	files?: string[]
@@ -74,7 +75,7 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 		)
 	}
 
-	verboseLog(`Saving to template: ${templateName}`)
+	verboseLog(`Saving to template: ${highlight.template(templateName)}`)
 
 	const templateDir = getTemplateDir(templateName)
 
@@ -136,7 +137,9 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 			await Bun.write(dir + "/.gitkeep", "")
 
 			await Bun.write(templateFilePath, content)
-			verboseLog(`Saved ${filePath} to '${templateName}' template`)
+			log(
+				`✓ Saved ${highlight.file(filePath)} to ${highlight.template(templateName)} template`,
+			)
 		}
 	} catch (err) {
 		// Re-throw errors for CLI handler to display

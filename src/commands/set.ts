@@ -6,6 +6,7 @@ import {
 	getCurrentBranch,
 } from "../utils/git"
 import { use } from "./use"
+import highlight from "../utils/colors"
 
 export interface SetOptions {
 	subcommand?: string
@@ -46,16 +47,19 @@ export async function setBase(options: SetBaseOptions): Promise<void> {
 	// Validate that the base branch exists
 	if (!(await branchExists(gitRoot, baseBranch))) {
 		throw new Error(
-			`Base branch '${baseBranch}' does not exist. Please provide a valid branch name.`,
+			`Base branch ${highlight.branch(baseBranch)} does not exist. Please provide a valid branch name.`,
 		)
 	}
 
 	// Get current branch
 	const currentBranch = await getCurrentBranch(gitRoot)
-	verboseLog(`Current branch: ${currentBranch}`)
+	verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
 	// Save the base branch configuration
 	await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
+	log(
+		`✓ Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
+	)
 }
 
 export async function setTemplate(options: SetTemplateOptions): Promise<void> {
