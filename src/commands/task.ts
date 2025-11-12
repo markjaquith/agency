@@ -375,15 +375,10 @@ export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
 
 export const help = `
 Usage: agency task [branch-name] [options]
-       agency task edit [options]
 
-Task management commands for managing AGENTS.md and TASK.md files.
+Initialize AGENTS.md and TASK.md files in a git repository using templates.
 
-Subcommands:
-  (default)             Initialize AGENTS.md and TASK.md files in a git repository using templates
-  edit                  Open TASK.md in the system editor for editing
-
-IMPORTANT: The default command must be run on a feature branch, not the main branch.
+IMPORTANT: This command must be run on a feature branch, not the main branch.
 If you're on the main branch, you must either:
   1. Switch to an existing feature branch first, then run 'agency task'
   2. Provide a branch name: 'agency task <branch-name>'
@@ -415,8 +410,6 @@ Examples:
   agency task --template=work        # Initialize with specific template
   agency task feat/new --template=work  # Create branch with specific template
   agency task --verbose              # Initialize with verbose output
-  agency task edit                   # Open TASK.md in default editor
-  EDITOR=nano agency task edit       # Use nano as the editor
   agency task --help                 # Show this help message
 
 Template Workflow:
@@ -433,16 +426,10 @@ Branch Creation:
   4. Selection is saved to .git/config (agency.mainBranch) for future use
   5. In --silent mode, a base branch must already be configured
 
-Task Edit Notes:
-  - Requires TASK.md to exist (run 'agency task' first)
-  - Respects VISUAL and EDITOR environment variables
-  - On macOS, defaults to 'open' which uses the default app for .md files
-  - On other platforms, defaults to 'vim'
-  - The command waits for the editor to close before returning
-
 Notes:
   - Files are created at the git repository root, not the current directory
   - If files already exist, they will not be overwritten
   - Templates are stored per-repository in .git/config (not committed)
   - Use --template flag to override saved template or skip prompt
+  - To edit TASK.md after creation, use 'agency edit'
 `

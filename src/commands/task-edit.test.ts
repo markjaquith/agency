@@ -8,7 +8,7 @@ import {
 	readFile,
 } from "../test-utils"
 
-describe("task edit command", () => {
+describe("edit command", () => {
 	let tempDir: string
 	let originalCwd: string
 	let originalConfigDir: string | undefined

@@ -133,25 +133,52 @@ const commands: Record<string, Command> = {
 				console.log(taskHelp)
 				return
 			}
-			const subcommand = args[0]
-			if (subcommand === "edit") {
-				await taskEdit({
-					silent: options.silent,
-					verbose: options.verbose,
-				})
-			} else {
-				// Default behavior: initialize (no subcommand or branch name)
-				const branch = subcommand || options.branch
-				await task({
-					branch,
-					silent: options.silent,
-					verbose: options.verbose,
-					template: options.template,
-					task: options.task,
-				})
-			}
+			// Initialize with optional branch name
+			const branch = args[0] || options.branch
+			await task({
+				branch,
+				silent: options.silent,
+				verbose: options.verbose,
+				template: options.template,
+				task: options.task,
+			})
 		},
 		help: taskHelp,
+	},
+	edit: {
+		name: "edit",
+		description: "Open TASK.md in system editor",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(`
+Usage: agency edit [options]
+
+Open TASK.md in the system editor for editing.
+
+Options:
+  -h, --help        Show this help message
+  -s, --silent      Suppress output messages
+  -v, --verbose     Show verbose output
+
+Notes:
+  - Requires TASK.md to exist (run 'agency task' first)
+  - Respects VISUAL and EDITOR environment variables
+  - On macOS, defaults to 'open' which uses the default app for .md files
+  - On other platforms, defaults to 'vim'
+  - The command waits for the editor to close before returning
+
+Examples:
+  agency edit                   # Open TASK.md in default editor
+  EDITOR=nano agency edit       # Use nano as the editor
+				`)
+				return
+			}
+			await taskEdit({
+				silent: options.silent,
+				verbose: options.verbose,
+			})
+		},
+		help: `Open TASK.md in system editor`,
 	},
 }
 
@@ -163,7 +190,7 @@ Usage: agency <command> [options]
 
 Commands:
    task [branch]          Initialize AGENTS.md and TASK.md files
-   task edit              Open TASK.md in system editor
+   edit                   Open TASK.md in system editor
    template <subcommand>  Template management commands
    pr [base-branch]       Create a PR branch without AGENTS.md
    set <subcommand>       Set configuration options
@@ -185,7 +212,7 @@ Command Options:
 Examples:
   agency task                         # Initialize in current directory
   agency task my-feature              # Create 'my-feature' branch and initialize
-  agency task edit                    # Open TASK.md in system editor
+  agency edit                         # Open TASK.md in system editor
   agency template save AGENTS.md      # Save specific file to template
   agency pr                           # Create PR branch (prompts for base branch)
   agency pr origin/main               # Create PR branch using origin/main as base
