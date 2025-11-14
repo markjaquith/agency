@@ -9,6 +9,7 @@ import {
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { initializeManagedFiles } from "../types"
+import highlight, { done } from "../utils/colors"
 
 export interface PrOptions {
 	branch?: string
@@ -56,7 +57,7 @@ async function getBaseBranch(
 		// Verify it exists
 		if (!(await branchExists(gitRoot, providedBaseBranch))) {
 			throw new Error(
-				`Provided base branch '${providedBaseBranch}' does not exist`,
+				`Provided base branch ${highlight.branch(providedBaseBranch)} does not exist`,
 			)
 		}
 		return providedBaseBranch
@@ -210,7 +211,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 			const sourceExists = await branchExists(gitRoot, possibleSourceBranch)
 			if (sourceExists) {
 				throw new Error(
-					`Current branch '${currentBranch}' appears to be a PR branch for '${possibleSourceBranch}'.\n` +
+					`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch for ${highlight.branch(possibleSourceBranch)}.\n` +
 						`Creating a PR branch from a PR branch is likely a mistake.\n` +
 						`Use --force to override this check.`,
 				)
@@ -224,7 +225,7 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 			options.baseBranch,
 		)
 
-		verboseLog(`Using base branch: ${baseBranch}`)
+		verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
 
 		// Save the base branch to git config for future runs
 		if (!options.baseBranch) {
@@ -232,14 +233,16 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 			const savedBaseBranch = await getBaseBranchConfig(currentBranch, gitRoot)
 			if (!savedBaseBranch || savedBaseBranch !== baseBranch) {
 				await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
-				verboseLog(`Saved base branch '${baseBranch}' to git config`)
+				verboseLog(
+					`Saved base branch ${highlight.branch(baseBranch)} to git config`,
+				)
 			}
 		}
 
 		// Get the merge-base (where the branch diverged)
 		const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch)
 
-		verboseLog(`Branch diverged at commit: ${mergeBase}`)
+		verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
 
 		// Determine PR branch name using config pattern
 		const prBranch =
@@ -254,10 +257,10 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		// while removing any modifications made on the feature branch
 
 		verboseLog(
-			`Filtering managed files from commits in range: ${mergeBase.substring(0, 8)}..${prBranch}`,
+			`Filtering managed files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranch)}`,
 		)
 		verboseLog(
-			`Files will revert to their state at merge-base (base branch: ${baseBranch})`,
+			`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
 		)
 
 		// Clean up .git/filter-repo directory to avoid interactive prompts
@@ -306,7 +309,11 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 			throw new Error(`git-filter-repo failed: ${stderr}`)
 		}
 
-		log(`Created ${prBranch} from ${currentBranch}`)
+		log(
+			done(
+				`Created ${highlight.branch(prBranch)} from ${highlight.branch(currentBranch)}`,
+			),
+		)
 	} catch (err) {
 		// Re-throw errors for CLI handler to display
 		throw err

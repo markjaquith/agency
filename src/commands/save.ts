@@ -1,7 +1,7 @@
 import { resolve, join, dirname, basename } from "path"
 import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
 import { getTemplateDir } from "../utils/template"
-import highlight from "../utils/colors"
+import highlight, { done } from "../utils/colors"
 
 export interface SaveOptions {
 	files?: string[]
@@ -136,7 +136,9 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 
 			await Bun.write(templateFilePath, content)
 			log(
-				`✓ Saved ${highlight.file(filePath)} to ${highlight.template(templateName)} template`,
+				done(
+					`Saved ${highlight.file(filePath)} to ${highlight.template(templateName)} template`,
+				),
 			)
 		}
 	} catch (err) {

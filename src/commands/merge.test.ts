@@ -232,9 +232,7 @@ describe("merge command", () => {
 			}).exited
 
 			// Try to merge - should fail
-			expect(merge({ silent: true })).rejects.toThrow(
-				"source branch 'feature' does not exist",
-			)
+			expect(merge({ silent: true })).rejects.toThrow("source branch")
 		})
 
 		test("throws error if base branch config is missing", async () => {

@@ -1,7 +1,7 @@
 import { isInsideGitRepo, getGitRoot } from "../utils/git"
 import { loadConfig } from "../config"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
-import highlight from "../utils/colors"
+import highlight, { done } from "../utils/colors"
 
 export interface SwitchOptions {
 	silent?: boolean
@@ -88,7 +88,7 @@ export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
 			}
 
 			await checkoutBranch(gitRoot, sourceBranch)
-			log(`✓ Switched to source branch: ${highlight.branch(sourceBranch)}`)
+			log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
 		} else {
 			// We're on a source branch, switch to PR branch
 			const prBranch = makePrBranchName(currentBranch, config.prBranch)
@@ -101,7 +101,7 @@ export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
 			}
 
 			await checkoutBranch(gitRoot, prBranch)
-			log(`✓ Switched to PR branch: ${highlight.branch(prBranch)}`)
+			log(done(`Switched to PR branch: ${highlight.branch(prBranch)}`))
 		}
 	} catch (err) {
 		// Re-throw errors for CLI handler to display

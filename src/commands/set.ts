@@ -6,7 +6,7 @@ import {
 	getCurrentBranch,
 } from "../utils/git"
 import { use } from "./use"
-import highlight from "../utils/colors"
+import highlight, { done } from "../utils/colors"
 
 export interface SetOptions {
 	subcommand?: string
@@ -58,7 +58,9 @@ export async function setBase(options: SetBaseOptions): Promise<void> {
 	// Save the base branch configuration
 	await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
 	log(
-		`✓ Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
+		done(
+			`Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
+		),
 	)
 }
 

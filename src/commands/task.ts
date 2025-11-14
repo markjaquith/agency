@@ -27,7 +27,7 @@ import {
 	createTemplateDir,
 	templateExists,
 } from "../utils/template"
-import highlight from "../utils/colors"
+import highlight, { done, info } from "../utils/colors"
 
 export interface TaskOptions {
 	path?: string
@@ -101,7 +101,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 					taskDescription = await prompt("Task description: ")
 					if (!taskDescription) {
 						log(
-							"ⓘ Skipping task description (TASK.md will use default placeholder)",
+							info(
+								"Skipping task description (TASK.md will use default placeholder)",
+							),
 						)
 						taskDescription = undefined
 					}
@@ -129,7 +131,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 						const mainBranchConfig = await getMainBranchConfig(targetPath)
 						if (!mainBranchConfig) {
 							await setMainBranchConfig(baseBranch, targetPath)
-							log(`✓ Set main branch to '${baseBranch}'`)
+							log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
 						}
 					} else {
 						throw new Error(
@@ -144,7 +146,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 				await createBranch(options.branch, targetPath, baseBranch)
 				log(
-					`✓ Created and switched to branch ${highlight.branch(options.branch)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+					done(
+						`Created and switched to branch ${highlight.branch(options.branch)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+					),
 				)
 			} else {
 				// Otherwise, fail with a helpful error message
@@ -209,7 +213,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		// Check if template is new (doesn't have any files yet)
 		const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
 		if (!(await templateAgents.exists())) {
-			log(`✓ Created template ${highlight.template(templateName)}`)
+			log(done(`Created template ${highlight.template(templateName)}`))
 
 			// Copy default content to template for each managed file
 			for (const managedFile of managedFiles) {
@@ -228,7 +232,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		if (needsSaveToConfig) {
 			await setGitConfig("agency.template", templateName, targetPath)
 			log(
-				`✓ Set ${highlight.setting("agency.template")} = ${highlight.template(templateName)}`,
+				done(
+					`Set ${highlight.setting("agency.template")} = ${highlight.template(templateName)}`,
+				),
 			)
 		}
 
@@ -244,7 +250,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 					taskDescription = await prompt("Task description: ")
 					if (!taskDescription) {
 						log(
-							"ⓘ Skipping task description (TASK.md will use default placeholder)",
+							info(
+								"Skipping task description (TASK.md will use default placeholder)",
+							),
 						)
 						taskDescription = undefined
 					}
@@ -259,7 +267,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 			if (await targetFile.exists()) {
 				log(
-					`ⓘ ${highlight.file(managedFile.name)} already exists at ${highlight.file(targetFilePath)}`,
+					info(
+						`${highlight.file(managedFile.name)} already exists at ${highlight.file(targetFilePath)}`,
+					),
 				)
 				continue
 			}
@@ -300,7 +310,9 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			await Bun.write(targetFilePath, content)
 			createdFiles.push(managedFile.name)
 			log(
-				`✓ Created ${highlight.file(managedFile.name)} from ${highlight.template(templateName)} template`,
+				done(
+					`Created ${highlight.file(managedFile.name)} from ${highlight.template(templateName)} template`,
+				),
 			)
 		}
 
@@ -309,7 +321,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			try {
 				await gitAdd(createdFiles, targetPath)
 				await gitCommit("chore: agency task", targetPath)
-				log(`✓ Committed ${highlight.value(createdFiles.length)} file(s)`)
+				log(done(`Committed ${highlight.value(createdFiles.length)} file(s)`))
 			} catch (err) {
 				// If commit fails, it might be because there are no changes (e.g., files already staged)
 				// We can ignore this error and let the user handle it manually
@@ -371,7 +383,7 @@ export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
 			throw new Error(`Editor exited with code ${exitCode}`)
 		}
 
-		log("✓ TASK.md edited")
+		log(done("TASK.md edited"))
 	} catch (err) {
 		if (err instanceof Error) {
 			throw new Error(`Failed to open editor: ${err.message}`)

@@ -119,9 +119,7 @@ describe("source command", () => {
 			await createBranch(tempDir, "feature--PR")
 			// We never created 'feature', so it doesn't exist
 
-			await expect(source({ silent: true })).rejects.toThrow(
-				"Source branch 'feature' does not exist",
-			)
+			await expect(source({ silent: true })).rejects.toThrow("Source branch")
 		})
 
 		test("throws error when not in a git repository", async () => {

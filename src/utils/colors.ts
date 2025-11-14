@@ -5,6 +5,10 @@
  * meaningful values in CLI feedback. All highlight types use the same
  * base color initially, but are separated into buckets to allow for
  * future customization.
+ *
+ * Colors can be disabled via:
+ * - NO_COLOR environment variable (standard)
+ * - Setting colorsEnabled to false
  */
 
 // ANSI color codes
@@ -27,9 +31,34 @@ const COLORS = {
 } as const
 
 /**
+ * Global flag to enable/disable colors
+ * Defaults to enabled unless NO_COLOR environment variable is set
+ */
+let colorsEnabled = !process.env.NO_COLOR
+
+/**
+ * Enable or disable color output
+ * @param enabled - Whether to enable colors
+ */
+export function setColorsEnabled(enabled: boolean): void {
+	colorsEnabled = enabled
+}
+
+/**
+ * Check if colors are currently enabled
+ */
+export function areColorsEnabled(): boolean {
+	return colorsEnabled
+}
+
+/**
  * Internal helper to apply color formatting
+ * Returns plain text if colors are disabled
  */
 function colorize(text: string, color: string): string {
+	if (!colorsEnabled) {
+		return text
+	}
 	return `${color}${text}${RESET}`
 }
 
@@ -87,6 +116,26 @@ export function commit(hash: string): string {
  */
 export function pattern(text: string): string {
 	return colorize(text, COLORS.pattern)
+}
+
+/**
+ * Prepends a checkmark to a message for success output
+ * @param message - The message to prepend the checkmark to
+ * @example log(done(`Merged ${highlight.branch("main")}`))
+ * @example log(done("Operation completed"))
+ */
+export function done(message: string): string {
+	return `✓ ${message}`
+}
+
+/**
+ * Prepends an info icon to a message for informational output
+ * @param message - The message to prepend the info icon to
+ * @example log(info("Skipping task description"))
+ * @example log(info(`File already exists`))
+ */
+export function info(message: string): string {
+	return `ⓘ ${message}`
 }
 
 /**

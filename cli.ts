@@ -10,6 +10,7 @@ import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { template, help as templateHelp } from "./src/commands/template"
 import type { Command } from "./src/types"
+import { setColorsEnabled } from "./src/utils/colors"
 
 // Read version from package.json
 const packageJson = await Bun.file(
@@ -196,6 +197,7 @@ Commands:
 Global Options:
   -h, --help             Show help for a command
   -v, --version          Show version number
+  --no-color             Disable color output
 
 Command Options:
   -s, --silent           Suppress output messages
@@ -227,10 +229,18 @@ try {
 				type: "boolean",
 				short: "v",
 			},
+			"no-color": {
+				type: "boolean",
+			},
 		},
 		strict: false,
 		allowPositionals: true,
 	})
+
+	// Handle --no-color flag
+	if (values["no-color"]) {
+		setColorsEnabled(false)
+	}
 
 	// Handle global flags
 	if (values.version) {

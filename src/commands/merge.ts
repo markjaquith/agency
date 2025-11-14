@@ -8,6 +8,7 @@ import {
 import { loadConfig } from "../config"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { pr } from "./pr"
+import highlight, { done } from "../utils/colors"
 
 export interface MergeOptions {
 	silent?: boolean
@@ -45,7 +46,7 @@ async function mergeBranch(
 	if (proc.exitCode !== 0) {
 		const stderr = verbose ? "" : await new Response(proc.stderr).text()
 		throw new Error(
-			`Failed to merge branch ${branch}${stderr ? `: ${stderr}` : ""}`,
+			`Failed to merge branch ${highlight.branch(branch)}${stderr ? `: ${stderr}` : ""}`,
 		)
 	}
 }
@@ -74,7 +75,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 		// Get current branch
 		const currentBranch = await getCurrentBranch(gitRoot)
 
-		verboseLog(`Current branch: ${currentBranch}`)
+		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
 		// Check if we're on a PR branch
 		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
@@ -85,13 +86,13 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 		if (sourceBranch) {
 			// We're on a PR branch - verify source branch exists
 			verboseLog(
-				`Current branch appears to be a PR branch for source: ${sourceBranch}`,
+				`Current branch appears to be a PR branch for source: ${highlight.branch(sourceBranch)}`,
 			)
 
 			const sourceExists = await branchExists(gitRoot, sourceBranch)
 			if (!sourceExists) {
 				throw new Error(
-					`Current branch '${currentBranch}' appears to be a PR branch, but source branch '${sourceBranch}' does not exist.\n` +
+					`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
 						`Cannot merge without a valid source branch.`,
 				)
 			}
@@ -100,12 +101,12 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			const configuredBase = await getBaseBranchConfig(sourceBranch, gitRoot)
 			if (!configuredBase) {
 				throw new Error(
-					`No base branch configuration found for source branch '${sourceBranch}'.\n` +
+					`No base branch configuration found for source branch ${highlight.branch(sourceBranch)}.\n` +
 						`The PR branch may not have been created with 'agency pr', or configuration is missing.`,
 				)
 			}
 
-			verboseLog(`Configured base branch: ${configuredBase}`)
+			verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
 
 			// For git operations (checkout/merge), use local branch name
 			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
@@ -114,7 +115,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
 			if (!baseExists) {
 				throw new Error(
-					`Base branch '${baseBranchToMergeInto}' does not exist locally.\n` +
+					`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
 						`You may need to checkout the branch first or update your base branch configuration.`,
 				)
 			}
@@ -131,23 +132,25 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			const prExists = await branchExists(gitRoot, prBranch)
 
 			if (prExists) {
-				verboseLog(`PR branch '${prBranch}' already exists, will recreate it`)
+				verboseLog(
+					`PR branch ${highlight.branch(prBranch)} already exists, will recreate it`,
+				)
 			}
 
 			// Run 'agency pr' to create/update the PR branch
-			verboseLog(`Creating PR branch ${prBranch}...`)
+			verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
 			await pr({ silent: true, verbose })
 
 			// Get the base branch from config
 			const configuredBase = await getBaseBranchConfig(currentBranch, gitRoot)
 			if (!configuredBase) {
 				throw new Error(
-					`Failed to determine base branch for '${currentBranch}' after running 'agency pr'.\n` +
+					`Failed to determine base branch for ${highlight.branch(currentBranch)} after running 'agency pr'.\n` +
 						`This should not happen - please report this issue.`,
 				)
 			}
 
-			verboseLog(`Configured base branch: ${configuredBase}`)
+			verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
 
 			// For git operations (checkout/merge), use local branch name
 			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
@@ -156,7 +159,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
 			if (!baseExists) {
 				throw new Error(
-					`Base branch '${baseBranchToMergeInto}' does not exist locally.\n` +
+					`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
 						`You may need to checkout the branch first or update your base branch configuration.`,
 				)
 			}
@@ -165,14 +168,20 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 		}
 
 		// Now switch to the base branch
-		verboseLog(`Switching to ${baseBranchToMergeInto}...`)
+		verboseLog(`Switching to ${highlight.branch(baseBranchToMergeInto)}...`)
 		await checkoutBranch(gitRoot, baseBranchToMergeInto)
 
 		// Merge the PR branch
-		verboseLog(`Merging ${prBranchToMerge} into ${baseBranchToMergeInto}...`)
+		verboseLog(
+			`Merging ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}...`,
+		)
 		await mergeBranch(gitRoot, prBranchToMerge, verbose)
 
-		log(`✓ Merged ${prBranchToMerge} into ${baseBranchToMergeInto}`)
+		log(
+			done(
+				`Merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
+			),
+		)
 	} catch (err) {
 		// Re-throw errors for CLI handler to display
 		throw err

@@ -1,6 +1,7 @@
 import { isInsideGitRepo, getGitRoot } from "../utils/git"
 import { loadConfig } from "../config"
 import { extractSourceBranch } from "../utils/pr-branch"
+import highlight, { done } from "../utils/colors"
 
 export interface SourceOptions {
 	silent?: boolean
@@ -84,13 +85,15 @@ export async function source(options: SourceOptions = {}): Promise<void> {
 		// Check if source branch exists
 		const exists = await branchExists(gitRoot, sourceBranch)
 		if (!exists) {
-			throw new Error(`Source branch '${sourceBranch}' does not exist`)
+			throw new Error(
+				`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+			)
 		}
 
 		// Checkout source branch
 		await checkoutBranch(gitRoot, sourceBranch)
 
-		log(`✓ Switched to source branch: ${sourceBranch}`)
+		log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
 	} catch (err) {
 		// Re-throw errors for CLI handler to display
 		throw err
