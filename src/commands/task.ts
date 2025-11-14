@@ -334,8 +334,8 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			await Bun.write(targetFilePath, content)
 			createdFiles.push(fileName)
 
-			// Track injected files (excluding TASK.md which is always filtered)
-			if (fileName !== "TASK.md") {
+			// Track injected files (excluding TASK.md and AGENCY.md which are always filtered)
+			if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
 				injectedFiles.push(fileName)
 			}
 

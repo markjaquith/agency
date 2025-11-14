@@ -451,5 +451,26 @@ describe("task command", () => {
 
 			expect(agentsContent).toContain("TASK.md")
 		})
+
+		test("excludes AGENCY.md and TASK.md from injectedFiles metadata", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await task({
+				silent: true,
+				template: "test",
+				branch: "test-feature",
+			})
+
+			// Read agency.json metadata
+			const metadata = JSON.parse(await readFile(join(tempDir, "agency.json")))
+
+			// AGENCY.md and TASK.md should NOT be in injectedFiles
+			expect(metadata.injectedFiles).not.toContain("AGENCY.md")
+			expect(metadata.injectedFiles).not.toContain("TASK.md")
+
+			// opencode.json should be in injectedFiles
+			expect(metadata.injectedFiles).toContain("opencode.json")
+		})
 	})
 })
