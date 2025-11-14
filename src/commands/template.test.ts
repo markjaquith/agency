@@ -9,7 +9,7 @@ describe("template command", () => {
 				silent: true,
 			}),
 		).rejects.toThrow(
-			"Subcommand is required. Available subcommands: use, save",
+			"Subcommand is required. Available subcommands: use, save, list, view, delete",
 		)
 	})
 
@@ -21,7 +21,7 @@ describe("template command", () => {
 				silent: true,
 			}),
 		).rejects.toThrow(
-			"Unknown template subcommand 'invalid'. Available: use, save",
+			"Unknown template subcommand 'invalid'. Available: use, save, list, view, delete",
 		)
 	})
 })
