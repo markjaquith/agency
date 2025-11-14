@@ -48,6 +48,15 @@ async function isGitFilterRepoAvailable(): Promise<boolean> {
 	return proc.exitCode === 0
 }
 
+// Cache the git-filter-repo availability check (it doesn't change during test run)
+let hasGitFilterRepoCache: boolean | null = null
+async function checkGitFilterRepo(): Promise<boolean> {
+	if (hasGitFilterRepoCache === null) {
+		hasGitFilterRepoCache = await isGitFilterRepoAvailable()
+	}
+	return hasGitFilterRepoCache
+}
+
 describe("pr command", () => {
 	let tempDir: string
 	let originalCwd: string
@@ -63,33 +72,20 @@ describe("pr command", () => {
 		// Set config dir to temp dir to avoid picking up user's config files
 		process.env.AGENCY_CONFIG_DIR = await createTempDir()
 
-		// Check if git-filter-repo is available
-		hasGitFilterRepo = await isGitFilterRepoAvailable()
+		// Check if git-filter-repo is available (cached)
+		hasGitFilterRepo = await checkGitFilterRepo()
 
-		// Initialize git repo with main branch
+		// Initialize git repo with main branch (already includes initial commit)
 		await initGitRepo(tempDir)
 
-		// Create initial commit on main
-		await createCommit(tempDir, "Initial commit")
-
-		// Rename master to main if needed
-		const currentBranch = await getCurrentBranch(tempDir)
-		if (currentBranch === "master") {
-			await Bun.spawn(["git", "branch", "-m", "main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-		}
-
-		// Create a feature branch so init doesn't fail
+		// Create a feature branch
 		await Bun.spawn(["git", "checkout", "-b", "test-feature"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
 		}).exited
 
-		// Initialize AGENTS.md
+		// Initialize AGENTS.md and commit in one go
 		await task({ silent: true, template: "test" })
 		await Bun.spawn(["git", "add", "AGENTS.md"], {
 			cwd: tempDir,

@@ -1,6 +1,53 @@
-import { mkdtemp, rm } from "fs/promises"
+import { mkdtemp, rm, cp } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
+
+// Cache a template git repository to speed up test setup
+let templateGitRepo: string | null = null
+
+async function getTemplateGitRepo(): Promise<string> {
+	if (templateGitRepo) {
+		return templateGitRepo
+	}
+
+	// Create a template git repo once and reuse it
+	const tempDir = await mkdtemp(join(tmpdir(), "agency-template-"))
+
+	const proc = Bun.spawn(["git", "init", "-b", "main"], {
+		cwd: tempDir,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+
+	if (proc.exitCode !== 0) {
+		throw new Error("Failed to initialize template git repository")
+	}
+
+	// Write config directly
+	const configFile = Bun.file(join(tempDir, ".git", "config"))
+	const existingConfig = await configFile.text()
+	const newConfig =
+		existingConfig +
+		"\n[user]\n\temail = test@example.com\n\tname = Test User\n[core]\n\thooksPath = /dev/null\n"
+	await Bun.write(join(tempDir, ".git", "config"), newConfig)
+
+	// Create initial commit
+	await Bun.write(join(tempDir, ".gitkeep"), "")
+	await Bun.spawn(["git", "add", ".gitkeep"], {
+		cwd: tempDir,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+	await Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+		cwd: tempDir,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+
+	templateGitRepo = tempDir
+	return tempDir
+}
 
 /**
  * Create a temporary directory for testing
@@ -22,58 +69,18 @@ export async function cleanupTempDir(path: string): Promise<void> {
 
 /**
  * Initialize a git repository in a directory
+ * Uses a cached template repository for much faster setup
  */
 export async function initGitRepo(path: string): Promise<void> {
-	const proc = Bun.spawn(["git", "init"], {
-		cwd: path,
-		stdout: "pipe",
-		stderr: "pipe",
+	const template = await getTemplateGitRepo()
+
+	// Copy the template .git directory
+	await cp(join(template, ".git"), join(path, ".git"), {
+		recursive: true,
 	})
 
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		throw new Error("Failed to initialize git repository")
-	}
-
-	// Configure git user for the test repo
-	await Bun.spawn(["git", "config", "user.email", "test@example.com"], {
-		cwd: path,
-	}).exited
-
-	await Bun.spawn(["git", "config", "user.name", "Test User"], {
-		cwd: path,
-	}).exited
-
-	// Disable all git hooks for this repo
-	await Bun.spawn(["git", "config", "core.hooksPath", "/dev/null"], {
-		cwd: path,
-	}).exited
-
-	// Set the default branch name to 'main' for consistency
-	await Bun.spawn(["git", "config", "init.defaultBranch", "main"], {
-		cwd: path,
-	}).exited
-
-	// Rename the initial branch to 'main' if it's not already
-	await Bun.spawn(["git", "branch", "-M", "main"], {
-		cwd: path,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-
-	// Create an initial commit so the branch actually exists
-	await Bun.write(join(path, ".gitkeep"), "")
-	await Bun.spawn(["git", "add", ".gitkeep"], {
-		cwd: path,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-	await Bun.spawn(["git", "commit", "-m", "Initial commit"], {
-		cwd: path,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
+	// Copy the .gitkeep file
+	await cp(join(template, ".gitkeep"), join(path, ".gitkeep"))
 }
 
 /**
