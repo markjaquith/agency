@@ -27,7 +27,7 @@ import {
 	createTemplateDir,
 	templateExists,
 } from "../utils/template"
-import highlight, { done, info } from "../utils/colors"
+import highlight, { done, info, plural } from "../utils/colors"
 
 export interface TaskOptions {
 	path?: string
@@ -321,7 +321,11 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			try {
 				await gitAdd(createdFiles, targetPath)
 				await gitCommit("chore: agency task", targetPath)
-				log(done(`Committed ${highlight.value(createdFiles.length)} file(s)`))
+				log(
+					done(
+						`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
+					),
+				)
 			} catch (err) {
 				// If commit fails, it might be because there are no changes (e.g., files already staged)
 				// We can ignore this error and let the user handle it manually

@@ -139,6 +139,16 @@ export function info(message: string): string {
 }
 
 /**
+ * Returns "s" if count is not 1, empty string otherwise
+ * Useful for pluralizing words in messages
+ * @param count - The count to check
+ * @example `Committed ${count} file${plural(count)}`  -> "Committed 1 file" or "Committed 3 files"
+ */
+export function plural(count: number): string {
+	return count === 1 ? "" : "s"
+}
+
+/**
  * Default export as namespace for convenient usage
  * @example import highlight from "./colors"
  * @example console.log(`Switched to ${highlight.branch("main")}`)
