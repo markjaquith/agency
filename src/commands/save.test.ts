@@ -154,7 +154,7 @@ describe("save command", () => {
 		expect(guideContent).toBe("# Guide")
 	})
 
-	test("saves TASK.md with {task} placeholder", async () => {
+	test("refuses to save TASK.md", async () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
@@ -164,19 +164,13 @@ describe("save command", () => {
 		// Create a TASK.md with the {task} placeholder
 		await Bun.write(join(tempDir, "TASK.md"), "{task}\n\n## Notes")
 
-		// Save should succeed
-		await save({ files: ["TASK.md"], silent: true })
-
-		// Check TASK.md was saved to template
-		const configDir = process.env.AGENCY_CONFIG_DIR!
-		const taskContent = await readFile(
-			join(configDir, "templates", "test-task", "TASK.md"),
+		// Save should fail regardless of content
+		await expect(save({ files: ["TASK.md"], silent: true })).rejects.toThrow(
+			"TASK.md files cannot be saved to templates",
 		)
-
-		expect(taskContent).toBe("{task}\n\n## Notes")
 	})
 
-	test("throws error when saving TASK.md without {task} placeholder", async () => {
+	test("refuses to save TASK.md even without {task} placeholder", async () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
@@ -195,11 +189,11 @@ describe("save command", () => {
 
 		// Save should fail
 		await expect(save({ files: ["TASK.md"], silent: true })).rejects.toThrow(
-			"TASK.md files must contain the {task} placeholder",
+			"TASK.md files cannot be saved to templates",
 		)
 	})
 
-	test("allows TASK.md in subdirectories with {task} placeholder", async () => {
+	test("refuses to save TASK.md in subdirectories", async () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
@@ -214,19 +208,13 @@ describe("save command", () => {
 		const subdir = join(tempDir, "projects")
 		await Bun.write(join(subdir, "TASK.md"), "{task}\n\n## Details")
 
-		// Save should succeed
-		await save({ files: ["projects/TASK.md"], silent: true })
-
-		// Check TASK.md was saved to template
-		const configDir = process.env.AGENCY_CONFIG_DIR!
-		const taskContent = await readFile(
-			join(configDir, "templates", "test-task-subdir", "projects", "TASK.md"),
-		)
-
-		expect(taskContent).toBe("{task}\n\n## Details")
+		// Save should fail regardless of content
+		await expect(
+			save({ files: ["projects/TASK.md"], silent: true }),
+		).rejects.toThrow("TASK.md files cannot be saved to templates")
 	})
 
-	test("throws error when saving TASK.md in subdirectory without {task} placeholder", async () => {
+	test("refuses to save TASK.md in subdirectory even without {task} placeholder", async () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
@@ -247,6 +235,6 @@ describe("save command", () => {
 		// Save should fail
 		await expect(
 			save({ files: ["projects/TASK.md"], silent: true }),
-		).rejects.toThrow("TASK.md files must contain the {task} placeholder")
+		).rejects.toThrow("TASK.md files cannot be saved to templates")
 	})
 })

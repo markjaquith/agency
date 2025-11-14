@@ -117,18 +117,16 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 				continue
 			}
 
-			const content = await sourceFile.text()
-
-			// Validate TASK.md files contain the {task} placeholder
+			// Refuse to save TASK.md files - agency itself must control these
 			const fileName = basename(filePath)
 			if (fileName === "TASK.md") {
-				if (!content.includes("{task}")) {
-					throw new Error(
-						`Cannot save ${filePath}: TASK.md files must contain the {task} placeholder to be saved as a template. ` +
-							`This prevents accidentally saving a specific task instead of a task template.`,
-					)
-				}
+				throw new Error(
+					`Cannot save ${filePath}: TASK.md files cannot be saved to templates. ` +
+						`Agency itself must control the creation of TASK.md files to ensure consistency.`,
+				)
 			}
+
+			const content = await sourceFile.text()
 
 			const templateFilePath = join(templateDir, filePath)
 
@@ -179,6 +177,5 @@ Notes:
   - Files are saved to ~/.config/agency/templates/{template-name}/
   - Existing template files will be overwritten
   - Directory structure is preserved in the template
-  - TASK.md files must contain the {task} placeholder to prevent saving
-    specific tasks instead of task templates
+  - TASK.md files cannot be saved - agency controls their creation
 `
