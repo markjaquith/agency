@@ -12,6 +12,13 @@ export interface ManagedFile {
 	defaultContent?: string
 }
 
+export interface AgencyMetadata {
+	injectedFiles: string[]
+	baseBranch?: string
+	template: string
+	createdAt: string
+}
+
 /**
  * Load template content from the templates directory.
  * Falls back to inline defaults if files cannot be read (e.g., in bundled packages).
@@ -112,3 +119,50 @@ export async function initializeManagedFiles(): Promise<ManagedFile[]> {
 // This will be initialized by commands that need it
 // For backward compatibility, export a variable that can be set
 export let MANAGED_FILES: ManagedFile[] = []
+
+/**
+ * Read agency.json metadata from a repository.
+ */
+export async function readAgencyMetadata(
+	gitRoot: string,
+): Promise<AgencyMetadata | null> {
+	const metadataPath = join(gitRoot, "agency.json")
+	const file = Bun.file(metadataPath)
+
+	if (!(await file.exists())) {
+		return null
+	}
+
+	try {
+		return await file.json()
+	} catch (error) {
+		throw new Error(`Failed to parse agency.json: ${error}`)
+	}
+}
+
+/**
+ * Write agency.json metadata to a repository.
+ */
+export async function writeAgencyMetadata(
+	gitRoot: string,
+	metadata: AgencyMetadata,
+): Promise<void> {
+	const metadataPath = join(gitRoot, "agency.json")
+	await Bun.write(metadataPath, JSON.stringify(metadata, null, 2) + "\n")
+}
+
+/**
+ * Get list of files to filter during PR/merge operations.
+ * Always includes TASK.md and agency.json, plus any injected files from metadata.
+ */
+export async function getFilesToFilter(gitRoot: string): Promise<string[]> {
+	const metadata = await readAgencyMetadata(gitRoot)
+	const baseFiles = ["TASK.md", "agency.json"]
+
+	if (!metadata) {
+		// Fallback to just the base files if no metadata exists
+		return baseFiles
+	}
+
+	return [...baseFiles, ...metadata.injectedFiles]
+}

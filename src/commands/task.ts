@@ -16,7 +16,7 @@ import {
 	gitCommit,
 } from "../utils/git"
 import { getConfigDir } from "../config"
-import { initializeManagedFiles } from "../types"
+import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import {
 	prompt,
 	sanitizeTemplateName,
@@ -44,9 +44,6 @@ export interface TaskEditOptions {
 }
 
 export async function task(options: TaskOptions = {}): Promise<void> {
-	// Initialize MANAGED_FILES from template files
-	const managedFiles = await initializeManagedFiles()
-
 	const { silent = false, verbose = false } = options
 	const log = silent ? () => {} : console.log
 	const verboseLog = verbose && !silent ? console.log : () => {}
@@ -80,8 +77,19 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 	const configDir = getConfigDir()
 	const createdFiles: string[] = []
+	const injectedFiles: string[] = []
 
 	try {
+		// Check if TASK.md already exists - if so, abort
+		const taskMdPath = resolve(targetPath, "TASK.md")
+		const taskMdFile = Bun.file(taskMdPath)
+		if (await taskMdFile.exists()) {
+			throw new Error(
+				"TASK.md already exists in the repository. This indicates something has gone wrong.\n" +
+					"Please remove TASK.md manually before running 'agency task'.",
+			)
+		}
+
 		// Check if we're on a feature branch
 		const currentBranch = await getCurrentBranch(targetPath)
 		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
@@ -211,6 +219,8 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		await createTemplateDir(templateName)
 
 		// Check if template is new (doesn't have any files yet)
+		// Initialize default template files if the template is brand new
+		const managedFiles = await initializeManagedFiles()
 		const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
 		if (!(await templateAgents.exists())) {
 			log(done(`Created template ${highlight.template(templateName)}`))
@@ -260,55 +270,80 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			}
 		}
 
-		// Process each managed file
-		for (const managedFile of managedFiles) {
-			const targetFilePath = resolve(targetPath, managedFile.name)
+		// Discover all files from the template directory
+		const templateFiles: string[] = []
+		try {
+			const result = Bun.spawnSync(["find", templateDir, "-type", "f"], {
+				stdout: "pipe",
+				stderr: "ignore",
+			})
+			const output = new TextDecoder().decode(result.stdout)
+			if (output) {
+				const foundFiles = output
+					.trim()
+					.split("\n")
+					.filter((f: string) => f.length > 0)
+				for (const file of foundFiles) {
+					// Get relative path from template directory
+					const relativePath = file.replace(templateDir + "/", "")
+					if (relativePath && !relativePath.startsWith(".")) {
+						templateFiles.push(relativePath)
+					}
+				}
+			}
+		} catch (err) {
+			verboseLog(`Error discovering template files: ${err}`)
+		}
+
+		verboseLog(
+			`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
+		)
+
+		// Process each template file
+		for (const fileName of templateFiles) {
+			const targetFilePath = resolve(targetPath, fileName)
 			const targetFile = Bun.file(targetFilePath)
 
+			// Check if file exists in repo - if so, skip injection
 			if (await targetFile.exists()) {
-				log(
-					info(`Skipped ${highlight.file(managedFile.name)} (exists in repo)`),
-				)
+				log(info(`Skipped ${highlight.file(fileName)} (exists in repo)`))
 				continue
 			}
 
-			let content: string
-
-			// Try template directory first
-			const templateFilePath = join(
-				getTemplateDir(templateName),
-				managedFile.name,
-			)
+			// Read content from template
+			const templateFilePath = join(templateDir, fileName)
 			const templateFile = Bun.file(templateFilePath)
-
-			if (await templateFile.exists()) {
-				content = await templateFile.text()
-				verboseLog(`Using template file from ${templateFilePath}`)
-			} else {
-				// Fall back to config directory root (backward compatibility)
-				const sourceFilePath = join(configDir, managedFile.name)
-				const sourceFile = Bun.file(sourceFilePath)
-
-				if (await sourceFile.exists()) {
-					content = await sourceFile.text()
-					verboseLog(`Using source file from ${sourceFilePath}`)
-				} else {
-					// Use default content
-					content = managedFile.defaultContent ?? ""
-					verboseLog(`Using default content for ${managedFile.name}`)
-				}
-			}
+			let content = await templateFile.text()
 
 			// Replace {task} placeholder in TASK.md if task description was provided
-			if (managedFile.name === "TASK.md" && taskDescription) {
+			if (fileName === "TASK.md" && taskDescription) {
 				content = content.replace("{task}", taskDescription)
 				verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
 			}
 
 			await Bun.write(targetFilePath, content)
-			createdFiles.push(managedFile.name)
-			log(done(`Created ${highlight.file(managedFile.name)}`))
+			createdFiles.push(fileName)
+
+			// Track injected files (excluding TASK.md which is always filtered)
+			if (fileName !== "TASK.md") {
+				injectedFiles.push(fileName)
+			}
+
+			log(done(`Created ${highlight.file(fileName)}`))
 		}
+
+		// Create agency.json metadata file
+		const metadata = {
+			injectedFiles,
+			template: templateName,
+			createdAt: new Date().toISOString(),
+		}
+		await writeAgencyMetadata(targetPath, metadata)
+		createdFiles.push("agency.json")
+		log(done(`Created ${highlight.file("agency.json")}`))
+		verboseLog(
+			`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
+		)
 
 		// Git add and commit the created files
 		if (createdFiles.length > 0) {

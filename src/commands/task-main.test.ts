@@ -240,17 +240,16 @@ describe("task command", () => {
 			expect(content).not.toContain("{task}")
 		})
 
-		test("does not overwrite existing TASK.md", async () => {
+		test("aborts if TASK.md already exists", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
 			const existingContent = "# Existing TASK"
 			await Bun.write(join(tempDir, "TASK.md"), existingContent)
 
-			await task({ silent: true, template: "test", branch: "test-feature" })
-
-			const content = await readFile(join(tempDir, "TASK.md"))
-			expect(content).toBe(existingContent)
+			await expect(
+				task({ silent: true, template: "test", branch: "test-feature" }),
+			).rejects.toThrow("TASK.md already exists in the repository")
 		})
 
 		test("uses TASK.md from template directory if it exists", async () => {

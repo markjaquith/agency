@@ -349,7 +349,20 @@ describe("pr command", () => {
 				stderr: "pipe",
 			}).exited
 			await Bun.write(join(freshDir, "AGENTS.md"), "# Feature only\n")
-			await Bun.spawn(["git", "add", "AGENTS.md"], {
+			// Create agency.json to track that AGENTS.md was injected
+			await Bun.write(
+				join(freshDir, "agency.json"),
+				JSON.stringify(
+					{
+						injectedFiles: ["AGENTS.md"],
+						template: "test",
+						createdAt: new Date().toISOString(),
+					},
+					null,
+					2,
+				) + "\n",
+			)
+			await Bun.spawn(["git", "add", "AGENTS.md", "agency.json"], {
 				cwd: freshDir,
 				stdout: "pipe",
 				stderr: "pipe",

@@ -8,7 +8,7 @@ import {
 } from "../utils/git"
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
-import { initializeManagedFiles } from "../types"
+import { getFilesToFilter } from "../types"
 import highlight, { done } from "../utils/colors"
 
 export interface PrOptions {
@@ -166,9 +166,6 @@ async function createOrResetBranch(
 }
 
 export async function pr(options: PrOptions = {}): Promise<void> {
-	// Initialize MANAGED_FILES from template files
-	const managedFiles = await initializeManagedFiles()
-
 	const { silent = false, force = false, verbose = false } = options
 	const log = silent ? () => {} : console.log
 	const verboseLog = verbose && !silent ? console.log : () => {}
@@ -281,10 +278,14 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		// See: https://github.com/newren/git-filter-repo/issues/512
 		const env = { ...process.env, GIT_CONFIG_GLOBAL: "" }
 
+		// Get files to filter from agency.json metadata
+		const filesToFilter = await getFilesToFilter(gitRoot)
+		verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
+
 		const filterRepoArgs = [
 			"git",
 			"filter-repo",
-			...managedFiles.flatMap((f) => ["--path", f.name]),
+			...filesToFilter.flatMap((f) => ["--path", f]),
 			"--invert-paths",
 			"--force",
 			"--refs",
