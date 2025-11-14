@@ -1,14 +1,12 @@
-# Agent Instructions
+# Repo Instructions
 
-## TASK.md
+Follow these instructions when working in this repository.
 
-The `TASK.md` file describes the task being performed and should be kept updated as work progresses. This file serves as a living record of:
+You should have already read @AGENCY.md to understand how agency is use to work on features.
 
-- What is being built or fixed
-- Current progress and status
-- Remaining work items
-- Any important context or decisions
+When you have read this file, move on to reading @TODO.md to understand the specific tasks.
 
-All work on this repository should begin by reading and understanding `TASK.md`. Whenever any significant progress is made, `TASK.md` should be updated to reflect the current state of work.
+## Rules
 
-See `TASK.md` for the current task description and progress.
+{human: fill this in}
+

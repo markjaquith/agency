@@ -1,21 +1,14 @@
-# Agency
+# Agent Instructions
 
-Agency is a CLI tool for managing `AGENTS.md`, `TASK.md`, and `opencode.json` files in git repositories. It helps coordinate work across multiple branches and templates.
+## TASK.md
 
-## Key Commands
+The `TASK.md` file describes the task being performed and should be kept updated as work progresses. This file serves as a living record of:
 
-- `agency task` - Initialize template files on a feature branch
-- `agency edit` - Open TASK.md in system editor
-- `agency template save` - Save current file versions back to a template
-- `agency template use` - Switch to a different template
-- `agency pr` - Create a PR branch with managed files reverted to their merge-base state
-- `agency switch` - Toggle between feature and PR branches
-- `agency template source` - Get the path to a template's source directory
-- `agency set base` - Update the saved base branch for PR creation
+- What is being built or fixed
+- Current progress and status
+- Remaining work items
+- Any important context or decisions
 
-## Features
+All work on this repository should begin by reading and understanding `TASK.md`. Whenever any significant progress is made, `TASK.md` should be updated to reflect the current state of work.
 
-- **Template-based workflow** - Reusable templates stored in `~/.config/agency/templates/`
-- **Git integration** - Saves template configuration in `.git/config`
-- **PR branch management** - Automatically creates clean PR branches without local modifications
-- **Multi-file support** - Manages AGENTS.md, TASK.md, and opencode.json
+See `TASK.md` for the current task description and progress.
