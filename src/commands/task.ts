@@ -96,9 +96,27 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		const isFeature = await isFeatureBranch(currentBranch, targetPath)
 		verboseLog(`Is feature branch: ${isFeature}`)
 
+		// If on main branch without a branch name, prompt for it (unless in silent mode)
+		let branchName = options.branch
+		if (!isFeature && !branchName) {
+			if (silent) {
+				throw new Error(
+					`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
+						`To initialize on a feature branch, either:\n` +
+						`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
+						`  2. Provide a new branch name: 'agency task <branch-name>'`,
+				)
+			}
+			branchName = await prompt("Branch name: ")
+			if (!branchName) {
+				throw new Error("Branch name is required when on main branch.")
+			}
+			verboseLog(`Branch name from prompt: ${branchName}`)
+		}
+
 		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
 		let taskDescription: string | undefined
-		if (!isFeature && options.branch) {
+		if (!isFeature && branchName) {
 			const taskMdPath = resolve(targetPath, "TASK.md")
 			const taskMdFile = Bun.file(taskMdPath)
 			if (!(await taskMdFile.exists())) {
@@ -121,7 +139,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 		if (!isFeature) {
 			// If a branch name was provided, create it
-			if (options.branch) {
+			if (branchName) {
 				// Get or prompt for base branch
 				let baseBranch: string | undefined =
 					(await getMainBranchConfig(targetPath)) ||
@@ -152,19 +170,11 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 					)
 				}
 
-				await createBranch(options.branch, targetPath, baseBranch)
+				await createBranch(branchName, targetPath, baseBranch)
 				log(
 					done(
-						`Created and switched to branch ${highlight.branch(options.branch)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+						`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
 					),
-				)
-			} else {
-				// Otherwise, fail with a helpful error message
-				throw new Error(
-					`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
-						`To initialize on a feature branch, either:\n` +
-						`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
-						`  2. Provide a new branch name: 'agency task <branch-name>'`,
 				)
 			}
 		}
