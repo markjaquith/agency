@@ -354,6 +354,7 @@ describe("pr command", () => {
 				join(freshDir, "agency.json"),
 				JSON.stringify(
 					{
+						version: 1,
 						injectedFiles: ["AGENTS.md"],
 						template: "test",
 						createdAt: new Date().toISOString(),

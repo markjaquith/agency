@@ -334,6 +334,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 		// Create agency.json metadata file
 		const metadata = {
+			version: 1,
 			injectedFiles,
 			template: templateName,
 			createdAt: new Date().toISOString(),
