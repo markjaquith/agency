@@ -267,9 +267,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 			if (await targetFile.exists()) {
 				log(
-					info(
-						`${highlight.file(managedFile.name)} already exists at ${highlight.file(targetFilePath)}`,
-					),
+					info(`Skipped ${highlight.file(managedFile.name)} (exists in repo)`),
 				)
 				continue
 			}
@@ -309,11 +307,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 
 			await Bun.write(targetFilePath, content)
 			createdFiles.push(managedFile.name)
-			log(
-				done(
-					`Created ${highlight.file(managedFile.name)} from ${highlight.template(templateName)} template`,
-				),
-			)
+			log(done(`Created ${highlight.file(managedFile.name)}`))
 		}
 
 		// Git add and commit the created files
