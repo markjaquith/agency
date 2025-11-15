@@ -185,12 +185,12 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
-   task [branch]          Initialize AGENTS.md and TASK.md files
+   task [branch]          Initialize template files on a feature branch
    edit                   Open TASK.md in system editor
    template <subcommand>  Template management commands
-   pr [base-branch]       Create a PR branch without AGENTS.md
-   set <subcommand>       Set configuration options
-   get <subcommand>       Get configuration options
+   pr [base-branch]       Create a PR branch with managed files reverted
+   set <option>           Set configuration option values
+   get <option>           Get configuration option values
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
   merge                  Merge PR branch into base branch
@@ -199,15 +199,11 @@ Global Options:
   -h, --help             Show help for a command
   -v, --version          Show version number
   --no-color             Disable color output
-
-Command Options:
   -s, --silent           Suppress output messages
-  -f, --force            Force operation (pr command only)
   -v, --verbose          Show verbose output including detailed debugging info
-  -t, --template         Specify template name (task command only)
 
 Examples:
-  agency task                         # Initialize in current directory
+  agency task                         # Initialize on current feature branch
   agency task my-feature              # Create 'my-feature' branch and initialize
   agency pr                           # Create PR branch (prompts for base branch)
   agency switch                       # Toggle between source and PR branch

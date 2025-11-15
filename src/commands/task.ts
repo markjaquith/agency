@@ -505,7 +505,7 @@ export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
 export const help = `
 Usage: agency task [branch-name] [options]
 
-Initialize AGENTS.md and TASK.md files in a git repository using templates.
+Initialize template files (AGENTS.md, TASK.md, opencode.json) in a git repository.
 
 IMPORTANT: This command must be run on a feature branch, not the main branch.
 If you're on the main branch, you must either:
@@ -532,7 +532,6 @@ Options:
 Examples:
   agency task                        # Initialize on current feature branch
   agency task my-feature             # Create 'my-feature' branch and initialize
-  agency task --template=work        # Initialize with specific template
 
 Template Workflow:
   1. First run: Prompted for template name (e.g., "work")
@@ -550,8 +549,7 @@ Branch Creation:
 
 Notes:
   - Files are created at the git repository root, not the current directory
-  - If files already exist, they will not be overwritten
+  - If files already exist in the repository, they will not be overwritten
   - Templates are stored per-repository in .git/config (not committed)
-  - Use --template flag to override saved template or skip prompt
   - To edit TASK.md after creation, use 'agency edit'
 `
