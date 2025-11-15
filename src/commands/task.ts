@@ -280,6 +280,14 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			}
 		}
 
+		// Build list of files to create, combining managed files with any additional template files
+		const filesToCreate = new Map<string, string>() // fileName -> content source
+
+		// Start with all managed files (these should always be created)
+		for (const managedFile of managedFiles) {
+			filesToCreate.set(managedFile.name, "default")
+		}
+
 		// Discover all files from the template directory
 		const templateFiles: string[] = []
 		try {
@@ -298,6 +306,8 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 					const relativePath = file.replace(templateDir + "/", "")
 					if (relativePath && !relativePath.startsWith(".")) {
 						templateFiles.push(relativePath)
+						// Mark that this file should use template content
+						filesToCreate.set(relativePath, "template")
 					}
 				}
 			}
@@ -309,8 +319,8 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
 		)
 
-		// Process each template file
-		for (const fileName of templateFiles) {
+		// Process each file to create
+		for (const [fileName, source] of filesToCreate) {
 			const targetFilePath = resolve(targetPath, fileName)
 			const targetFile = Bun.file(targetFilePath)
 
@@ -320,10 +330,18 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 				continue
 			}
 
-			// Read content from template
-			const templateFilePath = join(templateDir, fileName)
-			const templateFile = Bun.file(templateFilePath)
-			let content = await templateFile.text()
+			let content: string
+
+			// Try to read from template first, fall back to default content
+			if (source === "template") {
+				const templateFilePath = join(templateDir, fileName)
+				const templateFile = Bun.file(templateFilePath)
+				content = await templateFile.text()
+			} else {
+				// Use default content from managed files
+				const managedFile = managedFiles.find((f) => f.name === fileName)
+				content = managedFile?.defaultContent ?? ""
+			}
 
 			// Replace {task} placeholder in TASK.md if task description was provided
 			if (fileName === "TASK.md" && taskDescription) {
