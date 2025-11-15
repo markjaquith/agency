@@ -1,12 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { realpath } from "fs/promises"
-import {
-	isInsideGitRepo,
-	getGitRoot,
-	isGitRoot,
-	getBaseBranchConfig,
-	setBaseBranchConfig,
-} from "../utils/git"
+import { isInsideGitRepo, getGitRoot, isGitRoot } from "../utils/git"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -84,36 +78,6 @@ describe("git utilities", () => {
 		test("returns false when path is not in a git repository", async () => {
 			const result = await isGitRoot(tempDir)
 			expect(result).toBe(false)
-		})
-	})
-
-	describe("base branch config", () => {
-		test("setBaseBranchConfig and getBaseBranchConfig work together", async () => {
-			await initGitRepo(tempDir)
-			const branchName = "feature/test-branch"
-			const baseBranch = "origin/main"
-
-			await setBaseBranchConfig(branchName, baseBranch, tempDir)
-			const result = await getBaseBranchConfig(branchName, tempDir)
-
-			expect(result).toBe(baseBranch)
-		})
-
-		test("getBaseBranchConfig returns null when not set", async () => {
-			await initGitRepo(tempDir)
-			const result = await getBaseBranchConfig("nonexistent-branch", tempDir)
-			expect(result).toBe(null)
-		})
-
-		test("handles branch names with special characters", async () => {
-			await initGitRepo(tempDir)
-			const branchName = "feature/CAN-123/special-task"
-			const baseBranch = "origin/develop"
-
-			await setBaseBranchConfig(branchName, baseBranch, tempDir)
-			const result = await getBaseBranchConfig(branchName, tempDir)
-
-			expect(result).toBe(baseBranch)
 		})
 	})
 })
