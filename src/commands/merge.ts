@@ -3,8 +3,8 @@ import {
 	getGitRoot,
 	getCurrentBranch,
 	branchExists,
-	getBaseBranchConfig,
 } from "../utils/git"
+import { getBaseBranchFromMetadata } from "../types"
 import { loadConfig } from "../config"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { pr } from "./pr"
@@ -97,12 +97,17 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 				)
 			}
 
-			// Get the base branch that was configured when creating the PR
-			const configuredBase = await getBaseBranchConfig(sourceBranch, gitRoot)
+			// Get the base branch from the source branch's agency.json
+			// We need to temporarily switch to the source branch to read its agency.json
+			// because the PR branch's agency.json is filtered/reverted
+			await checkoutBranch(gitRoot, sourceBranch)
+			const configuredBase = await getBaseBranchFromMetadata(gitRoot)
+			await checkoutBranch(gitRoot, currentBranch)
+
 			if (!configuredBase) {
 				throw new Error(
-					`No base branch configuration found for source branch ${highlight.branch(sourceBranch)}.\n` +
-						`The PR branch may not have been created with 'agency pr', or configuration is missing.`,
+					`No base branch configured for ${highlight.branch(sourceBranch)}.\n` +
+						`Please switch to ${highlight.branch(sourceBranch)} and run: agency set base <branch>`,
 				)
 			}
 
@@ -141,12 +146,13 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
 			await pr({ silent: true, verbose })
 
-			// Get the base branch from config
-			const configuredBase = await getBaseBranchConfig(currentBranch, gitRoot)
+			// Switch back to source branch and get the base branch from agency.json
+			await checkoutBranch(gitRoot, currentBranch)
+			const configuredBase = await getBaseBranchFromMetadata(gitRoot)
 			if (!configuredBase) {
 				throw new Error(
-					`Failed to determine base branch for ${highlight.branch(currentBranch)} after running 'agency pr'.\n` +
-						`This should not happen - please report this issue.`,
+					`No base branch configured for ${highlight.branch(currentBranch)}.\n` +
+						`Please set one with: agency set base <branch>`,
 				)
 			}
 

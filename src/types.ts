@@ -280,11 +280,11 @@ export async function writeAgencyMetadata(
 
 /**
  * Get list of files to filter during PR/merge operations.
- * Always includes TASK.md and agency.json, plus any injected files from metadata.
+ * Always includes TASK.md, AGENCY.md, and agency.json, plus any injected files from metadata.
  */
 export async function getFilesToFilter(gitRoot: string): Promise<string[]> {
 	const metadata = await readAgencyMetadata(gitRoot)
-	const baseFiles = ["TASK.md", "agency.json"]
+	const baseFiles = ["TASK.md", "AGENCY.md", "agency.json"]
 
 	if (!metadata) {
 		// Fallback to just the base files if no metadata exists
@@ -292,4 +292,32 @@ export async function getFilesToFilter(gitRoot: string): Promise<string[]> {
 	}
 
 	return [...baseFiles, ...metadata.injectedFiles]
+}
+
+/**
+ * Get the configured base branch from agency.json metadata.
+ */
+export async function getBaseBranchFromMetadata(
+	gitRoot: string,
+): Promise<string | null> {
+	const metadata = await readAgencyMetadata(gitRoot)
+	return metadata?.baseBranch || null
+}
+
+/**
+ * Set the base branch in agency.json metadata.
+ */
+export async function setBaseBranchInMetadata(
+	gitRoot: string,
+	baseBranch: string,
+): Promise<void> {
+	const metadata = await readAgencyMetadata(gitRoot)
+	if (!metadata) {
+		throw new Error(
+			"agency.json not found. Please run 'agency task' first to initialize managed files.",
+		)
+	}
+
+	metadata.baseBranch = baseBranch
+	await writeAgencyMetadata(gitRoot, metadata)
 }

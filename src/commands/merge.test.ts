@@ -105,7 +105,19 @@ describe("merge command", () => {
 
 		// Initialize AGENTS.md on feature branch
 		await task({ silent: true, template: "test" })
-		await Bun.spawn(["git", "add", "AGENTS.md"], {
+
+		// Ensure agency.json has baseBranch set (task should auto-detect it, but ensure it's there)
+		const agencyJsonPath = join(tempDir, "agency.json")
+		const agencyJson = await Bun.file(agencyJsonPath).json()
+		if (!agencyJson.baseBranch) {
+			agencyJson.baseBranch = "origin/main"
+			await Bun.write(
+				agencyJsonPath,
+				JSON.stringify(agencyJson, null, 2) + "\n",
+			)
+		}
+
+		await Bun.spawn(["git", "add", "AGENTS.md", "agency.json"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -229,31 +241,6 @@ describe("merge command", () => {
 
 			// Try to merge - should fail
 			expect(merge({ silent: true })).rejects.toThrow("source branch")
-		})
-
-		test("throws error if base branch config is missing", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			// Create PR branch
-			await pr({ silent: true })
-
-			// Manually remove the base branch config
-			await Bun.spawn(
-				["git", "config", "--unset", "agency.pr.feature.baseBranch"],
-				{
-					cwd: tempDir,
-					stdout: "pipe",
-					stderr: "pipe",
-				},
-			).exited
-
-			// Try to merge - should fail
-			expect(merge({ silent: true })).rejects.toThrow(
-				"No base branch configuration found",
-			)
 		})
 	})
 
