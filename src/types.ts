@@ -38,7 +38,22 @@ async function loadTemplateContent(fileName: string): Promise<string> {
 
 	// Return inline defaults as fallback
 	const defaults: Record<string, string> = {
-		"AGENCY.md": `# Agency
+		"AGENCY.md": `# Agent Instructions
+
+## TASK.md
+
+The \`TASK.md\` file describes the task being performed and should be kept updated as work progresses. This file serves as a living record of:
+
+- What is being built or fixed
+- Current progress and status
+- Remaining work items
+- Any important context or decisions
+
+All work on this repository should begin by reading and understanding \`TASK.md\`. Whenever any significant progress is made, \`TASK.md\` should be updated to reflect the current state of work.
+
+See \`TASK.md\` for the current task description and progress.
+`,
+		"AGENTS.md": `# Agency
 
 Agency is a CLI tool for managing \`AGENTS.md\`, \`TASK.md\`, and \`opencode.json\` files in git repositories. It helps coordinate work across multiple branches and templates.
 
@@ -59,21 +74,6 @@ Agency is a CLI tool for managing \`AGENTS.md\`, \`TASK.md\`, and \`opencode.jso
 - **Git integration** - Saves template configuration in \`.git/config\`
 - **PR branch management** - Automatically creates clean PR branches without local modifications
 - **Multi-file support** - Manages AGENTS.md, TASK.md, and opencode.json
-`,
-		"AGENTS.md": `# Agent Instructions
-
-## TASK.md
-
-The \`TASK.md\` file describes the task being performed and should be kept updated as work progresses. This file serves as a living record of:
-
-- What is being built or fixed
-- Current progress and status
-- Remaining work items
-- Any important context or decisions
-
-All work on this repository should begin by reading and understanding \`TASK.md\`. Whenever any significant progress is made, \`TASK.md\` should be updated to reflect the current state of work.
-
-See \`TASK.md\` for the current task description and progress.
 `,
 		"TASK.md": `{task}
 

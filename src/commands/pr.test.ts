@@ -306,7 +306,7 @@ describe("pr command", () => {
 			expect(files).toContain("AGENTS.md")
 
 			const prAgentsContent = await Bun.file(join(tempDir, "AGENTS.md")).text()
-			expect(prAgentsContent).toContain("TASK.md") // Should be reverted to main's default content
+			expect(prAgentsContent).toContain("Repo Instructions") // Should be reverted to main's default content
 		})
 
 		test("removes AGENTS.md when it was added only on feature branch", async () => {

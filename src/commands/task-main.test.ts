@@ -56,8 +56,8 @@ describe("task command", () => {
 			await task({ silent: true, template: "test", branch: "test-feature" })
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
-			expect(content).toContain("TASK.md")
-			expect(content).toContain("should be kept updated")
+			expect(content).toContain("Repo Instructions")
+			expect(content).toContain("AGENCY.md")
 		})
 
 		test("creates file at git root even when run from subdirectory", async () => {
@@ -427,7 +427,7 @@ describe("task command", () => {
 
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
 
-			expect(agentsContent).toContain("TASK.md")
+			expect(agentsContent).toContain("Repo Instructions")
 		})
 
 		test("creates template files automatically on first use", async () => {
@@ -444,12 +444,12 @@ describe("task command", () => {
 			const templateDir = join(configDir, "templates", "auto-created")
 			const templateAgents = await readFile(join(templateDir, "AGENTS.md"))
 
-			expect(templateAgents).toContain("TASK.md")
+			expect(templateAgents).toContain("Repo Instructions")
 
 			// Files in repo should match template
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
 
-			expect(agentsContent).toContain("TASK.md")
+			expect(agentsContent).toContain("Repo Instructions")
 		})
 
 		test("excludes AGENCY.md and TASK.md from injectedFiles metadata", async () => {

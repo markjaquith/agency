@@ -9,4 +9,3 @@ When you have read this file, move on to reading @TODO.md to understand the spec
 ## Rules
 
 {human: fill this in}
-
