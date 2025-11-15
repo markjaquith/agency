@@ -239,7 +239,7 @@ describe("pr command", () => {
 			expect(files).toContain("test.txt")
 		})
 
-		test("preserves AGENTS.md from main when not modified on feature branch", async () => {
+		test("removes AGENTS.md on PR branch even when not modified on feature branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -255,15 +255,16 @@ describe("pr command", () => {
 			// Create PR branch
 			await pr({ silent: true })
 
-			// Check that AGENTS.md still exist (since they came from main and weren't modified)
+			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
-			expect(files).toContain("AGENTS.md")
+			expect(files).not.toContain("AGENTS.md")
+			expect(files).not.toContain("AGENCY.md")
 
-			// And test.txt should still exist
+			// But test.txt should still exist
 			expect(files).toContain("test.txt")
 		})
 
-		test("reverts AGENTS.md modifications to main version on PR branch", async () => {
+		test("removes AGENTS.md modifications on PR branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -292,21 +293,19 @@ describe("pr command", () => {
 
 			await createCommit(tempDir, "Feature commit")
 
-			// Get the original content from main
-			const mainAgentsContent = await Bun.file(
+			// Get the original content from feature branch
+			const featureAgentsContent = await Bun.file(
 				join(tempDir, "AGENTS.md"),
 			).text()
-			expect(mainAgentsContent).toContain("Modified by feature branch")
+			expect(featureAgentsContent).toContain("Modified by feature branch")
 
 			// Create PR branch
 			await pr({ silent: true })
 
-			// AGENTS.md should exist but be reverted to default content (the state from main before feature branch)
+			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
-			expect(files).toContain("AGENTS.md")
-
-			const prAgentsContent = await Bun.file(join(tempDir, "AGENTS.md")).text()
-			expect(prAgentsContent).toContain("Repo Instructions") // Should be reverted to main's default content
+			expect(files).not.toContain("AGENTS.md")
+			expect(files).not.toContain("AGENCY.md")
 		})
 
 		test("removes AGENTS.md when it was added only on feature branch", async () => {

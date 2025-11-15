@@ -122,6 +122,7 @@ const commands: Record<string, Command> = {
 				subcommand: args[0],
 				silent: options.silent,
 				verbose: options.verbose,
+				repo: options.repo,
 			})
 		},
 		help: getHelp,
@@ -299,6 +300,9 @@ try {
 			branch: {
 				type: "string",
 				short: "b",
+			},
+			repo: {
+				type: "boolean",
 			},
 		},
 		strict: false,

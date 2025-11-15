@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { set, setBase, setTemplate } from "./set"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-import { getBaseBranchConfig, getGitConfig } from "../utils/git"
+import { getGitConfig } from "../utils/git"
+import { getBaseBranchFromMetadata, writeAgencyMetadata } from "../types"
 import { join } from "path"
 
 describe("set", () => {
@@ -28,6 +29,14 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json first
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		// Set base branch
 		await setBase({
 			baseBranch: "main",
@@ -35,7 +44,7 @@ describe("set", () => {
 		})
 
 		// Verify it was saved
-		const savedBase = await getBaseBranchConfig("feature", testDir)
+		const savedBase = await getBaseBranchFromMetadata(testDir)
 		expect(savedBase).toBe("main")
 	})
 
@@ -86,6 +95,14 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json first
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		// Set initial base branch
 		await setBase({
 			baseBranch: "main",
@@ -99,7 +116,7 @@ describe("set", () => {
 		})
 
 		// Verify it was updated
-		const savedBase = await getBaseBranchConfig("feature", testDir)
+		const savedBase = await getBaseBranchFromMetadata(testDir)
 		expect(savedBase).toBe("develop")
 	})
 
@@ -110,6 +127,14 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json first
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		// Should not throw
 		await setBase({
 			baseBranch: "main",
@@ -117,7 +142,7 @@ describe("set", () => {
 			verbose: true,
 		})
 
-		const savedBase = await getBaseBranchConfig("feature", testDir)
+		const savedBase = await getBaseBranchFromMetadata(testDir)
 		expect(savedBase).toBe("main")
 	})
 
@@ -128,13 +153,21 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json first
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		// Should not throw and should not output anything
 		await setBase({
 			baseBranch: "main",
 			silent: true,
 		})
 
-		const savedBase = await getBaseBranchConfig("feature", testDir)
+		const savedBase = await getBaseBranchFromMetadata(testDir)
 		expect(savedBase).toBe("main")
 	})
 
@@ -146,10 +179,20 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json for feature1
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		await setBase({
 			baseBranch: "main",
 			silent: true,
 		})
+
+		const feature1Base = await getBaseBranchFromMetadata(testDir)
 
 		// Create feature2 branch
 		await Bun.spawn(["git", "checkout", "main"], {
@@ -177,15 +220,22 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json for feature2
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		await setBase({
 			baseBranch: "develop",
 			silent: true,
 		})
 
-		// Verify each has its own base
-		const feature1Base = await getBaseBranchConfig("feature1", testDir)
-		const feature2Base = await getBaseBranchConfig("feature2", testDir)
+		const feature2Base = await getBaseBranchFromMetadata(testDir)
 
+		// Verify each has its own base
 		expect(feature1Base).toBe("main")
 		expect(feature2Base).toBe("develop")
 	})
@@ -197,13 +247,21 @@ describe("set", () => {
 			stderr: "pipe",
 		}).exited
 
+		// Create agency.json first
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			createdAt: new Date().toISOString(),
+		})
+
 		await set({
 			subcommand: "base",
 			args: ["main"],
 			silent: true,
 		})
 
-		const savedBase = await getBaseBranchConfig("feature", testDir)
+		const savedBase = await getBaseBranchFromMetadata(testDir)
 		expect(savedBase).toBe("main")
 	})
 

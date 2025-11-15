@@ -109,6 +109,7 @@ export async function setGitConfig(
 
 /**
  * Get the configured base branch for a given feature branch
+ * @deprecated Use getBaseBranchFromMetadata from types.ts instead
  */
 export async function getBaseBranchConfig(
 	featureBranch: string,
@@ -120,6 +121,7 @@ export async function getBaseBranchConfig(
 
 /**
  * Set the base branch configuration for a given feature branch
+ * @deprecated Use setBaseBranchInMetadata from types.ts instead
  */
 export async function setBaseBranchConfig(
 	featureBranch: string,
@@ -128,6 +130,25 @@ export async function setBaseBranchConfig(
 ): Promise<void> {
 	const key = `agency.pr.${featureBranch}.baseBranch`
 	await setGitConfig(key, baseBranch, gitRoot)
+}
+
+/**
+ * Get the repository-level default base branch from git config
+ */
+export async function getDefaultBaseBranchConfig(
+	gitRoot: string,
+): Promise<string | null> {
+	return await getGitConfig("agency.baseBranch", gitRoot)
+}
+
+/**
+ * Set the repository-level default base branch in git config
+ */
+export async function setDefaultBaseBranchConfig(
+	baseBranch: string,
+	gitRoot: string,
+): Promise<void> {
+	await setGitConfig("agency.baseBranch", baseBranch, gitRoot)
 }
 
 /**

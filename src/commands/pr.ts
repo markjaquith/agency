@@ -1,14 +1,13 @@
 import {
 	isInsideGitRepo,
 	getGitRoot,
-	getBaseBranchConfig,
-	setBaseBranchConfig,
 	branchExists,
 	getCurrentBranch,
+	getDefaultBaseBranchConfig,
 } from "../utils/git"
 import { loadConfig } from "../config"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
-import { getFilesToFilter } from "../types"
+import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
 
 export interface PrOptions {
@@ -49,7 +48,6 @@ async function getDefaultRemoteBranch(gitRoot: string): Promise<string | null> {
 
 async function getBaseBranch(
 	gitRoot: string,
-	currentBranch: string,
 	providedBaseBranch?: string,
 ): Promise<string> {
 	// If explicitly provided, use it
@@ -63,10 +61,16 @@ async function getBaseBranch(
 		return providedBaseBranch
 	}
 
-	// Check if we have a saved base branch in git config
-	const savedBaseBranch = await getBaseBranchConfig(currentBranch, gitRoot)
+	// Check if we have a branch-specific base branch in agency.json (highest priority)
+	const savedBaseBranch = await getBaseBranchFromMetadata(gitRoot)
 	if (savedBaseBranch && (await branchExists(gitRoot, savedBaseBranch))) {
 		return savedBaseBranch
+	}
+
+	// Check for repository-level default base branch in git config
+	const defaultBaseBranch = await getDefaultBaseBranchConfig(gitRoot)
+	if (defaultBaseBranch && (await branchExists(gitRoot, defaultBaseBranch))) {
+		return defaultBaseBranch
 	}
 
 	// Try to auto-detect the default remote branch
@@ -216,25 +220,9 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		}
 
 		// Find the base branch this was created from
-		const baseBranch = await getBaseBranch(
-			gitRoot,
-			currentBranch,
-			options.baseBranch,
-		)
+		const baseBranch = await getBaseBranch(gitRoot, options.baseBranch)
 
 		verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
-
-		// Save the base branch to git config for future runs
-		if (!options.baseBranch) {
-			// Only save if it was auto-detected or prompted, not if explicitly provided each time
-			const savedBaseBranch = await getBaseBranchConfig(currentBranch, gitRoot)
-			if (!savedBaseBranch || savedBaseBranch !== baseBranch) {
-				await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
-				verboseLog(
-					`Saved base branch ${highlight.branch(baseBranch)} to git config`,
-				)
-			}
-		}
 
 		// Get the merge-base (where the branch diverged)
 		const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch)
@@ -342,11 +330,13 @@ Behavior:
 Base Branch Selection:
   The command determines the base branch in this order:
   1. Explicitly provided base-branch argument
-  2. Previously saved base branch from git config (agency.pr.<branch>.baseBranch)
-  3. Interactive prompt with smart suggestions (origin/main, origin/master, etc.)
+  2. Branch-specific base branch from agency.json (set by 'agency task')
+  3. Repository-level default base branch from .git/config (all branches)
+  4. Auto-detected from origin/HEAD or common branches (origin/main, origin/master, etc.)
   
-  Once selected, the base branch is saved to git config for future runs.
-  You can change the saved base branch using: agency set-base <new-base-branch>
+  The base branch is set when you run 'agency task' to initialize a feature branch.
+  Set a repository-level default with: agency set base --repo <branch>
+  Update a branch's base branch with: agency set base <branch>
 
 Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo
@@ -380,7 +370,7 @@ Examples:
 
 Notes:
   - PR branch is created from your current branch (not the base)
-  - Base branch is saved to git config after first selection
+  - Base branch is set when you run 'agency task' to initialize the feature branch
   - Only commits since the branch diverged are rewritten (uses merge-base range)
   - Managed files are reverted to their merge-base state (or removed if they didn't exist)
   - Only commits since divergence that touched these files will have different hashes

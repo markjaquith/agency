@@ -1,22 +1,25 @@
 import {
 	isInsideGitRepo,
 	getGitRoot,
-	setBaseBranchConfig,
 	branchExists,
 	getCurrentBranch,
+	setDefaultBaseBranchConfig,
 } from "../utils/git"
+import { setBaseBranchInMetadata } from "../types"
 import { use } from "./use"
 import highlight, { done } from "../utils/colors"
 
 export interface SetOptions {
 	subcommand?: string
 	args: string[]
+	repo?: boolean
 	silent?: boolean
 	verbose?: boolean
 }
 
 export interface SetBaseOptions {
 	baseBranch: string
+	repo?: boolean // If true, set repository-level default instead of branch-specific
 	silent?: boolean
 	verbose?: boolean
 }
@@ -28,7 +31,7 @@ export interface SetTemplateOptions {
 }
 
 export async function setBase(options: SetBaseOptions): Promise<void> {
-	const { baseBranch, silent = false, verbose = false } = options
+	const { baseBranch, repo = false, silent = false, verbose = false } = options
 	const log = silent ? () => {} : console.log
 	const verboseLog = verbose && !silent ? console.log : () => {}
 
@@ -51,17 +54,26 @@ export async function setBase(options: SetBaseOptions): Promise<void> {
 		)
 	}
 
-	// Get current branch
-	const currentBranch = await getCurrentBranch(gitRoot)
-	verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+	if (repo) {
+		// Set repository-level default base branch in git config
+		await setDefaultBaseBranchConfig(baseBranch, gitRoot)
+		log(
+			done(
+				`Set repository-level default base branch to ${highlight.branch(baseBranch)}`,
+			),
+		)
+	} else {
+		// Set branch-specific base branch in agency.json
+		const currentBranch = await getCurrentBranch(gitRoot)
+		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
-	// Save the base branch configuration
-	await setBaseBranchConfig(currentBranch, baseBranch, gitRoot)
-	log(
-		done(
-			`Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
-		),
-	)
+		await setBaseBranchInMetadata(gitRoot, baseBranch)
+		log(
+			done(
+				`Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
+			),
+		)
+	}
 }
 
 export async function setTemplate(options: SetTemplateOptions): Promise<void> {
@@ -76,7 +88,13 @@ export async function setTemplate(options: SetTemplateOptions): Promise<void> {
 }
 
 export async function set(options: SetOptions): Promise<void> {
-	const { subcommand, args, silent = false, verbose = false } = options
+	const {
+		subcommand,
+		args,
+		repo = false,
+		silent = false,
+		verbose = false,
+	} = options
 
 	if (!subcommand) {
 		throw new Error("Subcommand is required. Usage: agency set <subcommand>")
@@ -91,6 +109,7 @@ export async function set(options: SetOptions): Promise<void> {
 			}
 			await setBase({
 				baseBranch: args[0],
+				repo,
 				silent,
 				verbose,
 			})
@@ -122,17 +141,22 @@ Usage: agency set <subcommand> [options]
 Set various configuration options for the current branch or repository.
 
 Subcommands:
-  base <branch>       Set the default base branch for the current feature branch
+  base <branch>       Set the base branch for the current feature branch
   template <name>     Set the template for the current repository
 
+Options for 'set base':
+  --repo              Set repository-level default instead of branch-specific
+
 Examples:
-  agency set base origin/main       # Set base branch to origin/main
-  agency set template work          # Set template to 'work'
+  agency set base origin/main         # Set base branch for current branch only
+  agency set base --repo origin/main  # Set repository-level default for all branches
+  agency set template work            # Set template to 'work'
 
 Notes:
   - The base branch must exist in the repository
-  - Settings are saved in .git/config (not committed to the repository)
-  - Each feature branch can have its own base branch configuration
+  - Branch-specific base branch is saved in agency.json (committed with the branch)
+  - Repository-level default is saved in .git/config (not committed)
+  - Branch-specific settings take precedence over repository-level defaults
   - The template setting is used by 'agency task' when initializing files
   - Base branch configuration is used by 'agency pr' when creating PR branches
 `

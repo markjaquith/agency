@@ -14,6 +14,8 @@ import {
 	setMainBranchConfig,
 	gitAdd,
 	gitCommit,
+	getDefaultBaseBranchConfig,
+	branchExists,
 } from "../utils/git"
 import { getConfigDir } from "../config"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
@@ -360,16 +362,50 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			log(done(`Created ${highlight.file(fileName)}`))
 		}
 
+		// Auto-detect base branch for this feature branch
+		let baseBranch: string | undefined
+
+		// Check repository-level default in git config
+		baseBranch = (await getDefaultBaseBranchConfig(targetPath)) || undefined
+
+		// If no repo-level default, try to auto-detect
+		if (!baseBranch) {
+			// Try main branch config
+			baseBranch =
+				(await getMainBranchConfig(targetPath)) ||
+				(await findMainBranch(targetPath)) ||
+				undefined
+
+			// Try common base branches
+			if (!baseBranch) {
+				const commonBases = ["origin/main", "origin/master", "main", "master"]
+				for (const base of commonBases) {
+					if (await branchExists(targetPath, base)) {
+						baseBranch = base
+						break
+					}
+				}
+			}
+		}
+
+		if (baseBranch) {
+			verboseLog(`Auto-detected base branch: ${highlight.branch(baseBranch)}`)
+		}
+
 		// Create agency.json metadata file
 		const metadata = {
 			version: 1,
 			injectedFiles,
+			baseBranch, // Save the base branch if detected
 			template: templateName,
 			createdAt: new Date().toISOString(),
 		}
 		await writeAgencyMetadata(targetPath, metadata)
 		createdFiles.push("agency.json")
 		log(done(`Created ${highlight.file("agency.json")}`))
+		if (baseBranch) {
+			log(info(`Base branch: ${highlight.branch(baseBranch)}`))
+		}
 		verboseLog(
 			`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
 		)

@@ -1,7 +1,8 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { get, getBase, getTemplate } from "./get"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-import { setBaseBranchConfig, setGitConfig } from "../utils/git"
+import { setGitConfig } from "../utils/git"
+import { writeAgencyMetadata } from "../types"
 import { join } from "path"
 
 describe("get", () => {
@@ -28,8 +29,14 @@ describe("get", () => {
 			stderr: "pipe",
 		}).exited
 
-		// Set base branch
-		await setBaseBranchConfig("feature", "main", testDir)
+		// Set base branch via agency.json
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			baseBranch: "main",
+			createdAt: new Date().toISOString(),
+		})
 
 		// Get base branch - should not throw
 		await getBase({
@@ -68,7 +75,14 @@ describe("get", () => {
 			stderr: "pipe",
 		}).exited
 
-		await setBaseBranchConfig("feature", "main", testDir)
+		// Set base branch via agency.json
+		await writeAgencyMetadata(testDir, {
+			version: 1,
+			template: "test",
+			injectedFiles: [],
+			baseBranch: "main",
+			createdAt: new Date().toISOString(),
+		})
 
 		// Should not throw
 		await get({
