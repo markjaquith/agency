@@ -195,7 +195,7 @@ This registers the package so the `agency` command is available system-wide. Aft
 Before committing changes, run the following command to format the code:
 
 ```sh
-bun format
+bun format > /dev/null
 ```
 
 ## Help Documentation Policy
