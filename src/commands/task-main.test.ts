@@ -356,6 +356,35 @@ describe("task command", () => {
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
 
+		test("fails early when branch already exists", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create a feature branch first
+			await Bun.spawn(["git", "checkout", "-b", "existing-branch"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Switch back to main
+			await Bun.spawn(["git", "checkout", "main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Try to create a branch with the same name
+			await expect(
+				task({
+					silent: true,
+					template: "test",
+					branch: "existing-branch",
+					task: "This should not be asked for",
+				}),
+			).rejects.toThrow("already exists")
+		})
+
 		test("succeeds when already on a feature branch", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)

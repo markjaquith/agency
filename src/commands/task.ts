@@ -116,6 +116,18 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 			verboseLog(`Branch name from prompt: ${branchName}`)
 		}
 
+		// If we have a branch name and we're not on a feature branch, check if branch already exists
+		if (!isFeature && branchName) {
+			const exists = await branchExists(targetPath, branchName)
+			if (exists) {
+				throw new Error(
+					`Branch ${highlight.branch(branchName)} already exists.\n` +
+						`Either switch to it first or choose a different branch name.`,
+				)
+			}
+			verboseLog(`Branch ${branchName} does not exist, will create it`)
+		}
+
 		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
 		let taskDescription: string | undefined
 		if (!isFeature && branchName) {
