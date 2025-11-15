@@ -185,12 +185,12 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
-   task [branch]          Initialize template files on a feature branch
-   edit                   Open TASK.md in system editor
-   template <subcommand>  Template management commands
-   pr [base-branch]       Create a PR branch with managed files reverted
-   set <option>           Set configuration option values
-   get <option>           Get configuration option values
+  task [branch]          Initialize template files on a feature branch
+  edit                   Open TASK.md in system editor
+  template <subcommand>  Template management commands
+  pr [base-branch]       Create a PR branch with managed files reverted
+  set <option>           Set configuration option values
+  get <option>           Get configuration option values
   source                 Switch back to source branch from PR branch
   switch                 Toggle between source and PR branch
   merge                  Merge PR branch into base branch
