@@ -68,23 +68,19 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 		throw new Error("Failed to determine the root of the git repository.")
 	}
 
-	// Load config
 	const config = await loadConfig()
 
 	try {
-		// Get current branch
 		const currentBranch = await getCurrentBranch(gitRoot)
 
 		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
-		// Check if we're on a PR branch
 		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
 
 		let prBranchToMerge: string
 		let baseBranchToMergeInto: string
 
 		if (sourceBranch) {
-			// We're on a PR branch - verify source branch exists
 			verboseLog(
 				`Current branch appears to be a PR branch for source: ${highlight.branch(sourceBranch)}`,
 			)
