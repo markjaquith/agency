@@ -3,6 +3,7 @@ import {
 	getGitRoot,
 	getCurrentBranch,
 	branchExists,
+	checkoutBranch,
 } from "../utils/git"
 import { loadConfig } from "../config"
 import { extractSourceBranch } from "../utils/pr-branch"
@@ -11,21 +12,6 @@ import highlight, { done } from "../utils/colors"
 export interface SourceOptions {
 	silent?: boolean
 	verbose?: boolean
-}
-
-async function checkoutBranch(gitRoot: string, branch: string): Promise<void> {
-	const proc = Bun.spawn(["git", "checkout", branch], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to checkout branch: ${stderr}`)
-	}
 }
 
 export async function source(options: SourceOptions = {}): Promise<void> {

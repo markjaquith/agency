@@ -386,3 +386,24 @@ export async function gitCommit(
 		throw new Error(`Failed to commit: ${stderr}`)
 	}
 }
+
+/**
+ * Checkout a branch
+ */
+export async function checkoutBranch(
+	gitRoot: string,
+	branch: string,
+): Promise<void> {
+	const proc = Bun.spawn(["git", "checkout", branch], {
+		cwd: gitRoot,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+
+	await proc.exited
+
+	if (proc.exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`Failed to checkout branch: ${stderr}`)
+	}
+}
