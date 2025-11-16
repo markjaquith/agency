@@ -1,4 +1,4 @@
-import { isInsideGitRepo, getGitRoot } from "../utils/git"
+import { isInsideGitRepo, getGitRoot, getCurrentBranch } from "../utils/git"
 import { loadConfig } from "../config"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
@@ -6,23 +6,6 @@ import highlight, { done } from "../utils/colors"
 export interface SourceOptions {
 	silent?: boolean
 	verbose?: boolean
-}
-
-async function getCurrentBranch(gitRoot: string): Promise<string> {
-	const proc = Bun.spawn(["git", "branch", "--show-current"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		throw new Error("Failed to get current branch")
-	}
-
-	const output = await new Response(proc.stdout).text()
-	return output.trim()
 }
 
 async function branchExists(gitRoot: string, branch: string): Promise<boolean> {
