@@ -107,7 +107,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			if (!configuredBase) {
 				throw new Error(
 					`No base branch configured for ${highlight.branch(sourceBranch)}.\n` +
-						`Please switch to ${highlight.branch(sourceBranch)} and run: agency set base <branch>`,
+						`Please switch to ${highlight.branch(sourceBranch)} and run: agency base set <branch>`,
 				)
 			}
 
@@ -152,7 +152,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 			if (!configuredBase) {
 				throw new Error(
 					`No base branch configured for ${highlight.branch(currentBranch)}.\n` +
-						`Please set one with: agency set base <branch>`,
+						`Please set one with: agency base set <branch>`,
 				)
 			}
 

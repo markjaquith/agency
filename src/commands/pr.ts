@@ -335,8 +335,8 @@ Base Branch Selection:
   4. Auto-detected from origin/HEAD or common branches (origin/main, origin/master, etc.)
   
   The base branch is set when you run 'agency task' to initialize a feature branch.
-  Set a repository-level default with: agency set base --repo <branch>
-  Update a branch's base branch with: agency set base <branch>
+  Set a repository-level default with: agency base set --repo <branch>
+  Update a branch's base branch with: agency base set <branch>
 
 Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo

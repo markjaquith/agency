@@ -3,9 +3,7 @@
 import { parseArgs } from "util"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
-import { set, help as setHelp } from "./src/commands/set"
-import { get, help as getHelp } from "./src/commands/get"
-import { source, help as sourceHelp } from "./src/commands/source"
+import { base, help as baseHelp } from "./src/commands/base"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { template, help as templateHelp } from "./src/commands/template"
@@ -56,17 +54,23 @@ const commands: Record<string, Command> = {
 		},
 		help: templateHelp,
 	},
-	source: {
-		name: "source",
-		description: "Switch back to source branch from PR branch",
+	base: {
+		name: "base",
+		description: "Get or set the base branch",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
-				console.log(sourceHelp)
+				console.log(baseHelp)
 				return
 			}
-			await source({ silent: options.silent, verbose: options.verbose })
+			await base({
+				subcommand: args[0],
+				args: args.slice(1),
+				repo: options.repo,
+				silent: options.silent,
+				verbose: options.verbose,
+			})
 		},
-		help: sourceHelp,
+		help: baseHelp,
 	},
 	switch: {
 		name: "switch",
@@ -92,40 +96,6 @@ const commands: Record<string, Command> = {
 			await merge({ silent: options.silent, verbose: options.verbose })
 		},
 		help: mergeHelp,
-	},
-	set: {
-		name: "set",
-		description: "Set configuration options",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(setHelp)
-				return
-			}
-			await set({
-				subcommand: args[0],
-				args: args.slice(1),
-				silent: options.silent,
-				verbose: options.verbose,
-			})
-		},
-		help: setHelp,
-	},
-	get: {
-		name: "get",
-		description: "Get configuration options",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(getHelp)
-				return
-			}
-			await get({
-				subcommand: args[0],
-				silent: options.silent,
-				verbose: options.verbose,
-				repo: options.repo,
-			})
-		},
-		help: getHelp,
 	},
 	task: {
 		name: "task",
@@ -187,11 +157,16 @@ Usage: agency <command> [options]
 Commands:
   task [branch]          Initialize template files on a feature branch
   edit                   Open TASK.md in system editor
-  template <subcommand>  Template management commands
+  template               Template management commands
+    use [template]         Set template for this repository
+    save <file|dir> ...    Save files/dirs to configured template
+    list                   List all files in configured template
+    view <file>            View contents of a file in template
+    delete <file> ...      Delete files from configured template
   pr [base-branch]       Create a PR branch with managed files reverted
-  set <option>           Set configuration option values
-  get <option>           Get configuration option values
-  source                 Switch back to source branch from PR branch
+  base                   Get or set the base branch
+    set <branch>           Set the base branch for the current feature branch
+    get                    Get the configured base branch
   switch                 Toggle between source and PR branch
   merge                  Merge PR branch into base branch
 
