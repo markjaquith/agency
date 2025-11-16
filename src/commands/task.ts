@@ -81,366 +81,361 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 	const createdFiles: string[] = []
 	const injectedFiles: string[] = []
 
-	try {
-		// Check if TASK.md already exists - if so, abort
+	// Check if TASK.md already exists - if so, abort
+	const taskMdPath = resolve(targetPath, "TASK.md")
+	const taskMdFile = Bun.file(taskMdPath)
+	if (await taskMdFile.exists()) {
+		throw new Error(
+			"TASK.md already exists in the repository. This indicates something has gone wrong.\n" +
+				"Please remove TASK.md manually before running 'agency task'.",
+		)
+	}
+
+	// Check if we're on a feature branch
+	const currentBranch = await getCurrentBranch(targetPath)
+	verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+	const isFeature = await isFeatureBranch(currentBranch, targetPath)
+	verboseLog(`Is feature branch: ${isFeature}`)
+
+	// If on main branch without a branch name, prompt for it (unless in silent mode)
+	let branchName = options.branch
+	if (!isFeature && !branchName) {
+		if (silent) {
+			throw new Error(
+				`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
+					`To initialize on a feature branch, either:\n` +
+					`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
+					`  2. Provide a new branch name: 'agency task <branch-name>'`,
+			)
+		}
+		branchName = await prompt("Branch name: ")
+		if (!branchName) {
+			throw new Error("Branch name is required when on main branch.")
+		}
+		verboseLog(`Branch name from prompt: ${branchName}`)
+	}
+
+	// If we have a branch name and we're not on a feature branch, check if branch already exists
+	if (!isFeature && branchName) {
+		const exists = await branchExists(targetPath, branchName)
+		if (exists) {
+			throw new Error(
+				`Branch ${highlight.branch(branchName)} already exists.\n` +
+					`Either switch to it first or choose a different branch name.`,
+			)
+		}
+		verboseLog(`Branch ${branchName} does not exist, will create it`)
+	}
+
+	// If we're going to create a branch, check if TASK.md will be created and prompt for description first
+	let taskDescription: string | undefined
+	if (!isFeature && branchName) {
 		const taskMdPath = resolve(targetPath, "TASK.md")
 		const taskMdFile = Bun.file(taskMdPath)
-		if (await taskMdFile.exists()) {
-			throw new Error(
-				"TASK.md already exists in the repository. This indicates something has gone wrong.\n" +
-					"Please remove TASK.md manually before running 'agency task'.",
-			)
-		}
-
-		// Check if we're on a feature branch
-		const currentBranch = await getCurrentBranch(targetPath)
-		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
-		const isFeature = await isFeatureBranch(currentBranch, targetPath)
-		verboseLog(`Is feature branch: ${isFeature}`)
-
-		// If on main branch without a branch name, prompt for it (unless in silent mode)
-		let branchName = options.branch
-		if (!isFeature && !branchName) {
-			if (silent) {
-				throw new Error(
-					`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
-						`To initialize on a feature branch, either:\n` +
-						`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
-						`  2. Provide a new branch name: 'agency task <branch-name>'`,
-				)
-			}
-			branchName = await prompt("Branch name: ")
-			if (!branchName) {
-				throw new Error("Branch name is required when on main branch.")
-			}
-			verboseLog(`Branch name from prompt: ${branchName}`)
-		}
-
-		// If we have a branch name and we're not on a feature branch, check if branch already exists
-		if (!isFeature && branchName) {
-			const exists = await branchExists(targetPath, branchName)
-			if (exists) {
-				throw new Error(
-					`Branch ${highlight.branch(branchName)} already exists.\n` +
-						`Either switch to it first or choose a different branch name.`,
-				)
-			}
-			verboseLog(`Branch ${branchName} does not exist, will create it`)
-		}
-
-		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
-		let taskDescription: string | undefined
-		if (!isFeature && branchName) {
-			const taskMdPath = resolve(targetPath, "TASK.md")
-			const taskMdFile = Bun.file(taskMdPath)
-			if (!(await taskMdFile.exists())) {
-				if (options.task) {
-					taskDescription = options.task
-					verboseLog(`Using task from option: ${taskDescription}`)
-				} else if (!silent) {
-					taskDescription = await prompt("Task description: ")
-					if (!taskDescription) {
-						log(
-							info(
-								"Skipping task description (TASK.md will use default placeholder)",
-							),
-						)
-						taskDescription = undefined
-					}
-				}
-			}
-		}
-
-		if (!isFeature) {
-			// If a branch name was provided, create it
-			if (branchName) {
-				// Get or prompt for base branch
-				let baseBranch: string | undefined =
-					(await getMainBranchConfig(targetPath)) ||
-					(await findMainBranch(targetPath)) ||
-					undefined
-
-				// If no base branch is configured and not in silent mode, prompt for it
-				if (!baseBranch && !silent) {
-					const suggestions = await getSuggestedBaseBranches(targetPath)
-					if (suggestions.length > 0) {
-						baseBranch = await promptForBaseBranch(suggestions)
-						verboseLog(`Selected base branch: ${baseBranch}`)
-
-						// Save the main branch config if it's not already set
-						const mainBranchConfig = await getMainBranchConfig(targetPath)
-						if (!mainBranchConfig) {
-							await setMainBranchConfig(baseBranch, targetPath)
-							log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
-						}
-					} else {
-						throw new Error(
-							"Could not find any base branches. Please ensure your repository has at least one branch.",
-						)
-					}
-				} else if (!baseBranch && silent) {
-					throw new Error(
-						"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
+		if (!(await taskMdFile.exists())) {
+			if (options.task) {
+				taskDescription = options.task
+				verboseLog(`Using task from option: ${taskDescription}`)
+			} else if (!silent) {
+				taskDescription = await prompt("Task description: ")
+				if (!taskDescription) {
+					log(
+						info(
+							"Skipping task description (TASK.md will use default placeholder)",
+						),
 					)
-				}
-
-				await createBranch(branchName, targetPath, baseBranch)
-				log(
-					done(
-						`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
-					),
-				)
-			}
-		}
-
-		// Get or prompt for template name
-		let templateName =
-			options.template || (await getGitConfig("agency.template", targetPath))
-		let needsSaveToConfig = false
-
-		if (!templateName) {
-			// Prompt for template name if not in silent mode
-			if (silent) {
-				throw new Error(
-					"No template configured. Run without --silent to configure, or use --template flag.",
-				)
-			}
-
-			log("No template configured for this repository.")
-
-			// Suggest directory name as default if no template exists with that name
-			let defaultTemplateName: string | undefined
-			const dirName = basename(targetPath)
-			const sanitizedDirName = sanitizeTemplateName(dirName)
-
-			if (sanitizedDirName && !(await templateExists(sanitizedDirName))) {
-				defaultTemplateName = sanitizedDirName
-				verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
-			}
-
-			const answer = await prompt("Template name: ", defaultTemplateName)
-
-			if (!answer) {
-				throw new Error("Template name is required.")
-			}
-
-			templateName = sanitizeTemplateName(answer)
-			verboseLog(`Sanitized template name: ${templateName}`)
-			needsSaveToConfig = true
-		} else if (options.template) {
-			// Template was provided via option, not from git config
-			const existingTemplate = await getGitConfig("agency.template", targetPath)
-			if (existingTemplate !== options.template) {
-				needsSaveToConfig = true
-			}
-			verboseLog(`Using template: ${templateName}`)
-		} else {
-			verboseLog(`Using template: ${templateName}`)
-		}
-
-		// Create template directory if it doesn't exist
-		const templateDir = getTemplateDir(templateName)
-		await createTemplateDir(templateName)
-
-		// Check if template is new (doesn't have any files yet)
-		// Initialize default template files if the template is brand new
-		const managedFiles = await initializeManagedFiles()
-		const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
-		if (!(await templateAgents.exists())) {
-			log(done(`Created template ${highlight.template(templateName)}`))
-
-			// Copy default content to template for each managed file
-			for (const managedFile of managedFiles) {
-				const templateFilePath = join(templateDir, managedFile.name)
-				const templateFile = Bun.file(templateFilePath)
-
-				if (!(await templateFile.exists())) {
-					const defaultContent = managedFile.defaultContent ?? ""
-					await Bun.write(templateFilePath, defaultContent)
-					verboseLog(`Created ${templateFilePath} with default content`)
+					taskDescription = undefined
 				}
 			}
 		}
+	}
 
-		// Save template name to git config if needed
-		if (needsSaveToConfig) {
-			await setGitConfig("agency.template", templateName, targetPath)
-			log(
-				done(
-					`Set ${highlight.setting("agency.template")} = ${highlight.template(templateName)}`,
-				),
-			)
-		}
-
-		// Prompt for task if TASK.md will be created (only if not already prompted earlier)
-		if (taskDescription === undefined) {
-			const taskMdPath = resolve(targetPath, "TASK.md")
-			const taskMdFile = Bun.file(taskMdPath)
-			if (!(await taskMdFile.exists())) {
-				if (options.task) {
-					taskDescription = options.task
-					verboseLog(`Using task from option: ${taskDescription}`)
-				} else if (!silent) {
-					taskDescription = await prompt("Task description: ")
-					if (!taskDescription) {
-						log(
-							info(
-								"Skipping task description (TASK.md will use default placeholder)",
-							),
-						)
-						taskDescription = undefined
-					}
-				}
-			}
-		}
-
-		// Build list of files to create, combining managed files with any additional template files
-		const filesToCreate = new Map<string, string>() // fileName -> content source
-
-		// Start with all managed files (these should always be created)
-		for (const managedFile of managedFiles) {
-			filesToCreate.set(managedFile.name, "default")
-		}
-
-		// Discover all files from the template directory
-		const templateFiles: string[] = []
-		try {
-			const result = Bun.spawnSync(["find", templateDir, "-type", "f"], {
-				stdout: "pipe",
-				stderr: "ignore",
-			})
-			const output = new TextDecoder().decode(result.stdout)
-			if (output) {
-				const foundFiles = output
-					.trim()
-					.split("\n")
-					.filter((f: string) => f.length > 0)
-				for (const file of foundFiles) {
-					// Get relative path from template directory
-					const relativePath = file.replace(templateDir + "/", "")
-					if (relativePath && !relativePath.startsWith(".")) {
-						templateFiles.push(relativePath)
-						// Mark that this file should use template content
-						filesToCreate.set(relativePath, "template")
-					}
-				}
-			}
-		} catch (err) {
-			verboseLog(`Error discovering template files: ${err}`)
-		}
-
-		verboseLog(
-			`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
-		)
-
-		// Process each file to create
-		for (const [fileName, source] of filesToCreate) {
-			const targetFilePath = resolve(targetPath, fileName)
-			const targetFile = Bun.file(targetFilePath)
-
-			// Check if file exists in repo - if so, skip injection
-			if (await targetFile.exists()) {
-				log(info(`Skipped ${highlight.file(fileName)} (exists in repo)`))
-				continue
-			}
-
-			let content: string
-
-			// Try to read from template first, fall back to default content
-			if (source === "template") {
-				const templateFilePath = join(templateDir, fileName)
-				const templateFile = Bun.file(templateFilePath)
-				content = await templateFile.text()
-			} else {
-				// Use default content from managed files
-				const managedFile = managedFiles.find((f) => f.name === fileName)
-				content = managedFile?.defaultContent ?? ""
-			}
-
-			// Replace {task} placeholder in TASK.md if task description was provided
-			if (fileName === "TASK.md" && taskDescription) {
-				content = content.replace("{task}", taskDescription)
-				verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
-			}
-
-			await Bun.write(targetFilePath, content)
-			createdFiles.push(fileName)
-
-			// Track injected files (excluding TASK.md and AGENCY.md which are always filtered)
-			if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
-				injectedFiles.push(fileName)
-			}
-
-			log(done(`Created ${highlight.file(fileName)}`))
-		}
-
-		// Auto-detect base branch for this feature branch
-		let baseBranch: string | undefined
-
-		// Check repository-level default in git config
-		baseBranch = (await getDefaultBaseBranchConfig(targetPath)) || undefined
-
-		// If no repo-level default, try to auto-detect
-		if (!baseBranch) {
-			// Try main branch config
-			baseBranch =
+	if (!isFeature) {
+		// If a branch name was provided, create it
+		if (branchName) {
+			// Get or prompt for base branch
+			let baseBranch: string | undefined =
 				(await getMainBranchConfig(targetPath)) ||
 				(await findMainBranch(targetPath)) ||
 				undefined
 
-			// Try common base branches
-			if (!baseBranch) {
-				const commonBases = ["origin/main", "origin/master", "main", "master"]
-				for (const base of commonBases) {
-					if (await branchExists(targetPath, base)) {
-						baseBranch = base
-						break
+			// If no base branch is configured and not in silent mode, prompt for it
+			if (!baseBranch && !silent) {
+				const suggestions = await getSuggestedBaseBranches(targetPath)
+				if (suggestions.length > 0) {
+					baseBranch = await promptForBaseBranch(suggestions)
+					verboseLog(`Selected base branch: ${baseBranch}`)
+
+					// Save the main branch config if it's not already set
+					const mainBranchConfig = await getMainBranchConfig(targetPath)
+					if (!mainBranchConfig) {
+						await setMainBranchConfig(baseBranch, targetPath)
+						log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
 					}
+				} else {
+					throw new Error(
+						"Could not find any base branches. Please ensure your repository has at least one branch.",
+					)
+				}
+			} else if (!baseBranch && silent) {
+				throw new Error(
+					"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
+				)
+			}
+
+			await createBranch(branchName, targetPath, baseBranch)
+			log(
+				done(
+					`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+				),
+			)
+		}
+	}
+
+	// Get or prompt for template name
+	let templateName =
+		options.template || (await getGitConfig("agency.template", targetPath))
+	let needsSaveToConfig = false
+
+	if (!templateName) {
+		// Prompt for template name if not in silent mode
+		if (silent) {
+			throw new Error(
+				"No template configured. Run without --silent to configure, or use --template flag.",
+			)
+		}
+
+		log("No template configured for this repository.")
+
+		// Suggest directory name as default if no template exists with that name
+		let defaultTemplateName: string | undefined
+		const dirName = basename(targetPath)
+		const sanitizedDirName = sanitizeTemplateName(dirName)
+
+		if (sanitizedDirName && !(await templateExists(sanitizedDirName))) {
+			defaultTemplateName = sanitizedDirName
+			verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
+		}
+
+		const answer = await prompt("Template name: ", defaultTemplateName)
+
+		if (!answer) {
+			throw new Error("Template name is required.")
+		}
+
+		templateName = sanitizeTemplateName(answer)
+		verboseLog(`Sanitized template name: ${templateName}`)
+		needsSaveToConfig = true
+	} else if (options.template) {
+		// Template was provided via option, not from git config
+		const existingTemplate = await getGitConfig("agency.template", targetPath)
+		if (existingTemplate !== options.template) {
+			needsSaveToConfig = true
+		}
+		verboseLog(`Using template: ${templateName}`)
+	} else {
+		verboseLog(`Using template: ${templateName}`)
+	}
+
+	// Create template directory if it doesn't exist
+	const templateDir = getTemplateDir(templateName)
+	await createTemplateDir(templateName)
+
+	// Check if template is new (doesn't have any files yet)
+	// Initialize default template files if the template is brand new
+	const managedFiles = await initializeManagedFiles()
+	const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
+	if (!(await templateAgents.exists())) {
+		log(done(`Created template ${highlight.template(templateName)}`))
+
+		// Copy default content to template for each managed file
+		for (const managedFile of managedFiles) {
+			const templateFilePath = join(templateDir, managedFile.name)
+			const templateFile = Bun.file(templateFilePath)
+
+			if (!(await templateFile.exists())) {
+				const defaultContent = managedFile.defaultContent ?? ""
+				await Bun.write(templateFilePath, defaultContent)
+				verboseLog(`Created ${templateFilePath} with default content`)
+			}
+		}
+	}
+
+	// Save template name to git config if needed
+	if (needsSaveToConfig) {
+		await setGitConfig("agency.template", templateName, targetPath)
+		log(
+			done(
+				`Set ${highlight.setting("agency.template")} = ${highlight.template(templateName)}`,
+			),
+		)
+	}
+
+	// Prompt for task if TASK.md will be created (only if not already prompted earlier)
+	if (taskDescription === undefined) {
+		const taskMdPath = resolve(targetPath, "TASK.md")
+		const taskMdFile = Bun.file(taskMdPath)
+		if (!(await taskMdFile.exists())) {
+			if (options.task) {
+				taskDescription = options.task
+				verboseLog(`Using task from option: ${taskDescription}`)
+			} else if (!silent) {
+				taskDescription = await prompt("Task description: ")
+				if (!taskDescription) {
+					log(
+						info(
+							"Skipping task description (TASK.md will use default placeholder)",
+						),
+					)
+					taskDescription = undefined
 				}
 			}
 		}
+	}
 
-		if (baseBranch) {
-			verboseLog(`Auto-detected base branch: ${highlight.branch(baseBranch)}`)
-		}
+	// Build list of files to create, combining managed files with any additional template files
+	const filesToCreate = new Map<string, string>() // fileName -> content source
 
-		// Create agency.json metadata file
-		const metadata = {
-			version: 1,
-			injectedFiles,
-			baseBranch, // Save the base branch if detected
-			template: templateName,
-			createdAt: new Date().toISOString(),
-		}
-		await writeAgencyMetadata(targetPath, metadata)
-		createdFiles.push("agency.json")
-		log(done(`Created ${highlight.file("agency.json")}`))
-		if (baseBranch) {
-			log(info(`Base branch: ${highlight.branch(baseBranch)}`))
-		}
-		verboseLog(
-			`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
-		)
+	// Start with all managed files (these should always be created)
+	for (const managedFile of managedFiles) {
+		filesToCreate.set(managedFile.name, "default")
+	}
 
-		// Git add and commit the created files
-		if (createdFiles.length > 0) {
-			try {
-				await gitAdd(createdFiles, targetPath)
-				await gitCommit("chore: agency task", targetPath)
-				log(
-					done(
-						`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
-					),
-				)
-			} catch (err) {
-				// If commit fails, it might be because there are no changes (e.g., files already staged)
-				// We can ignore this error and let the user handle it manually
-				verboseLog(`Failed to commit: ${err}`)
+	// Discover all files from the template directory
+	const templateFiles: string[] = []
+	try {
+		const result = Bun.spawnSync(["find", templateDir, "-type", "f"], {
+			stdout: "pipe",
+			stderr: "ignore",
+		})
+		const output = new TextDecoder().decode(result.stdout)
+		if (output) {
+			const foundFiles = output
+				.trim()
+				.split("\n")
+				.filter((f: string) => f.length > 0)
+			for (const file of foundFiles) {
+				// Get relative path from template directory
+				const relativePath = file.replace(templateDir + "/", "")
+				if (relativePath && !relativePath.startsWith(".")) {
+					templateFiles.push(relativePath)
+					// Mark that this file should use template content
+					filesToCreate.set(relativePath, "template")
+				}
 			}
 		}
 	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
+		verboseLog(`Error discovering template files: ${err}`)
+	}
+
+	verboseLog(
+		`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
+	)
+
+	// Process each file to create
+	for (const [fileName, source] of filesToCreate) {
+		const targetFilePath = resolve(targetPath, fileName)
+		const targetFile = Bun.file(targetFilePath)
+
+		// Check if file exists in repo - if so, skip injection
+		if (await targetFile.exists()) {
+			log(info(`Skipped ${highlight.file(fileName)} (exists in repo)`))
+			continue
+		}
+
+		let content: string
+
+		// Try to read from template first, fall back to default content
+		if (source === "template") {
+			const templateFilePath = join(templateDir, fileName)
+			const templateFile = Bun.file(templateFilePath)
+			content = await templateFile.text()
+		} else {
+			// Use default content from managed files
+			const managedFile = managedFiles.find((f) => f.name === fileName)
+			content = managedFile?.defaultContent ?? ""
+		}
+
+		// Replace {task} placeholder in TASK.md if task description was provided
+		if (fileName === "TASK.md" && taskDescription) {
+			content = content.replace("{task}", taskDescription)
+			verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
+		}
+
+		await Bun.write(targetFilePath, content)
+		createdFiles.push(fileName)
+
+		// Track injected files (excluding TASK.md and AGENCY.md which are always filtered)
+		if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
+			injectedFiles.push(fileName)
+		}
+
+		log(done(`Created ${highlight.file(fileName)}`))
+	}
+
+	// Auto-detect base branch for this feature branch
+	let baseBranch: string | undefined
+
+	// Check repository-level default in git config
+	baseBranch = (await getDefaultBaseBranchConfig(targetPath)) || undefined
+
+	// If no repo-level default, try to auto-detect
+	if (!baseBranch) {
+		// Try main branch config
+		baseBranch =
+			(await getMainBranchConfig(targetPath)) ||
+			(await findMainBranch(targetPath)) ||
+			undefined
+
+		// Try common base branches
+		if (!baseBranch) {
+			const commonBases = ["origin/main", "origin/master", "main", "master"]
+			for (const base of commonBases) {
+				if (await branchExists(targetPath, base)) {
+					baseBranch = base
+					break
+				}
+			}
+		}
+	}
+
+	if (baseBranch) {
+		verboseLog(`Auto-detected base branch: ${highlight.branch(baseBranch)}`)
+	}
+
+	// Create agency.json metadata file
+	const metadata = {
+		version: 1,
+		injectedFiles,
+		baseBranch, // Save the base branch if detected
+		template: templateName,
+		createdAt: new Date().toISOString(),
+	}
+	await writeAgencyMetadata(targetPath, metadata)
+	createdFiles.push("agency.json")
+	log(done(`Created ${highlight.file("agency.json")}`))
+	if (baseBranch) {
+		log(info(`Base branch: ${highlight.branch(baseBranch)}`))
+	}
+	verboseLog(
+		`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
+	)
+
+	// Git add and commit the created files
+	if (createdFiles.length > 0) {
+		try {
+			await gitAdd(createdFiles, targetPath)
+			await gitCommit("chore: agency task", targetPath)
+			log(
+				done(
+					`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
+				),
+			)
+		} catch (err) {
+			// If commit fails, it might be because there are no changes (e.g., files already staged)
+			// We can ignore this error and let the user handle it manually
+			verboseLog(`Failed to commit: ${err}`)
+		}
 	}
 }
 

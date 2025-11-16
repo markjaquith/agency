@@ -82,21 +82,16 @@ export async function templateList(options: ListOptions = {}): Promise<void> {
 		)
 	}
 
-	try {
-		// Collect all files recursively
-		const files = await collectFilesRecursively(templateDir)
+	// Collect all files recursively
+	const files = await collectFilesRecursively(templateDir)
 
-		if (files.length === 0) {
-			log(`Template ${highlight.template(templateName)} has no files`)
-			return
-		}
+	if (files.length === 0) {
+		log(`Template ${highlight.template(templateName)} has no files`)
+		return
+	}
 
-		for (const file of files) {
-			log(highlight.file(file))
-		}
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
+	for (const file of files) {
+		log(highlight.file(file))
 	}
 }
 

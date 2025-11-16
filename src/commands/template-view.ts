@@ -60,15 +60,10 @@ export async function templateView(options: ViewOptions = {}): Promise<void> {
 		)
 	}
 
-	try {
-		// Read and display the file
-		const file = Bun.file(templateFilePath)
-		const content = await file.text()
-		console.log(content)
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
-	}
+	// Read and display the file
+	const file = Bun.file(templateFilePath)
+	const content = await file.text()
+	console.log(content)
 }
 
 export const help = `

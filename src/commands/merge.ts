@@ -70,124 +70,119 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 
 	const config = await loadConfig()
 
-	try {
-		const currentBranch = await getCurrentBranch(gitRoot)
+	const currentBranch = await getCurrentBranch(gitRoot)
 
-		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+	verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
-		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
+	const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
 
-		let prBranchToMerge: string
-		let baseBranchToMergeInto: string
+	let prBranchToMerge: string
+	let baseBranchToMergeInto: string
 
-		if (sourceBranch) {
-			verboseLog(
-				`Current branch appears to be a PR branch for source: ${highlight.branch(sourceBranch)}`,
+	if (sourceBranch) {
+		verboseLog(
+			`Current branch appears to be a PR branch for source: ${highlight.branch(sourceBranch)}`,
+		)
+
+		const sourceExists = await branchExists(gitRoot, sourceBranch)
+		if (!sourceExists) {
+			throw new Error(
+				`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
+					`Cannot merge without a valid source branch.`,
 			)
-
-			const sourceExists = await branchExists(gitRoot, sourceBranch)
-			if (!sourceExists) {
-				throw new Error(
-					`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
-						`Cannot merge without a valid source branch.`,
-				)
-			}
-
-			// Get the base branch from the source branch's agency.json
-			// We need to temporarily switch to the source branch to read its agency.json
-			// because the PR branch's agency.json is filtered/reverted
-			await checkoutBranch(gitRoot, sourceBranch)
-			const configuredBase = await getBaseBranchFromMetadata(gitRoot)
-			await checkoutBranch(gitRoot, currentBranch)
-
-			if (!configuredBase) {
-				throw new Error(
-					`No base branch configured for ${highlight.branch(sourceBranch)}.\n` +
-						`Please switch to ${highlight.branch(sourceBranch)} and run: agency base set <branch>`,
-				)
-			}
-
-			verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
-
-			// For git operations (checkout/merge), use local branch name
-			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
-
-			// Verify local base branch exists
-			const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
-			if (!baseExists) {
-				throw new Error(
-					`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
-						`You may need to checkout the branch first or update your base branch configuration.`,
-				)
-			}
-
-			prBranchToMerge = currentBranch
-		} else {
-			// We're on a source branch - need to create/update PR branch first
-			verboseLog(
-				`Current branch appears to be a source branch, will create PR branch first`,
-			)
-
-			// Check if a corresponding PR branch already exists
-			const prBranch = makePrBranchName(currentBranch, config.prBranch)
-			const prExists = await branchExists(gitRoot, prBranch)
-
-			if (prExists) {
-				verboseLog(
-					`PR branch ${highlight.branch(prBranch)} already exists, will recreate it`,
-				)
-			}
-
-			// Run 'agency pr' to create/update the PR branch
-			verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
-			await pr({ silent: true, verbose })
-
-			// Switch back to source branch and get the base branch from agency.json
-			await checkoutBranch(gitRoot, currentBranch)
-			const configuredBase = await getBaseBranchFromMetadata(gitRoot)
-			if (!configuredBase) {
-				throw new Error(
-					`No base branch configured for ${highlight.branch(currentBranch)}.\n` +
-						`Please set one with: agency base set <branch>`,
-				)
-			}
-
-			verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
-
-			// For git operations (checkout/merge), use local branch name
-			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
-
-			// Verify local base branch exists
-			const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
-			if (!baseExists) {
-				throw new Error(
-					`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
-						`You may need to checkout the branch first or update your base branch configuration.`,
-				)
-			}
-
-			prBranchToMerge = prBranch
 		}
 
-		// Now switch to the base branch
-		verboseLog(`Switching to ${highlight.branch(baseBranchToMergeInto)}...`)
-		await checkoutBranch(gitRoot, baseBranchToMergeInto)
+		// Get the base branch from the source branch's agency.json
+		// We need to temporarily switch to the source branch to read its agency.json
+		// because the PR branch's agency.json is filtered/reverted
+		await checkoutBranch(gitRoot, sourceBranch)
+		const configuredBase = await getBaseBranchFromMetadata(gitRoot)
+		await checkoutBranch(gitRoot, currentBranch)
 
-		// Merge the PR branch
+		if (!configuredBase) {
+			throw new Error(
+				`No base branch configured for ${highlight.branch(sourceBranch)}.\n` +
+					`Please switch to ${highlight.branch(sourceBranch)} and run: agency base set <branch>`,
+			)
+		}
+
+		verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
+
+		// For git operations (checkout/merge), use local branch name
+		baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
+
+		// Verify local base branch exists
+		const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
+		if (!baseExists) {
+			throw new Error(
+				`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
+					`You may need to checkout the branch first or update your base branch configuration.`,
+			)
+		}
+
+		prBranchToMerge = currentBranch
+	} else {
+		// We're on a source branch - need to create/update PR branch first
 		verboseLog(
-			`Merging ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}...`,
+			`Current branch appears to be a source branch, will create PR branch first`,
 		)
-		await mergeBranch(gitRoot, prBranchToMerge, verbose)
 
-		log(
-			done(
-				`Merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
-			),
-		)
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
+		// Check if a corresponding PR branch already exists
+		const prBranch = makePrBranchName(currentBranch, config.prBranch)
+		const prExists = await branchExists(gitRoot, prBranch)
+
+		if (prExists) {
+			verboseLog(
+				`PR branch ${highlight.branch(prBranch)} already exists, will recreate it`,
+			)
+		}
+
+		// Run 'agency pr' to create/update the PR branch
+		verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
+		await pr({ silent: true, verbose })
+
+		// Switch back to source branch and get the base branch from agency.json
+		await checkoutBranch(gitRoot, currentBranch)
+		const configuredBase = await getBaseBranchFromMetadata(gitRoot)
+		if (!configuredBase) {
+			throw new Error(
+				`No base branch configured for ${highlight.branch(currentBranch)}.\n` +
+					`Please set one with: agency base set <branch>`,
+			)
+		}
+
+		verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
+
+		// For git operations (checkout/merge), use local branch name
+		baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
+
+		// Verify local base branch exists
+		const baseExists = await branchExists(gitRoot, baseBranchToMergeInto)
+		if (!baseExists) {
+			throw new Error(
+				`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
+					`You may need to checkout the branch first or update your base branch configuration.`,
+			)
+		}
+
+		prBranchToMerge = prBranch
 	}
+
+	// Now switch to the base branch
+	verboseLog(`Switching to ${highlight.branch(baseBranchToMergeInto)}...`)
+	await checkoutBranch(gitRoot, baseBranchToMergeInto)
+
+	// Merge the PR branch
+	verboseLog(
+		`Merging ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}...`,
+	)
+	await mergeBranch(gitRoot, prBranchToMerge, verbose)
+
+	log(
+		done(
+			`Merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
+		),
+	)
 }
 
 export const help = `

@@ -71,41 +71,36 @@ export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
 	// Load config
 	const config = await loadConfig()
 
-	try {
-		// Get current branch
-		const currentBranch = await getCurrentBranch(gitRoot)
+	// Get current branch
+	const currentBranch = await getCurrentBranch(gitRoot)
 
-		// Try to extract source branch (are we on a PR branch?)
-		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
+	// Try to extract source branch (are we on a PR branch?)
+	const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
 
-		if (sourceBranch) {
-			// We're on a PR branch, switch to source
-			const exists = await branchExists(gitRoot, sourceBranch)
-			if (!exists) {
-				throw new Error(
-					`Source branch ${highlight.branch(sourceBranch)} does not exist`,
-				)
-			}
-
-			await checkoutBranch(gitRoot, sourceBranch)
-			log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
-		} else {
-			// We're on a source branch, switch to PR branch
-			const prBranch = makePrBranchName(currentBranch, config.prBranch)
-
-			const exists = await branchExists(gitRoot, prBranch)
-			if (!exists) {
-				throw new Error(
-					`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
-				)
-			}
-
-			await checkoutBranch(gitRoot, prBranch)
-			log(done(`Switched to PR branch: ${highlight.branch(prBranch)}`))
+	if (sourceBranch) {
+		// We're on a PR branch, switch to source
+		const exists = await branchExists(gitRoot, sourceBranch)
+		if (!exists) {
+			throw new Error(
+				`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+			)
 		}
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
+
+		await checkoutBranch(gitRoot, sourceBranch)
+		log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
+	} else {
+		// We're on a source branch, switch to PR branch
+		const prBranch = makePrBranchName(currentBranch, config.prBranch)
+
+		const exists = await branchExists(gitRoot, prBranch)
+		if (!exists) {
+			throw new Error(
+				`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
+			)
+		}
+
+		await checkoutBranch(gitRoot, prBranch)
+		log(done(`Switched to PR branch: ${highlight.branch(prBranch)}`))
 	}
 }
 

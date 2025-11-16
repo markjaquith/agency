@@ -71,33 +71,28 @@ export async function source(options: SourceOptions = {}): Promise<void> {
 	// Load config
 	const config = await loadConfig()
 
-	try {
-		// Get current branch
-		const currentBranch = await getCurrentBranch(gitRoot)
+	// Get current branch
+	const currentBranch = await getCurrentBranch(gitRoot)
 
-		// Extract source branch name
-		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
+	// Extract source branch name
+	const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
 
-		if (!sourceBranch) {
-			throw new Error(`Not on a PR branch. Current branch: ${currentBranch}`)
-		}
-
-		// Check if source branch exists
-		const exists = await branchExists(gitRoot, sourceBranch)
-		if (!exists) {
-			throw new Error(
-				`Source branch ${highlight.branch(sourceBranch)} does not exist`,
-			)
-		}
-
-		// Checkout source branch
-		await checkoutBranch(gitRoot, sourceBranch)
-
-		log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
+	if (!sourceBranch) {
+		throw new Error(`Not on a PR branch. Current branch: ${currentBranch}`)
 	}
+
+	// Check if source branch exists
+	const exists = await branchExists(gitRoot, sourceBranch)
+	if (!exists) {
+		throw new Error(
+			`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+		)
+	}
+
+	// Checkout source branch
+	await checkoutBranch(gitRoot, sourceBranch)
+
+	log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
 }
 
 export const help = `

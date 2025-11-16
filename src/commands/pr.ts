@@ -198,115 +198,110 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 	// Load config
 	const config = await loadConfig()
 
-	try {
-		// Get current branch
-		const currentBranch = await getCurrentBranch(gitRoot)
+	// Get current branch
+	const currentBranch = await getCurrentBranch(gitRoot)
 
-		// Check if current branch looks like a PR branch already
-		const possibleSourceBranch = extractSourceBranch(
-			currentBranch,
-			config.prBranch,
-		)
-		if (possibleSourceBranch && !force) {
-			// Check if the possible source branch exists
-			const sourceExists = await branchExists(gitRoot, possibleSourceBranch)
-			if (sourceExists) {
-				throw new Error(
-					`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch for ${highlight.branch(possibleSourceBranch)}.\n` +
-						`Creating a PR branch from a PR branch is likely a mistake.\n` +
-						`Use --force to override this check.`,
-				)
-			}
+	// Check if current branch looks like a PR branch already
+	const possibleSourceBranch = extractSourceBranch(
+		currentBranch,
+		config.prBranch,
+	)
+	if (possibleSourceBranch && !force) {
+		// Check if the possible source branch exists
+		const sourceExists = await branchExists(gitRoot, possibleSourceBranch)
+		if (sourceExists) {
+			throw new Error(
+				`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch for ${highlight.branch(possibleSourceBranch)}.\n` +
+					`Creating a PR branch from a PR branch is likely a mistake.\n` +
+					`Use --force to override this check.`,
+			)
 		}
-
-		// Find the base branch this was created from
-		const baseBranch = await getBaseBranch(gitRoot, options.baseBranch)
-
-		verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
-
-		// Get the merge-base (where the branch diverged)
-		const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch)
-
-		verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
-
-		// Determine PR branch name using config pattern
-		const prBranch =
-			options.branch || makePrBranchName(currentBranch, config.prBranch)
-
-		// Create or reset PR branch from current branch
-		await createOrResetBranch(gitRoot, currentBranch, prBranch)
-
-		// Run git-filter-repo to remove files from history on the PR branch
-		// Use --refs with a range to only rewrite commits since the merge-base
-		// This preserves the state of managed files as they were on the base branch,
-		// while removing any modifications made on the feature branch
-
-		verboseLog(
-			`Filtering managed files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranch)}`,
-		)
-		verboseLog(
-			`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
-		)
-
-		// Clean up .git/filter-repo directory to avoid interactive prompts
-		// about continuing from a previous run
-		const filterRepoDir = `${gitRoot}/.git/filter-repo`
-		try {
-			await Bun.spawn(["rm", "-rf", filterRepoDir], {
-				cwd: gitRoot,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			verboseLog("Cleaned up previous git-filter-repo state")
-		} catch {
-			// Ignore errors if directory doesn't exist
-		}
-
-		// Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
-		// See: https://github.com/newren/git-filter-repo/issues/512
-		const env = { ...process.env, GIT_CONFIG_GLOBAL: "" }
-
-		// Get files to filter from agency.json metadata
-		const filesToFilter = await getFilesToFilter(gitRoot)
-		verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
-
-		const filterRepoArgs = [
-			"git",
-			"filter-repo",
-			...filesToFilter.flatMap((f) => ["--path", f]),
-			"--invert-paths",
-			"--force",
-			"--refs",
-			`${mergeBase}..${prBranch}`,
-		]
-
-		const proc = Bun.spawn(filterRepoArgs, {
-			cwd: gitRoot,
-			stdout: verbose ? "inherit" : "pipe",
-			stderr: "pipe",
-			env,
-		})
-
-		await proc.exited
-
-		if (verbose) {
-			verboseLog("git-filter-repo completed")
-		}
-
-		if (proc.exitCode !== 0) {
-			const stderr = await new Response(proc.stderr).text()
-			throw new Error(`git-filter-repo failed: ${stderr}`)
-		}
-
-		log(
-			done(
-				`Created ${highlight.branch(prBranch)} from ${highlight.branch(currentBranch)}`,
-			),
-		)
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
 	}
+
+	// Find the base branch this was created from
+	const baseBranch = await getBaseBranch(gitRoot, options.baseBranch)
+
+	verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
+
+	// Get the merge-base (where the branch diverged)
+	const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch)
+
+	verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
+
+	// Determine PR branch name using config pattern
+	const prBranch =
+		options.branch || makePrBranchName(currentBranch, config.prBranch)
+
+	// Create or reset PR branch from current branch
+	await createOrResetBranch(gitRoot, currentBranch, prBranch)
+
+	// Run git-filter-repo to remove files from history on the PR branch
+	// Use --refs with a range to only rewrite commits since the merge-base
+	// This preserves the state of managed files as they were on the base branch,
+	// while removing any modifications made on the feature branch
+
+	verboseLog(
+		`Filtering managed files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranch)}`,
+	)
+	verboseLog(
+		`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
+	)
+
+	// Clean up .git/filter-repo directory to avoid interactive prompts
+	// about continuing from a previous run
+	const filterRepoDir = `${gitRoot}/.git/filter-repo`
+	try {
+		await Bun.spawn(["rm", "-rf", filterRepoDir], {
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		verboseLog("Cleaned up previous git-filter-repo state")
+	} catch {
+		// Ignore errors if directory doesn't exist
+	}
+
+	// Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
+	// See: https://github.com/newren/git-filter-repo/issues/512
+	const env = { ...process.env, GIT_CONFIG_GLOBAL: "" }
+
+	// Get files to filter from agency.json metadata
+	const filesToFilter = await getFilesToFilter(gitRoot)
+	verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
+
+	const filterRepoArgs = [
+		"git",
+		"filter-repo",
+		...filesToFilter.flatMap((f) => ["--path", f]),
+		"--invert-paths",
+		"--force",
+		"--refs",
+		`${mergeBase}..${prBranch}`,
+	]
+
+	const proc = Bun.spawn(filterRepoArgs, {
+		cwd: gitRoot,
+		stdout: verbose ? "inherit" : "pipe",
+		stderr: "pipe",
+		env,
+	})
+
+	await proc.exited
+
+	if (verbose) {
+		verboseLog("git-filter-repo completed")
+	}
+
+	if (proc.exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`git-filter-repo failed: ${stderr}`)
+	}
+
+	log(
+		done(
+			`Created ${highlight.branch(prBranch)} from ${highlight.branch(currentBranch)}`,
+		),
+	)
 }
 
 export const help = `
