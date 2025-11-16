@@ -1,36 +1,14 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
 import { source } from "./source"
-import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-
-async function getGitOutput(cwd: string, args: string[]): Promise<string> {
-	const proc = Bun.spawn(["git", ...args], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-	return await new Response(proc.stdout).text()
-}
-
-async function getCurrentBranch(cwd: string): Promise<string> {
-	const output = await getGitOutput(cwd, ["branch", "--show-current"])
-	return output.trim()
-}
-
-async function createCommit(cwd: string, message: string): Promise<void> {
-	await Bun.write(join(cwd, "test.txt"), message)
-	await Bun.spawn(["git", "add", "test.txt"], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-	await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-}
+import {
+	createTempDir,
+	cleanupTempDir,
+	initGitRepo,
+	getGitOutput,
+	getCurrentBranch,
+	createCommit,
+} from "../test-utils"
 
 async function createBranch(cwd: string, branchName: string): Promise<void> {
 	await Bun.spawn(["git", "checkout", "-b", branchName], {

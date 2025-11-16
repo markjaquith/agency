@@ -3,50 +3,18 @@ import { join } from "path"
 import { merge } from "./merge"
 import { pr } from "./pr"
 import { task } from "./task"
-import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-
-async function getGitOutput(cwd: string, args: string[]): Promise<string> {
-	const proc = Bun.spawn(["git", ...args], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-	return await new Response(proc.stdout).text()
-}
-
-async function getCurrentBranch(cwd: string): Promise<string> {
-	const output = await getGitOutput(cwd, ["branch", "--show-current"])
-	return output.trim()
-}
-
-async function createCommit(cwd: string, message: string): Promise<void> {
-	// Create a test file and commit it
-	await Bun.write(join(cwd, `${Date.now()}.txt`), message)
-	await Bun.spawn(["git", "add", "."], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-	await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-}
+import {
+	createTempDir,
+	cleanupTempDir,
+	initGitRepo,
+	getGitOutput,
+	getCurrentBranch,
+	createCommit,
+	branchExists,
+} from "../test-utils"
 
 async function isGitFilterRepoAvailable(): Promise<boolean> {
 	const proc = Bun.spawn(["which", "git-filter-repo"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-	return proc.exitCode === 0
-}
-
-async function branchExists(cwd: string, branch: string): Promise<boolean> {
-	const proc = Bun.spawn(["git", "rev-parse", "--verify", branch], {
-		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
 	})

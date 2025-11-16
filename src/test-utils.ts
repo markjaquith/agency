@@ -110,3 +110,78 @@ export async function readFile(path: string): Promise<string> {
 	const file = Bun.file(path)
 	return await file.text()
 }
+
+/**
+ * Execute a git command and return its output
+ */
+export async function getGitOutput(
+	cwd: string,
+	args: string[],
+): Promise<string> {
+	const proc = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+	return await new Response(proc.stdout).text()
+}
+
+/**
+ * Get the current branch name in a git repository
+ */
+export async function getCurrentBranch(cwd: string): Promise<string> {
+	const output = await getGitOutput(cwd, ["branch", "--show-current"])
+	return output.trim()
+}
+
+/**
+ * Create a test commit in a git repository
+ */
+export async function createCommit(
+	cwd: string,
+	message: string,
+): Promise<void> {
+	// Create a test file and commit it
+	await Bun.write(join(cwd, "test.txt"), message)
+	await Bun.spawn(["git", "add", "test.txt"], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+	await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+}
+
+/**
+ * Checkout a branch in a git repository
+ */
+export async function checkoutBranch(
+	cwd: string,
+	branchName: string,
+): Promise<void> {
+	await Bun.spawn(["git", "checkout", branchName], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	}).exited
+}
+
+/**
+ * Check if a branch exists in a git repository
+ */
+export async function branchExists(
+	cwd: string,
+	branch: string,
+): Promise<boolean> {
+	const proc = Bun.spawn(["git", "rev-parse", "--verify", branch], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+	return proc.exitCode === 0
+}
