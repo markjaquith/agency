@@ -1,4 +1,9 @@
-import { isInsideGitRepo, getGitRoot, getCurrentBranch } from "../utils/git"
+import {
+	isInsideGitRepo,
+	getGitRoot,
+	getCurrentBranch,
+	branchExists,
+} from "../utils/git"
 import { loadConfig } from "../config"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
@@ -6,17 +11,6 @@ import highlight, { done } from "../utils/colors"
 export interface SwitchOptions {
 	silent?: boolean
 	verbose?: boolean
-}
-
-async function branchExists(gitRoot: string, branch: string): Promise<boolean> {
-	const proc = Bun.spawn(["git", "rev-parse", "--verify", branch], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-	return proc.exitCode === 0
 }
 
 async function checkoutBranch(gitRoot: string, branch: string): Promise<void> {
