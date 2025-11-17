@@ -63,7 +63,9 @@ export async function templateView(options: ViewOptions = {}): Promise<void> {
 	// Read and display the file
 	const file = Bun.file(templateFilePath)
 	const content = await file.text()
-	console.log(content)
+	if (!silent) {
+		console.log(content)
+	}
 }
 
 export const help = `
