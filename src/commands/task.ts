@@ -237,29 +237,17 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		verboseLog(`Using template: ${templateName}`)
 	}
 
-	// Create template directory if it doesn't exist
+	// Create template directory if it doesn't exist (but don't populate it)
 	const templateDir = getTemplateDir(templateName)
+	const isNewTemplate = !(await templateExists(templateName))
 	await createTemplateDir(templateName)
 
-	// Check if template is new (doesn't have any files yet)
-	// Initialize default template files if the template is brand new
-	const managedFiles = await initializeManagedFiles()
-	const templateAgents = Bun.file(join(templateDir, "AGENTS.md"))
-	if (!(await templateAgents.exists())) {
+	if (isNewTemplate) {
 		log(done(`Created template ${highlight.template(templateName)}`))
-
-		// Copy default content to template for each managed file
-		for (const managedFile of managedFiles) {
-			const templateFilePath = join(templateDir, managedFile.name)
-			const templateFile = Bun.file(templateFilePath)
-
-			if (!(await templateFile.exists())) {
-				const defaultContent = managedFile.defaultContent ?? ""
-				await Bun.write(templateFilePath, defaultContent)
-				verboseLog(`Created ${templateFilePath} with default content`)
-			}
-		}
 	}
+
+	// Get managed files for later use
+	const managedFiles = await initializeManagedFiles()
 
 	// Save template name to git config if needed
 	if (needsSaveToConfig) {

@@ -459,7 +459,7 @@ describe("task command", () => {
 			expect(agentsContent).toContain("Repo Instructions")
 		})
 
-		test("creates template files automatically on first use", async () => {
+		test("does not populate template directory automatically on first use", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
@@ -469,15 +469,15 @@ describe("task command", () => {
 				branch: "test-feature",
 			})
 
-			// Template should have been created
+			// Template should NOT have AGENTS.md (not populated automatically)
 			const templateDir = join(configDir, "templates", "auto-created")
-			const templateAgents = await readFile(join(templateDir, "AGENTS.md"))
+			const templateAgentsExists = await fileExists(
+				join(templateDir, "AGENTS.md"),
+			)
+			expect(templateAgentsExists).toBe(false)
 
-			expect(templateAgents).toContain("Repo Instructions")
-
-			// Files in repo should match template
+			// Files in repo should use default content (not from template)
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
-
 			expect(agentsContent).toContain("Repo Instructions")
 		})
 

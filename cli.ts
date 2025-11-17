@@ -272,6 +272,9 @@ try {
 				type: "string",
 				short: "b",
 			},
+			task: {
+				type: "string",
+			},
 			repo: {
 				type: "boolean",
 			},
