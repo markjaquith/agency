@@ -7,6 +7,7 @@ import { base, help as baseHelp } from "./src/commands/base"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { template, help as templateHelp } from "./src/commands/template"
+import { work, help as workHelp } from "./src/commands/work"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 
@@ -146,6 +147,21 @@ Example:
 		},
 		help: `Open TASK.md in system editor`,
 	},
+	work: {
+		name: "work",
+		description: "Start working on TASK.md with OpenCode",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(workHelp)
+				return
+			}
+			await work({
+				silent: options.silent,
+				verbose: options.verbose,
+			})
+		},
+		help: workHelp,
+	},
 }
 
 function showMainHelp() {
@@ -157,6 +173,7 @@ Usage: agency <command> [options]
 Commands:
   task [branch]          Initialize template files on a feature branch
   edit                   Open TASK.md in system editor
+  work                   Start working on TASK.md with OpenCode
   template               Template management commands
     use [template]         Set template for this repository
     save <file|dir> ...    Save files/dirs to configured template
