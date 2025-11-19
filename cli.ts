@@ -3,8 +3,10 @@
 import { parseArgs } from "util"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
+import { push, help as pushHelp } from "./src/commands/push"
 import { base, help as baseHelp } from "./src/commands/base"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
+import { source, help as sourceHelp } from "./src/commands/source"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { template, help as templateHelp } from "./src/commands/template"
 import { work, help as workHelp } from "./src/commands/work"
@@ -36,6 +38,24 @@ const commands: Record<string, Command> = {
 			})
 		},
 		help: prHelp,
+	},
+	push: {
+		name: "push",
+		description: "Create PR branch, push to remote, return to source",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(pushHelp)
+				return
+			}
+			await push({
+				baseBranch: args[0],
+				branch: options.branch,
+				silent: options.silent,
+				force: options.force,
+				verbose: options.verbose,
+			})
+		},
+		help: pushHelp,
 	},
 	template: {
 		name: "template",
@@ -85,7 +105,18 @@ const commands: Record<string, Command> = {
 		},
 		help: switchHelp,
 	},
-
+	source: {
+		name: "source",
+		description: "Switch to source branch from PR branch",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(sourceHelp)
+				return
+			}
+			await source({ silent: options.silent, verbose: options.verbose })
+		},
+		help: sourceHelp,
+	},
 	merge: {
 		name: "merge",
 		description: "Merge PR branch into base branch",
@@ -181,10 +212,12 @@ Commands:
     view <file>            View contents of a file in template
     delete <file> ...      Delete files from configured template
   pr [base-branch]       Create a PR branch with managed files reverted
+  push [base-branch]     Create PR branch, push to remote, return to source
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
     get                    Get the configured base branch
   switch                 Toggle between source and PR branch
+  source                 Switch to source branch from PR branch
   merge                  Merge PR branch into base branch
 
 Global Options:
