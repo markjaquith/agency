@@ -63,22 +63,84 @@ export async function push(options: PushOptions = {}): Promise<void> {
 	log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
 
 	// Step 2: Push to remote (git push)
-	verboseLog(`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`)
+	// Wrap in try-catch to ensure we switch back to source branch on error
+	try {
+		verboseLog(`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`)
 
-	const pushProc = Bun.spawn(["git", "push", "-u", "origin", prBranchName], {
-		cwd: gitRoot,
-		stdout: verbose ? "inherit" : "pipe",
-		stderr: "pipe",
-	})
+		// Try pushing without force first
+		let pushProc = Bun.spawn(["git", "push", "-u", "origin", prBranchName], {
+			cwd: gitRoot,
+			stdout: verbose ? "inherit" : "pipe",
+			stderr: "pipe",
+		})
 
-	await pushProc.exited
+		await pushProc.exited
 
-	if (pushProc.exitCode !== 0) {
-		const stderr = await new Response(pushProc.stderr).text()
-		throw new Error(`Failed to push branch to remote: ${stderr}`)
+		let usedForce = false
+
+		// If push failed, check if we should retry with --force
+		if (pushProc.exitCode !== 0) {
+			const stderr = await new Response(pushProc.stderr).text()
+
+			// Check if this is a force-push-needed error
+			const needsForce =
+				stderr.includes("rejected") ||
+				stderr.includes("non-fast-forward") ||
+				stderr.includes("fetch first") ||
+				stderr.includes("Updates were rejected")
+
+			if (needsForce && options.force) {
+				// User provided --force flag, retry with force
+				verboseLog("Initial push rejected, retrying with --force...")
+				pushProc = Bun.spawn(
+					["git", "push", "-u", "--force", "origin", prBranchName],
+					{
+						cwd: gitRoot,
+						stdout: verbose ? "inherit" : "pipe",
+						stderr: "pipe",
+					},
+				)
+
+				await pushProc.exited
+
+				if (pushProc.exitCode !== 0) {
+					const forcedStderr = await new Response(pushProc.stderr).text()
+					throw new Error(
+						`Failed to force push branch to remote: ${forcedStderr}`,
+					)
+				}
+
+				usedForce = true
+			} else if (needsForce && !options.force) {
+				// User didn't provide --force but it's needed
+				throw new Error(
+					`Failed to push branch to remote. The branch has diverged from the remote.\n` +
+						`Run 'agency push --force' to force push the branch.`,
+				)
+			} else {
+				// Some other error
+				throw new Error(`Failed to push branch to remote: ${stderr}`)
+			}
+		}
+
+		if (usedForce) {
+			log(done(`Force pushed ${highlight.branch(prBranchName)} to origin`))
+		} else {
+			log(done(`Pushed ${highlight.branch(prBranchName)} to origin`))
+		}
+	} catch (error) {
+		// If push failed, switch back to source branch before rethrowing
+		verboseLog(
+			"Push failed, switching back to source branch before reporting error...",
+		)
+		const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await checkoutProc.exited
+		throw error
 	}
-
-	log(done(`Pushed ${highlight.branch(prBranchName)} to origin`))
 
 	// Step 3: Switch back to source branch
 	// We switch back directly to the source branch we started on,
@@ -128,12 +190,12 @@ Arguments:
 
 Options:
   -b, --branch      Custom name for PR branch (defaults to pattern from config)
-  -f, --force       Force PR branch creation even if current branch looks like a PR branch
+  -f, --force       Force push to remote if branch has diverged
 
 Examples:
   agency push                          # Create PR, push, return to source
   agency push origin/main              # Explicitly use origin/main as base
-  agency push --force                  # Force creation even from a PR-like branch
+  agency push --force                  # Force push if branch has diverged
 
 Notes:
   - Must be run from a source branch (not a PR branch)

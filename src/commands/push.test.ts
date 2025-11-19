@@ -234,4 +234,96 @@ describe("push command", () => {
 			expect(logCalled).toBe(false)
 		})
 	})
+
+	describe("force push", () => {
+		test("force pushes when branch has diverged and --force is provided", async () => {
+			// First push
+			await push({ baseBranch: "main", silent: true })
+
+			// Make changes on feature branch
+			await checkoutBranch(tempDir, "feature")
+			await createCommit(tempDir, "More feature work")
+
+			// Modify the PR branch to create divergence
+			await checkoutBranch(tempDir, "feature--PR")
+			await createCommit(tempDir, "Direct PR branch commit")
+			await Bun.spawn(["git", "push"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Go back to feature branch and try to push again with --force
+			await checkoutBranch(tempDir, "feature")
+
+			// Capture output to check for force push message
+			const originalLog = console.log
+			let logMessages: string[] = []
+			console.log = (msg: string) => {
+				logMessages.push(msg)
+			}
+
+			await push({ baseBranch: "main", force: true, silent: false })
+
+			console.log = originalLog
+
+			// Should be back on feature branch
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
+
+			// Should have reported force push
+			expect(logMessages.some((msg) => msg.includes("Force pushed"))).toBe(true)
+		})
+
+		test("suggests using --force when push is rejected without it", async () => {
+			// First push
+			await push({ baseBranch: "main", silent: true })
+
+			// Make changes on feature branch
+			await checkoutBranch(tempDir, "feature")
+			await createCommit(tempDir, "More feature work")
+
+			// Modify the PR branch to create divergence
+			await checkoutBranch(tempDir, "feature--PR")
+			await createCommit(tempDir, "Direct PR branch commit")
+			await Bun.spawn(["git", "push"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Go back to feature branch and try to push without --force
+			await checkoutBranch(tempDir, "feature")
+
+			// Should throw error suggesting --force
+			await expect(push({ baseBranch: "main", silent: true })).rejects.toThrow(
+				/agency push --force/,
+			)
+
+			// Should still be on feature branch (not left in intermediate state)
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
+		})
+
+		test("does not report force push when --force is provided but not needed", async () => {
+			// Capture output to check for force push message
+			const originalLog = console.log
+			let logMessages: string[] = []
+			console.log = (msg: string) => {
+				logMessages.push(msg)
+			}
+
+			// First push with --force (but it won't actually need force)
+			await push({ baseBranch: "main", force: true, silent: false })
+
+			console.log = originalLog
+
+			// Should be back on feature branch
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
+
+			// Should NOT have reported force push (since it wasn't actually used)
+			expect(logMessages.some((msg) => msg.includes("Force pushed"))).toBe(
+				false,
+			)
+			expect(logMessages.some((msg) => msg.includes("Pushed"))).toBe(true)
+		})
+	})
 })
