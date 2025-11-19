@@ -78,7 +78,7 @@ export async function push(options: PushOptions = {}): Promise<void> {
 		throw new Error(`Failed to push branch to remote: ${stderr}`)
 	}
 
-	log(done(`Pushed ${highlight.branch(prBranchName)} to remote`))
+	log(done(`Pushed ${highlight.branch(prBranchName)} to origin`))
 
 	// Step 3: Switch back to source branch
 	// We switch back directly to the source branch we started on,
@@ -99,12 +99,6 @@ export async function push(options: PushOptions = {}): Promise<void> {
 	}
 
 	log(done(`Switched back to source branch: ${highlight.branch(sourceBranch)}`))
-
-	log(
-		done(
-			`\nPush workflow complete: ${highlight.branch(sourceBranch)} → ${highlight.branch(prBranchName)} → pushed to remote → back to ${highlight.branch(sourceBranch)}`,
-		),
-	)
 }
 
 export const help = `
