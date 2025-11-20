@@ -1,71 +1,64 @@
 # @markjaquith/agency
 
-A CLI tool for managing `AGENTS.md` files in your projects.
+Smuggle project-level LLM instruction into any Git repo. Plan your tasks. Commit your plans. Execute your plans using Opencode. Filter those plans out out your PRs.
 
 ## Installation
 
 ```bash
-bun add @markjaquith/agency
+bun install -g @markjaquith/agency
 ```
 
-Or with npm:
-
-```bash
-npm install @markjaquith/agency
-```
-
-## Commands
+## Primary Commands
 
 ### `agency task [branch-name]`
 
-Initialize `AGENTS.md` and `TASK.md` files using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
+Initialize `AGENTS.md` and `TASK.md` files using the template you've set for this repo. Commits smuggled files and lands you on that branch.
 
 ### `agency task edit`
 
-Open `TASK.md` in the system editor for editing.
+Open `TASK.md` in the system editor for editing. Nice if you have to paste in large amounts of context.
+
+### `agency work`
+
+Launch Opencode to work on the current task defined in `TASK.md`. All your context will be loaded.
+
+### `agency pr [base-branch]`
+
+Create a PR branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
+
+### `agency push`
+
+Runs `agency pr`, pushes the branch, and then switches back to the source branch.
+
+### `agency merge`
+
+Runs `agency pr`, and then merges the PR back into the base branch locally.
+
+## Other Commands
 
 ### `agency template use [template]`
 
 Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
 
-### `agency template save [files...]`
+### `agency template save <files...>`
 
-Save files back to the configured template directory.
+Save the specified files back to the configured template directory (so they will be used for future `agency task` commands).
 
-### `agency pr [base-branch]`
+### `agency base get`
 
-Create a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
+Get the base branch for the current feature branch.
 
-### `agency base <subcommand>`
+### `agency base set <branch>`
 
-Get or set the base branch for the current feature branch.
-
-**Subcommands:**
-
-- `agency base set <branch>` - Set the default base branch for the current feature branch
-- `agency base get` - Get the configured base branch for the current feature branch
+Set the base branch for the current feature branch.
 
 ### `agency switch`
 
-Toggle between source branch and PR branch. If on a PR branch (e.g., `main--PR`), switches to source branch (e.g., `main`). If on source branch, switches to PR branch. PR branch must exist first.
+Toggle between source branch and PR branch. If on a PR branch (e.g., `foo--PR`), switches to source branch (e.g., `foo`). If on source branch and PR branch exists, switches to PR branch.
 
-### `agency merge`
+### `agency source`
 
-Merge the current PR branch into the configured base branch. If run from a source branch, automatically creates/updates the PR branch first, then merges it. If run from a PR branch, merges it directly into the base branch.
-
-**Usage:**
-
-- From source branch: `agency merge` (creates PR branch, then merges)
-- From PR branch: `agency merge` (merges directly)
-
-The command automatically:
-
-1. Detects whether you're on a source or PR branch
-2. Retrieves the configured base branch from git config
-3. Switches to the base branch
-4. Merges the PR branch into the base branch
-
-This is useful for local development workflows where you want to test merging your clean PR branch (without `AGENTS.md` modifications) into the base branch before pushing.
+Switch to the source branch for the current PR branch.
 
 ## Requirements
 
