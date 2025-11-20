@@ -14,14 +14,22 @@ import highlight, { done } from "../utils/colors"
 export interface MergeOptions {
 	silent?: boolean
 	verbose?: boolean
+	squash?: boolean
 }
 
 async function mergeBranch(
 	gitRoot: string,
 	branch: string,
 	verbose: boolean,
+	squash: boolean = false,
 ): Promise<void> {
-	const proc = Bun.spawn(["git", "merge", branch], {
+	const args = ["git", "merge"]
+	if (squash) {
+		args.push("--squash")
+	}
+	args.push(branch)
+
+	const proc = Bun.spawn(args, {
 		cwd: gitRoot,
 		stdout: verbose ? "inherit" : "pipe",
 		stderr: verbose ? "inherit" : "pipe",
@@ -38,7 +46,7 @@ async function mergeBranch(
 }
 
 export async function merge(options: MergeOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
+	const { silent = false, verbose = false, squash = false } = options
 	const log = silent ? () => {} : console.log
 	const verboseLog = verbose && !silent ? console.log : () => {}
 
@@ -160,15 +168,23 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 
 	// Merge the PR branch
 	verboseLog(
-		`Merging ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}...`,
+		`Merging ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}${squash ? " (squash)" : ""}...`,
 	)
-	await mergeBranch(gitRoot, prBranchToMerge, verbose)
+	await mergeBranch(gitRoot, prBranchToMerge, verbose, squash)
 
-	log(
-		done(
-			`Merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
-		),
-	)
+	if (squash) {
+		log(
+			done(
+				`Squash merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)} (staged, not committed)`,
+			),
+		)
+	} else {
+		log(
+			done(
+				`Merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
+			),
+		)
+	}
 }
 
 export const help = `
@@ -196,8 +212,12 @@ Prerequisites:
   - Base branch must exist locally
   - For source branches: Must have a corresponding PR branch or be able to create one
 
-Example:
+Options:
+  --squash                       # Use squash merge instead of regular merge
+
+Examples:
   agency merge                   # From source branch: creates PR branch then merges
+  agency merge --squash          # Squash merge (stages changes, requires manual commit)
 
 Notes:
   - The command determines the base branch from git config (agency.pr.<branch>.baseBranch)
@@ -205,4 +225,5 @@ Notes:
   - The PR branch must have both a source branch and base branch configured
   - After merge, you remain on the base branch
   - Merge conflicts must be resolved manually if they occur
+  - With --squash, changes are staged but not committed (you must commit manually)
 `

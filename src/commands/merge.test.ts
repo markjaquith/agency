@@ -266,4 +266,91 @@ describe("merge command", () => {
 			expect(logs.length).toBe(0)
 		})
 	})
+
+	describe("squash merge", () => {
+		test("performs squash merge when --squash flag is set", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			// We're on feature branch (source)
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Run merge with squash flag
+			await merge({ silent: true, squash: true })
+
+			// Should be on main branch after merge
+			const afterMergeBranch = await getCurrentBranch(tempDir)
+			expect(afterMergeBranch).toBe("main")
+
+			// Check that changes are staged but not committed
+			// Get the git status to see if there are staged changes
+			const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await statusProc.exited
+			const status = await new Response(statusProc.stdout).text()
+
+			// Staged changes should be present (indicated by status codes in first column)
+			expect(status.trim().length).toBeGreaterThan(0)
+
+			// Get the log to verify no merge commit was created
+			const logProc = Bun.spawn(["git", "log", "--oneline", "-5"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await logProc.exited
+			const log = await new Response(logProc.stdout).text()
+
+			// Should not contain a merge commit message
+			expect(log).not.toContain("Merge branch")
+		})
+
+		test("performs regular merge when --squash flag is not set", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			// We're on feature branch (source)
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Run merge without squash flag
+			await merge({ silent: true, squash: false })
+
+			// Should be on main branch after merge
+			const afterMergeBranch = await getCurrentBranch(tempDir)
+			expect(afterMergeBranch).toBe("main")
+
+			// With regular merge (not squash), there should be no staged changes
+			const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await statusProc.exited
+			const status = await new Response(statusProc.stdout).text()
+
+			// No staged changes - everything should be committed
+			expect(status.trim().length).toBe(0)
+
+			// Get the log to verify commits were included
+			const logProc = Bun.spawn(["git", "log", "--oneline", "-5"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await logProc.exited
+			const log = await new Response(logProc.stdout).text()
+
+			// Should contain the feature work commit (regular merge includes all commits)
+			expect(log).toContain("Feature work")
+		})
+	})
 })
