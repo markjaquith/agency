@@ -471,6 +471,108 @@ describe("pr command", () => {
 				"does not exist",
 			)
 		})
+
+		test("handles PR branch recreation after source branch rebase", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			// We're on test-feature which has AGENTS.md
+			// Add a feature-specific file to avoid conflicts
+			await Bun.write(join(tempDir, "feature.txt"), "feature content\n")
+			await Bun.spawn(["git", "add", "feature.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await Bun.spawn(
+				["git", "commit", "--no-verify", "-m", "Add feature file"],
+				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
+			).exited
+
+			// Store merge-base before advancing main
+			const initialMergeBase = await getGitOutput(tempDir, [
+				"merge-base",
+				"test-feature",
+				"main",
+			])
+
+			// Create initial PR branch
+			await pr({ silent: true, baseBranch: "main" })
+
+			// Verify AGENTS.md is filtered on PR branch (it was added on test-feature)
+			let files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).not.toContain("AGENTS.md")
+			expect(files).toContain("feature.txt")
+
+			// Switch back to test-feature branch
+			await Bun.spawn(["git", "checkout", "test-feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Simulate advancing main branch with a different file
+			await Bun.spawn(["git", "checkout", "main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await Bun.write(join(tempDir, "main-file.txt"), "main content\n")
+			await Bun.spawn(["git", "add", "main-file.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await Bun.spawn(
+				["git", "commit", "--no-verify", "-m", "Main branch advancement"],
+				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
+			).exited
+
+			// Rebase test-feature onto new main
+			await Bun.spawn(["git", "checkout", "test-feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			const rebaseProc = Bun.spawn(["git", "rebase", "main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await rebaseProc.exited
+			if (rebaseProc.exitCode !== 0) {
+				const stderr = await new Response(rebaseProc.stderr).text()
+				throw new Error(`Rebase failed: ${stderr}`)
+			}
+
+			// Verify merge-base has changed after rebase
+			const newMergeBase = await getGitOutput(tempDir, [
+				"merge-base",
+				"test-feature",
+				"main",
+			])
+			expect(newMergeBase.trim()).not.toBe(initialMergeBase.trim())
+
+			// Recreate PR branch after rebase (this is where the bug would manifest)
+			await pr({ silent: true, baseBranch: "main" })
+
+			// Verify AGENTS.md is still filtered and no extraneous changes
+			files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).not.toContain("AGENTS.md")
+			expect(files).toContain("feature.txt")
+			expect(files).toContain("main-file.txt") // Should have main's file after rebase
+
+			// Verify that our feature commits exist but AGENTS.md commit is filtered
+			const logOutput = await getGitOutput(tempDir, [
+				"log",
+				"--oneline",
+				"main..test-feature--PR",
+			])
+			expect(logOutput).toContain("Add feature file")
+			expect(logOutput).not.toContain("Add AGENTS.md")
+		})
 	})
 
 	describe("error handling", () => {

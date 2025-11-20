@@ -235,6 +235,30 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 	// Create or reset PR branch from current branch
 	await createOrResetBranch(gitRoot, currentBranch, prBranch)
 
+	// Unset any remote tracking branch for the PR branch to avoid confusion with git-filter-repo
+	// This ensures git-filter-repo only operates on the local branch without remote ref interference
+	const unsetRemoteProc = Bun.spawn(
+		["git", "config", "--unset", `branch.${prBranch}.remote`],
+		{
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	)
+	await unsetRemoteProc.exited
+	// Ignore errors - the config might not exist, which is fine
+
+	const unsetMergeProc = Bun.spawn(
+		["git", "config", "--unset", `branch.${prBranch}.merge`],
+		{
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	)
+	await unsetMergeProc.exited
+	// Ignore errors - the config might not exist, which is fine
+
 	// Run git-filter-repo to remove files from history on the PR branch
 	// Use --refs with a range to only rewrite commits since the merge-base
 	// This preserves the state of managed files as they were on the base branch,
