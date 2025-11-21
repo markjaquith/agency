@@ -372,8 +372,14 @@ export async function gitAdd(files: string[], gitRoot: string): Promise<void> {
 export async function gitCommit(
 	message: string,
 	gitRoot: string,
+	options?: { noVerify?: boolean },
 ): Promise<void> {
-	const proc = Bun.spawn(["git", "commit", "-m", message], {
+	const args = ["git", "commit", "-m", message]
+	if (options?.noVerify) {
+		args.push("--no-verify")
+	}
+
+	const proc = Bun.spawn(args, {
 		cwd: gitRoot,
 		stdout: "pipe",
 		stderr: "pipe",

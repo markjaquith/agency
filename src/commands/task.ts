@@ -413,7 +413,7 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 	if (createdFiles.length > 0) {
 		try {
 			await gitAdd(createdFiles, targetPath)
-			await gitCommit("chore: agency task", targetPath)
+			await gitCommit("chore: agency task", targetPath, { noVerify: true })
 			log(
 				done(
 					`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
