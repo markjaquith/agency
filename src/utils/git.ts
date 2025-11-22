@@ -1,19 +1,25 @@
-import { resolve } from "path"
-import { realpath } from "fs/promises"
+import { Effect, pipe } from "effect"
+import { GitService } from "../services/GitService"
+import { GitServiceLive } from "../services/GitServiceLive"
+
+/**
+ * Helper function to run an Effect with the GitService
+ * This provides backward compatibility with the existing async functions
+ */
+const runWithGitService = <A, E>(effect: Effect.Effect<A, E, GitService>) =>
+	Effect.runPromise(pipe(effect, Effect.provide(GitServiceLive)))
 
 /**
  * Check if a directory is inside a git repository
  */
 export async function isInsideGitRepo(path: string): Promise<boolean> {
 	try {
-		const proc = Bun.spawn(["git", "rev-parse", "--is-inside-work-tree"], {
-			cwd: path,
-			stdout: "pipe",
-			stderr: "pipe",
-		})
-
-		await proc.exited
-		return proc.exitCode === 0
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.isInsideGitRepo(path)
+			}),
+		)
 	} catch {
 		return false
 	}
@@ -24,20 +30,12 @@ export async function isInsideGitRepo(path: string): Promise<boolean> {
  */
 export async function getGitRoot(path: string): Promise<string | null> {
 	try {
-		const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
-			cwd: path,
-			stdout: "pipe",
-			stderr: "pipe",
-		})
-
-		await proc.exited
-
-		if (proc.exitCode !== 0) {
-			return null
-		}
-
-		const output = await new Response(proc.stdout).text()
-		return output.trim()
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.getGitRoot(path)
+			}),
+		)
 	} catch {
 		return null
 	}
@@ -47,15 +45,16 @@ export async function getGitRoot(path: string): Promise<string | null> {
  * Check if a path is the root of a git repository
  */
 export async function isGitRoot(path: string): Promise<boolean> {
-	const absolutePath = await realpath(resolve(path))
-	const gitRoot = await getGitRoot(absolutePath)
-
-	if (!gitRoot) {
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.isGitRoot(path)
+			}),
+		)
+	} catch {
 		return false
 	}
-
-	const gitRootReal = await realpath(gitRoot)
-	return gitRootReal === absolutePath
 }
 
 /**
@@ -66,20 +65,12 @@ export async function getGitConfig(
 	gitRoot: string,
 ): Promise<string | null> {
 	try {
-		const proc = Bun.spawn(["git", "config", "--local", "--get", key], {
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		})
-
-		await proc.exited
-
-		if (proc.exitCode !== 0) {
-			return null
-		}
-
-		const output = await new Response(proc.stdout).text()
-		return output.trim()
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.getGitConfig(key, gitRoot)
+			}),
+		)
 	} catch {
 		return null
 	}
@@ -93,18 +84,12 @@ export async function setGitConfig(
 	value: string,
 	gitRoot: string,
 ): Promise<void> {
-	const proc = Bun.spawn(["git", "config", "--local", key, value], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to set git config ${key}: ${stderr}`)
-	}
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.setGitConfig(key, value, gitRoot)
+		}),
+	)
 }
 
 /**
@@ -113,7 +98,16 @@ export async function setGitConfig(
 export async function getDefaultBaseBranchConfig(
 	gitRoot: string,
 ): Promise<string | null> {
-	return await getGitConfig("agency.baseBranch", gitRoot)
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.getDefaultBaseBranchConfig(gitRoot)
+			}),
+		)
+	} catch {
+		return null
+	}
 }
 
 /**
@@ -123,27 +117,28 @@ export async function setDefaultBaseBranchConfig(
 	baseBranch: string,
 	gitRoot: string,
 ): Promise<void> {
-	await setGitConfig("agency.baseBranch", baseBranch, gitRoot)
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.setDefaultBaseBranchConfig(baseBranch, gitRoot)
+		}),
+	)
 }
 
 /**
  * Get the current branch name
  */
 export async function getCurrentBranch(gitRoot: string): Promise<string> {
-	const proc = Bun.spawn(["git", "branch", "--show-current"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
+	return await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			return yield* git.getCurrentBranch(gitRoot)
+		}),
+	).catch((error: any) => {
+		throw new Error(
+			error.stderr || error.message || "Failed to get current branch",
+		)
 	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		throw new Error("Failed to get current branch")
-	}
-
-	const output = await new Response(proc.stdout).text()
-	return output.trim()
 }
 
 /**
@@ -153,34 +148,16 @@ export async function branchExists(
 	gitRoot: string,
 	branch: string,
 ): Promise<boolean> {
-	// Check if it's a remote branch (e.g., origin/main)
-	// Remote branches start with a remote name like origin/, upstream/, etc.
-	const remotePattern = /^(origin|upstream|fork)\//
-	if (remotePattern.test(branch)) {
-		const proc = Bun.spawn(
-			["git", "show-ref", "--verify", "--quiet", `refs/remotes/${branch}`],
-			{
-				cwd: gitRoot,
-				stdout: "pipe",
-				stderr: "pipe",
-			},
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.branchExists(gitRoot, branch)
+			}),
 		)
-		await proc.exited
-		return proc.exitCode === 0
+	} catch {
+		return false
 	}
-
-	// Check for local branch
-	const proc = Bun.spawn(
-		["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	)
-
-	await proc.exited
-	return proc.exitCode === 0
 }
 
 /**
@@ -189,21 +166,16 @@ export async function branchExists(
 export async function getDefaultRemoteBranch(
 	gitRoot: string,
 ): Promise<string | null> {
-	// Check what origin/HEAD points to
-	const proc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-
-	if (proc.exitCode === 0) {
-		const output = await new Response(proc.stdout).text()
-		return output.trim()
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.getDefaultRemoteBranch(gitRoot)
+			}),
+		)
+	} catch {
+		return null
 	}
-
-	return null
 }
 
 /**
@@ -211,26 +183,16 @@ export async function getDefaultRemoteBranch(
  * Returns the branch name without the remote prefix (e.g., "main" instead of "origin/main")
  */
 export async function findMainBranch(gitRoot: string): Promise<string | null> {
-	// Check what the actual default remote branch is
-	const defaultRemote = await getDefaultRemoteBranch(gitRoot)
-	if (defaultRemote && (await branchExists(gitRoot, defaultRemote))) {
-		// Strip the remote prefix if present
-		const match = defaultRemote.match(/^origin\/(.+)$/)
-		if (match) {
-			return match[1] || null
-		}
-		return defaultRemote
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.findMainBranch(gitRoot)
+			}),
+		)
+	} catch {
+		return null
 	}
-
-	// Try common base branches in order
-	const commonBases = ["main", "master"]
-	for (const base of commonBases) {
-		if (await branchExists(gitRoot, base)) {
-			return base
-		}
-	}
-
-	return null
 }
 
 /**
@@ -239,7 +201,16 @@ export async function findMainBranch(gitRoot: string): Promise<string | null> {
 export async function getMainBranchConfig(
 	gitRoot: string,
 ): Promise<string | null> {
-	return await getGitConfig("agency.mainBranch", gitRoot)
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.getMainBranchConfig(gitRoot)
+			}),
+		)
+	} catch {
+		return null
+	}
 }
 
 /**
@@ -249,7 +220,12 @@ export async function setMainBranchConfig(
 	mainBranch: string,
 	gitRoot: string,
 ): Promise<void> {
-	await setGitConfig("agency.mainBranch", mainBranch, gitRoot)
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.setMainBranchConfig(mainBranch, gitRoot)
+		}),
+	)
 }
 
 /**
@@ -260,23 +236,17 @@ export async function isFeatureBranch(
 	currentBranch: string,
 	gitRoot: string,
 ): Promise<boolean> {
-	// Get or find the main branch
-	let mainBranch = await getMainBranchConfig(gitRoot)
-	if (!mainBranch) {
-		mainBranch = await findMainBranch(gitRoot)
-		// Save it for future use
-		if (mainBranch) {
-			await setMainBranchConfig(mainBranch, gitRoot)
-		}
-	}
-
-	// If we couldn't determine a main branch, assume current is a feature branch
-	if (!mainBranch) {
+	try {
+		return await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.isFeatureBranch(currentBranch, gitRoot)
+			}),
+		)
+	} catch {
+		// If there's an error, assume it's a feature branch
 		return true
 	}
-
-	// Current branch is not a feature branch if it's the main branch
-	return currentBranch !== mainBranch
 }
 
 /**
@@ -286,39 +256,18 @@ export async function isFeatureBranch(
 export async function getSuggestedBaseBranches(
 	gitRoot: string,
 ): Promise<string[]> {
-	const suggestions: string[] = []
-
-	// Get the main branch from config or find it
-	let mainBranch = await getMainBranchConfig(gitRoot)
-	if (!mainBranch) {
-		mainBranch = await findMainBranch(gitRoot)
-	}
-	if (mainBranch) {
-		suggestions.push(mainBranch)
-	}
-
-	// Check for other common base branches
-	const commonBases = ["develop", "development", "staging"]
-	for (const base of commonBases) {
-		if (await branchExists(gitRoot, base)) {
-			// Don't add if it's already in suggestions
-			if (!suggestions.includes(base)) {
-				suggestions.push(base)
-			}
-		}
-	}
-
-	// Get current branch as a suggestion too
 	try {
-		const currentBranch = await getCurrentBranch(gitRoot)
-		if (currentBranch && !suggestions.includes(currentBranch)) {
-			suggestions.push(currentBranch)
-		}
+		const result = await runWithGitService(
+			Effect.gen(function* () {
+				const git = yield* GitService
+				return yield* git.getSuggestedBaseBranches(gitRoot)
+			}),
+		)
+		// Convert readonly array to regular array
+		return [...result]
 	} catch {
-		// Ignore if we can't get current branch
+		return []
 	}
-
-	return suggestions
 }
 
 /**
@@ -329,41 +278,32 @@ export async function createBranch(
 	gitRoot: string,
 	baseBranch?: string,
 ): Promise<void> {
-	const args = ["git", "checkout", "-b", branchName]
-	if (baseBranch) {
-		args.push(baseBranch)
-	}
-
-	const proc = Bun.spawn(args, {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.createBranch(branchName, gitRoot, baseBranch)
+		}),
+	).catch((error: any) => {
+		throw new Error(
+			error.stderr || error.message || `Failed to create branch: ${error}`,
+		)
 	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to create branch: ${stderr}`)
-	}
 }
 
 /**
  * Stage files for commit
  */
 export async function gitAdd(files: string[], gitRoot: string): Promise<void> {
-	const proc = Bun.spawn(["git", "add", ...files], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.gitAdd(files, gitRoot)
+		}),
+	).catch((error: any) => {
+		throw new Error(
+			error.stderr || error.message || `Failed to stage files: ${error}`,
+		)
 	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to stage files: ${stderr}`)
-	}
 }
 
 /**
@@ -374,23 +314,16 @@ export async function gitCommit(
 	gitRoot: string,
 	options?: { noVerify?: boolean },
 ): Promise<void> {
-	const args = ["git", "commit", "-m", message]
-	if (options?.noVerify) {
-		args.push("--no-verify")
-	}
-
-	const proc = Bun.spawn(args, {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.gitCommit(message, gitRoot, options)
+		}),
+	).catch((error: any) => {
+		throw new Error(
+			error.stderr || error.message || `Failed to commit: ${error}`,
+		)
 	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to commit: ${stderr}`)
-	}
 }
 
 /**
@@ -400,16 +333,14 @@ export async function checkoutBranch(
 	gitRoot: string,
 	branch: string,
 ): Promise<void> {
-	const proc = Bun.spawn(["git", "checkout", branch], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
+	await runWithGitService(
+		Effect.gen(function* () {
+			const git = yield* GitService
+			yield* git.checkoutBranch(gitRoot, branch)
+		}),
+	).catch((error: any) => {
+		throw new Error(
+			error.stderr || error.message || `Failed to checkout branch: ${error}`,
+		)
 	})
-
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to checkout branch: ${stderr}`)
-	}
 }

@@ -77,13 +77,17 @@ Phase 4: Testing & Cleanup
 
 ## Progress Update
 
-Successfully set up the foundation for Effect TS migration:
+Successfully migrated core services and utilities to Effect TS:
 
 - ✅ Installed Effect and @effect/schema dependencies
 - ✅ Analyzed codebase patterns and identified migration strategy
 - ✅ Created GitService interface using latest Effect.Service pattern
 - ✅ Implemented GitServiceLive with full error handling
-- ✅ All 159 tests still passing
+- ✅ Migrated git utilities to use GitService (backward compatible facade)
+- ✅ Created Effect Schema definitions for all data types
+- ✅ Created ConfigService with Effect
+- ✅ Migrated config.ts to use ConfigService
+- ✅ All 159 tests still passing after each migration step
 
 ## Tasks
 
@@ -92,12 +96,12 @@ Successfully set up the foundation for Effect TS migration:
 - [x] Install Effect dependencies (@effect/schema, effect)
 - [x] Study codebase patterns and identify Effect migration opportunities
 - [x] Create Effect service layers for git operations
-- [ ] Migrate src/utils/git.ts to Effect with proper error handling
+- [x] Migrate src/utils/git.ts to Effect with proper error handling
 
 ### Phase 2: Data & Validation
 
-- [ ] Create Effect Schema definitions for types (AgencyMetadata, ManagedFile, etc)
-- [ ] Migrate config.ts to use Effect for file I/O and error handling
+- [x] Create Effect Schema definitions for types (AgencyMetadata, ManagedFile, etc)
+- [x] Migrate config.ts to use Effect for file I/O and error handling
 - [ ] Convert types.ts to use Effect Schema for validation
 
 ### Phase 3: Utilities
