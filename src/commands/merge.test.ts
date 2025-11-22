@@ -7,6 +7,7 @@ import {
 	createTempDir,
 	cleanupTempDir,
 	initGitRepo,
+	initAgency,
 	getGitOutput,
 	getCurrentBranch,
 	createCommit,
@@ -72,7 +73,9 @@ describe("merge command", () => {
 		}).exited
 
 		// Initialize AGENTS.md on feature branch
-		await task({ silent: true, template: "test" })
+		await initAgency(tempDir, "test")
+
+		await task({ silent: true })
 
 		// Ensure agency.json has baseBranch set (task should auto-detect it, but ensure it's there)
 		const agencyJsonPath = join(tempDir, "agency.json")

@@ -1,6 +1,7 @@
 import { resolve } from "path"
 import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
 import { getTemplateDir } from "../utils/template"
+import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
 
 export interface ViewOptions {
@@ -37,9 +38,7 @@ export async function templateView(options: ViewOptions = {}): Promise<void> {
 	// Get template name from git config
 	const templateName = await getGitConfig("agency.template", gitRoot)
 	if (!templateName) {
-		throw new Error(
-			"No template configured for this repository. Run 'agency task' first.",
-		)
+		throw new RepositoryNotInitializedError()
 	}
 
 	if (!fileToView) {
@@ -89,7 +88,7 @@ Examples:
   agency template view docs/README.md    # View file in subdirectory
 
 Notes:
-  - Requires agency.template to be set (run 'agency task' first)
+  - Requires agency.template to be set (run 'agency init' first)
   - File path is relative to template root directory
   - File content is displayed directly to stdout
 `

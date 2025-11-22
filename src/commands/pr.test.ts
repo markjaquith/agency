@@ -6,6 +6,7 @@ import {
 	createTempDir,
 	cleanupTempDir,
 	initGitRepo,
+	initAgency,
 	fileExists,
 	getGitOutput,
 	getCurrentBranch,
@@ -59,7 +60,9 @@ describe("pr command", () => {
 		}).exited
 
 		// Initialize AGENTS.md and commit in one go
-		await task({ silent: true, template: "test" })
+		await initAgency(tempDir, "test")
+
+		await task({ silent: true })
 		await Bun.spawn(["git", "add", "AGENTS.md"], {
 			cwd: tempDir,
 			stdout: "pipe",

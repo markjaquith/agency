@@ -1,6 +1,8 @@
 import { resolve, join, dirname, basename } from "path"
+import { mkdir } from "node:fs/promises"
 import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
 import { getTemplateDir } from "../utils/template"
+import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
 
 export interface SaveOptions {
@@ -70,14 +72,16 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 	// Get template name from git config
 	const templateName = await getGitConfig("agency.template", gitRoot)
 	if (!templateName) {
-		throw new Error(
-			"No template configured for this repository. Run 'agency task' first.",
-		)
+		throw new RepositoryNotInitializedError()
 	}
 
 	verboseLog(`Saving to template: ${highlight.template(templateName)}`)
 
 	const templateDir = getTemplateDir(templateName)
+
+	// Create template directory if it doesn't exist
+	await mkdir(templateDir, { recursive: true })
+	verboseLog(`Ensured template directory exists: ${templateDir}`)
 
 	// Determine which files to save
 	let filesToProcess: string[] = []
@@ -174,9 +178,10 @@ Examples:
   agency save --help                 # Show this help message
 
 Notes:
-  - Requires agency.template to be set (run 'agency task' first)
+  - Requires agency.template to be set (run 'agency init' first)
   - At least one file or directory must be specified
   - Files are saved to ~/.config/agency/templates/{template-name}/
+  - Template directory is created automatically if it doesn't exist
   - Existing template files will be overwritten
   - Directory structure is preserved in the template
   - TASK.md files cannot be saved - agency controls their creation

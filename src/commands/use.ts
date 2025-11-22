@@ -87,9 +87,12 @@ export async function use(options: UseOptions = {}): Promise<void> {
 }
 
 export const help = `
-Usage: agency use [template] [options]
+Usage: agency template use [template] [options]
 
 Set the template to use for this repository.
+
+NOTE: This command is equivalent to 'agency init'. Use 'agency init' for
+      initial setup, and 'agency template use' to change templates later.
 
 When no template name is provided, shows an interactive list of available
 templates to choose from. The template name is saved to .git/config
@@ -105,14 +108,13 @@ Options:
   -t, --template    Specify template name (same as positional argument)
 
 Examples:
-  agency use                     # Interactive template selection
-  agency use work                # Set template to 'work'
-  agency use --template=client   # Set template to 'client'
-  agency use --help              # Show this help message
+  agency template use                     # Interactive template selection
+  agency template use work                # Set template to 'work'
+  agency template use --template=client   # Set template to 'client'
 
 Notes:
   - Template must exist in ~/.config/agency/templates/{name}/
-  - Run 'agency task' to create new templates
   - Template name is saved to .git/config (not committed)
   - Use 'agency task' after changing template to create/update files
+  - Template directory is created when you save files to it
 `

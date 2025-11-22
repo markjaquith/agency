@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "util"
+import { init, help as initHelp } from "./src/commands/init"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { push, help as pushHelp } from "./src/commands/push"
@@ -21,6 +22,22 @@ const VERSION = packageJson.version
 
 // Define commands
 const commands: Record<string, Command> = {
+	init: {
+		name: "init",
+		description: "Initialize agency with template selection",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(initHelp)
+				return
+			}
+			await init({
+				template: options.template,
+				silent: options.silent,
+				verbose: options.verbose,
+			})
+		},
+		help: initHelp,
+	},
 	pr: {
 		name: "pr",
 		description: "Create a PR branch without AGENTS.md",
@@ -143,7 +160,6 @@ const commands: Record<string, Command> = {
 				branch,
 				silent: options.silent,
 				verbose: options.verbose,
-				template: options.template,
 				task: options.task,
 			})
 		},
@@ -202,6 +218,7 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
+  init                   Initialize agency with template selection (run first)
   task [branch]          Initialize template files on a feature branch
   edit                   Open TASK.md in system editor
   work                   Start working on TASK.md with OpenCode
@@ -228,6 +245,7 @@ Global Options:
   -v, --verbose          Show verbose output including detailed debugging info
 
 Examples:
+  agency init                         # Initialize with template (run first)
   agency task                         # Initialize on current feature branch
   agency task my-feature              # Create 'my-feature' branch and initialize
   agency pr                           # Create PR branch (prompts for base branch)

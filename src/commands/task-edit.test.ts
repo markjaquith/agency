@@ -5,6 +5,7 @@ import {
 	createTempDir,
 	cleanupTempDir,
 	initGitRepo,
+	initAgency,
 	readFile,
 } from "../test-utils"
 
@@ -66,7 +67,9 @@ describe("edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await task({ silent: true, template: "test-task", branch: "test-feature" })
+		await initAgency(tempDir, "test-task")
+
+		await task({ silent: true, branch: "test-feature" })
 
 		// Use a mock editor that just exits successfully
 		process.env.EDITOR = "true" // 'true' is a command that always exits with code 0
@@ -80,7 +83,9 @@ describe("edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await task({ silent: true, template: "test-task", branch: "test-feature" })
+		await initAgency(tempDir, "test-task")
+
+		await task({ silent: true, branch: "test-feature" })
 
 		// Use 'true' command which exits successfully without doing anything
 		process.env.EDITOR = "true"
@@ -94,7 +99,9 @@ describe("edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await task({ silent: true, template: "test-task", branch: "test-feature" })
+		await initAgency(tempDir, "test-task")
+
+		await task({ silent: true, branch: "test-feature" })
 
 		// Set VISUAL to 'true' and EDITOR to 'false'
 		// If VISUAL is used (correct), it should succeed
@@ -111,7 +118,9 @@ describe("edit command", () => {
 		process.chdir(tempDir)
 
 		// Initialize to create TASK.md
-		await task({ silent: true, template: "test-task", branch: "test-feature" })
+		await initAgency(tempDir, "test-task")
+
+		await task({ silent: true, branch: "test-feature" })
 
 		// Clear VISUAL to ensure EDITOR is used
 		delete process.env.VISUAL

@@ -1,5 +1,6 @@
 import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
 import { getTemplateDir } from "../utils/template"
+import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
 
 export interface ListOptions {
@@ -58,9 +59,7 @@ export async function templateList(options: ListOptions = {}): Promise<void> {
 	// Get template name from git config
 	const templateName = await getGitConfig("agency.template", gitRoot)
 	if (!templateName) {
-		throw new Error(
-			"No template configured for this repository. Run 'agency task' first.",
-		)
+		throw new RepositoryNotInitializedError()
 	}
 
 	verboseLog(`Listing files in template: ${highlight.template(templateName)}`)
@@ -112,7 +111,8 @@ Example:
   agency template list                # List files in current template
 
 Notes:
-  - Requires agency.template to be set (run 'agency task' first)
+  - Requires agency.template to be set (run 'agency init' first)
   - Shows files relative to template root directory
   - Files are listed in alphabetical order
+  - Template directory must exist (created when you save files)
 `

@@ -2,6 +2,7 @@ import { resolve } from "path"
 import { rm } from "node:fs/promises"
 import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
 import { getTemplateDir } from "../utils/template"
+import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
 
 export interface DeleteOptions {
@@ -41,9 +42,7 @@ export async function templateDelete(
 	// Get template name from git config
 	const templateName = await getGitConfig("agency.template", gitRoot)
 	if (!templateName) {
-		throw new Error(
-			"No template configured for this repository. Run 'agency task' first.",
-		)
+		throw new RepositoryNotInitializedError()
 	}
 
 	if (filesToDelete.length === 0) {
@@ -104,7 +103,7 @@ Examples:
   agency template delete file1 file2 file3   # Delete multiple files
 
 Notes:
-  - Requires agency.template to be set (run 'agency task' first)
+  - Requires agency.template to be set (run 'agency init' first)
   - At least one file must be specified
   - Files are deleted from ~/.config/agency/templates/{template-name}/
   - Non-existent files are skipped with a warning in verbose mode

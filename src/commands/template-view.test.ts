@@ -147,7 +147,7 @@ describe("template view command", () => {
 		try {
 			await expect(
 				templateView({ file: "test.md", silent: true }),
-			).rejects.toThrow("No template configured")
+			).rejects.toThrow("Repository not initialized")
 		} finally {
 			process.chdir(originalCwd)
 		}

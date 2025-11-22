@@ -6,6 +6,7 @@ import {
 	createTempDir,
 	cleanupTempDir,
 	initGitRepo,
+	initAgency,
 	readFile,
 } from "../test-utils"
 
@@ -43,7 +44,8 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await task({ silent: true, template: "test-save", branch: "test-feature" })
+		await initAgency(tempDir, "test-save")
+		await task({ silent: true, branch: "test-feature" })
 
 		// Modify the files
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Modified content")
@@ -65,9 +67,9 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
+		await initAgency(tempDir, "test-no-files")
 		await task({
 			silent: true,
-			template: "test-no-files",
 			branch: "test-feature",
 		})
 
@@ -81,7 +83,7 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		await expect(save({ files: ["AGENTS.md"], silent: true })).rejects.toThrow(
-			"No template configured",
+			"Repository not initialized",
 		)
 	})
 
@@ -98,9 +100,9 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
+		await initAgency(tempDir, "test-partial")
 		await task({
 			silent: true,
-			template: "test-partial",
 			branch: "test-feature",
 		})
 
@@ -131,7 +133,8 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await task({ silent: true, template: "test-dir", branch: "test-feature" })
+		await initAgency(tempDir, "test-dir")
+		await task({ silent: true, branch: "test-feature" })
 
 		// Create a directory with files
 		const docsDir = join(tempDir, "docs")
@@ -159,7 +162,8 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
-		await task({ silent: true, template: "test-task", branch: "test-feature" })
+		await initAgency(tempDir, "test-task")
+		await task({ silent: true, branch: "test-feature" })
 
 		// Create a TASK.md with the {task} placeholder
 		await Bun.write(join(tempDir, "TASK.md"), "{task}\n\n## Notes")
@@ -175,9 +179,9 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
+		await initAgency(tempDir, "test-task-invalid")
 		await task({
 			silent: true,
-			template: "test-task-invalid",
 			branch: "test-feature",
 		})
 
@@ -198,9 +202,9 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
+		await initAgency(tempDir, "test-task-subdir")
 		await task({
 			silent: true,
-			template: "test-task-subdir",
 			branch: "test-feature",
 		})
 
@@ -219,9 +223,9 @@ describe("save command", () => {
 		process.chdir(tempDir)
 
 		// Initialize with template
+		await initAgency(tempDir, "test-task-subdir-invalid")
 		await task({
 			silent: true,
-			template: "test-task-subdir-invalid",
 			branch: "test-feature",
 		})
 

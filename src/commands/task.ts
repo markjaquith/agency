@@ -1,10 +1,9 @@
-import { resolve, join, basename } from "path"
+import { resolve, join } from "path"
 import {
 	isInsideGitRepo,
 	getGitRoot,
 	isGitRoot,
 	getGitConfig,
-	setGitConfig,
 	getCurrentBranch,
 	isFeatureBranch,
 	createBranch,
@@ -17,25 +16,16 @@ import {
 	getDefaultBaseBranchConfig,
 	branchExists,
 } from "../utils/git"
-import { getConfigDir } from "../config"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
-import {
-	prompt,
-	sanitizeTemplateName,
-	promptForBaseBranch,
-} from "../utils/prompt"
-import {
-	getTemplateDir,
-	createTemplateDir,
-	templateExists,
-} from "../utils/template"
+import { prompt, promptForBaseBranch } from "../utils/prompt"
+import { getTemplateDir } from "../utils/template"
+import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
 
 export interface TaskOptions {
 	path?: string
 	silent?: boolean
 	verbose?: boolean
-	template?: string
 	task?: string
 	branch?: string
 }
@@ -77,9 +67,17 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		targetPath = gitRoot
 	}
 
-	const configDir = getConfigDir()
 	const createdFiles: string[] = []
 	const injectedFiles: string[] = []
+
+	// Check if initialized (has template in git config)
+	const templateName = await getGitConfig("agency.template", targetPath)
+
+	if (!templateName) {
+		throw new RepositoryNotInitializedError()
+	}
+
+	verboseLog(`Using template: ${templateName}`)
 
 	// Check if TASK.md already exists - if so, abort
 	const taskMdPath = resolve(targetPath, "TASK.md")
@@ -192,72 +190,11 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		}
 	}
 
-	// Get or prompt for template name
-	let templateName =
-		options.template || (await getGitConfig("agency.template", targetPath))
-	let needsSaveToConfig = false
-
-	if (!templateName) {
-		// Prompt for template name if not in silent mode
-		if (silent) {
-			throw new Error(
-				"No template configured. Run without --silent to configure, or use --template flag.",
-			)
-		}
-
-		log("No template configured for this repository.")
-
-		// Suggest directory name as default if no template exists with that name
-		let defaultTemplateName: string | undefined
-		const dirName = basename(targetPath)
-		const sanitizedDirName = sanitizeTemplateName(dirName)
-
-		if (sanitizedDirName && !(await templateExists(sanitizedDirName))) {
-			defaultTemplateName = sanitizedDirName
-			verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
-		}
-
-		const answer = await prompt("Template name: ", defaultTemplateName)
-
-		if (!answer) {
-			throw new Error("Template name is required.")
-		}
-
-		templateName = sanitizeTemplateName(answer)
-		verboseLog(`Sanitized template name: ${templateName}`)
-		needsSaveToConfig = true
-	} else if (options.template) {
-		// Template was provided via option, not from git config
-		const existingTemplate = await getGitConfig("agency.template", targetPath)
-		if (existingTemplate !== options.template) {
-			needsSaveToConfig = true
-		}
-		verboseLog(`Using template: ${templateName}`)
-	} else {
-		verboseLog(`Using template: ${templateName}`)
-	}
-
-	// Create template directory if it doesn't exist (but don't populate it)
-	const templateDir = getTemplateDir(templateName)
-	const isNewTemplate = !(await templateExists(templateName))
-	await createTemplateDir(templateName)
-
-	if (isNewTemplate) {
-		log(done(`Created template ${highlight.template(templateName)}`))
-	}
-
 	// Get managed files for later use
 	const managedFiles = await initializeManagedFiles()
 
-	// Save template name to git config if needed
-	if (needsSaveToConfig) {
-		await setGitConfig("agency.template", templateName, targetPath)
-		log(
-			done(
-				`Set ${highlight.setting("agency.template")} = ${highlight.template(templateName)}`,
-			),
-		)
-	}
+	// Get template directory (it may or may not exist yet)
+	const templateDir = getTemplateDir(templateName)
 
 	// Prompt for task if TASK.md will be created (only if not already prompted earlier)
 	if (taskDescription === undefined) {
@@ -490,7 +427,10 @@ Usage: agency task [branch-name] [options]
 
 Initialize template files (AGENTS.md, TASK.md, opencode.json) in a git repository.
 
-IMPORTANT: This command must be run on a feature branch, not the main branch.
+IMPORTANT: 
+  - You must run 'agency init' first to select a template
+  - This command must be run on a feature branch, not the main branch
+
 If you're on the main branch, you must either:
   1. Switch to an existing feature branch first, then run 'agency task'
   2. Provide a branch name: 'agency task <branch-name>'
@@ -501,27 +441,22 @@ future use.
 
 Initializes files at the root of the current git repository.
 
-On first run in a repository, you'll be prompted for a template name. This
-creates a template directory at ~/.config/agency/templates/{name}/ and saves
-the template name to .git/config for future use.
-
 Arguments:
   branch-name       Create and switch to this branch before initializing
 
 Options:
-  -t, --template    Specify template name (skips prompt)
   -b, --branch      Branch name to create (alternative to positional arg)
 
 Examples:
-  agency task                        # Initialize on current feature branch
+  agency init                        # First, initialize with template
+  agency task                        # Then initialize on current feature branch
   agency task my-feature             # Create 'my-feature' branch and initialize
 
 Template Workflow:
-  1. First run: Prompted for template name (e.g., "work")
-  2. Template directory created at ~/.config/agency/templates/work/
-  3. Template name saved to .git/config (agency.template = work)
-  4. Subsequent runs: Automatically uses saved template
-  5. Use 'agency template save' to update template with local changes
+  1. Run 'agency init' to select template (saved to .git/config)
+  2. Run 'agency task' to create template files on feature branch
+  3. Use 'agency template save <file>' to update template with local changes
+  4. Template directory only created when you save files to it
 
 Branch Creation:
   1. When creating a new branch, you're prompted to select a base branch
@@ -533,6 +468,6 @@ Branch Creation:
 Notes:
   - Files are created at the git repository root, not the current directory
   - If files already exist in the repository, they will not be overwritten
-  - Templates are stored per-repository in .git/config (not committed)
+  - Template selection is stored in .git/config (not committed)
   - To edit TASK.md after creation, use 'agency edit'
 `

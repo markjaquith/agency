@@ -185,3 +185,20 @@ export async function branchExists(
 	await proc.exited
 	return proc.exitCode === 0
 }
+
+/**
+ * Initialize a repository with agency by setting a template in git config
+ */
+export async function initAgency(
+	cwd: string,
+	templateName: string,
+): Promise<void> {
+	await Bun.spawn(
+		["git", "config", "--local", "agency.template", templateName],
+		{
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	).exited
+}

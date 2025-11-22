@@ -125,7 +125,7 @@ describe("template list command", () => {
 
 		try {
 			await expect(templateList({ silent: true })).rejects.toThrow(
-				"No template configured",
+				"Repository not initialized",
 			)
 		} finally {
 			process.chdir(originalCwd)

@@ -165,7 +165,7 @@ describe("template delete command", () => {
 		try {
 			await expect(
 				templateDelete({ files: ["test.md"], silent: true }),
-			).rejects.toThrow("No template configured")
+			).rejects.toThrow("Repository not initialized")
 		} finally {
 			process.chdir(originalCwd)
 		}
