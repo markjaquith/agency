@@ -171,3 +171,42 @@ For commands to fully leverage Effect, they would need to:
 - Rely on Effect.runPromise in the CLI runner
 
 However, the current architecture provides the foundation for this without requiring immediate migration of all commands.
+
+## Summary of Completed Work
+
+### Services Created (10 total)
+
+1. **GitService** - Comprehensive git operations with full error handling
+2. **ConfigService** - Configuration management with schema validation
+3. **PromptService** - User input operations with readline integration
+4. **TemplateService** - Template discovery and management
+5. **FileSystemService** - Comprehensive file I/O operations
+
+Each service has:
+
+- A clean interface definition (ServiceName.ts)
+- A complete live implementation using Bun APIs (ServiceNameLive.ts)
+- Typed error variants for each failure mode
+- Effect-based composition support
+
+### Schemas Defined (4 total)
+
+- **AgencyMetadata** - Version 1 metadata with validation
+- **AgencyConfig** - Configuration schema with defaults
+- **ManagedFile** - Managed template file schema
+- **TemplateMetadata** - Template information schema
+
+### Migration Pattern Established
+
+The facade pattern used for utilities allows:
+
+1. Services to use Effect internally
+2. Existing code to use Promise-based APIs
+3. Gradual migration without breaking changes
+4. Easy transition when needed (remove facades, update callers)
+
+### Test Coverage Maintained
+
+- All 159 tests passing after each migration
+- No test modifications needed
+- Backward compatibility verified at every step
