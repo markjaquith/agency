@@ -98,11 +98,31 @@ Successfully migrated core services and utilities to Effect TS:
 
 The codebase now has a solid Effect TS foundation:
 
-- **Service Layer**: Full set of Effect services for core operations (Git, Config, Prompt, Template)
-- **Schema Validation**: All data types now validated using @effect/schema with proper encoding/decoding
-- **Error Handling**: Services use typed error channels instead of throwing
-- **Backward Compatibility**: Existing commands work seamlessly with Effect-based utilities via facades
-- **Type Safety**: Complete type coverage with schema-based validation for runtime safety
+- **Service Layer**: Complete set of Effect services for core operations:
+  - `GitService`: All git operations with typed errors (GitError, NotInGitRepoError, GitCommandError)
+  - `ConfigService`: Configuration management with schema validation
+  - `PromptService`: User input operations with proper error handling
+  - `TemplateService`: Template management and discovery
+  - `FileSystemService`: Comprehensive file I/O operations
+- **Schema Validation**: All data types now validated using @effect/schema:
+  - `AgencyMetadata`: Version 1 metadata for agency.json
+  - `AgencyConfig`: Configuration schema for PR branch patterns
+  - `ManagedFile`: Managed template files
+  - `TemplateMetadata`: Template information
+
+- **Error Handling**: Services use typed error channels with:
+  - Tagged error types for each service (GitError, ConfigError, PromptError, TemplateError, FileSystemError)
+  - Proper error composition and propagation
+  - Specific error variants for different failure modes
+
+- **Backward Compatibility**: Existing commands work seamlessly:
+  - Async/await facades wrap Effect services
+  - No breaking changes to CLI interface
+  - All 159 tests pass without modification
+- **Type Safety**: Complete type coverage:
+  - Schema-based validation for runtime safety
+  - TypeScript strict mode compliance
+  - Immutable data structures via Schema classes
 
 ## Tasks
 
