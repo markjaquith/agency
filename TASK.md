@@ -87,6 +87,10 @@ Successfully migrated core services and utilities to Effect TS:
 - ✅ Created Effect Schema definitions for all data types
 - ✅ Created ConfigService with Effect
 - ✅ Migrated config.ts to use ConfigService
+- ✅ Created PromptService for user input operations
+- ✅ Created TemplateService for template management
+- ✅ Migrated prompt.ts to use PromptService
+- ✅ Migrated template.ts to use TemplateService
 - ✅ All 159 tests still passing after each migration step
 
 ## Tasks
@@ -106,8 +110,8 @@ Successfully migrated core services and utilities to Effect TS:
 
 ### Phase 3: Utilities
 
-- [ ] Migrate template utility functions to Effect
-- [ ] Migrate prompt utilities to Effect
+- [x] Migrate template utility functions to Effect
+- [x] Migrate prompt utilities to Effect
 
 ### Phase 4: Commands
 

@@ -1,4 +1,14 @@
-import { createInterface } from "node:readline"
+import { Effect, pipe } from "effect"
+import { PromptService } from "../services/PromptService"
+import { PromptServiceLive } from "../services/PromptServiceLive"
+
+/**
+ * Helper function to run an Effect with the PromptService
+ * This provides backward compatibility with the existing async functions
+ */
+const runWithPromptService = <A, E>(
+	effect: Effect.Effect<A, E, PromptService>,
+) => Effect.runPromise(pipe(effect, Effect.provide(PromptServiceLive)))
 
 /**
  * Prompt the user for input with optional default value
@@ -7,23 +17,12 @@ export async function prompt(
 	question: string,
 	defaultValue?: string,
 ): Promise<string> {
-	const rl = createInterface({
-		input: process.stdin,
-		output: process.stdout,
-	})
-
-	return new Promise((resolve) => {
-		rl.question(question, (answer) => {
-			rl.close()
-			resolve(answer.trim())
-		})
-
-		// If a default value is provided, pre-fill it in the prompt
-		// This allows the user to backspace and delete it
-		if (defaultValue) {
-			rl.write(defaultValue)
-		}
-	})
+	return await runWithPromptService(
+		Effect.gen(function* () {
+			const promptService = yield* PromptService
+			return yield* promptService.prompt(question, defaultValue)
+		}),
+	)
 }
 
 /**
@@ -44,25 +43,13 @@ export function sanitizeTemplateName(name: string): string {
 export async function promptForBaseBranch(
 	suggestions: string[],
 ): Promise<string> {
-	console.log("\nAvailable base branch options:")
-	suggestions.forEach((branch, index) => {
-		console.log(`  ${index + 1}. ${branch}`)
-	})
-
-	const answer = await prompt(
-		`\nSelect base branch (1-${suggestions.length}) or enter custom branch name: `,
+	return await runWithPromptService(
+		Effect.gen(function* () {
+			const promptService = yield* PromptService
+			return yield* promptService.promptForSelection(
+				"\nAvailable base branch options:",
+				suggestions,
+			)
+		}),
 	)
-
-	// Check if it's a number selection
-	const selection = parseInt(answer, 10)
-	if (!isNaN(selection) && selection >= 1 && selection <= suggestions.length) {
-		const selected = suggestions[selection - 1]
-		if (!selected) {
-			throw new Error("Invalid selection")
-		}
-		return selected
-	}
-
-	// Otherwise treat as custom branch name
-	return answer.trim()
 }
