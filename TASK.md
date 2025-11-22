@@ -106,7 +106,7 @@ Successfully migrated core services and utilities to Effect TS:
 
 - [x] Create Effect Schema definitions for types (AgencyMetadata, ManagedFile, etc)
 - [x] Migrate config.ts to use Effect for file I/O and error handling
-- [ ] Convert types.ts to use Effect Schema for validation
+- [x] Convert types.ts to use Effect Schema for validation
 
 ### Phase 3: Utilities
 
