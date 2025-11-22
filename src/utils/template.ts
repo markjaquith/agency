@@ -1,44 +1,67 @@
-import { join } from "node:path"
-import { mkdir } from "node:fs/promises"
-import { getConfigDir } from "../config"
+import { Effect, pipe } from "effect"
+import { TemplateService } from "../services/TemplateService"
+import { TemplateServiceLive } from "../services/TemplateServiceLive"
+
+/**
+ * Helper function to run an Effect with the TemplateService
+ * This provides backward compatibility with the existing async functions
+ */
+const runWithTemplateService = <A, E>(
+	effect: Effect.Effect<A, E, TemplateService>,
+) => Effect.runPromise(pipe(effect, Effect.provide(TemplateServiceLive)))
 
 /**
  * Get the directory path for a template
  */
 export function getTemplateDir(templateName: string): string {
-	return join(getConfigDir(), "templates", templateName)
+	// Synchronous wrapper - get the config dir directly
+	const { homedir } = require("node:os")
+	const { join } = require("node:path")
+	const configDir =
+		process.env.AGENCY_CONFIG_DIR || join(homedir(), ".config", "agency")
+	return join(configDir, "templates", templateName)
 }
 
 /**
  * Check if a template exists
  */
 export async function templateExists(templateName: string): Promise<boolean> {
-	const templateDir = getTemplateDir(templateName)
-	const file = Bun.file(join(templateDir, "AGENTS.md"))
-	return await file.exists()
+	try {
+		return await runWithTemplateService(
+			Effect.gen(function* () {
+				const templateService = yield* TemplateService
+				return yield* templateService.templateExists(templateName)
+			}),
+		)
+	} catch {
+		return false
+	}
 }
 
 /**
  * Create a template directory
  */
 export async function createTemplateDir(templateName: string): Promise<void> {
-	const templateDir = getTemplateDir(templateName)
-	await mkdir(templateDir, { recursive: true })
+	await runWithTemplateService(
+		Effect.gen(function* () {
+			const templateService = yield* TemplateService
+			yield* templateService.createTemplateDir(templateName)
+		}),
+	)
 }
 
 /**
  * List all available templates
  */
 export async function listTemplates(): Promise<string[]> {
-	const templatesDir = join(getConfigDir(), "templates")
-
 	try {
-		const entries = await Array.fromAsync(
-			new Bun.Glob("*/AGENTS.md").scan({ cwd: templatesDir }),
+		return await runWithTemplateService(
+			Effect.gen(function* () {
+				const templateService = yield* TemplateService
+				const templates = yield* templateService.listTemplates()
+				return Array.from(templates)
+			}),
 		)
-
-		// Extract template names from paths like "work/AGENTS.md"
-		return entries.map((entry) => entry.split("/")[0] || "").filter(Boolean)
 	} catch {
 		return []
 	}
