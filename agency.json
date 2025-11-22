@@ -1,9 +1,7 @@
 {
-  "version": 1,
-  "injectedFiles": [
-    "opencode.json"
-  ],
-  "baseBranch": "main",
-  "template": "agency",
-  "createdAt": "2025-11-22T22:35:30.880Z"
+	"version": 1,
+	"injectedFiles": ["opencode.json"],
+	"baseBranch": "main",
+	"template": "agency",
+	"createdAt": "2025-11-22T22:35:30.880Z"
 }
