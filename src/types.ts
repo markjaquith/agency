@@ -1,4 +1,6 @@
 import { join } from "node:path"
+import { Schema } from "@effect/schema"
+import { ManagedFile, AgencyMetadata } from "./schemas"
 
 export interface Command {
 	name: string
@@ -7,18 +9,7 @@ export interface Command {
 	help: string
 }
 
-export interface ManagedFile {
-	name: string
-	defaultContent?: string
-}
-
-export interface AgencyMetadata {
-	version: number
-	injectedFiles: string[]
-	baseBranch?: string
-	template: string
-	createdAt: string
-}
+export { ManagedFile, AgencyMetadata }
 
 /**
  * Load template content from the templates directory.
@@ -121,104 +112,7 @@ export async function initializeManagedFiles(): Promise<ManagedFile[]> {
 // For backward compatibility, export a variable that can be set
 export let MANAGED_FILES: ManagedFile[] = []
 
-/**
- * JSON Schema for agency.json version 1
- */
-const AGENCY_METADATA_SCHEMA_V1 = {
-	type: "object",
-	required: ["version", "injectedFiles", "template", "createdAt"],
-	properties: {
-		version: {
-			type: "number",
-			const: 1,
-		},
-		injectedFiles: {
-			type: "array",
-			items: {
-				type: "string",
-			},
-		},
-		baseBranch: {
-			type: "string",
-		},
-		template: {
-			type: "string",
-		},
-		createdAt: {
-			type: "string",
-			format: "date-time",
-		},
-	},
-	additionalProperties: false,
-}
-
-/**
- * Validate data against a JSON schema
- */
-function validateSchema(
-	data: any,
-	schema: any,
-): { valid: boolean; errors: string[] } {
-	const errors: string[] = []
-
-	// Check required fields
-	if (schema.required) {
-		for (const field of schema.required) {
-			if (!(field in data)) {
-				errors.push(`Missing required field: ${field}`)
-			}
-		}
-	}
-
-	// Check properties
-	if (schema.properties) {
-		for (const [key, propSchema] of Object.entries(schema.properties)) {
-			const value = data[key]
-			if (value === undefined) continue
-
-			const prop = propSchema as any
-
-			// Type check
-			if (prop.type) {
-				const actualType = Array.isArray(value) ? "array" : typeof value
-				if (actualType !== prop.type) {
-					errors.push(
-						`Field '${key}' should be type '${prop.type}', got '${actualType}'`,
-					)
-				}
-			}
-
-			// Const check
-			if (prop.const !== undefined && value !== prop.const) {
-				errors.push(`Field '${key}' should be ${prop.const}, got ${value}`)
-			}
-
-			// Array items check
-			if (prop.type === "array" && prop.items && Array.isArray(value)) {
-				for (let i = 0; i < value.length; i++) {
-					const itemType = typeof value[i]
-					if (itemType !== prop.items.type) {
-						errors.push(
-							`Field '${key}[${i}]' should be type '${prop.items.type}', got '${itemType}'`,
-						)
-					}
-				}
-			}
-		}
-	}
-
-	// Check for additional properties
-	if (schema.additionalProperties === false) {
-		const allowedKeys = new Set(Object.keys(schema.properties || {}))
-		for (const key of Object.keys(data)) {
-			if (!allowedKeys.has(key)) {
-				errors.push(`Unknown field: ${key}`)
-			}
-		}
-	}
-
-	return { valid: errors.length === 0, errors }
-}
+// Validation is now handled by Effect schemas in schemas.ts
 
 /**
  * Read agency.json metadata from a repository.
@@ -250,15 +144,14 @@ export async function readAgencyMetadata(
 			)
 		}
 
-		// Validate against schema
-		const validation = validateSchema(data, AGENCY_METADATA_SCHEMA_V1)
-		if (!validation.valid) {
+		// Parse and validate using Effect schema
+		try {
+			return Schema.decodeUnknownSync(AgencyMetadata)(data)
+		} catch (schemaError) {
 			throw new Error(
-				`Invalid agency.json format:\n${validation.errors.map((e) => `  - ${e}`).join("\n")}`,
+				`Invalid agency.json format: ${schemaError instanceof Error ? schemaError.message : String(schemaError)}`,
 			)
 		}
-
-		return data as AgencyMetadata
 	} catch (error) {
 		if (error instanceof Error) {
 			throw error
@@ -318,6 +211,13 @@ export async function setBaseBranchInMetadata(
 		)
 	}
 
-	metadata.baseBranch = baseBranch
-	await writeAgencyMetadata(gitRoot, metadata)
+	// Create a new metadata instance with the updated baseBranch
+	const updatedMetadata = new AgencyMetadata({
+		version: metadata.version,
+		injectedFiles: metadata.injectedFiles,
+		template: metadata.template,
+		createdAt: metadata.createdAt,
+		baseBranch,
+	})
+	await writeAgencyMetadata(gitRoot, updatedMetadata)
 }
