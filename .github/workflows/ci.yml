@@ -30,5 +30,8 @@ jobs:
       - name: Check formatting
         run: bun run format:check
 
+      - name: Check TypeScript
+        run: bunx tsc --noEmit
+
       - name: Run tests
         run: bun test
