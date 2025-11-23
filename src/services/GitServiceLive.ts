@@ -88,23 +88,7 @@ const findMainBranchHelper = async (
 		const defaultRemote = output.trim()
 
 		// Check if it exists
-		const proc2 = Bun.spawn(
-			[
-				"git",
-				"show-ref",
-				"--verify",
-				"--quiet",
-				`refs/remotes/${defaultRemote}`,
-			],
-			{
-				cwd: gitRoot,
-				stdout: "pipe",
-				stderr: "pipe",
-			},
-		)
-		await proc2.exited
-
-		if (proc2.exitCode === 0) {
+		if (await branchExistsHelper(gitRoot, defaultRemote)) {
 			// Strip the remote prefix if present
 			const match = defaultRemote.match(/^origin\/(.+)$/)
 			if (match?.[1]) {
@@ -117,17 +101,7 @@ const findMainBranchHelper = async (
 	// Try common base branches in order
 	const commonBases = ["main", "master"]
 	for (const base of commonBases) {
-		const proc = Bun.spawn(
-			["git", "show-ref", "--verify", "--quiet", `refs/heads/${base}`],
-			{
-				cwd: gitRoot,
-				stdout: "pipe",
-				stderr: "pipe",
-			},
-		)
-		await proc.exited
-
-		if (proc.exitCode === 0) {
+		if (await branchExistsHelper(gitRoot, base)) {
 			return base
 		}
 	}
@@ -155,6 +129,40 @@ const getMainBranchConfigHelper = async (
 	}
 
 	return null
+}
+
+// Helper to check if branch exists
+const branchExistsHelper = async (
+	gitRoot: string,
+	branch: string,
+): Promise<boolean> => {
+	// Check if it's a remote branch
+	const remotePattern = /^(origin|upstream|fork)\//
+	if (remotePattern.test(branch)) {
+		const proc = Bun.spawn(
+			["git", "show-ref", "--verify", "--quiet", `refs/remotes/${branch}`],
+			{
+				cwd: gitRoot,
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		)
+		await proc.exited
+		return proc.exitCode === 0
+	}
+
+	// Check for local branch
+	const proc = Bun.spawn(
+		["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+		{
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	)
+
+	await proc.exited
+	return proc.exitCode === 0
 }
 
 // Create the live implementation
@@ -278,41 +286,7 @@ export const GitServiceLive = Layer.succeed(
 
 		branchExists: (gitRoot: string, branch: string) =>
 			Effect.tryPromise({
-				try: async () => {
-					// Check if it's a remote branch
-					const remotePattern = /^(origin|upstream|fork)\//
-					if (remotePattern.test(branch)) {
-						const proc = Bun.spawn(
-							[
-								"git",
-								"show-ref",
-								"--verify",
-								"--quiet",
-								`refs/remotes/${branch}`,
-							],
-							{
-								cwd: gitRoot,
-								stdout: "pipe",
-								stderr: "pipe",
-							},
-						)
-						await proc.exited
-						return proc.exitCode === 0
-					}
-
-					// Check for local branch
-					const proc = Bun.spawn(
-						["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-
-					await proc.exited
-					return proc.exitCode === 0
-				},
+				try: () => branchExistsHelper(gitRoot, branch),
 				catch: () =>
 					new GitError({
 						message: `Failed to check if branch exists: ${branch}`,
@@ -399,17 +373,10 @@ export const GitServiceLive = Layer.succeed(
 					// Check for other common base branches
 					const commonBases = ["develop", "development", "staging"]
 					for (const base of commonBases) {
-						const proc = Bun.spawn(
-							["git", "show-ref", "--verify", "--quiet", `refs/heads/${base}`],
-							{
-								cwd: gitRoot,
-								stdout: "pipe",
-								stderr: "pipe",
-							},
-						)
-						await proc.exited
-
-						if (proc.exitCode === 0 && !suggestions.includes(base)) {
+						if (
+							(await branchExistsHelper(gitRoot, base)) &&
+							!suggestions.includes(base)
+						) {
 							suggestions.push(base)
 						}
 					}
