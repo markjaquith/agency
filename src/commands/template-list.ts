@@ -57,7 +57,6 @@ export const templateListEffect = (options: ListOptions = {}) =>
 
 		const git = yield* GitService
 		const templateService = yield* TemplateService
-		const fs = yield* FileSystemService
 
 		// Check if in a git repository
 		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
