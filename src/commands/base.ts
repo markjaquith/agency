@@ -1,11 +1,6 @@
-import {
-	isInsideGitRepo,
-	getGitRoot,
-	branchExists,
-	getCurrentBranch,
-	setDefaultBaseBranchConfig,
-	getDefaultBaseBranchConfig,
-} from "../utils/git"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { ConfigService } from "../services/ConfigService"
 import { setBaseBranchInMetadata, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
 
@@ -30,141 +25,219 @@ export interface BaseGetOptions {
 	verbose?: boolean
 }
 
+// Effect-based implementation
+export const baseSetEffect = (options: BaseSetOptions) =>
+	Effect.gen(function* () {
+		const {
+			baseBranch,
+			repo = false,
+			silent = false,
+			verbose = false,
+		} = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
+
+		const git = yield* GitService
+
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
+
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
+
+		// Validate that the base branch exists
+		const exists = yield* git.branchExists(gitRoot, baseBranch)
+		if (!exists) {
+			return yield* Effect.fail(
+				new Error(
+					`Base branch ${highlight.branch(baseBranch)} does not exist. Please provide a valid branch name.`,
+				),
+			)
+		}
+
+		if (repo) {
+			// Set repository-level default base branch in git config
+			yield* git.setDefaultBaseBranchConfig(baseBranch, gitRoot)
+			log(
+				done(
+					`Set repository-level default base branch to ${highlight.branch(baseBranch)}`,
+				),
+			)
+		} else {
+			// Set branch-specific base branch in agency.json
+			const currentBranch = yield* git.getCurrentBranch(gitRoot)
+			verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+
+			// Use Effect.tryPromise for metadata functions
+			yield* Effect.tryPromise({
+				try: () => setBaseBranchInMetadata(gitRoot, baseBranch),
+				catch: (error) =>
+					new Error(`Failed to set base branch in metadata: ${error}`),
+			})
+			log(
+				done(
+					`Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
+				),
+			)
+		}
+	})
+
+// Effect-based implementation
+export const baseGetEffect = (options: BaseGetOptions) =>
+	Effect.gen(function* () {
+		const { repo = false, silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
+
+		const git = yield* GitService
+
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
+
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
+
+		let currentBase: string | null
+
+		if (repo) {
+			// Get repository-level default base branch from git config
+			verboseLog("Reading repository-level default base branch from git config")
+			currentBase = yield* git.getDefaultBaseBranchConfig(gitRoot)
+
+			if (!currentBase) {
+				return yield* Effect.fail(
+					new Error(
+						"No repository-level base branch configured. Use 'agency base set --repo <branch>' to set one.",
+					),
+				)
+			}
+		} else {
+			// Get current branch
+			const currentBranch = yield* git.getCurrentBranch(gitRoot)
+			verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+
+			// Get branch-specific base branch from agency.json
+			verboseLog("Reading branch-specific base branch from agency.json")
+			currentBase = yield* Effect.tryPromise({
+				try: () => getBaseBranchFromMetadata(gitRoot),
+				catch: (error) => {
+					throw new Error(`Failed to get base branch from metadata: ${error}`)
+				},
+			})
+
+			if (!currentBase) {
+				return yield* Effect.fail(
+					new Error(
+						`No base branch configured for ${highlight.branch(currentBranch)}. Use 'agency base set <branch>' to set one.`,
+					),
+				)
+			}
+		}
+
+		log(currentBase)
+	})
+
+// Effect-based implementation
+export const baseEffect = (options: BaseOptions) =>
+	Effect.gen(function* () {
+		const {
+			subcommand,
+			args,
+			repo = false,
+			silent = false,
+			verbose = false,
+		} = options
+
+		if (!subcommand) {
+			return yield* Effect.fail(
+				new Error("Subcommand is required. Usage: agency base <subcommand>"),
+			)
+		}
+
+		switch (subcommand) {
+			case "set": {
+				if (!args[0]) {
+					return yield* Effect.fail(
+						new Error(
+							"Base branch argument is required. Usage: agency base set <branch>",
+						),
+					)
+				}
+				return yield* baseSetEffect({
+					baseBranch: args[0],
+					repo,
+					silent,
+					verbose,
+				})
+			}
+			case "get": {
+				return yield* baseGetEffect({
+					repo,
+					silent,
+					verbose,
+				})
+			}
+			default:
+				return yield* Effect.fail(
+					new Error(
+						`Unknown subcommand '${subcommand}'. Available subcommands: set, get`,
+					),
+				)
+		}
+	})
+
+// Backward-compatible Promise wrappers
 export async function baseSet(options: BaseSetOptions): Promise<void> {
-	const { baseBranch, repo = false, silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+	const { GitServiceLive } = await import("../services/GitServiceLive")
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+	const program = baseSetEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
-
-	// Validate that the base branch exists
-	if (!(await branchExists(gitRoot, baseBranch))) {
-		throw new Error(
-			`Base branch ${highlight.branch(baseBranch)} does not exist. Please provide a valid branch name.`,
-		)
-	}
-
-	if (repo) {
-		// Set repository-level default base branch in git config
-		await setDefaultBaseBranchConfig(baseBranch, gitRoot)
-		log(
-			done(
-				`Set repository-level default base branch to ${highlight.branch(baseBranch)}`,
-			),
-		)
-	} else {
-		// Set branch-specific base branch in agency.json
-		const currentBranch = await getCurrentBranch(gitRoot)
-		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
-
-		await setBaseBranchInMetadata(gitRoot, baseBranch)
-		log(
-			done(
-				`Set base branch to ${highlight.branch(baseBranch)} for ${highlight.branch(currentBranch)}`,
-			),
-		)
-	}
+	await Effect.runPromise(program)
 }
 
 export async function baseGet(options: BaseGetOptions): Promise<void> {
-	const { repo = false, silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+	const { GitServiceLive } = await import("../services/GitServiceLive")
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+	const program = baseGetEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
-
-	let currentBase: string | null
-
-	if (repo) {
-		// Get repository-level default base branch from git config
-		verboseLog("Reading repository-level default base branch from git config")
-		currentBase = await getDefaultBaseBranchConfig(gitRoot)
-
-		if (!currentBase) {
-			throw new Error(
-				"No repository-level base branch configured. Use 'agency base set --repo <branch>' to set one.",
-			)
-		}
-	} else {
-		// Get current branch
-		const currentBranch = await getCurrentBranch(gitRoot)
-		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
-
-		// Get branch-specific base branch from agency.json
-		verboseLog("Reading branch-specific base branch from agency.json")
-		currentBase = await getBaseBranchFromMetadata(gitRoot)
-
-		if (!currentBase) {
-			throw new Error(
-				`No base branch configured for ${highlight.branch(currentBranch)}. Use 'agency base set <branch>' to set one.`,
-			)
-		}
-	}
-
-	log(currentBase)
+	await Effect.runPromise(program)
 }
 
 export async function base(options: BaseOptions): Promise<void> {
-	const {
-		subcommand,
-		args,
-		repo = false,
-		silent = false,
-		verbose = false,
-	} = options
+	const { GitServiceLive } = await import("../services/GitServiceLive")
 
-	if (!subcommand) {
-		throw new Error("Subcommand is required. Usage: agency base <subcommand>")
-	}
+	const program = baseEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	switch (subcommand) {
-		case "set": {
-			if (!args[0]) {
-				throw new Error(
-					"Base branch argument is required. Usage: agency base set <branch>",
-				)
-			}
-			await baseSet({
-				baseBranch: args[0],
-				repo,
-				silent,
-				verbose,
-			})
-			break
-		}
-		case "get": {
-			await baseGet({
-				repo,
-				silent,
-				verbose,
-			})
-			break
-		}
-		default:
-			throw new Error(
-				`Unknown subcommand '${subcommand}'. Available subcommands: set, get`,
-			)
-	}
+	await Effect.runPromise(program)
 }
 
 export const help = `
