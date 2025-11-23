@@ -5,6 +5,7 @@ import { FileSystemService } from "../services/FileSystemService"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface PrOptions {
 	branch?: string
@@ -254,16 +255,11 @@ export async function pr(options: PrOptions = {}): Promise<void> {
 		"../services/FileSystemServiceLive"
 	)
 
-	const program = prEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(ConfigServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(prEffect(options), [
+		GitServiceLive,
+		ConfigServiceLive,
+		FileSystemServiceLive,
+	])
 }
 
 export const help = `

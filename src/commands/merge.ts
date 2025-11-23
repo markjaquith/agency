@@ -5,6 +5,7 @@ import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { getBaseBranchFromMetadata } from "../types"
 import { pr } from "./pr"
 import highlight, { done } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface MergeOptions {
 	silent?: boolean
@@ -212,15 +213,7 @@ export async function merge(options: MergeOptions = {}): Promise<void> {
 	const { GitServiceLive } = await import("../services/GitServiceLive")
 	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
 
-	const program = mergeEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(ConfigServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(mergeEffect(options), [GitServiceLive, ConfigServiceLive])
 }
 
 export const help = `

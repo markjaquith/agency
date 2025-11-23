@@ -7,6 +7,7 @@ import { TemplateService } from "../services/TemplateService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface TaskOptions {
 	path?: string
@@ -455,17 +456,12 @@ export async function task(options: TaskOptions = {}): Promise<void> {
 		"../services/TemplateServiceLive"
 	)
 
-	const program = taskEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.provide(PromptServiceLive),
-		Effect.provide(TemplateServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(taskEffect(options), [
+		GitServiceLive,
+		FileSystemServiceLive,
+		PromptServiceLive,
+		TemplateServiceLive,
+	])
 }
 
 export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
@@ -474,15 +470,10 @@ export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
 		"../services/FileSystemServiceLive"
 	)
 
-	const program = taskEditEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(taskEditEffect(options), [
+		GitServiceLive,
+		FileSystemServiceLive,
+	])
 }
 
 export const help = `

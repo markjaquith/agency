@@ -5,6 +5,7 @@ import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface ViewOptions {
 	file?: string
@@ -82,16 +83,11 @@ export async function templateView(options: ViewOptions = {}): Promise<void> {
 		"../services/FileSystemServiceLive"
 	)
 
-	const program = templateViewEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(TemplateServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(templateViewEffect(options), [
+		GitServiceLive,
+		TemplateServiceLive,
+		FileSystemServiceLive,
+	])
 }
 
 export const help = `

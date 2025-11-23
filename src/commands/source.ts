@@ -3,6 +3,7 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface SourceOptions {
 	silent?: boolean
@@ -68,15 +69,7 @@ export async function source(options: SourceOptions = {}): Promise<void> {
 	const { GitServiceLive } = await import("../services/GitServiceLive")
 	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
 
-	const program = sourceEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(ConfigServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(sourceEffect(options), [GitServiceLive, ConfigServiceLive])
 }
 
 export const help = `

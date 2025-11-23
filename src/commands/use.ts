@@ -3,6 +3,7 @@ import { GitService } from "../services/GitService"
 import { TemplateService } from "../services/TemplateService"
 import { PromptService } from "../services/PromptService"
 import highlight from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface UseOptions {
 	template?: string
@@ -104,16 +105,11 @@ export async function use(options: UseOptions = {}): Promise<void> {
 	)
 	const { PromptServiceLive } = await import("../services/PromptServiceLive")
 
-	const program = useEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(TemplateServiceLive),
-		Effect.provide(PromptServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(useEffect(options), [
+		GitServiceLive,
+		TemplateServiceLive,
+		PromptServiceLive,
+	])
 }
 
 export const help = `

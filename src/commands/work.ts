@@ -2,6 +2,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
+import { runEffect } from "../utils/effect"
 
 export interface WorkOptions {
 	silent?: boolean
@@ -67,15 +68,7 @@ export async function work(options: WorkOptions = {}): Promise<void> {
 		"../services/FileSystemServiceLive"
 	)
 
-	const program = workEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(workEffect(options), [GitServiceLive, FileSystemServiceLive])
 }
 
 export const help = `

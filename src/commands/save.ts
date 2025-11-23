@@ -5,6 +5,7 @@ import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface SaveOptions {
 	files?: string[]
@@ -182,16 +183,11 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 		"../services/FileSystemServiceLive"
 	)
 
-	const program = saveEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(TemplateServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(saveEffect(options), [
+		GitServiceLive,
+		TemplateServiceLive,
+		FileSystemServiceLive,
+	])
 }
 
 export const help = `

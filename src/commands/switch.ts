@@ -3,6 +3,7 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface SwitchOptions {
 	silent?: boolean
@@ -76,15 +77,10 @@ export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
 	const { GitServiceLive } = await import("../services/GitServiceLive")
 	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
 
-	const program = switchBranchEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(ConfigServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(switchBranchEffect(options), [
+		GitServiceLive,
+		ConfigServiceLive,
+	])
 }
 
 export const help = `

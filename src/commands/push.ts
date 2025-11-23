@@ -4,6 +4,7 @@ import { ConfigService } from "../services/ConfigService"
 import { prEffect } from "./pr"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
+import { runEffect } from "../utils/effect"
 
 export interface PushOptions {
 	baseBranch?: string
@@ -218,16 +219,11 @@ export async function push(options: PushOptions = {}): Promise<void> {
 		"../services/FileSystemServiceLive"
 	)
 
-	const program = pushEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.provide(ConfigServiceLive),
-		Effect.provide(FileSystemServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(pushEffect(options), [
+		GitServiceLive,
+		ConfigServiceLive,
+		FileSystemServiceLive,
+	])
 }
 
 export const help = `
