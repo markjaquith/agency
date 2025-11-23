@@ -66,14 +66,3 @@ export function extractSourceBranch(
 		return sourceBranch.length > 0 ? sourceBranch : null
 	}
 }
-
-/**
- * Check if a branch name appears to be a PR branch based on the pattern.
- *
- * @example
- * isPrBranch("feature-foo--PR", "%branch%--PR") // true
- * isPrBranch("feature-foo", "%branch%--PR") // false
- */
-export function isPrBranch(branchName: string, pattern: string): boolean {
-	return extractSourceBranch(branchName, pattern) !== null
-}

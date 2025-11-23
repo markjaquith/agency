@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test"
-import { makePrBranchName, extractSourceBranch, isPrBranch } from "./pr-branch"
+import { makePrBranchName, extractSourceBranch } from "./pr-branch"
 
 describe("makePrBranchName", () => {
 	test("replaces %branch% placeholder with branch name", () => {
@@ -71,24 +71,5 @@ describe("extractSourceBranch", () => {
 			expect(extractSourceBranch("--PR", "--PR")).toBeNull()
 			expect(extractSourceBranch("-pr", "-pr")).toBeNull()
 		})
-	})
-})
-
-describe("isPrBranch", () => {
-	test("returns true for PR branches", () => {
-		expect(isPrBranch("feature-foo--PR", "%branch%--PR")).toBe(true)
-		expect(isPrBranch("PR/feature-foo", "PR/%branch%")).toBe(true)
-		expect(isPrBranch("feature-foo--PR", "--PR")).toBe(true)
-	})
-
-	test("returns false for non-PR branches", () => {
-		expect(isPrBranch("feature-foo", "%branch%--PR")).toBe(false)
-		expect(isPrBranch("main", "%branch%--PR")).toBe(false)
-		expect(isPrBranch("feature-foo", "--PR")).toBe(false)
-	})
-
-	test("returns false for empty source branch", () => {
-		expect(isPrBranch("--PR", "%branch%--PR")).toBe(false)
-		expect(isPrBranch("PR/", "PR/%branch%")).toBe(false)
 	})
 })
