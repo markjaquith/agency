@@ -37,7 +37,7 @@ const runGitCommand = (args: readonly string[], cwd: string) =>
 			}),
 	})
 
-// Helper to run git commands and check exit code (DRY pattern)
+// Helper to run git commands and check exit code
 const runGitCommandOrFail = (args: readonly string[], cwd: string) =>
 	pipe(
 		runGitCommand(args, cwd),
@@ -54,7 +54,7 @@ const runGitCommandOrFail = (args: readonly string[], cwd: string) =>
 		),
 	)
 
-// Helper to run git commands that don't return output (void)
+// Helper to run git commands that return void
 const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 	pipe(
 		runGitCommand(args, cwd),

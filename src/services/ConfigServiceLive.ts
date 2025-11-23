@@ -10,42 +10,34 @@ const DEFAULT_CONFIG: AgencyConfig = new AgencyConfig({
 	prBranch: "%branch%--PR",
 })
 
+// Helper to get config directory
+const getConfigDir = (): string => {
+	// Allow override for testing
+	if (process.env.AGENCY_CONFIG_DIR) {
+		return process.env.AGENCY_CONFIG_DIR
+	}
+	return join(homedir(), ".config", "agency")
+}
+
+// Helper to get config file path
+const getConfigPath = (): string => {
+	// Allow override for testing
+	if (process.env.AGENCY_CONFIG_PATH) {
+		return process.env.AGENCY_CONFIG_PATH
+	}
+	return join(getConfigDir(), "agency.json")
+}
+
 export const ConfigServiceLive = Layer.succeed(
 	ConfigService,
 	ConfigService.of({
-		getConfigDir: () =>
-			Effect.sync(() => {
-				// Allow override for testing
-				if (process.env.AGENCY_CONFIG_DIR) {
-					return process.env.AGENCY_CONFIG_DIR
-				}
-				return join(homedir(), ".config", "agency")
-			}),
+		getConfigDir: () => Effect.sync(() => getConfigDir()),
 
-		getConfigPath: () =>
-			Effect.sync(() => {
-				// Allow override for testing
-				if (process.env.AGENCY_CONFIG_PATH) {
-					return process.env.AGENCY_CONFIG_PATH
-				}
-				const configDir =
-					process.env.AGENCY_CONFIG_DIR || join(homedir(), ".config", "agency")
-				return join(configDir, "agency.json")
-			}),
+		getConfigPath: () => Effect.sync(() => getConfigPath()),
 
 		loadConfig: (configPath?: string) =>
 			Effect.gen(function* () {
-				const path =
-					configPath ||
-					(yield* Effect.sync(() => {
-						if (process.env.AGENCY_CONFIG_PATH) {
-							return process.env.AGENCY_CONFIG_PATH
-						}
-						const configDir =
-							process.env.AGENCY_CONFIG_DIR ||
-							join(homedir(), ".config", "agency")
-						return join(configDir, "agency.json")
-					}))
+				const path = configPath || (yield* Effect.sync(() => getConfigPath()))
 
 				// Check if file exists
 				const file = Bun.file(path)
@@ -87,25 +79,10 @@ export const ConfigServiceLive = Layer.succeed(
 
 		saveConfig: (config: AgencyConfig, configPath?: string) =>
 			Effect.gen(function* () {
-				const path =
-					configPath ||
-					(yield* Effect.sync(() => {
-						if (process.env.AGENCY_CONFIG_PATH) {
-							return process.env.AGENCY_CONFIG_PATH
-						}
-						const configDir =
-							process.env.AGENCY_CONFIG_DIR ||
-							join(homedir(), ".config", "agency")
-						return join(configDir, "agency.json")
-					}))
+				const path = configPath || (yield* Effect.sync(() => getConfigPath()))
 
 				// Ensure the config directory exists
-				const configDir = yield* Effect.sync(() => {
-					if (process.env.AGENCY_CONFIG_DIR) {
-						return process.env.AGENCY_CONFIG_DIR
-					}
-					return join(homedir(), ".config", "agency")
-				})
+				const configDir = yield* Effect.sync(() => getConfigDir())
 
 				yield* Effect.tryPromise({
 					try: () => mkdir(configDir, { recursive: true }),
