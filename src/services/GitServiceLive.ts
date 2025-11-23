@@ -714,5 +714,93 @@ export const GitServiceLive = Layer.succeed(
 							),
 				),
 			),
+
+		deleteBranch: (gitRoot: string, branchName: string, force = false) =>
+			pipe(
+				runGitCommand(
+					["git", "branch", force ? "-D" : "-d", branchName],
+					gitRoot,
+				),
+				Effect.flatMap((result) =>
+					result.exitCode === 0
+						? Effect.void
+						: Effect.fail(
+								new GitCommandError({
+									command: `git branch ${force ? "-D" : "-d"} ${branchName}`,
+									exitCode: result.exitCode,
+									stderr: result.stderr,
+								}),
+							),
+				),
+			),
+
+		unsetGitConfig: (key: string, gitRoot: string) =>
+			Effect.tryPromise({
+				try: async () => {
+					const proc = Bun.spawn(["git", "config", "--unset", key], {
+						cwd: gitRoot,
+						stdout: "pipe",
+						stderr: "pipe",
+					})
+					await proc.exited
+					// Ignore errors - the config might not exist, which is fine
+				},
+				catch: () => new GitError({ message: `Failed to unset config ${key}` }),
+			}),
+
+		checkCommandExists: (command: string) =>
+			Effect.tryPromise({
+				try: async () => {
+					const proc = Bun.spawn(["which", command], {
+						stdout: "pipe",
+						stderr: "pipe",
+					})
+					await proc.exited
+					return proc.exitCode === 0
+				},
+				catch: () =>
+					new GitError({ message: `Failed to check if ${command} exists` }),
+			}),
+
+		runGitCommand: (
+			args: readonly string[],
+			gitRoot: string,
+			options?: {
+				readonly env?: Record<string, string>
+				readonly stdin?: string
+				readonly captureOutput?: boolean
+			},
+		) =>
+			Effect.tryPromise({
+				try: async () => {
+					const proc = Bun.spawn([...args], {
+						cwd: gitRoot,
+						stdout: options?.captureOutput ? "pipe" : "inherit",
+						stderr: "pipe",
+						env: options?.env
+							? { ...process.env, ...options.env }
+							: process.env,
+					})
+
+					await proc.exited
+
+					const stdout = options?.captureOutput
+						? await new Response(proc.stdout).text()
+						: ""
+					const stderr = await new Response(proc.stderr).text()
+
+					return {
+						stdout: stdout.trim(),
+						stderr: stderr.trim(),
+						exitCode: proc.exitCode ?? 0,
+					}
+				},
+				catch: (error) =>
+					new GitCommandError({
+						command: args.join(" "),
+						exitCode: -1,
+						stderr: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 	}),
 )

@@ -1,12 +1,7 @@
 import { Effect } from "effect"
-import {
-	isInsideGitRepo,
-	getGitRoot,
-	branchExists,
-	getCurrentBranch,
-	getDefaultBaseBranchConfig,
-} from "../utils/git"
-import { loadConfig } from "../config"
+import { GitService } from "../services/GitService"
+import { ConfigService } from "../services/ConfigService"
+import { FileSystemService } from "../services/FileSystemService"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
@@ -19,314 +14,256 @@ export interface PrOptions {
 	verbose?: boolean
 }
 
-async function checkGitFilterRepo(): Promise<boolean> {
-	const proc = Bun.spawn(["which", "git-filter-repo"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	})
+// Effect-based implementation
+export const prEffect = (options: PrOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, force = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	await proc.exited
-	return proc.exitCode === 0
-}
+		const git = yield* GitService
+		const configService = yield* ConfigService
+		const fs = yield* FileSystemService
 
-async function getDefaultRemoteBranch(gitRoot: string): Promise<string | null> {
-	// Check what origin/HEAD points to
-	const proc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-
-	await proc.exited
-
-	if (proc.exitCode === 0) {
-		const output = await new Response(proc.stdout).text()
-		return output.trim()
-	}
-
-	return null
-}
-
-async function getBaseBranch(
-	gitRoot: string,
-	providedBaseBranch?: string,
-): Promise<string> {
-	// If explicitly provided, use it
-	if (providedBaseBranch) {
-		// Verify it exists
-		if (!(await branchExists(gitRoot, providedBaseBranch))) {
-			throw new Error(
-				`Provided base branch ${highlight.branch(providedBaseBranch)} does not exist`,
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
 			)
 		}
-		return providedBaseBranch
-	}
 
-	// Check if we have a branch-specific base branch in agency.json (highest priority)
-	const savedBaseBranch = await getBaseBranchFromMetadata(gitRoot)
-	if (savedBaseBranch && (await branchExists(gitRoot, savedBaseBranch))) {
-		return savedBaseBranch
-	}
+		const gitRoot = yield* git.getGitRoot(process.cwd())
 
-	// Check for repository-level default base branch in git config
-	const defaultBaseBranch = await getDefaultBaseBranchConfig(gitRoot)
-	if (defaultBaseBranch && (await branchExists(gitRoot, defaultBaseBranch))) {
-		return defaultBaseBranch
-	}
-
-	// Try to auto-detect the default remote branch
-	const defaultRemote = await getDefaultRemoteBranch(gitRoot)
-	if (defaultRemote && (await branchExists(gitRoot, defaultRemote))) {
-		return defaultRemote
-	}
-
-	// Try common base branches in order
-	const commonBases = ["origin/main", "origin/master", "main", "master"]
-	for (const base of commonBases) {
-		if (await branchExists(gitRoot, base)) {
-			return base
+		// Check if git-filter-repo is installed
+		const hasFilterRepo = yield* git.checkCommandExists("git-filter-repo")
+		if (!hasFilterRepo) {
+			const isMac = process.platform === "darwin"
+			const installInstructions = isMac
+				? "Please install it via Homebrew: brew install git-filter-repo"
+				: "Please install it using your package manager. See: https://github.com/newren/git-filter-repo/blob/main/INSTALL.md"
+			return yield* Effect.fail(
+				new Error(`git-filter-repo is not installed. ${installInstructions}`),
+			)
 		}
-	}
 
-	// Could not auto-detect, require explicit specification
-	throw new Error(
-		"Could not auto-detect base branch. Please specify one explicitly with: agency pr <base-branch>",
-	)
-}
+		// Load config
+		const config = yield* configService.loadConfig()
 
-async function getMergeBase(
-	gitRoot: string,
-	branch1: string,
-	branch2: string,
-): Promise<string> {
-	const proc = Bun.spawn(["git", "merge-base", branch1, branch2], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
+		// Get current branch
+		const currentBranch = yield* git.getCurrentBranch(gitRoot)
 
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to find merge base: ${stderr}`)
-	}
-
-	const output = await new Response(proc.stdout).text()
-	return output.trim()
-}
-
-async function createOrResetBranch(
-	gitRoot: string,
-	sourceBranch: string,
-	targetBranch: string,
-): Promise<void> {
-	const exists = await branchExists(gitRoot, targetBranch)
-	const currentBranch = await getCurrentBranch(gitRoot)
-
-	if (exists) {
-		// If we're currently on the target branch, switch away first
-		if (currentBranch === targetBranch) {
-			const switchProc = Bun.spawn(["git", "checkout", sourceBranch], {
-				cwd: gitRoot,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await switchProc.exited
-			if (switchProc.exitCode !== 0) {
-				const stderr = await new Response(switchProc.stderr).text()
-				throw new Error(`Failed to switch away from branch: ${stderr}`)
+		// Check if current branch looks like a PR branch already
+		const possibleSourceBranch = extractSourceBranch(
+			currentBranch,
+			config.prBranch,
+		)
+		if (possibleSourceBranch && !force) {
+			// Check if the possible source branch exists
+			const sourceExists = yield* git.branchExists(
+				gitRoot,
+				possibleSourceBranch,
+			)
+			if (sourceExists) {
+				return yield* Effect.fail(
+					new Error(
+						`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch for ${highlight.branch(possibleSourceBranch)}.\n` +
+							`Creating a PR branch from a PR branch is likely a mistake.\n` +
+							`Use --force to override this check.`,
+					),
+				)
 			}
 		}
 
-		// Delete the existing branch
-		const deleteProc = Bun.spawn(["git", "branch", "-D", targetBranch], {
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		})
-		await deleteProc.exited
-		if (deleteProc.exitCode !== 0) {
-			const stderr = await new Response(deleteProc.stderr).text()
-			throw new Error(`Failed to delete branch: ${stderr}`)
-		}
-	}
+		// Find the base branch this was created from
+		const baseBranch = yield* getBaseBranchEffect(gitRoot, options.baseBranch)
 
-	// Create new branch from source
-	const proc = Bun.spawn(
-		["git", "checkout", "-b", targetBranch, sourceBranch],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	)
+		verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
 
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to create branch: ${stderr}`)
-	}
-}
-
-export async function pr(options: PrOptions = {}): Promise<void> {
-	const { silent = false, force = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
-
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
+		// Get the merge-base (where the branch diverged)
+		const mergeBase = yield* git.getMergeBase(
+			gitRoot,
+			currentBranch,
+			baseBranch,
 		)
-	}
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
+		verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
 
-	// Check if git-filter-repo is installed
-	if (!(await checkGitFilterRepo())) {
-		const isMac = process.platform === "darwin"
-		const installInstructions = isMac
-			? "Please install it via Homebrew: brew install git-filter-repo"
-			: "Please install it using your package manager. See: https://github.com/newren/git-filter-repo/blob/main/INSTALL.md"
-		throw new Error(`git-filter-repo is not installed. ${installInstructions}`)
-	}
+		// Determine PR branch name using config pattern
+		const prBranchName =
+			options.branch || makePrBranchName(currentBranch, config.prBranch)
 
-	// Load config
-	const config = await loadConfig()
+		// Create or reset PR branch from current branch
+		yield* createOrResetBranchEffect(gitRoot, currentBranch, prBranchName)
 
-	// Get current branch
-	const currentBranch = await getCurrentBranch(gitRoot)
+		// Unset any remote tracking branch for the PR branch
+		yield* git.unsetGitConfig(`branch.${prBranchName}.remote`, gitRoot)
+		yield* git.unsetGitConfig(`branch.${prBranchName}.merge`, gitRoot)
 
-	// Check if current branch looks like a PR branch already
-	const possibleSourceBranch = extractSourceBranch(
-		currentBranch,
-		config.prBranch,
-	)
-	if (possibleSourceBranch && !force) {
-		// Check if the possible source branch exists
-		const sourceExists = await branchExists(gitRoot, possibleSourceBranch)
-		if (sourceExists) {
-			throw new Error(
-				`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch for ${highlight.branch(possibleSourceBranch)}.\n` +
-					`Creating a PR branch from a PR branch is likely a mistake.\n` +
-					`Use --force to override this check.`,
+		verboseLog(
+			`Filtering managed files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranchName)}`,
+		)
+		verboseLog(
+			`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
+		)
+
+		// Clean up .git/filter-repo directory
+		const filterRepoDir = `${gitRoot}/.git/filter-repo`
+		yield* fs.deleteDirectory(filterRepoDir)
+		verboseLog("Cleaned up previous git-filter-repo state")
+
+		// Get files to filter from agency.json metadata
+		const filesToFilter = yield* Effect.tryPromise({
+			try: () => getFilesToFilter(gitRoot),
+			catch: (error) => new Error(`Failed to get files to filter: ${error}`),
+		})
+		verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
+
+		// Run git-filter-repo
+		const filterRepoArgs = [
+			"git",
+			"filter-repo",
+			...filesToFilter.flatMap((f) => ["--path", f]),
+			"--invert-paths",
+			"--force",
+			"--refs",
+			`${mergeBase}..${prBranchName}`,
+		]
+
+		const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
+			env: { GIT_CONFIG_GLOBAL: "" },
+			captureOutput: !verbose,
+		})
+
+		if (verbose) {
+			verboseLog("git-filter-repo completed")
+		}
+
+		if (result.exitCode !== 0) {
+			return yield* Effect.fail(
+				new Error(`git-filter-repo failed: ${result.stderr}`),
 			)
 		}
-	}
 
-	// Find the base branch this was created from
-	const baseBranch = await getBaseBranch(gitRoot, options.baseBranch)
-
-	verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
-
-	// Get the merge-base (where the branch diverged)
-	const mergeBase = await getMergeBase(gitRoot, currentBranch, baseBranch)
-
-	verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
-
-	// Determine PR branch name using config pattern
-	const prBranch =
-		options.branch || makePrBranchName(currentBranch, config.prBranch)
-
-	// Create or reset PR branch from current branch
-	await createOrResetBranch(gitRoot, currentBranch, prBranch)
-
-	// Unset any remote tracking branch for the PR branch to avoid confusion with git-filter-repo
-	// This ensures git-filter-repo only operates on the local branch without remote ref interference
-	const unsetRemoteProc = Bun.spawn(
-		["git", "config", "--unset", `branch.${prBranch}.remote`],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	)
-	await unsetRemoteProc.exited
-	// Ignore errors - the config might not exist, which is fine
-
-	const unsetMergeProc = Bun.spawn(
-		["git", "config", "--unset", `branch.${prBranch}.merge`],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	)
-	await unsetMergeProc.exited
-	// Ignore errors - the config might not exist, which is fine
-
-	// Run git-filter-repo to remove files from history on the PR branch
-	// Use --refs with a range to only rewrite commits since the merge-base
-	// This preserves the state of managed files as they were on the base branch,
-	// while removing any modifications made on the feature branch
-
-	verboseLog(
-		`Filtering managed files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranch)}`,
-	)
-	verboseLog(
-		`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
-	)
-
-	// Clean up .git/filter-repo directory to avoid interactive prompts
-	// about continuing from a previous run
-	const filterRepoDir = `${gitRoot}/.git/filter-repo`
-	try {
-		await Bun.spawn(["rm", "-rf", filterRepoDir], {
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
-		verboseLog("Cleaned up previous git-filter-repo state")
-	} catch {
-		// Ignore errors if directory doesn't exist
-	}
-
-	// Set GIT_CONFIG_GLOBAL to empty to avoid parsing issues with global git config
-	// See: https://github.com/newren/git-filter-repo/issues/512
-	const env = { ...process.env, GIT_CONFIG_GLOBAL: "" }
-
-	// Get files to filter from agency.json metadata
-	const filesToFilter = await getFilesToFilter(gitRoot)
-	verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
-
-	const filterRepoArgs = [
-		"git",
-		"filter-repo",
-		...filesToFilter.flatMap((f) => ["--path", f]),
-		"--invert-paths",
-		"--force",
-		"--refs",
-		`${mergeBase}..${prBranch}`,
-	]
-
-	const proc = Bun.spawn(filterRepoArgs, {
-		cwd: gitRoot,
-		stdout: verbose ? "inherit" : "pipe",
-		stderr: "pipe",
-		env,
+		log(
+			done(
+				`Created ${highlight.branch(prBranchName)} from ${highlight.branch(currentBranch)}`,
+			),
+		)
 	})
 
-	await proc.exited
+// Helper: Get base branch with auto-detection
+const getBaseBranchEffect = (gitRoot: string, providedBaseBranch?: string) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
 
-	if (verbose) {
-		verboseLog("git-filter-repo completed")
-	}
+		// If explicitly provided, use it
+		if (providedBaseBranch) {
+			const exists = yield* git.branchExists(gitRoot, providedBaseBranch)
+			if (!exists) {
+				return yield* Effect.fail(
+					new Error(
+						`Provided base branch ${highlight.branch(providedBaseBranch)} does not exist`,
+					),
+				)
+			}
+			return providedBaseBranch
+		}
 
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`git-filter-repo failed: ${stderr}`)
-	}
+		// Check if we have a branch-specific base branch in agency.json
+		const savedBaseBranch = yield* Effect.tryPromise({
+			try: () => getBaseBranchFromMetadata(gitRoot),
+			catch: () => null,
+		})
+		if (savedBaseBranch) {
+			const exists = yield* git.branchExists(gitRoot, savedBaseBranch)
+			if (exists) {
+				return savedBaseBranch
+			}
+		}
 
-	log(
-		done(
-			`Created ${highlight.branch(prBranch)} from ${highlight.branch(currentBranch)}`,
+		// Check for repository-level default base branch in git config
+		const defaultBaseBranch = yield* git.getDefaultBaseBranchConfig(gitRoot)
+		if (defaultBaseBranch) {
+			const exists = yield* git.branchExists(gitRoot, defaultBaseBranch)
+			if (exists) {
+				return defaultBaseBranch
+			}
+		}
+
+		// Try to auto-detect the default remote branch
+		const defaultRemote = yield* git.getDefaultRemoteBranch(gitRoot)
+		if (defaultRemote) {
+			const exists = yield* git.branchExists(gitRoot, defaultRemote)
+			if (exists) {
+				return defaultRemote
+			}
+		}
+
+		// Try common base branches in order
+		const commonBases = ["origin/main", "origin/master", "main", "master"]
+		for (const base of commonBases) {
+			const exists = yield* git.branchExists(gitRoot, base)
+			if (exists) {
+				return base
+			}
+		}
+
+		// Could not auto-detect, require explicit specification
+		return yield* Effect.fail(
+			new Error(
+				"Could not auto-detect base branch. Please specify one explicitly with: agency pr <base-branch>",
+			),
+		)
+	})
+
+// Helper: Create or reset branch
+const createOrResetBranchEffect = (
+	gitRoot: string,
+	sourceBranch: string,
+	targetBranch: string,
+) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+
+		const exists = yield* git.branchExists(gitRoot, targetBranch)
+		const currentBranch = yield* git.getCurrentBranch(gitRoot)
+
+		if (exists) {
+			// If we're currently on the target branch, switch away first
+			if (currentBranch === targetBranch) {
+				yield* git.checkoutBranch(gitRoot, sourceBranch)
+			}
+
+			// Delete the existing branch
+			yield* git.deleteBranch(gitRoot, targetBranch, true)
+		}
+
+		// Create new branch from source
+		yield* git.createBranch(targetBranch, gitRoot, sourceBranch)
+		yield* git.checkoutBranch(gitRoot, targetBranch)
+	})
+
+// Backward-compatible Promise wrapper
+export async function pr(options: PrOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+
+	const program = prEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(ConfigServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
 		),
 	)
+
+	await Effect.runPromise(program)
 }
 
 export const help = `
@@ -399,10 +336,3 @@ Notes:
   - If PR branch exists, it will be deleted and recreated
    - Command will refuse to create PR branch from a PR branch unless --force is used
 `
-
-// Effect-based wrapper for backward compatibility
-export const prEffect = (options: PrOptions = {}) =>
-	Effect.tryPromise({
-		try: () => pr(options),
-		catch: (error) => error as Error,
-	})
