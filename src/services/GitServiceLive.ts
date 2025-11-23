@@ -71,6 +71,92 @@ const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 		),
 	)
 
+// Helper to find main branch (shared logic)
+const findMainBranchHelper = async (
+	gitRoot: string,
+): Promise<string | null> => {
+	// First check for origin/HEAD
+	const proc1 = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], {
+		cwd: gitRoot,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc1.exited
+
+	if (proc1.exitCode === 0) {
+		const output = await new Response(proc1.stdout).text()
+		const defaultRemote = output.trim()
+
+		// Check if it exists
+		const proc2 = Bun.spawn(
+			[
+				"git",
+				"show-ref",
+				"--verify",
+				"--quiet",
+				`refs/remotes/${defaultRemote}`,
+			],
+			{
+				cwd: gitRoot,
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		)
+		await proc2.exited
+
+		if (proc2.exitCode === 0) {
+			// Strip the remote prefix if present
+			const match = defaultRemote.match(/^origin\/(.+)$/)
+			if (match?.[1]) {
+				return match[1]
+			}
+			return defaultRemote
+		}
+	}
+
+	// Try common base branches in order
+	const commonBases = ["main", "master"]
+	for (const base of commonBases) {
+		const proc = Bun.spawn(
+			["git", "show-ref", "--verify", "--quiet", `refs/heads/${base}`],
+			{
+				cwd: gitRoot,
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		)
+		await proc.exited
+
+		if (proc.exitCode === 0) {
+			return base
+		}
+	}
+
+	return null
+}
+
+// Helper to get main branch config
+const getMainBranchConfigHelper = async (
+	gitRoot: string,
+): Promise<string | null> => {
+	const proc = Bun.spawn(
+		["git", "config", "--local", "--get", "agency.mainBranch"],
+		{
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	)
+	await proc.exited
+
+	if (proc.exitCode === 0) {
+		const output = await new Response(proc.stdout).text()
+		return output.trim()
+	}
+
+	return null
+}
+
 // Create the live implementation
 export const GitServiceLive = Layer.succeed(
 	GitService,
@@ -290,72 +376,9 @@ export const GitServiceLive = Layer.succeed(
 					new GitError({ message: "Failed to get default remote branch" }),
 			}),
 
-		// These methods need to access the service context, so we'll implement them differently
 		findMainBranch: (gitRoot: string) =>
 			Effect.tryPromise({
-				try: async () => {
-					// First check for origin/HEAD
-					const proc1 = Bun.spawn(
-						["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await proc1.exited
-
-					if (proc1.exitCode === 0) {
-						const output = await new Response(proc1.stdout).text()
-						const defaultRemote = output.trim()
-
-						// Check if it exists
-						const proc2 = Bun.spawn(
-							[
-								"git",
-								"show-ref",
-								"--verify",
-								"--quiet",
-								`refs/remotes/${defaultRemote}`,
-							],
-							{
-								cwd: gitRoot,
-								stdout: "pipe",
-								stderr: "pipe",
-							},
-						)
-						await proc2.exited
-
-						if (proc2.exitCode === 0) {
-							// Strip the remote prefix if present
-							const match = defaultRemote.match(/^origin\/(.+)$/)
-							if (match?.[1]) {
-								return match[1]
-							}
-							return defaultRemote
-						}
-					}
-
-					// Try common base branches in order
-					const commonBases = ["main", "master"]
-					for (const base of commonBases) {
-						const proc = Bun.spawn(
-							["git", "show-ref", "--verify", "--quiet", `refs/heads/${base}`],
-							{
-								cwd: gitRoot,
-								stdout: "pipe",
-								stderr: "pipe",
-							},
-						)
-						await proc.exited
-
-						if (proc.exitCode === 0) {
-							return base
-						}
-					}
-
-					return null
-				},
+				try: () => findMainBranchHelper(gitRoot),
 				catch: () => new GitError({ message: "Failed to find main branch" }),
 			}),
 
@@ -365,72 +388,9 @@ export const GitServiceLive = Layer.succeed(
 					const suggestions: string[] = []
 
 					// Get the main branch from config or find it
-					let mainBranch: string | null = null
-
-					// Try to get from config first
-					const configProc = Bun.spawn(
-						["git", "config", "--local", "--get", "agency.mainBranch"],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await configProc.exited
-
-					if (configProc.exitCode === 0) {
-						const output = await new Response(configProc.stdout).text()
-						mainBranch = output.trim()
-					}
-
-					// If not in config, try to find it
-					if (!mainBranch) {
-						// Implementation from findMainBranch inlined
-						const proc1 = Bun.spawn(
-							["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-							{
-								cwd: gitRoot,
-								stdout: "pipe",
-								stderr: "pipe",
-							},
-						)
-						await proc1.exited
-
-						if (proc1.exitCode === 0) {
-							const output = await new Response(proc1.stdout).text()
-							const defaultRemote = output.trim()
-							const match = defaultRemote.match(/^origin\/(.+)$/)
-							if (match?.[1]) {
-								mainBranch = match[1]
-							}
-						}
-
-						if (!mainBranch) {
-							const commonBases = ["main", "master"]
-							for (const base of commonBases) {
-								const proc = Bun.spawn(
-									[
-										"git",
-										"show-ref",
-										"--verify",
-										"--quiet",
-										`refs/heads/${base}`,
-									],
-									{
-										cwd: gitRoot,
-										stdout: "pipe",
-										stderr: "pipe",
-									},
-								)
-								await proc.exited
-
-								if (proc.exitCode === 0) {
-									mainBranch = base
-									break
-								}
-							}
-						}
-					}
+					const mainBranch =
+						(await getMainBranchConfigHelper(gitRoot)) ||
+						(await findMainBranchHelper(gitRoot))
 
 					if (mainBranch) {
 						suggestions.push(mainBranch)
@@ -479,84 +439,22 @@ export const GitServiceLive = Layer.succeed(
 		isFeatureBranch: (currentBranch: string, gitRoot: string) =>
 			Effect.tryPromise({
 				try: async () => {
-					// Get the main branch from config
-					let mainBranch: string | null = null
-
-					const configProc = Bun.spawn(
-						["git", "config", "--local", "--get", "agency.mainBranch"],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await configProc.exited
-
-					if (configProc.exitCode === 0) {
-						const output = await new Response(configProc.stdout).text()
-						mainBranch = output.trim()
-					}
-
-					// If not in config, try to find it
-					if (!mainBranch) {
-						// Check origin/HEAD first
-						const proc1 = Bun.spawn(
-							["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-							{
-								cwd: gitRoot,
-								stdout: "pipe",
-								stderr: "pipe",
-							},
-						)
-						await proc1.exited
-
-						if (proc1.exitCode === 0) {
-							const output = await new Response(proc1.stdout).text()
-							const defaultRemote = output.trim()
-							const match = defaultRemote.match(/^origin\/(.+)$/)
-							if (match?.[1]) {
-								mainBranch = match[1]
-							}
-						}
-
-						// Try common branches
-						if (!mainBranch) {
-							const commonBases = ["main", "master"]
-							for (const base of commonBases) {
-								const proc = Bun.spawn(
-									[
-										"git",
-										"show-ref",
-										"--verify",
-										"--quiet",
-										`refs/heads/${base}`,
-									],
-									{
-										cwd: gitRoot,
-										stdout: "pipe",
-										stderr: "pipe",
-									},
-								)
-								await proc.exited
-
-								if (proc.exitCode === 0) {
-									mainBranch = base
-
-									// Save it for future use
-									Bun.spawn(
-										["git", "config", "--local", "agency.mainBranch", base],
-										{ cwd: gitRoot },
-									)
-
-									break
-								}
-							}
-						}
-					}
+					// Get the main branch from config or find it
+					const mainBranch =
+						(await getMainBranchConfigHelper(gitRoot)) ||
+						(await findMainBranchHelper(gitRoot))
 
 					// If we couldn't determine a main branch, assume current is a feature branch
 					if (!mainBranch) {
 						return true
+					}
+
+					// Save it for future use if we found it
+					if (!(await getMainBranchConfigHelper(gitRoot))) {
+						Bun.spawn(
+							["git", "config", "--local", "agency.mainBranch", mainBranch],
+							{ cwd: gitRoot },
+						)
 					}
 
 					// Current branch is not a feature branch if it's the main branch
@@ -568,24 +466,7 @@ export const GitServiceLive = Layer.succeed(
 
 		getMainBranchConfig: (gitRoot: string) =>
 			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(
-						["git", "config", "--local", "--get", "agency.mainBranch"],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await proc.exited
-
-					if (proc.exitCode === 0) {
-						const output = await new Response(proc.stdout).text()
-						return output.trim()
-					}
-
-					return null
-				},
+				try: () => getMainBranchConfigHelper(gitRoot),
 				catch: () =>
 					new GitError({ message: "Failed to get main branch config" }),
 			}),
