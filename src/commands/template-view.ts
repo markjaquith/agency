@@ -7,12 +7,12 @@ import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface ViewOptions extends BaseCommandOptions {
+interface ViewOptions extends BaseCommandOptions {
 	file?: string
 }
 
 // Effect-based implementation
-export const templateViewEffect = (options: ViewOptions = {}) =>
+const templateViewEffect = (options: ViewOptions = {}) =>
 	Effect.gen(function* () {
 		const { file: fileToView, silent = false } = options
 		const { verboseLog } = createLoggers(options)
@@ -85,13 +85,8 @@ Notes:
   - File content is displayed directly to stdout
 `
 
-export const {
-	effect,
-	execute: templateView,
-	help,
-} = createCommand<ViewOptions>({
+export const { execute: templateView } = createCommand<ViewOptions>({
 	name: "template-view",
 	services: ["git", "template", "filesystem"],
 	effect: templateViewEffect,
-	help: helpText,
 })

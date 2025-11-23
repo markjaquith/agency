@@ -2,12 +2,12 @@ import { Effect, Either } from "effect"
 import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { effect as prEffect } from "./pr"
 import { extractSourceBranch } from "../utils/pr-branch"
+import { prEffect } from "./pr"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface PushOptions extends BaseCommandOptions {
+interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
 	branch?: string
 	force?: boolean
@@ -239,11 +239,7 @@ Notes:
   - If any step fails, the command stops and reports the error
 `
 
-export const {
-	effect,
-	execute: push,
-	help,
-} = createCommand<PushOptions>({
+export const { execute: push, help } = createCommand<PushOptions>({
 	name: "push",
 	services: ["git", "config", "filesystem"],
 	effect: pushEffect,

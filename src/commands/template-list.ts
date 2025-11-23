@@ -6,7 +6,7 @@ import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface ListOptions extends BaseCommandOptions {}
+interface ListOptions extends BaseCommandOptions {}
 
 function collectFilesRecursively(
 	dirPath: string,
@@ -47,7 +47,7 @@ function collectFilesRecursively(
 }
 
 // Effect-based implementation
-export const templateListEffect = (options: ListOptions = {}) =>
+const templateListEffect = (options: ListOptions = {}) =>
 	Effect.gen(function* () {
 		const { log, verboseLog } = createLoggers(options)
 
@@ -119,13 +119,8 @@ Notes:
   - Template directory must exist (created when you save files)
 `
 
-export const {
-	effect,
-	execute: templateList,
-	help,
-} = createCommand<ListOptions>({
+export const { execute: templateList } = createCommand<ListOptions>({
 	name: "template-list",
 	services: ["git", "template", "filesystem"],
 	effect: templateListEffect,
-	help: helpText,
 })

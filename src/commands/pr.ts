@@ -8,13 +8,13 @@ import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface PrOptions extends BaseCommandOptions {
+interface PrOptions extends BaseCommandOptions {
 	branch?: string
 	baseBranch?: string
 	force?: boolean
 }
 
-const prEffect = (options: PrOptions = {}) =>
+export const prEffect = (options: PrOptions = {}) =>
 	Effect.gen(function* () {
 		const { force = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -303,11 +303,7 @@ Notes:
    - Command will refuse to create PR branch from a PR branch unless --force is used
 `
 
-export const {
-	effect,
-	execute: pr,
-	help,
-} = createCommand<PrOptions>({
+export const { execute: pr, help } = createCommand<PrOptions>({
 	name: "pr",
 	services: ["git", "config", "filesystem"],
 	effect: prEffect,

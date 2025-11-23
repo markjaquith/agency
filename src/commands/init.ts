@@ -7,7 +7,7 @@ import { TemplateService } from "../services/TemplateService"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface InitOptions extends BaseCommandOptions {
+interface InitOptions extends BaseCommandOptions {
 	template?: string
 }
 
@@ -143,11 +143,7 @@ Notes:
   - Run 'agency task' after initialization to create template files
 `
 
-export const {
-	effect,
-	execute: init,
-	help,
-} = createCommand<InitOptions>({
+export const { execute: init, help } = createCommand<InitOptions>({
 	name: "init",
 	services: ["git", "prompt", "template"],
 	effect: initEffect,

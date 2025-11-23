@@ -9,8 +9,6 @@ export interface Command {
 	help: string
 }
 
-export { ManagedFile, AgencyMetadata }
-
 /**
  * Load template content from the templates directory.
  * Falls back to inline defaults if files cannot be read (e.g., in bundled packages).
@@ -110,14 +108,14 @@ export async function initializeManagedFiles(): Promise<ManagedFile[]> {
 
 // This will be initialized by commands that need it
 // For backward compatibility, export a variable that can be set
-export let MANAGED_FILES: ManagedFile[] = []
+let MANAGED_FILES: ManagedFile[] = []
 
 // Validation is now handled by Effect schemas in schemas.ts
 
 /**
  * Read agency.json metadata from a repository.
  */
-export async function readAgencyMetadata(
+async function readAgencyMetadata(
 	gitRoot: string,
 ): Promise<AgencyMetadata | null> {
 	const metadataPath = join(gitRoot, "agency.json")

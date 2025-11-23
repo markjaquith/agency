@@ -10,16 +10,16 @@ import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface TaskOptions extends BaseCommandOptions {
+interface TaskOptions extends BaseCommandOptions {
 	path?: string
 	task?: string
 	branch?: string
 }
 
-export interface TaskEditOptions extends BaseCommandOptions {}
+interface TaskEditOptions extends BaseCommandOptions {}
 
 // Effect-based implementation
-export const taskEffect = (options: TaskOptions = {}) =>
+const taskEffect = (options: TaskOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -387,7 +387,7 @@ const discoverTemplateFiles = (templateDir: string, verboseLog: Function) =>
 	})
 
 // Effect-based taskEdit implementation
-export const taskEditEffect = (options: TaskEditOptions = {}) =>
+const taskEditEffect = (options: TaskEditOptions = {}) =>
 	Effect.gen(function* () {
 		const { log, verboseLog } = createLoggers(options)
 
@@ -478,11 +478,7 @@ Notes:
   - To edit TASK.md after creation, use 'agency edit'
 `
 
-export const {
-	effect,
-	execute: task,
-	help,
-} = createCommand<TaskOptions>({
+export const { execute: task, help } = createCommand<TaskOptions>({
 	name: "task",
 	services: ["git", "filesystem", "prompt", "template"],
 	effect: taskEffect,

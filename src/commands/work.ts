@@ -5,7 +5,7 @@ import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface WorkOptions extends BaseCommandOptions {}
+interface WorkOptions extends BaseCommandOptions {}
 
 const workEffect = (options: WorkOptions = {}) =>
 	Effect.gen(function* () {
@@ -62,11 +62,7 @@ Notes:
   - Opens an interactive OpenCode session
 `
 
-export const {
-	effect,
-	execute: work,
-	help,
-} = createCommand<WorkOptions>({
+export const { execute: work, help } = createCommand<WorkOptions>({
 	name: "work",
 	services: ["git", "filesystem"],
 	effect: workEffect,

@@ -10,9 +10,7 @@ export class NotInGitRepoError extends Data.TaggedError("NotInGitRepoError")<{
 	path: string
 }> {}
 
-export class BranchNotFoundError extends Data.TaggedError(
-	"BranchNotFoundError",
-)<{
+class BranchNotFoundError extends Data.TaggedError("BranchNotFoundError")<{
 	branch: string
 }> {}
 

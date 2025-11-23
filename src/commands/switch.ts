@@ -6,7 +6,7 @@ import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface SwitchOptions extends BaseCommandOptions {}
+interface SwitchOptions extends BaseCommandOptions {}
 
 const switchEffect = (options: SwitchOptions = {}) =>
 	Effect.gen(function* () {
@@ -76,11 +76,7 @@ Notes:
   - If PR branch doesn't exist, run 'agency pr' to create it
 `
 
-export const {
-	effect,
-	execute: switchBranch,
-	help,
-} = createCommand<SwitchOptions>({
+export const { execute: switchBranch, help } = createCommand<SwitchOptions>({
 	name: "switch",
 	services: ["git", "config"],
 	effect: switchEffect,

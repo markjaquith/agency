@@ -5,7 +5,7 @@ import { setBaseBranchInMetadata, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface BaseOptions {
+interface BaseOptions {
 	subcommand?: string
 	args: string[]
 	repo?: boolean
@@ -13,21 +13,21 @@ export interface BaseOptions {
 	verbose?: boolean
 }
 
-export interface BaseSetOptions {
+interface BaseSetOptions {
 	baseBranch: string
 	repo?: boolean
 	silent?: boolean
 	verbose?: boolean
 }
 
-export interface BaseGetOptions {
+interface BaseGetOptions {
 	repo?: boolean
 	silent?: boolean
 	verbose?: boolean
 }
 
 // Effect-based implementation
-export const baseSetEffect = (options: BaseSetOptions) =>
+const baseSetEffect = (options: BaseSetOptions) =>
 	Effect.gen(function* () {
 		const { baseBranch, repo = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -73,7 +73,7 @@ export const baseSetEffect = (options: BaseSetOptions) =>
 	})
 
 // Effect-based implementation
-export const baseGetEffect = (options: BaseGetOptions) =>
+const baseGetEffect = (options: BaseGetOptions) =>
 	Effect.gen(function* () {
 		const { repo = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -122,7 +122,7 @@ export const baseGetEffect = (options: BaseGetOptions) =>
 	})
 
 // Effect-based implementation
-export const baseEffect = (options: BaseOptions) =>
+const baseEffect = (options: BaseOptions) =>
 	Effect.gen(function* () {
 		const {
 			subcommand,

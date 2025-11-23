@@ -47,7 +47,7 @@ export function setColorsEnabled(enabled: boolean): void {
 /**
  * Check if colors are currently enabled
  */
-export function areColorsEnabled(): boolean {
+function areColorsEnabled(): boolean {
 	return colorsEnabled
 }
 
@@ -66,7 +66,7 @@ function colorize(text: string, color: string): string {
  * Highlight a branch name
  * @example highlight.branch("main") -> "\x1b[96mmain\x1b[0m"
  */
-export function branch(name: string): string {
+function branch(name: string): string {
 	return colorize(name, COLORS.branch)
 }
 
@@ -74,7 +74,7 @@ export function branch(name: string): string {
  * Highlight a template name
  * @example highlight.template("my-template") -> "\x1b[96mmy-template\x1b[0m"
  */
-export function template(name: string): string {
+function template(name: string): string {
 	return colorize(name, COLORS.template)
 }
 
@@ -82,7 +82,7 @@ export function template(name: string): string {
  * Highlight a file name or path
  * @example highlight.file("AGENTS.md") -> "\x1b[96mAGENTS.md\x1b[0m"
  */
-export function file(name: string): string {
+function file(name: string): string {
 	return colorize(name, COLORS.file)
 }
 
@@ -90,7 +90,7 @@ export function file(name: string): string {
  * Highlight a setting name
  * @example highlight.setting("agency.template") -> "\x1b[96magency.template\x1b[0m"
  */
-export function setting(name: string): string {
+function setting(name: string): string {
 	return colorize(name, COLORS.setting)
 }
 
@@ -98,7 +98,7 @@ export function setting(name: string): string {
  * Highlight a numeric value or count
  * @example highlight.value("3") -> "\x1b[96m3\x1b[0m"
  */
-export function value(val: string | number): string {
+function value(val: string | number): string {
 	return colorize(String(val), COLORS.value)
 }
 
@@ -106,7 +106,7 @@ export function value(val: string | number): string {
  * Highlight a commit hash
  * @example highlight.commit("abc123") -> "\x1b[96mabc123\x1b[0m"
  */
-export function commit(hash: string): string {
+function commit(hash: string): string {
 	return colorize(hash, COLORS.commit)
 }
 
@@ -114,7 +114,7 @@ export function commit(hash: string): string {
  * Highlight a pattern or placeholder
  * @example highlight.pattern("{task}") -> "\x1b[96m{task}\x1b[0m"
  */
-export function pattern(text: string): string {
+function pattern(text: string): string {
 	return colorize(text, COLORS.pattern)
 }
 

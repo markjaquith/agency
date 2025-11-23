@@ -8,7 +8,7 @@ import { pr } from "./pr"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface MergeOptions extends BaseCommandOptions {
+interface MergeOptions extends BaseCommandOptions {
 	squash?: boolean
 }
 
@@ -235,11 +235,7 @@ Notes:
   - With --squash, changes are staged but not committed (you must commit manually)
 `
 
-export const {
-	effect,
-	execute: merge,
-	help,
-} = createCommand<MergeOptions>({
+export const { execute: merge, help } = createCommand<MergeOptions>({
 	name: "merge",
 	services: ["git", "config"],
 	effect: mergeEffect,

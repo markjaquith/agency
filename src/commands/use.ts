@@ -6,7 +6,7 @@ import { PromptService } from "../services/PromptService"
 import highlight from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface UseOptions extends BaseCommandOptions {
+interface UseOptions extends BaseCommandOptions {
 	template?: string
 }
 
@@ -116,13 +116,8 @@ Notes:
   - Template directory is created when you save files to it
 `
 
-export const {
-	effect,
-	execute: use,
-	help,
-} = createCommand<UseOptions>({
+export const { execute: use } = createCommand<UseOptions>({
 	name: "use",
 	services: ["git", "template", "prompt"],
 	effect: useEffect,
-	help: helpText,
 })

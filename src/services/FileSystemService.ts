@@ -10,7 +10,7 @@ export class FileNotFoundError extends Data.TaggedError("FileNotFoundError")<{
 	path: string
 }> {}
 
-export class DirectoryNotFoundError extends Data.TaggedError(
+class DirectoryNotFoundError extends Data.TaggedError(
 	"DirectoryNotFoundError",
 )<{
 	path: string

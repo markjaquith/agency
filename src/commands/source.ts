@@ -6,7 +6,7 @@ import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface SourceOptions extends BaseCommandOptions {}
+interface SourceOptions extends BaseCommandOptions {}
 
 const sourceEffect = (options: SourceOptions = {}) =>
 	Effect.gen(function* () {
@@ -65,11 +65,7 @@ Notes:
   - Uses PR branch pattern from ~/.config/agency/agency.json
 `
 
-export const {
-	effect,
-	execute: source,
-	help,
-} = createCommand<SourceOptions>({
+export const { execute: source, help } = createCommand<SourceOptions>({
 	name: "source",
 	services: ["git", "config"],
 	effect: sourceEffect,

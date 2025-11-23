@@ -3,9 +3,6 @@ import { ConfigService } from "./services/ConfigService"
 import { ConfigServiceLive } from "./services/ConfigServiceLive"
 import { AgencyConfig } from "./schemas"
 
-// Re-export the AgencyConfig type for backward compatibility
-export { AgencyConfig }
-
 /**
  * Helper function to run an Effect with the ConfigService
  * This provides backward compatibility with the existing async functions
@@ -18,7 +15,7 @@ const DEFAULT_CONFIG: AgencyConfig = new AgencyConfig({
 	prBranch: "%branch%--PR",
 })
 
-export function getConfigDir(): string {
+function getConfigDir(): string {
 	// Allow override for testing
 	if (process.env.AGENCY_CONFIG_DIR) {
 		return process.env.AGENCY_CONFIG_DIR

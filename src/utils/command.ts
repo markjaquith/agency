@@ -11,24 +11,24 @@ type ServiceKey = "git" | "config" | "template" | "filesystem" | "prompt"
 /**
  * Configuration for creating a command
  */
-export interface CommandConfig<
+interface CommandConfig<
 	TOptions extends BaseCommandOptions = BaseCommandOptions,
 > {
 	name: string
 	services: readonly ServiceKey[]
 	effect: (options: TOptions) => Effect.Effect<void, Error, any>
-	help: string
+	help?: string
 }
 
 /**
  * Result of createCommand - the command and its exports
  */
-export interface CreatedCommand<
+interface CreatedCommand<
 	TOptions extends BaseCommandOptions = BaseCommandOptions,
 > {
 	effect: (options: TOptions) => Effect.Effect<void, Error, any>
 	execute: (options?: TOptions) => Promise<void>
-	help: string
+	help?: string
 }
 
 /**
@@ -92,6 +92,6 @@ export function createCommand<
 			// Execute the command effect with all services
 			await runEffect(config.effect(options), services)
 		},
-		help: config.help,
+		help: config.help ?? "",
 	}
 }

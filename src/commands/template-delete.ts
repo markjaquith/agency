@@ -8,12 +8,12 @@ import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface DeleteOptions extends BaseCommandOptions {
+interface DeleteOptions extends BaseCommandOptions {
 	files?: string[]
 }
 
 // Effect-based implementation
-export const templateDeleteEffect = (options: DeleteOptions = {}) =>
+const templateDeleteEffect = (options: DeleteOptions = {}) =>
 	Effect.gen(function* () {
 		const { files: filesToDelete = [] } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -97,13 +97,8 @@ Notes:
   - Directories are deleted recursively
 `
 
-export const {
-	effect,
-	execute: templateDelete,
-	help,
-} = createCommand<DeleteOptions>({
+export const { execute: templateDelete } = createCommand<DeleteOptions>({
 	name: "template-delete",
 	services: ["git", "template", "filesystem"],
 	effect: templateDeleteEffect,
-	help: helpText,
 })

@@ -7,7 +7,7 @@ import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface SaveOptions extends BaseCommandOptions {
+interface SaveOptions extends BaseCommandOptions {
 	files?: string[]
 }
 
@@ -63,7 +63,7 @@ function collectFilesRecursively(
 }
 
 // Effect-based implementation
-export const saveEffect = (options: SaveOptions = {}) =>
+const saveEffect = (options: SaveOptions = {}) =>
 	Effect.gen(function* () {
 		const { files: filesToSave = [] } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -194,13 +194,8 @@ Notes:
   - TASK.md files cannot be saved - agency controls their creation
 `
 
-export const {
-	effect,
-	execute: save,
-	help,
-} = createCommand<SaveOptions>({
+export const { execute: save } = createCommand<SaveOptions>({
 	name: "save",
 	services: ["git", "template", "filesystem"],
 	effect: saveEffect,
-	help: helpText,
 })

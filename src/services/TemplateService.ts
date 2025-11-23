@@ -6,9 +6,7 @@ export class TemplateError extends Data.TaggedError("TemplateError")<{
 	cause?: unknown
 }> {}
 
-export class TemplateNotFoundError extends Data.TaggedError(
-	"TemplateNotFoundError",
-)<{
+class TemplateNotFoundError extends Data.TaggedError("TemplateNotFoundError")<{
 	template: string
 }> {}
 

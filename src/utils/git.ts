@@ -79,7 +79,7 @@ export async function getGitConfig(
 /**
  * Set a git config value in the repository
  */
-export async function setGitConfig(
+async function setGitConfig(
 	key: string,
 	value: string,
 	gitRoot: string,
@@ -95,7 +95,7 @@ export async function setGitConfig(
 /**
  * Get the repository-level default base branch from git config
  */
-export async function getDefaultBaseBranchConfig(
+async function getDefaultBaseBranchConfig(
 	gitRoot: string,
 ): Promise<string | null> {
 	try {
@@ -113,7 +113,7 @@ export async function getDefaultBaseBranchConfig(
 /**
  * Set the repository-level default base branch in git config
  */
-export async function setDefaultBaseBranchConfig(
+async function setDefaultBaseBranchConfig(
 	baseBranch: string,
 	gitRoot: string,
 ): Promise<void> {
@@ -128,7 +128,7 @@ export async function setDefaultBaseBranchConfig(
 /**
  * Get the current branch name
  */
-export async function getCurrentBranch(gitRoot: string): Promise<string> {
+async function getCurrentBranch(gitRoot: string): Promise<string> {
 	return await runWithGitService(
 		Effect.gen(function* () {
 			const git = yield* GitService
@@ -144,10 +144,7 @@ export async function getCurrentBranch(gitRoot: string): Promise<string> {
 /**
  * Check if a branch exists (local or remote)
  */
-export async function branchExists(
-	gitRoot: string,
-	branch: string,
-): Promise<boolean> {
+async function branchExists(gitRoot: string, branch: string): Promise<boolean> {
 	try {
 		return await runWithGitService(
 			Effect.gen(function* () {
@@ -163,9 +160,7 @@ export async function branchExists(
 /**
  * Get the default remote branch (usually origin/main or origin/master)
  */
-export async function getDefaultRemoteBranch(
-	gitRoot: string,
-): Promise<string | null> {
+async function getDefaultRemoteBranch(gitRoot: string): Promise<string | null> {
 	try {
 		return await runWithGitService(
 			Effect.gen(function* () {
@@ -182,7 +177,7 @@ export async function getDefaultRemoteBranch(
  * Find the main/base branch for this repository
  * Returns the branch name without the remote prefix (e.g., "main" instead of "origin/main")
  */
-export async function findMainBranch(gitRoot: string): Promise<string | null> {
+async function findMainBranch(gitRoot: string): Promise<string | null> {
 	try {
 		return await runWithGitService(
 			Effect.gen(function* () {
@@ -198,9 +193,7 @@ export async function findMainBranch(gitRoot: string): Promise<string | null> {
 /**
  * Get the configured main branch for this repository
  */
-export async function getMainBranchConfig(
-	gitRoot: string,
-): Promise<string | null> {
+async function getMainBranchConfig(gitRoot: string): Promise<string | null> {
 	try {
 		return await runWithGitService(
 			Effect.gen(function* () {
@@ -216,7 +209,7 @@ export async function getMainBranchConfig(
 /**
  * Set the main branch configuration for this repository
  */
-export async function setMainBranchConfig(
+async function setMainBranchConfig(
 	mainBranch: string,
 	gitRoot: string,
 ): Promise<void> {
@@ -232,7 +225,7 @@ export async function setMainBranchConfig(
  * Check if the current branch is a feature branch
  * A branch is considered a feature branch if it's not the main branch
  */
-export async function isFeatureBranch(
+async function isFeatureBranch(
 	currentBranch: string,
 	gitRoot: string,
 ): Promise<boolean> {
@@ -253,9 +246,7 @@ export async function isFeatureBranch(
  * Get suggested base branches for creating a new branch
  * Returns common base branches like main, master, develop that exist in the repo
  */
-export async function getSuggestedBaseBranches(
-	gitRoot: string,
-): Promise<string[]> {
+async function getSuggestedBaseBranches(gitRoot: string): Promise<string[]> {
 	try {
 		const result = await runWithGitService(
 			Effect.gen(function* () {
@@ -273,7 +264,7 @@ export async function getSuggestedBaseBranches(
 /**
  * Create a new branch from a base branch
  */
-export async function createBranch(
+async function createBranch(
 	branchName: string,
 	gitRoot: string,
 	baseBranch?: string,
@@ -329,10 +320,7 @@ export async function gitCommit(
 /**
  * Checkout a branch
  */
-export async function checkoutBranch(
-	gitRoot: string,
-	branch: string,
-): Promise<void> {
+async function checkoutBranch(gitRoot: string, branch: string): Promise<void> {
 	await runWithGitService(
 		Effect.gen(function* () {
 			const git = yield* GitService

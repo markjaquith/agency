@@ -7,7 +7,7 @@ export class ConfigError extends Data.TaggedError("ConfigError")<{
 	cause?: unknown
 }> {}
 
-export class ConfigReadError extends Data.TaggedError("ConfigReadError")<{
+class ConfigReadError extends Data.TaggedError("ConfigReadError")<{
 	path: string
 	cause?: unknown
 }> {}

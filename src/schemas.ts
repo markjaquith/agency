@@ -31,7 +31,7 @@ export class AgencyConfig extends Schema.Class<AgencyConfig>("AgencyConfig")({
 /**
  * Schema for template metadata
  */
-export class TemplateMetadata extends Schema.Class<TemplateMetadata>(
+class TemplateMetadata extends Schema.Class<TemplateMetadata>(
 	"TemplateMetadata",
 )({
 	name: Schema.String,
@@ -45,29 +45,29 @@ export class TemplateMetadata extends Schema.Class<TemplateMetadata>(
 /**
  * Parse and validate agency metadata from JSON
  */
-export const parseAgencyMetadata = Schema.decode(AgencyMetadata)
+const parseAgencyMetadata = Schema.decode(AgencyMetadata)
 
 /**
  * Encode agency metadata to JSON
  */
-export const encodeAgencyMetadata = Schema.encode(AgencyMetadata)
+const encodeAgencyMetadata = Schema.encode(AgencyMetadata)
 
 /**
  * Parse and validate agency config from JSON
  */
-export const parseAgencyConfig = Schema.decode(AgencyConfig)
+const parseAgencyConfig = Schema.decode(AgencyConfig)
 
 /**
  * Encode agency config to JSON
  */
-export const encodeAgencyConfig = Schema.encode(AgencyConfig)
+const encodeAgencyConfig = Schema.encode(AgencyConfig)
 
 /**
  * Parse and validate managed file from JSON
  */
-export const parseManagedFile = Schema.decode(ManagedFile)
+const parseManagedFile = Schema.decode(ManagedFile)
 
 /**
  * Parse and validate template metadata from JSON
  */
-export const parseTemplateMetadata = Schema.decode(TemplateMetadata)
+const parseTemplateMetadata = Schema.decode(TemplateMetadata)
