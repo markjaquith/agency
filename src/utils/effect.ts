@@ -1,5 +1,7 @@
 import { Effect, Layer } from "effect"
 import { GitService } from "../services/GitService"
+import { getBaseBranchFromMetadata } from "../types"
+import highlight from "./colors"
 
 /**
  * Helper to run an Effect program with services and proper error handling
@@ -64,5 +66,92 @@ export function getTemplateName(gitRoot: string) {
 	return Effect.gen(function* () {
 		const git = yield* GitService
 		return yield* git.getGitConfig("agency.template", gitRoot)
+	})
+}
+
+/**
+ * Resolve base branch with fallback chain:
+ * 1. Explicitly provided base branch
+ * 2. Branch-specific base branch from agency.json
+ * 3. Repository-level default base branch from git config
+ * 4. Auto-detected from origin/HEAD or common branches
+ */
+export function resolveBaseBranch(
+	gitRoot: string,
+	providedBaseBranch?: string,
+) {
+	return Effect.gen(function* () {
+		const git = yield* GitService
+
+		// If explicitly provided, use it
+		if (providedBaseBranch) {
+			const exists = yield* git.branchExists(gitRoot, providedBaseBranch)
+			if (!exists) {
+				return yield* Effect.fail(
+					new Error(
+						`Provided base branch ${highlight.branch(providedBaseBranch)} does not exist`,
+					),
+				)
+			}
+			return providedBaseBranch
+		}
+
+		// Check if we have a branch-specific base branch in agency.json
+		const savedBaseBranch = yield* Effect.tryPromise({
+			try: () => getBaseBranchFromMetadata(gitRoot),
+			catch: (error) =>
+				new Error(`Failed to get base branch from metadata: ${error}`),
+		})
+		if (savedBaseBranch) {
+			const exists = yield* git.branchExists(gitRoot, savedBaseBranch)
+			if (exists) {
+				return savedBaseBranch
+			}
+		}
+
+		// Check for repository-level default base branch in git config
+		const defaultBaseBranch = yield* git.getDefaultBaseBranchConfig(gitRoot)
+		if (defaultBaseBranch) {
+			const exists = yield* git.branchExists(gitRoot, defaultBaseBranch)
+			if (exists) {
+				return defaultBaseBranch
+			}
+		}
+
+		// Try to auto-detect the default remote branch
+		const defaultRemote = yield* git.getDefaultRemoteBranch(gitRoot)
+		if (defaultRemote) {
+			const exists = yield* git.branchExists(gitRoot, defaultRemote)
+			if (exists) {
+				return defaultRemote
+			}
+		}
+
+		// Try common base branches in order
+		const commonBases = ["origin/main", "origin/master", "main", "master"]
+		for (const base of commonBases) {
+			const exists = yield* git.branchExists(gitRoot, base)
+			if (exists) {
+				return base
+			}
+		}
+
+		// Could not auto-detect, require explicit specification
+		return yield* Effect.fail(
+			new Error(
+				"Could not auto-detect base branch. Please specify one explicitly with the --base-branch option or configure one with: agency base set <branch>",
+			),
+		)
+	})
+}
+
+/**
+ * Get base branch from agency.json metadata as an Effect
+ */
+export function getBaseBranchFromMetadataEffect(gitRoot: string) {
+	return Effect.tryPromise({
+		try: () => getBaseBranchFromMetadata(gitRoot),
+		catch: (error) =>
+			new Error(`Failed to get base branch from metadata: ${error}`),
 	})
 }

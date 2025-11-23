@@ -3,10 +3,13 @@ import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService, GitCommandError } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
-import { getBaseBranchFromMetadata } from "../types"
 import { pr } from "./pr"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	getBaseBranchFromMetadataEffect,
+} from "../utils/effect"
 
 interface MergeOptions extends BaseCommandOptions {
 	squash?: boolean
@@ -85,9 +88,7 @@ const mergeEffect = (options: MergeOptions = {}) =>
 			// Get the base branch from the source branch's agency.json
 			// We need to temporarily switch to the source branch to read its agency.json
 			yield* git.checkoutBranch(gitRoot, sourceBranch)
-			const configuredBase = yield* Effect.promise(() =>
-				getBaseBranchFromMetadata(gitRoot),
-			)
+			const configuredBase = yield* getBaseBranchFromMetadataEffect(gitRoot)
 			yield* git.checkoutBranch(gitRoot, currentBranch)
 
 			if (!configuredBase) {
@@ -138,9 +139,7 @@ const mergeEffect = (options: MergeOptions = {}) =>
 
 			// Switch back to source branch and get the base branch from agency.json
 			yield* git.checkoutBranch(gitRoot, currentBranch)
-			const configuredBase = yield* Effect.promise(() =>
-				getBaseBranchFromMetadata(gitRoot),
-			)
+			const configuredBase = yield* getBaseBranchFromMetadataEffect(gitRoot)
 			if (!configuredBase) {
 				return yield* Effect.fail(
 					new Error(

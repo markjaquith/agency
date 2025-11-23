@@ -4,9 +4,13 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
-import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
+import { getFilesToFilter } from "../types"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	resolveBaseBranch,
+} from "../utils/effect"
 
 interface PrOptions extends BaseCommandOptions {
 	branch?: string
@@ -66,7 +70,7 @@ export const prEffect = (options: PrOptions = {}) =>
 		}
 
 		// Find the base branch this was created from
-		const baseBranch = yield* getBaseBranchEffect(gitRoot, options.baseBranch)
+		const baseBranch = yield* resolveBaseBranch(gitRoot, options.baseBranch)
 
 		verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
 
@@ -136,72 +140,6 @@ export const prEffect = (options: PrOptions = {}) =>
 		log(
 			done(
 				`Created ${highlight.branch(prBranchName)} from ${highlight.branch(currentBranch)}`,
-			),
-		)
-	})
-
-// Helper: Get base branch with auto-detection
-const getBaseBranchEffect = (gitRoot: string, providedBaseBranch?: string) =>
-	Effect.gen(function* () {
-		const git = yield* GitService
-
-		// If explicitly provided, use it
-		if (providedBaseBranch) {
-			const exists = yield* git.branchExists(gitRoot, providedBaseBranch)
-			if (!exists) {
-				return yield* Effect.fail(
-					new Error(
-						`Provided base branch ${highlight.branch(providedBaseBranch)} does not exist`,
-					),
-				)
-			}
-			return providedBaseBranch
-		}
-
-		// Check if we have a branch-specific base branch in agency.json
-		const savedBaseBranch = yield* Effect.tryPromise({
-			try: () => getBaseBranchFromMetadata(gitRoot),
-			catch: (error) =>
-				new Error(`Failed to get base branch from metadata: ${error}`),
-		})
-		if (savedBaseBranch) {
-			const exists = yield* git.branchExists(gitRoot, savedBaseBranch)
-			if (exists) {
-				return savedBaseBranch
-			}
-		}
-
-		// Check for repository-level default base branch in git config
-		const defaultBaseBranch = yield* git.getDefaultBaseBranchConfig(gitRoot)
-		if (defaultBaseBranch) {
-			const exists = yield* git.branchExists(gitRoot, defaultBaseBranch)
-			if (exists) {
-				return defaultBaseBranch
-			}
-		}
-
-		// Try to auto-detect the default remote branch
-		const defaultRemote = yield* git.getDefaultRemoteBranch(gitRoot)
-		if (defaultRemote) {
-			const exists = yield* git.branchExists(gitRoot, defaultRemote)
-			if (exists) {
-				return defaultRemote
-			}
-		}
-
-		// Try common base branches in order
-		const commonBases = ["origin/main", "origin/master", "main", "master"]
-		for (const base of commonBases) {
-			const exists = yield* git.branchExists(gitRoot, base)
-			if (exists) {
-				return base
-			}
-		}
-
-		// Could not auto-detect, require explicit specification
-		return yield* Effect.fail(
-			new Error(
-				"Could not auto-detect base branch. Please specify one explicitly with: agency pr <base-branch>",
 			),
 		)
 	})
