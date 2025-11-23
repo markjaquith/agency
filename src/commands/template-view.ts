@@ -1,6 +1,8 @@
 import { resolve } from "path"
-import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
-import { getTemplateDir } from "../utils/template"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { TemplateService } from "../services/TemplateService"
+import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
 
@@ -10,61 +12,86 @@ export interface ViewOptions {
 	verbose?: boolean
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
-	try {
-		const file = Bun.file(filePath)
-		return await file.exists()
-	} catch {
-		return false
-	}
-}
+// Effect-based implementation
+export const templateViewEffect = (options: ViewOptions = {}) =>
+	Effect.gen(function* () {
+		const { file: fileToView, silent = false, verbose = false } = options
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-export async function templateView(options: ViewOptions = {}): Promise<void> {
-	const { file: fileToView, silent = false, verbose = false } = options
-	const verboseLog = verbose && !silent ? console.log : () => {}
+		const git = yield* GitService
+		const templateService = yield* TemplateService
+		const fs = yield* FileSystemService
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
+
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
+
+		// Get template name from git config
+		const templateName = yield* git.getGitConfig("agency.template", gitRoot)
+		if (!templateName) {
+			return yield* Effect.fail(new RepositoryNotInitializedError())
+		}
+
+		if (!fileToView) {
+			return yield* Effect.fail(
+				new Error("File path is required. Usage: agency template view <file>"),
+			)
+		}
+
+		verboseLog(
+			`Viewing ${highlight.file(fileToView)} from ${highlight.template(templateName)} template`,
 		)
-	}
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
+		// Get template directory
+		const templateDir = yield* templateService.getTemplateDir(templateName)
+		const templateFilePath = resolve(templateDir, fileToView)
 
-	// Get template name from git config
-	const templateName = await getGitConfig("agency.template", gitRoot)
-	if (!templateName) {
-		throw new RepositoryNotInitializedError()
-	}
+		// Check if file exists
+		const exists = yield* fs.exists(templateFilePath)
+		if (!exists) {
+			return yield* Effect.fail(
+				new Error(
+					`File ${highlight.file(fileToView)} does not exist in template ${highlight.template(templateName)}`,
+				),
+			)
+		}
 
-	if (!fileToView) {
-		throw new Error("File path is required. Usage: agency template view <file>")
-	}
+		// Read and display the file
+		const content = yield* fs.readFile(templateFilePath)
+		if (!silent) {
+			console.log(content)
+		}
+	})
 
-	verboseLog(
-		`Viewing ${highlight.file(fileToView)} from ${highlight.template(templateName)} template`,
+// Backward-compatible Promise wrapper
+export async function templateView(options: ViewOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { TemplateServiceLive } = await import(
+		"../services/TemplateServiceLive"
+	)
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
 	)
 
-	const templateDir = getTemplateDir(templateName)
-	const templateFilePath = resolve(templateDir, fileToView)
+	const program = templateViewEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(TemplateServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	// Check if file exists
-	if (!(await fileExists(templateFilePath))) {
-		throw new Error(
-			`File ${highlight.file(fileToView)} does not exist in template ${highlight.template(templateName)}`,
-		)
-	}
-
-	// Read and display the file
-	const file = Bun.file(templateFilePath)
-	const content = await file.text()
-	if (!silent) {
-		console.log(content)
-	}
+	await Effect.runPromise(program)
 }
 
 export const help = `
