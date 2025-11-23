@@ -1,11 +1,6 @@
-import {
-	isInsideGitRepo,
-	getGitRoot,
-	getCurrentBranch,
-	branchExists,
-	checkoutBranch,
-} from "../utils/git"
-import { loadConfig } from "../config"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 
@@ -14,57 +9,83 @@ export interface SwitchOptions {
 	verbose?: boolean
 }
 
+// Effect-based implementation
+export const switchBranchEffect = (options: SwitchOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
+
+		const git = yield* GitService
+		const configService = yield* ConfigService
+
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
+
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
+
+		// Load config
+		const config = yield* configService.loadConfig()
+
+		// Get current branch
+		const currentBranch = yield* git.getCurrentBranch(gitRoot)
+
+		// Try to extract source branch (are we on a PR branch?)
+		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
+
+		if (sourceBranch) {
+			// We're on a PR branch, switch to source
+			const exists = yield* git.branchExists(gitRoot, sourceBranch)
+			if (!exists) {
+				return yield* Effect.fail(
+					new Error(
+						`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+					),
+				)
+			}
+
+			yield* git.checkoutBranch(gitRoot, sourceBranch)
+			log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
+		} else {
+			// We're on a source branch, switch to PR branch
+			const prBranch = makePrBranchName(currentBranch, config.prBranch)
+
+			const exists = yield* git.branchExists(gitRoot, prBranch)
+			if (!exists) {
+				return yield* Effect.fail(
+					new Error(
+						`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
+					),
+				)
+			}
+
+			yield* git.checkoutBranch(gitRoot, prBranch)
+			log(done(`Switched to PR branch: ${highlight.branch(prBranch)}`))
+		}
+	})
+
+// Backward-compatible Promise wrapper
 export async function switchBranch(options: SwitchOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+	const program = switchBranchEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(ConfigServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
-
-	// Load config
-	const config = await loadConfig()
-
-	// Get current branch
-	const currentBranch = await getCurrentBranch(gitRoot)
-
-	// Try to extract source branch (are we on a PR branch?)
-	const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
-
-	if (sourceBranch) {
-		// We're on a PR branch, switch to source
-		const exists = await branchExists(gitRoot, sourceBranch)
-		if (!exists) {
-			throw new Error(
-				`Source branch ${highlight.branch(sourceBranch)} does not exist`,
-			)
-		}
-
-		await checkoutBranch(gitRoot, sourceBranch)
-		log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
-	} else {
-		// We're on a source branch, switch to PR branch
-		const prBranch = makePrBranchName(currentBranch, config.prBranch)
-
-		const exists = await branchExists(gitRoot, prBranch)
-		if (!exists) {
-			throw new Error(
-				`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
-			)
-		}
-
-		await checkoutBranch(gitRoot, prBranch)
-		log(done(`Switched to PR branch: ${highlight.branch(prBranch)}`))
-	}
+	await Effect.runPromise(program)
 }
 
 export const help = `

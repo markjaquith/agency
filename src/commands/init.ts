@@ -1,12 +1,8 @@
 import { basename } from "path"
-import {
-	isInsideGitRepo,
-	getGitRoot,
-	setGitConfig,
-	getGitConfig,
-} from "../utils/git"
-import { listTemplates } from "../utils/template"
-import { prompt, sanitizeTemplateName } from "../utils/prompt"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { PromptService } from "../services/PromptService"
+import { TemplateService } from "../services/TemplateService"
 import highlight, { done } from "../utils/colors"
 
 export interface InitOptions {
@@ -15,106 +11,138 @@ export interface InitOptions {
 	verbose?: boolean
 }
 
-export async function init(options: InitOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+// Effect-based implementation
+export const initEffect = (options: InitOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+		const git = yield* GitService
+		const promptService = yield* PromptService
+		const templateService = yield* TemplateService
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
-
-	// Check if already initialized
-	const existingTemplate = await getGitConfig("agency.template", gitRoot)
-	if (existingTemplate && !options.template) {
-		throw new Error(
-			`Already initialized with template ${highlight.template(existingTemplate)}.\n` +
-				`To change template, run: agency init --template <name>`,
-		)
-	}
-
-	let templateName = options.template
-
-	// If template name not provided, show interactive selection
-	if (!templateName) {
-		if (silent) {
-			throw new Error(
-				"Template name required. Use --template flag in silent mode.",
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
 			)
 		}
 
-		const existingTemplates = await listTemplates()
-		verboseLog(`Found ${existingTemplates.length} existing templates`)
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
 
-		// Get current directory name as default suggestion
-		let defaultTemplateName: string | undefined
-		const dirName = basename(gitRoot)
-		const sanitizedDirName = sanitizeTemplateName(dirName)
-
-		if (sanitizedDirName && !existingTemplates.includes(sanitizedDirName)) {
-			defaultTemplateName = sanitizedDirName
-			verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
+		// Check if already initialized
+		const existingTemplate = yield* git.getGitConfig("agency.template", gitRoot)
+		if (existingTemplate && !options.template) {
+			return yield* Effect.fail(
+				new Error(
+					`Already initialized with template ${highlight.template(existingTemplate)}.\n` +
+						`To change template, run: agency init --template <name>`,
+				),
+			)
 		}
 
-		if (existingTemplates.length > 0) {
-			log("\nAvailable templates:")
-			existingTemplates.forEach((t, i) => {
-				log(`  ${highlight.value(i + 1)}. ${highlight.template(t)}`)
-			})
-			log("")
+		let templateName = options.template
+
+		// If template name not provided, show interactive selection
+		if (!templateName) {
+			if (silent) {
+				return yield* Effect.fail(
+					new Error(
+						"Template name required. Use --template flag in silent mode.",
+					),
+				)
+			}
+
+			const existingTemplates = yield* templateService.listTemplates()
+			verboseLog(`Found ${existingTemplates.length} existing templates`)
+
+			// Get current directory name as default suggestion
+			let defaultTemplateName: string | undefined
+			const dirName = basename(gitRoot)
+			const sanitizedDirName =
+				yield* promptService.sanitizeTemplateName(dirName)
+
+			if (sanitizedDirName && !existingTemplates.includes(sanitizedDirName)) {
+				defaultTemplateName = sanitizedDirName
+				verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
+			}
+
+			if (existingTemplates.length > 0) {
+				log("\nAvailable templates:")
+				existingTemplates.forEach((t, i) => {
+					log(`  ${highlight.value(i + 1)}. ${highlight.template(t)}`)
+				})
+				log("")
+			}
+
+			const answer = yield* promptService.prompt(
+				existingTemplates.length > 0
+					? `Template name (1-${existingTemplates.length}) or enter new name: `
+					: "Template name: ",
+				defaultTemplateName,
+			)
+
+			if (!answer) {
+				return yield* Effect.fail(new Error("Template name is required."))
+			}
+
+			// Check if answer is a number (template selection)
+			const num = parseInt(answer, 10)
+			if (!isNaN(num) && num >= 1 && num <= existingTemplates.length) {
+				const selected = existingTemplates[num - 1]
+				if (!selected) {
+					return yield* Effect.fail(new Error("Invalid selection"))
+				}
+				templateName = selected
+			} else {
+				templateName = yield* promptService.sanitizeTemplateName(answer)
+			}
+
+			verboseLog(`Selected template: ${templateName}`)
 		}
 
-		const answer = await prompt(
-			existingTemplates.length > 0
-				? `Template name (1-${existingTemplates.length}) or enter new name: `
-				: "Template name: ",
-			defaultTemplateName,
+		if (!templateName) {
+			return yield* Effect.fail(new Error("Template name is required."))
+		}
+
+		// Save template name to git config
+		yield* git.setGitConfig("agency.template", templateName, gitRoot)
+		log(
+			done(
+				`Initialized with template ${highlight.template(templateName)}${existingTemplate && existingTemplate !== templateName ? ` (was ${highlight.template(existingTemplate)})` : ""}`,
+			),
 		)
 
-		if (!answer) {
-			throw new Error("Template name is required.")
-		}
+		// Note: We do NOT create the template directory here
+		// It will be created when the user runs 'agency template save'
+		verboseLog(
+			`Template directory will be created when you save files with 'agency template save'`,
+		)
+	})
 
-		// Check if answer is a number (template selection)
-		const num = parseInt(answer, 10)
-		if (!isNaN(num) && num >= 1 && num <= existingTemplates.length) {
-			const selected = existingTemplates[num - 1]
-			if (!selected) {
-				throw new Error("Invalid selection")
-			}
-			templateName = selected
-		} else {
-			templateName = sanitizeTemplateName(answer)
-		}
+// Backward-compatible Promise wrapper
+export async function init(options: InitOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { PromptServiceLive } = await import("../services/PromptServiceLive")
+	const { TemplateServiceLive } = await import(
+		"../services/TemplateServiceLive"
+	)
 
-		verboseLog(`Selected template: ${templateName}`)
-	}
-
-	if (!templateName) {
-		throw new Error("Template name is required.")
-	}
-
-	// Save template name to git config
-	await setGitConfig("agency.template", templateName, gitRoot)
-	log(
-		done(
-			`Initialized with template ${highlight.template(templateName)}${existingTemplate && existingTemplate !== templateName ? ` (was ${highlight.template(existingTemplate)})` : ""}`,
+	const program = initEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(PromptServiceLive),
+		Effect.provide(TemplateServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
 		),
 	)
 
-	// Note: We do NOT create the template directory here
-	// It will be created when the user runs 'agency template save'
-	verboseLog(
-		`Template directory will be created when you save files with 'agency template save'`,
-	)
+	await Effect.runPromise(program)
 }
 
 export const help = `
