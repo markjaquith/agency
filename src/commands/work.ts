@@ -1,51 +1,81 @@
-import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { isInsideGitRepo, getGitRoot } from "../utils/git"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { FileSystemService } from "../services/FileSystemService"
 
 export interface WorkOptions {
 	silent?: boolean
 	verbose?: boolean
 }
 
-export async function work(options: WorkOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const verboseLog = verbose && !silent ? console.log : () => {}
+// Effect-based implementation
+export const workEffect = (options: WorkOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
+		const git = yield* GitService
+		const fs = yield* FileSystemService
+
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
+
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
+
+		// Check if TASK.md exists
+		const taskPath = join(gitRoot, "TASK.md")
+		const taskExists = yield* fs.exists(taskPath)
+		if (!taskExists) {
+			return yield* Effect.fail(
+				new Error("TASK.md not found. Run 'agency task' first to create it."),
+			)
+		}
+
+		verboseLog(`Found TASK.md at: ${taskPath}`)
+		verboseLog("Running opencode with task prompt...")
+
+		// Run opencode with the task prompt
+		const proc = Bun.spawn(
+			["opencode", "-p", "Get started on the task described in TASK.md"],
+			{
+				cwd: gitRoot,
+				stdio: ["inherit", "inherit", "inherit"],
+			},
 		)
-	}
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
+		const exitCode = yield* Effect.promise(() => proc.exited)
 
-	// Check if TASK.md exists
-	const taskPath = join(gitRoot, "TASK.md")
-	if (!existsSync(taskPath)) {
-		throw new Error("TASK.md not found. Run 'agency task' first to create it.")
-	}
+		if (exitCode !== 0) {
+			return yield* Effect.fail(
+				new Error(`opencode exited with code ${exitCode}`),
+			)
+		}
+	})
 
-	verboseLog(`Found TASK.md at: ${taskPath}`)
-	verboseLog("Running opencode with task prompt...")
-
-	// Run opencode with the task prompt
-	const proc = Bun.spawn(
-		["opencode", "-p", "Get started on the task described in TASK.md"],
-		{
-			cwd: gitRoot,
-			stdio: ["inherit", "inherit", "inherit"],
-		},
+// Backward-compatible Promise wrapper
+export async function work(options: WorkOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
 	)
 
-	const exitCode = await proc.exited
+	const program = workEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	if (exitCode !== 0) {
-		throw new Error(`opencode exited with code ${exitCode}`)
-	}
+	await Effect.runPromise(program)
 }
 
 export const help = `
