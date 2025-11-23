@@ -1,5 +1,7 @@
-import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
-import { getTemplateDir } from "../utils/template"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { TemplateService } from "../services/TemplateService"
+import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
 
@@ -8,90 +10,129 @@ export interface ListOptions {
 	verbose?: boolean
 }
 
-async function collectFilesRecursively(dirPath: string): Promise<string[]> {
-	const files: string[] = []
+function collectFilesRecursively(
+	dirPath: string,
+): Effect.Effect<string[], unknown> {
+	return Effect.tryPromise({
+		try: async () => {
+			const files: string[] = []
 
-	// Use find to recursively get all files, excluding .gitkeep
-	const result = Bun.spawnSync(
-		["find", dirPath, "-type", "f", "!", "-name", ".gitkeep"],
-		{
-			stdout: "pipe",
-			stderr: "ignore",
-		},
-	)
+			// Use find to recursively get all files, excluding .gitkeep
+			const result = Bun.spawnSync(
+				["find", dirPath, "-type", "f", "!", "-name", ".gitkeep"],
+				{
+					stdout: "pipe",
+					stderr: "ignore",
+				},
+			)
 
-	const output = new TextDecoder().decode(result.stdout)
-	if (output) {
-		const foundFiles = output
-			.trim()
-			.split("\n")
-			.filter((f: string) => f.length > 0)
+			const output = new TextDecoder().decode(result.stdout)
+			if (output) {
+				const foundFiles = output
+					.trim()
+					.split("\n")
+					.filter((f: string) => f.length > 0)
 
-		for (const file of foundFiles) {
-			// Get relative path from template directory
-			const relativePath = file.replace(dirPath + "/", "")
-			if (relativePath) {
-				files.push(relativePath)
+				for (const file of foundFiles) {
+					// Get relative path from template directory
+					const relativePath = file.replace(dirPath + "/", "")
+					if (relativePath) {
+						files.push(relativePath)
+					}
+				}
 			}
-		}
-	}
 
-	return files.sort()
+			return files.sort()
+		},
+		catch: () => [],
+	})
 }
 
-export async function templateList(options: ListOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+// Effect-based implementation
+export const templateListEffect = (options: ListOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+		const git = yield* GitService
+		const templateService = yield* TemplateService
+		const fs = yield* FileSystemService
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
-
-	// Get template name from git config
-	const templateName = await getGitConfig("agency.template", gitRoot)
-	if (!templateName) {
-		throw new RepositoryNotInitializedError()
-	}
-
-	verboseLog(`Listing files in template: ${highlight.template(templateName)}`)
-
-	const templateDir = getTemplateDir(templateName)
-
-	// Check if template directory exists
-	const templateDirFile = Bun.file(templateDir)
-	try {
-		const stat = await templateDirFile.stat()
-		if (!stat || !stat.isDirectory?.()) {
-			throw new Error(
-				`Template directory does not exist: ${highlight.template(templateName)}`,
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
 			)
 		}
-	} catch {
-		throw new Error(
-			`Template directory does not exist: ${highlight.template(templateName)}`,
-		)
-	}
 
-	// Collect all files recursively
-	const files = await collectFilesRecursively(templateDir)
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
 
-	if (files.length === 0) {
-		log(`Template ${highlight.template(templateName)} has no files`)
-		return
-	}
+		// Get template name from git config
+		const templateName = yield* git.getGitConfig("agency.template", gitRoot)
+		if (!templateName) {
+			return yield* Effect.fail(new RepositoryNotInitializedError())
+		}
 
-	for (const file of files) {
-		log(highlight.file(file))
-	}
+		verboseLog(`Listing files in template: ${highlight.template(templateName)}`)
+
+		// Get template directory
+		const templateDir = yield* templateService.getTemplateDir(templateName)
+
+		// Check if template directory exists and is a directory
+		const isDirectory = yield* Effect.tryPromise({
+			try: async () => {
+				const file = Bun.file(templateDir)
+				const stat = await file.stat()
+				return stat?.isDirectory?.() ?? false
+			},
+			catch: () => false,
+		})
+		if (!isDirectory) {
+			return yield* Effect.fail(
+				new Error(
+					`Template directory does not exist: ${highlight.template(templateName)}`,
+				),
+			)
+		}
+
+		// Collect all files recursively
+		const files = yield* collectFilesRecursively(templateDir)
+
+		if (files.length === 0) {
+			log(`Template ${highlight.template(templateName)} has no files`)
+			return
+		}
+
+		for (const file of files) {
+			log(highlight.file(file))
+		}
+	})
+
+// Backward-compatible Promise wrapper
+export async function templateList(options: ListOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { TemplateServiceLive } = await import(
+		"../services/TemplateServiceLive"
+	)
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+
+	const program = templateListEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(TemplateServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
+
+	await Effect.runPromise(program)
 }
 
 export const help = `
