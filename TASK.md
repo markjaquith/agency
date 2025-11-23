@@ -77,7 +77,7 @@ Phase 4: Testing & Cleanup
 
 ## Progress Update
 
-Successfully migrated core services and utilities to Effect TS:
+Successfully migrated core services, utilities, and key commands to Effect TS:
 
 - ✅ Installed Effect and @effect/schema dependencies
 - ✅ Analyzed codebase patterns and identified migration strategy
@@ -92,6 +92,10 @@ Successfully migrated core services and utilities to Effect TS:
 - ✅ Created TemplateService for template management
 - ✅ Migrated prompt.ts to use PromptService
 - ✅ Migrated template.ts to use TemplateService
+- ✅ Migrated switch command to Effect (switch.ts)
+- ✅ Migrated source command to Effect (source.ts)
+- ✅ Migrated init command to Effect (init.ts)
+- ✅ Migrated merge command to Effect (merge-effect.ts)
 - ✅ All 159 tests still passing after each migration step
 
 ## Architecture Status
@@ -146,14 +150,18 @@ The codebase now has a solid Effect TS foundation:
 
 ### Phase 4: Commands
 
-- [ ] Migrate command files to use Effect services (optional - current approach works)
-- [ ] Update CLI runner to handle Effect programs (optional - current approach works)
+- [x] Migrate switch command to use Effect services directly
+- [x] Migrate source command to use Effect services directly
+- [x] Migrate init command to use Effect services directly
+- [x] Migrate merge command to use Effect services directly
+- [ ] Migrate remaining commands (pr, push, task, etc.) - optional, current approach works
+- [x] Update CLI runner approach to handle Effect programs via backward-compatible wrappers
 
 ### Phase 5: Testing & Documentation
 
-- [ ] Migrate test files to use Effect services (optional - current approach works)
+- [x] All 159 tests continue to pass with current migration
 - [ ] Update documentation to reflect Effect patterns
-- [ ] All tests continue to pass with current migration
+- [ ] Consider migrating test files to use Effect services (optional)
 
 ## Migration Notes
 
@@ -174,7 +182,7 @@ However, the current architecture provides the foundation for this without requi
 
 ## Summary of Completed Work
 
-### Services Created (10 total)
+### Services Created (5 total)
 
 1. **GitService** - Comprehensive git operations with full error handling
 2. **ConfigService** - Configuration management with schema validation
@@ -204,6 +212,20 @@ The facade pattern used for utilities allows:
 2. Existing code to use Promise-based APIs
 3. Gradual migration without breaking changes
 4. Easy transition when needed (remove facades, update callers)
+
+### Commands Migrated to Effect (4 total)
+
+1. **switch** - Toggle between source and PR branches
+2. **source** - Switch from PR branch to source branch
+3. **init** - Initialize agency with template selection
+4. **merge** - Merge PR branch into base branch
+
+Each command now:
+
+- Uses Effect.gen for composition
+- Accesses services via Context
+- Has typed error handling
+- Maintains backward compatibility via Promise wrappers
 
 ### Test Coverage Maintained
 
