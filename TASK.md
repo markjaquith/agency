@@ -96,6 +96,8 @@ Successfully migrated core services, utilities, and key commands to Effect TS:
 - ✅ Migrated source command to Effect (source.ts)
 - ✅ Migrated init command to Effect (init.ts)
 - ✅ Migrated merge command to Effect (merge-effect.ts)
+- ✅ Migrated work command to Effect (work.ts)
+- ✅ Migrated use command to Effect (use.ts)
 - ✅ All 159 tests still passing after each migration step
 
 ## Architecture Status
@@ -154,7 +156,9 @@ The codebase now has a solid Effect TS foundation:
 - [x] Migrate source command to use Effect services directly
 - [x] Migrate init command to use Effect services directly
 - [x] Migrate merge command to use Effect services directly
-- [ ] Migrate remaining commands (pr, push, task, etc.) - optional, current approach works
+- [x] Migrate work command to use Effect services directly
+- [x] Migrate use command to use Effect services directly
+- [ ] Migrate remaining commands (pr, push, task, base, template subcommands) - optional, current approach works
 - [x] Update CLI runner approach to handle Effect programs via backward-compatible wrappers
 
 ### Phase 5: Testing & Documentation
@@ -213,12 +217,14 @@ The facade pattern used for utilities allows:
 3. Gradual migration without breaking changes
 4. Easy transition when needed (remove facades, update callers)
 
-### Commands Migrated to Effect (4 total)
+### Commands Migrated to Effect (6 total)
 
 1. **switch** - Toggle between source and PR branches
 2. **source** - Switch from PR branch to source branch
 3. **init** - Initialize agency with template selection
 4. **merge** - Merge PR branch into base branch
+5. **work** - Start working on TASK.md with OpenCode
+6. **use** - Set template for repository
 
 Each command now:
 
