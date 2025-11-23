@@ -101,6 +101,7 @@ Successfully migrated core services, utilities, and key commands to Effect TS:
 - ✅ Migrated template-view command to Effect (template-view.ts)
 - ✅ Migrated template-delete command to Effect (template-delete.ts)
 - ✅ Migrated template-list command to Effect (template-list.ts)
+- ✅ Migrated save command to Effect (save.ts)
 
 ## Architecture Status
 
@@ -160,7 +161,7 @@ The codebase now has a solid Effect TS foundation:
 - [x] Migrate merge command to use Effect services directly
 - [x] Migrate work command to use Effect services directly
 - [x] Migrate use command to use Effect services directly
-- [ ] Migrate remaining commands (pr, push, task, base, template subcommands: save) - optional, current approach works
+- [ ] Migrate remaining commands (pr, push, task, base) - optional, current approach works
 - [x] Update CLI runner approach to handle Effect programs via backward-compatible wrappers
 
 ### Phase 5: Testing & Documentation
@@ -219,7 +220,7 @@ The facade pattern used for utilities allows:
 3. Gradual migration without breaking changes
 4. Easy transition when needed (remove facades, update callers)
 
-### Commands Migrated to Effect (9 total)
+### Commands Migrated to Effect (10 total)
 
 1. **switch** - Toggle between source and PR branches
 2. **source** - Switch from PR branch to source branch
@@ -230,6 +231,7 @@ The facade pattern used for utilities allows:
 7. **template-view** - View contents of a file in template
 8. **template-delete** - Delete files from template
 9. **template-list** - List all files in template
+10. **save** - Save files/directories to template
 
 Each command now:
 
