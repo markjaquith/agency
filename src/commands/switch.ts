@@ -12,9 +12,8 @@ export interface SwitchOptions {
 // Effect-based implementation
 export const switchBranchEffect = (options: SwitchOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false, verbose = false } = options
+		const { silent = false } = options
 		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
 
 		const git = yield* GitService
 		const configService = yield* ConfigService

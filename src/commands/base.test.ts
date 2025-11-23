@@ -31,11 +31,11 @@ describe("base", () => {
 
 			// Create agency.json first
 			await writeAgencyMetadata(testDir, {
-				version: 1,
+				version: 1 as const,
 				template: "test",
 				injectedFiles: [],
 				createdAt: new Date().toISOString(),
-			})
+			} as any)
 
 			// Set base branch
 			await baseSet({
@@ -87,7 +87,7 @@ describe("base", () => {
 				injectedFiles: [],
 				baseBranch: "main",
 				createdAt: new Date().toISOString(),
-			})
+			} as any)
 
 			// Mock console.log to capture output
 			const logs: string[] = []
@@ -116,7 +116,7 @@ describe("base", () => {
 				template: "test",
 				injectedFiles: [],
 				createdAt: new Date().toISOString(),
-			})
+			} as any)
 
 			await expect(baseGet({ silent: true })).rejects.toThrow(
 				"No base branch configured",
@@ -143,7 +143,7 @@ describe("base", () => {
 				template: "test",
 				injectedFiles: [],
 				createdAt: new Date().toISOString(),
-			})
+			} as any)
 
 			await base({
 				subcommand: "set",
