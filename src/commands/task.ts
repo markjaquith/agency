@@ -21,7 +21,7 @@ interface TaskEditOptions extends BaseCommandOptions {}
 // Effect-based implementation
 const taskEffect = (options: TaskOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false } = options
+		const { silent = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
@@ -146,53 +146,8 @@ const taskEffect = (options: TaskOptions = {}) =>
 			}
 		}
 
-		if (!isFeature) {
-			// If a branch name was provided, create it
-			if (branchName) {
-				// Get or prompt for base branch
-				let baseBranch: string | undefined =
-					(yield* git.getMainBranchConfig(targetPath)) ||
-					(yield* git.findMainBranch(targetPath)) ||
-					undefined
-
-				// If no base branch is configured and not in silent mode, prompt for it
-				if (!baseBranch && !silent) {
-					const suggestions = yield* git.getSuggestedBaseBranches(targetPath)
-					if (suggestions.length > 0) {
-						baseBranch = yield* promptService.promptForSelection(
-							"Select base branch",
-							suggestions,
-						)
-						verboseLog(`Selected base branch: ${baseBranch}`)
-
-						// Save the main branch config if it's not already set
-						const mainBranchConfig = yield* git.getMainBranchConfig(targetPath)
-						if (!mainBranchConfig) {
-							yield* git.setMainBranchConfig(baseBranch, targetPath)
-							log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
-						}
-					} else {
-						return yield* Effect.fail(
-							new Error(
-								"Could not find any base branches. Please ensure your repository has at least one branch.",
-							),
-						)
-					}
-				} else if (!baseBranch && silent) {
-					return yield* Effect.fail(
-						new Error(
-							"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
-						),
-					)
-				}
-
-				yield* git.createBranch(branchName, targetPath, baseBranch)
-				log(
-					done(
-						`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
-					),
-				)
-			}
+		if (!isFeature && branchName) {
+			yield* createFeatureBranchEffect(targetPath, branchName, silent, verbose)
 		}
 
 		// Get managed files for later use
@@ -350,6 +305,63 @@ const taskEffect = (options: TaskOptions = {}) =>
 				verboseLog(`Failed to commit: ${err}`)
 			}
 		}
+	})
+
+// Helper: Create feature branch with interactive prompts
+const createFeatureBranchEffect = (
+	targetPath: string,
+	branchName: string,
+	silent: boolean,
+	verbose: boolean,
+) =>
+	Effect.gen(function* () {
+		const { log, verboseLog } = createLoggers({ silent, verbose })
+		const git = yield* GitService
+		const promptService = yield* PromptService
+
+		// Get or prompt for base branch
+		let baseBranch: string | undefined =
+			(yield* git.getMainBranchConfig(targetPath)) ||
+			(yield* git.findMainBranch(targetPath)) ||
+			undefined
+
+		// If no base branch is configured and not in silent mode, prompt for it
+		if (!baseBranch && !silent) {
+			const suggestions = yield* git.getSuggestedBaseBranches(targetPath)
+			if (suggestions.length > 0) {
+				baseBranch = yield* promptService.promptForSelection(
+					"Select base branch",
+					suggestions,
+				)
+				verboseLog(`Selected base branch: ${baseBranch}`)
+
+				// Save the main branch config if it's not already set
+				const mainBranchConfig = yield* git.getMainBranchConfig(targetPath)
+				if (!mainBranchConfig) {
+					yield* git.setMainBranchConfig(baseBranch, targetPath)
+					log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
+				}
+			} else {
+				return yield* Effect.fail(
+					new Error(
+						"Could not find any base branches. Please ensure your repository has at least one branch.",
+					),
+				)
+			}
+		} else if (!baseBranch && silent) {
+			return yield* Effect.fail(
+				new Error(
+					"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
+				),
+			)
+		}
+
+		yield* git.createBranch(branchName, targetPath, baseBranch)
+		log(
+			done(
+				`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+			),
+		)
 	})
 
 // Helper: Discover template files
