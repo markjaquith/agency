@@ -1,7 +1,6 @@
 import { Effect, Layer } from "effect"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import { mkdir } from "node:fs/promises"
 import { TemplateService, TemplateError } from "./TemplateService"
 
 const getConfigDir = () => {

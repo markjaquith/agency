@@ -109,18 +109,16 @@ const findMainBranchHelper = async (
 	return null
 }
 
-// Helper to get main branch config
-const getMainBranchConfigHelper = async (
+// Helper to get git config value
+const getGitConfigHelper = async (
 	gitRoot: string,
+	key: string,
 ): Promise<string | null> => {
-	const proc = Bun.spawn(
-		["git", "config", "--local", "--get", "agency.mainBranch"],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	)
+	const proc = Bun.spawn(["git", "config", "--local", "--get", key], {
+		cwd: gitRoot,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
 	await proc.exited
 
 	if (proc.exitCode === 0) {
@@ -129,6 +127,32 @@ const getMainBranchConfigHelper = async (
 	}
 
 	return null
+}
+
+// Helper to set git config value
+const setGitConfigHelper = async (
+	gitRoot: string,
+	key: string,
+	value: string,
+): Promise<void> => {
+	const proc = Bun.spawn(["git", "config", "--local", key, value], {
+		cwd: gitRoot,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+
+	if (proc.exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`Failed to set git config ${key}: ${stderr}`)
+	}
+}
+
+// Helper to get main branch config
+const getMainBranchConfigHelper = async (
+	gitRoot: string,
+): Promise<string | null> => {
+	return await getGitConfigHelper(gitRoot, "agency.mainBranch")
 }
 
 // Helper to check if branch exists
@@ -407,21 +431,18 @@ export const GitServiceLive = Layer.succeed(
 			Effect.tryPromise({
 				try: async () => {
 					// Get the main branch from config or find it
+					const configBranch = await getMainBranchConfigHelper(gitRoot)
 					const mainBranch =
-						(await getMainBranchConfigHelper(gitRoot)) ||
-						(await findMainBranchHelper(gitRoot))
+						configBranch || (await findMainBranchHelper(gitRoot))
 
 					// If we couldn't determine a main branch, assume current is a feature branch
 					if (!mainBranch) {
 						return true
 					}
 
-					// Save it for future use if we found it
-					if (!(await getMainBranchConfigHelper(gitRoot))) {
-						Bun.spawn(
-							["git", "config", "--local", "agency.mainBranch", mainBranch],
-							{ cwd: gitRoot },
-						)
+					// Save it for future use if we found it and it wasn't in config
+					if (!configBranch) {
+						await setGitConfigHelper(gitRoot, "agency.mainBranch", mainBranch)
 					}
 
 					// Current branch is not a feature branch if it's the main branch
@@ -440,22 +461,7 @@ export const GitServiceLive = Layer.succeed(
 
 		setMainBranchConfig: (mainBranch: string, gitRoot: string) =>
 			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(
-						["git", "config", "--local", "agency.mainBranch", mainBranch],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await proc.exited
-
-					if (proc.exitCode !== 0) {
-						const stderr = await new Response(proc.stderr).text()
-						throw new Error(`Failed to set main branch config: ${stderr}`)
-					}
-				},
+				try: () => setGitConfigHelper(gitRoot, "agency.mainBranch", mainBranch),
 				catch: (error) =>
 					new GitError({
 						message:
@@ -467,46 +473,14 @@ export const GitServiceLive = Layer.succeed(
 
 		getDefaultBaseBranchConfig: (gitRoot: string) =>
 			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(
-						["git", "config", "--local", "--get", "agency.baseBranch"],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await proc.exited
-
-					if (proc.exitCode === 0) {
-						const output = await new Response(proc.stdout).text()
-						return output.trim()
-					}
-
-					return null
-				},
+				try: () => getGitConfigHelper(gitRoot, "agency.baseBranch"),
 				catch: () =>
 					new GitError({ message: "Failed to get base branch config" }),
 			}),
 
 		setDefaultBaseBranchConfig: (baseBranch: string, gitRoot: string) =>
 			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(
-						["git", "config", "--local", "agency.baseBranch", baseBranch],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await proc.exited
-
-					if (proc.exitCode !== 0) {
-						const stderr = await new Response(proc.stderr).text()
-						throw new Error(`Failed to set base branch config: ${stderr}`)
-					}
-				},
+				try: () => setGitConfigHelper(gitRoot, "agency.baseBranch", baseBranch),
 				catch: (error) =>
 					new GitError({
 						message:
