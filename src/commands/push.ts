@@ -70,77 +70,14 @@ const pushEffect = (options: PushOptions = {}) =>
 		log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
 
 		// Step 2: Push to remote (git push)
-		const pushEffectInner = Effect.tryPromise({
-			try: async () => {
-				verboseLog(
-					`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`,
-				)
+		verboseLog(`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`)
 
-				// Try pushing without force first
-				let pushProc = Bun.spawn(
-					["git", "push", "-u", "origin", prBranchName],
-					{
-						cwd: gitRoot,
-						stdout: verbose ? "inherit" : "pipe",
-						stderr: "pipe",
-					},
-				)
-
-				await pushProc.exited
-
-				let usedForce = false
-
-				// If push failed, check if we should retry with --force
-				if (pushProc.exitCode !== 0) {
-					const stderr = await new Response(pushProc.stderr).text()
-
-					// Check if this is a force-push-needed error
-					const needsForce =
-						stderr.includes("rejected") ||
-						stderr.includes("non-fast-forward") ||
-						stderr.includes("fetch first") ||
-						stderr.includes("Updates were rejected")
-
-					if (needsForce && options.force) {
-						// User provided --force flag, retry with force
-						verboseLog("Initial push rejected, retrying with --force...")
-						pushProc = Bun.spawn(
-							["git", "push", "-u", "--force", "origin", prBranchName],
-							{
-								cwd: gitRoot,
-								stdout: verbose ? "inherit" : "pipe",
-								stderr: "pipe",
-							},
-						)
-
-						await pushProc.exited
-
-						if (pushProc.exitCode !== 0) {
-							const forcedStderr = await new Response(pushProc.stderr).text()
-							throw new Error(
-								`Failed to force push branch to remote: ${forcedStderr}`,
-							)
-						}
-
-						usedForce = true
-					} else if (needsForce && !options.force) {
-						// User didn't provide --force but it's needed
-						throw new Error(
-							`Failed to push branch to remote. The branch has diverged from the remote.\n` +
-								`Run 'agency push --force' to force push the branch.`,
-						)
-					} else {
-						// Some other error
-						throw new Error(`Failed to push branch to remote: ${stderr}`)
-					}
-				}
-
-				return usedForce
-			},
-			catch: (error) => error as Error,
-		})
-
-		const pushEither = yield* Effect.either(pushEffectInner)
+		const pushEither = yield* Effect.either(
+			pushBranchToRemoteEffect(gitRoot, prBranchName, {
+				force: options.force,
+				verbose: options.verbose,
+			}),
+		)
 		if (Either.isLeft(pushEither)) {
 			const error = pushEither.left
 			// If push failed, switch back to source branch before rethrowing
@@ -196,6 +133,84 @@ const pushEffect = (options: PushOptions = {}) =>
 		log(
 			done(`Switched back to source branch: ${highlight.branch(sourceBranch)}`),
 		)
+	})
+
+// Helper: Push branch to remote with optional force and retry logic
+const pushBranchToRemoteEffect = (
+	gitRoot: string,
+	branchName: string,
+	options: {
+		readonly force?: boolean
+		readonly verbose?: boolean
+	},
+) =>
+	Effect.gen(function* () {
+		const { force = false, verbose = false } = options
+
+		// Try pushing without force first
+		let pushProc = Bun.spawn(["git", "push", "-u", "origin", branchName], {
+			cwd: gitRoot,
+			stdout: verbose ? "inherit" : "pipe",
+			stderr: "pipe",
+		})
+
+		yield* Effect.promise(() => pushProc.exited)
+
+		let usedForce = false
+
+		// If push failed, check if we should retry with --force
+		if (pushProc.exitCode !== 0) {
+			const stderr = yield* Effect.promise(() =>
+				new Response(pushProc.stderr).text(),
+			)
+
+			// Check if this is a force-push-needed error
+			const needsForce =
+				stderr.includes("rejected") ||
+				stderr.includes("non-fast-forward") ||
+				stderr.includes("fetch first") ||
+				stderr.includes("Updates were rejected")
+
+			if (needsForce && force) {
+				// User provided --force flag, retry with force
+				pushProc = Bun.spawn(
+					["git", "push", "-u", "--force", "origin", branchName],
+					{
+						cwd: gitRoot,
+						stdout: verbose ? "inherit" : "pipe",
+						stderr: "pipe",
+					},
+				)
+
+				yield* Effect.promise(() => pushProc.exited)
+
+				if (pushProc.exitCode !== 0) {
+					const forcedStderr = yield* Effect.promise(() =>
+						new Response(pushProc.stderr).text(),
+					)
+					return yield* Effect.fail(
+						new Error(`Failed to force push branch to remote: ${forcedStderr}`),
+					)
+				}
+
+				usedForce = true
+			} else if (needsForce && !force) {
+				// User didn't provide --force but it's needed
+				return yield* Effect.fail(
+					new Error(
+						`Failed to push branch to remote. The branch has diverged from the remote.\n` +
+							`Run 'agency push --force' to force push the branch.`,
+					),
+				)
+			} else {
+				// Some other error
+				return yield* Effect.fail(
+					new Error(`Failed to push branch to remote: ${stderr}`),
+				)
+			}
+		}
+
+		return usedForce
 	})
 
 const helpText = `
