@@ -52,38 +52,32 @@ export function createCommand<
 			for (const serviceKey of config.services) {
 				switch (serviceKey) {
 					case "git": {
-						const { GitServiceLive } = await import(
-							"../services/GitServiceLive"
-						)
-						services.push(GitServiceLive)
+						const { GitService } = await import("../services/GitService")
+						services.push(GitService.Default)
 						break
 					}
 					case "config": {
-						const { ConfigServiceLive } = await import(
-							"../services/ConfigServiceLive"
-						)
-						services.push(ConfigServiceLive)
+						const { ConfigService } = await import("../services/ConfigService")
+						services.push(ConfigService.Default)
 						break
 					}
 					case "template": {
-						const { TemplateServiceLive } = await import(
-							"../services/TemplateServiceLive"
+						const { TemplateService } = await import(
+							"../services/TemplateService"
 						)
-						services.push(TemplateServiceLive)
+						services.push(TemplateService.Default)
 						break
 					}
 					case "filesystem": {
-						const { FileSystemServiceLive } = await import(
-							"../services/FileSystemServiceLive"
+						const { FileSystemService } = await import(
+							"../services/FileSystemService"
 						)
-						services.push(FileSystemServiceLive)
+						services.push(FileSystemService.Default)
 						break
 					}
 					case "prompt": {
-						const { PromptServiceLive } = await import(
-							"../services/PromptServiceLive"
-						)
-						services.push(PromptServiceLive)
+						const { PromptService } = await import("../services/PromptService")
+						services.push(PromptService.Default)
 						break
 					}
 				}

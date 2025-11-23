@@ -172,9 +172,9 @@ const baseEffect = (options: BaseOptions) =>
 
 // Backward-compatible Promise wrapper
 export async function base(options: BaseOptions): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { GitService } = await import("../services/GitService")
 
-	await runEffect(baseEffect(options), [GitServiceLive])
+	await runEffect(baseEffect(options), [GitService.Default])
 }
 
 export const help = `

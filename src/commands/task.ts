@@ -498,15 +498,13 @@ export const { execute: task, help } = createCommand<TaskOptions>({
 })
 
 export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
+	const { GitService } = await import("../services/GitService")
+	const { FileSystemService } = await import("../services/FileSystemService")
 
 	// Manually run the Effect since taskEdit is a separate command
 	const { runEffect } = await import("../utils/effect")
 	await runEffect(taskEditEffect(options), [
-		GitServiceLive,
-		FileSystemServiceLive,
+		GitService.Default,
+		FileSystemService.Default,
 	])
 }
