@@ -116,6 +116,83 @@ This is a CLI tool called `agency` that helps you set up and manage `AGENTS.md` 
 
 It is meant to be used in projects where you don't own the `AGENTS.md` file, but you want to apply certain configurations or templates to it. For instance, when working on a specific feature branch, you would have your `AGENTS.md` template that describes your specific requirements for working this this project as well as layering on your instructions for the feature you're building. That way, LLM agents that read `AGENTS.md` will immediately understand the context of your work and how to assist you.
 
+## Architecture
+
+The codebase uses Effect TS for type-safe, composable error handling and dependency injection. The architecture follows these patterns:
+
+### Services
+
+Core functionality is organized into Effect services that provide clean interfaces and typed error handling:
+
+- **GitService**: All git operations with proper error types (GitError, NotInGitRepoError, GitCommandError)
+- **ConfigService**: Configuration management with schema validation using @effect/schema
+- **PromptService**: User input operations with readline integration
+- **TemplateService**: Template discovery and management
+- **FileSystemService**: Comprehensive file I/O operations
+
+### Error Handling
+
+Services use tagged error types for specific failure modes:
+
+```typescript
+export class GitError extends Data.TaggedError("GitError")<{
+	message: string
+	cause?: unknown
+}> {}
+
+export class ConfigError extends Data.TaggedError("ConfigError")<{
+	message: string
+	cause?: unknown
+}> {}
+```
+
+### Schema Validation
+
+All data types are validated using @effect/schema for runtime type safety:
+
+```typescript
+import { Schema } from "@effect/schema"
+
+export const AgencyMetadata = Schema.Struct({
+	version: Schema.Literal(1),
+	managedFiles: Schema.Array(ManagedFile),
+	// ...
+})
+```
+
+### Command Pattern
+
+Commands follow a consistent pattern with Effect-based implementations and backward-compatible async wrappers:
+
+```typescript
+// Effect implementation
+export const commandEffect = (options) =>
+	Effect.gen(function* () {
+		const service = yield* ServiceName
+		// ... implementation
+	})
+
+// Backward-compatible wrapper
+export async function command(options) {
+	const program = commandEffect(options).pipe(
+		Effect.provide(ServiceNameLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
+	await Effect.runPromise(program)
+}
+```
+
+### Migration Strategy
+
+The codebase maintains backward compatibility during the Effect migration:
+
+1. **Facade Pattern**: Async utility functions wrap Effect services
+2. **Promise Wrappers**: Effect.tryPromise bridges async code
+3. **Gradual Migration**: Commands are migrated incrementally
+4. **Type Safety**: Schema validation ensures runtime correctness
+
 ## Commands
 
 - `agency init [path]`: Initializes `AGENTS.md` file using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.

@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import {
 	isInsideGitRepo,
 	getGitRoot,
@@ -396,5 +397,12 @@ Notes:
   - All commits from the base branch remain unchanged (shared history is preserved)
   - Original branch is never modified
   - If PR branch exists, it will be deleted and recreated
-  - Command will refuse to create PR branch from a PR branch unless --force is used
+   - Command will refuse to create PR branch from a PR branch unless --force is used
 `
+
+// Effect-based wrapper for backward compatibility
+export const prEffect = (options: PrOptions = {}) =>
+	Effect.tryPromise({
+		try: () => pr(options),
+		catch: (error) => error as Error,
+	})

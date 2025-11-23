@@ -1,7 +1,7 @@
 import { Effect, Either } from "effect"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { pr } from "./pr"
+import { prEffect } from "./pr"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 
@@ -59,18 +59,21 @@ export const pushEffect = (options: PushOptions = {}) =>
 
 		// Step 1: Create PR branch (agency pr)
 		verboseLog("Step 1: Creating PR branch...")
-		// Use Effect.tryPromise for the pr call since it's not migrated yet
-		yield* Effect.tryPromise({
-			try: () =>
-				pr({
-					baseBranch: options.baseBranch,
-					branch: options.branch,
-					silent: true, // Suppress pr command output, we'll provide our own
-					force: options.force,
-					verbose: options.verbose,
-				}),
-			catch: (error) => new Error(`Failed to create PR branch: ${error}`),
+		// Use prEffect which wraps the pr command
+		const prEffectWithOptions = prEffect({
+			baseBranch: options.baseBranch,
+			branch: options.branch,
+			silent: true, // Suppress pr command output, we'll provide our own
+			force: options.force,
+			verbose: options.verbose,
 		})
+
+		const prResult = yield* Effect.either(prEffectWithOptions)
+		if (Either.isLeft(prResult)) {
+			return yield* Effect.fail(
+				new Error(`Failed to create PR branch: ${prResult.left.message}`),
+			)
+		}
 
 		// Get the PR branch name that was created
 		const prBranchName = yield* git.getCurrentBranch(gitRoot)
@@ -144,9 +147,7 @@ export const pushEffect = (options: PushOptions = {}) =>
 
 				return usedForce
 			},
-			catch: (error) => {
-				throw error
-			},
+			catch: (error) => error as Error,
 		})
 
 		const pushEither = yield* Effect.either(pushEffectInner)
@@ -156,7 +157,18 @@ export const pushEffect = (options: PushOptions = {}) =>
 			verboseLog(
 				"Push failed, switching back to source branch before reporting error...",
 			)
-			yield* git.checkoutBranch(gitRoot, sourceBranch)
+			const checkoutEffect = Effect.tryPromise({
+				try: async () => {
+					const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
+						cwd: gitRoot,
+						stdout: "pipe",
+						stderr: "pipe",
+					})
+					await checkoutProc.exited
+				},
+				catch: () => {},
+			})
+			yield* checkoutEffect
 			return yield* Effect.fail(error)
 		}
 
@@ -173,9 +185,19 @@ export const pushEffect = (options: PushOptions = {}) =>
 		// rather than using the source command, to support custom branch names
 		verboseLog("Step 3: Switching back to source branch...")
 
-		const checkoutEither = yield* Effect.either(
-			git.checkoutBranch(gitRoot, sourceBranch),
-		)
+		const checkoutEffect = Effect.tryPromise({
+			try: async () => {
+				const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
+					cwd: gitRoot,
+					stdout: "pipe",
+					stderr: "pipe",
+				})
+				await checkoutProc.exited
+			},
+			catch: (error) => error as Error,
+		})
+
+		const checkoutEither = yield* Effect.either(checkoutEffect)
 		if (Either.isLeft(checkoutEither)) {
 			return yield* Effect.fail(checkoutEither.left)
 		}
