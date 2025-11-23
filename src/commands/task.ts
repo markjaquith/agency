@@ -7,7 +7,12 @@ import { TemplateService } from "../services/TemplateService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	runEffect,
+	createLoggers,
+	ensureGitRepo,
+	getTemplateName,
+} from "../utils/effect"
 
 export interface TaskOptions {
 	path?: string
@@ -66,7 +71,7 @@ export const taskEffect = (options: TaskOptions = {}) =>
 		const injectedFiles: string[] = []
 
 		// Check if initialized (has template in git config)
-		const templateName = yield* git.getGitConfig("agency.template", targetPath)
+		const templateName = yield* getTemplateName(targetPath)
 
 		if (!templateName) {
 			return yield* Effect.fail(new RepositoryNotInitializedError())

@@ -1,11 +1,15 @@
 import { resolve, join, dirname, basename } from "path"
 import { Effect } from "effect"
-import { GitService } from "../services/GitService"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	runEffect,
+	createLoggers,
+	ensureGitRepo,
+	getTemplateName,
+} from "../utils/effect"
 
 export interface SaveOptions {
 	files?: string[]
@@ -70,14 +74,13 @@ export const saveEffect = (options: SaveOptions = {}) =>
 		const { files: filesToSave = [] } = options
 		const { log, verboseLog } = createLoggers(options)
 
-		const git = yield* GitService
 		const templateService = yield* TemplateService
 		const fs = yield* FileSystemService
 
 		const gitRoot = yield* ensureGitRepo()
 
 		// Get template name from git config
-		const templateName = yield* git.getGitConfig("agency.template", gitRoot)
+		const templateName = yield* getTemplateName(gitRoot)
 		if (!templateName) {
 			return yield* Effect.fail(new RepositoryNotInitializedError())
 		}

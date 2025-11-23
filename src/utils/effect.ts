@@ -56,3 +56,13 @@ export function ensureGitRepo() {
 		return yield* git.getGitRoot(process.cwd())
 	})
 }
+
+/**
+ * Get the configured template name for the current repository
+ */
+export function getTemplateName(gitRoot: string) {
+	return Effect.gen(function* () {
+		const git = yield* GitService
+		return yield* git.getGitConfig("agency.template", gitRoot)
+	})
+}

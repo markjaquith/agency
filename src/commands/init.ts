@@ -4,7 +4,12 @@ import { GitService } from "../services/GitService"
 import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
 import highlight, { done } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	runEffect,
+	createLoggers,
+	ensureGitRepo,
+	getTemplateName,
+} from "../utils/effect"
 
 export interface InitOptions {
 	template?: string
@@ -25,7 +30,7 @@ export const initEffect = (options: InitOptions = {}) =>
 		const gitRoot = yield* ensureGitRepo()
 
 		// Check if already initialized
-		const existingTemplate = yield* git.getGitConfig("agency.template", gitRoot)
+		const existingTemplate = yield* getTemplateName(gitRoot)
 		if (existingTemplate && !options.template) {
 			return yield* Effect.fail(
 				new Error(
