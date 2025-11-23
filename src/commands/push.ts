@@ -1,7 +1,8 @@
-import { isInsideGitRepo, getGitRoot, getCurrentBranch } from "../utils/git"
+import { Effect, Either } from "effect"
+import { GitService } from "../services/GitService"
+import { ConfigService } from "../services/ConfigService"
 import { pr } from "./pr"
 import { extractSourceBranch } from "../utils/pr-branch"
-import { loadConfig } from "../config"
 import highlight, { done } from "../utils/colors"
 
 export interface PushOptions {
@@ -12,88 +13,79 @@ export interface PushOptions {
 	verbose?: boolean
 }
 
-export async function push(options: PushOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+// Effect-based implementation
+export const pushEffect = (options: PushOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+		const git = yield* GitService
+		const configService = yield* ConfigService
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
 
-	// Load config to check PR branch pattern
-	const config = await loadConfig()
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
 
-	// Get current branch (this is our source branch we'll return to)
-	const sourceBranch = await getCurrentBranch(gitRoot)
+		// Load config to check PR branch pattern
+		const config = yield* configService.loadConfig()
 
-	// Check if we're already on a PR branch
-	const isOnPrBranch = extractSourceBranch(sourceBranch, config.prBranch)
+		// Get current branch (this is our source branch we'll return to)
+		const sourceBranch = yield* git.getCurrentBranch(gitRoot)
 
-	// If we're on a PR branch, throw an error
-	if (isOnPrBranch) {
-		throw new Error(
-			`Already on PR branch ${highlight.branch(sourceBranch)}. ` +
-				`Run 'agency source' first to switch to the source branch, then run 'agency push'.`,
-		)
-	}
+		// Check if we're already on a PR branch
+		const isOnPrBranch = extractSourceBranch(sourceBranch, config.prBranch)
 
-	verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
+		// If we're on a PR branch, throw an error
+		if (isOnPrBranch) {
+			return yield* Effect.fail(
+				new Error(
+					`Already on PR branch ${highlight.branch(sourceBranch)}. ` +
+						`Run 'agency source' first to switch to the source branch, then run 'agency push'.`,
+				),
+			)
+		}
 
-	// Step 1: Create PR branch (agency pr)
-	verboseLog("Step 1: Creating PR branch...")
-	await pr({
-		baseBranch: options.baseBranch,
-		branch: options.branch,
-		silent: true, // Suppress pr command output, we'll provide our own
-		force: options.force,
-		verbose: options.verbose,
-	})
+		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
 
-	// Get the PR branch name that was created
-	const prBranchName = await getCurrentBranch(gitRoot)
-	log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
-
-	// Step 2: Push to remote (git push)
-	// Wrap in try-catch to ensure we switch back to source branch on error
-	try {
-		verboseLog(`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`)
-
-		// Try pushing without force first
-		let pushProc = Bun.spawn(["git", "push", "-u", "origin", prBranchName], {
-			cwd: gitRoot,
-			stdout: verbose ? "inherit" : "pipe",
-			stderr: "pipe",
+		// Step 1: Create PR branch (agency pr)
+		verboseLog("Step 1: Creating PR branch...")
+		// Use Effect.tryPromise for the pr call since it's not migrated yet
+		yield* Effect.tryPromise({
+			try: () =>
+				pr({
+					baseBranch: options.baseBranch,
+					branch: options.branch,
+					silent: true, // Suppress pr command output, we'll provide our own
+					force: options.force,
+					verbose: options.verbose,
+				}),
+			catch: (error) => new Error(`Failed to create PR branch: ${error}`),
 		})
 
-		await pushProc.exited
+		// Get the PR branch name that was created
+		const prBranchName = yield* git.getCurrentBranch(gitRoot)
+		log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
 
-		let usedForce = false
+		// Step 2: Push to remote (git push)
+		const pushEffectInner = Effect.tryPromise({
+			try: async () => {
+				verboseLog(
+					`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`,
+				)
 
-		// If push failed, check if we should retry with --force
-		if (pushProc.exitCode !== 0) {
-			const stderr = await new Response(pushProc.stderr).text()
-
-			// Check if this is a force-push-needed error
-			const needsForce =
-				stderr.includes("rejected") ||
-				stderr.includes("non-fast-forward") ||
-				stderr.includes("fetch first") ||
-				stderr.includes("Updates were rejected")
-
-			if (needsForce && options.force) {
-				// User provided --force flag, retry with force
-				verboseLog("Initial push rejected, retrying with --force...")
-				pushProc = Bun.spawn(
-					["git", "push", "-u", "--force", "origin", prBranchName],
+				// Try pushing without force first
+				let pushProc = Bun.spawn(
+					["git", "push", "-u", "origin", prBranchName],
 					{
 						cwd: gitRoot,
 						stdout: verbose ? "inherit" : "pipe",
@@ -103,64 +95,110 @@ export async function push(options: PushOptions = {}): Promise<void> {
 
 				await pushProc.exited
 
+				let usedForce = false
+
+				// If push failed, check if we should retry with --force
 				if (pushProc.exitCode !== 0) {
-					const forcedStderr = await new Response(pushProc.stderr).text()
-					throw new Error(
-						`Failed to force push branch to remote: ${forcedStderr}`,
-					)
+					const stderr = await new Response(pushProc.stderr).text()
+
+					// Check if this is a force-push-needed error
+					const needsForce =
+						stderr.includes("rejected") ||
+						stderr.includes("non-fast-forward") ||
+						stderr.includes("fetch first") ||
+						stderr.includes("Updates were rejected")
+
+					if (needsForce && options.force) {
+						// User provided --force flag, retry with force
+						verboseLog("Initial push rejected, retrying with --force...")
+						pushProc = Bun.spawn(
+							["git", "push", "-u", "--force", "origin", prBranchName],
+							{
+								cwd: gitRoot,
+								stdout: verbose ? "inherit" : "pipe",
+								stderr: "pipe",
+							},
+						)
+
+						await pushProc.exited
+
+						if (pushProc.exitCode !== 0) {
+							const forcedStderr = await new Response(pushProc.stderr).text()
+							throw new Error(
+								`Failed to force push branch to remote: ${forcedStderr}`,
+							)
+						}
+
+						usedForce = true
+					} else if (needsForce && !options.force) {
+						// User didn't provide --force but it's needed
+						throw new Error(
+							`Failed to push branch to remote. The branch has diverged from the remote.\n` +
+								`Run 'agency push --force' to force push the branch.`,
+						)
+					} else {
+						// Some other error
+						throw new Error(`Failed to push branch to remote: ${stderr}`)
+					}
 				}
 
-				usedForce = true
-			} else if (needsForce && !options.force) {
-				// User didn't provide --force but it's needed
-				throw new Error(
-					`Failed to push branch to remote. The branch has diverged from the remote.\n` +
-						`Run 'agency push --force' to force push the branch.`,
-				)
-			} else {
-				// Some other error
-				throw new Error(`Failed to push branch to remote: ${stderr}`)
-			}
+				return usedForce
+			},
+			catch: (error) => {
+				throw error
+			},
+		})
+
+		const pushEither = yield* Effect.either(pushEffectInner)
+		if (Either.isLeft(pushEither)) {
+			const error = pushEither.left
+			// If push failed, switch back to source branch before rethrowing
+			verboseLog(
+				"Push failed, switching back to source branch before reporting error...",
+			)
+			yield* git.checkoutBranch(gitRoot, sourceBranch)
+			return yield* Effect.fail(error)
 		}
+
+		const usedForce = pushEither.right
 
 		if (usedForce) {
 			log(done(`Force pushed ${highlight.branch(prBranchName)} to origin`))
 		} else {
 			log(done(`Pushed ${highlight.branch(prBranchName)} to origin`))
 		}
-	} catch (error) {
-		// If push failed, switch back to source branch before rethrowing
-		verboseLog(
-			"Push failed, switching back to source branch before reporting error...",
+
+		// Step 3: Switch back to source branch
+		// We switch back directly to the source branch we started on,
+		// rather than using the source command, to support custom branch names
+		verboseLog("Step 3: Switching back to source branch...")
+
+		const checkoutEither = yield* Effect.either(
+			git.checkoutBranch(gitRoot, sourceBranch),
 		)
-		const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		})
-		await checkoutProc.exited
-		throw error
-	}
+		if (Either.isLeft(checkoutEither)) {
+			return yield* Effect.fail(checkoutEither.left)
+		}
 
-	// Step 3: Switch back to source branch
-	// We switch back directly to the source branch we started on,
-	// rather than using the source command, to support custom branch names
-	verboseLog("Step 3: Switching back to source branch...")
-
-	const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
+		log(
+			done(`Switched back to source branch: ${highlight.branch(sourceBranch)}`),
+		)
 	})
 
-	await checkoutProc.exited
+// Backward-compatible Promise wrapper
+export async function push(options: PushOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
 
-	if (checkoutProc.exitCode !== 0) {
-		const stderr = await new Response(checkoutProc.stderr).text()
-		throw new Error(`Failed to switch back to source branch: ${stderr}`)
-	}
+	const program = pushEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(ConfigServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
 
-	log(done(`Switched back to source branch: ${highlight.branch(sourceBranch)}`))
+	await Effect.runPromise(program)
 }
 
 export const help = `
