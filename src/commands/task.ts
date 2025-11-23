@@ -1,25 +1,10 @@
 import { resolve, join } from "path"
 import { Effect } from "effect"
-import {
-	isInsideGitRepo,
-	getGitRoot,
-	isGitRoot,
-	getGitConfig,
-	getCurrentBranch,
-	isFeatureBranch,
-	createBranch,
-	getSuggestedBaseBranches,
-	getMainBranchConfig,
-	findMainBranch,
-	setMainBranchConfig,
-	gitAdd,
-	gitCommit,
-	getDefaultBaseBranchConfig,
-	branchExists,
-} from "../utils/git"
+import { GitService } from "../services/GitService"
+import { FileSystemService } from "../services/FileSystemService"
+import { PromptService } from "../services/PromptService"
+import { TemplateService } from "../services/TemplateService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
-import { prompt, promptForBaseBranch } from "../utils/prompt"
-import { getTemplateDir } from "../utils/template"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
 
@@ -36,391 +21,468 @@ export interface TaskEditOptions {
 	verbose?: boolean
 }
 
-export async function task(options: TaskOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+// Effect-based implementation
+export const taskEffect = (options: TaskOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	let targetPath: string
+		const git = yield* GitService
+		const fs = yield* FileSystemService
+		const promptService = yield* PromptService
+		const templateService = yield* TemplateService
 
-	if (options.path) {
-		// If path is provided, validate it's a git repository root
-		targetPath = resolve(options.path)
+		// Determine target path
+		let targetPath: string
 
-		if (!(await isGitRoot(targetPath))) {
-			throw new Error(
-				"The specified path is not the root of a git repository. Please provide a path to the top-level directory of a git checkout.",
-			)
-		}
-	} else {
-		// If no path provided, use git root of current directory
-		if (!(await isInsideGitRepo(process.cwd()))) {
-			throw new Error(
-				"Not in a git repository. Please run this command inside a git repo.",
-			)
-		}
+		if (options.path) {
+			// If path is provided, validate it's a git repository root
+			targetPath = resolve(options.path)
 
-		const gitRoot = await getGitRoot(process.cwd())
-		if (!gitRoot) {
-			throw new Error("Failed to determine the root of the git repository.")
-		}
-
-		targetPath = gitRoot
-	}
-
-	const createdFiles: string[] = []
-	const injectedFiles: string[] = []
-
-	// Check if initialized (has template in git config)
-	const templateName = await getGitConfig("agency.template", targetPath)
-
-	if (!templateName) {
-		throw new RepositoryNotInitializedError()
-	}
-
-	verboseLog(`Using template: ${templateName}`)
-
-	// Check if TASK.md already exists - if so, abort
-	const taskMdPath = resolve(targetPath, "TASK.md")
-	const taskMdFile = Bun.file(taskMdPath)
-	if (await taskMdFile.exists()) {
-		throw new Error(
-			"TASK.md already exists in the repository. This indicates something has gone wrong.\n" +
-				"Please remove TASK.md manually before running 'agency task'.",
-		)
-	}
-
-	// Check if we're on a feature branch
-	const currentBranch = await getCurrentBranch(targetPath)
-	verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
-	const isFeature = await isFeatureBranch(currentBranch, targetPath)
-	verboseLog(`Is feature branch: ${isFeature}`)
-
-	// If on main branch without a branch name, prompt for it (unless in silent mode)
-	let branchName = options.branch
-	if (!isFeature && !branchName) {
-		if (silent) {
-			throw new Error(
-				`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
-					`To initialize on a feature branch, either:\n` +
-					`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
-					`  2. Provide a new branch name: 'agency task <branch-name>'`,
-			)
-		}
-		branchName = await prompt("Branch name: ")
-		if (!branchName) {
-			throw new Error("Branch name is required when on main branch.")
-		}
-		verboseLog(`Branch name from prompt: ${branchName}`)
-	}
-
-	// If we have a branch name and we're not on a feature branch, check if branch already exists
-	if (!isFeature && branchName) {
-		const exists = await branchExists(targetPath, branchName)
-		if (exists) {
-			throw new Error(
-				`Branch ${highlight.branch(branchName)} already exists.\n` +
-					`Either switch to it first or choose a different branch name.`,
-			)
-		}
-		verboseLog(`Branch ${branchName} does not exist, will create it`)
-	}
-
-	// If we're going to create a branch, check if TASK.md will be created and prompt for description first
-	let taskDescription: string | undefined
-	if (!isFeature && branchName) {
-		const taskMdPath = resolve(targetPath, "TASK.md")
-		const taskMdFile = Bun.file(taskMdPath)
-		if (!(await taskMdFile.exists())) {
-			if (options.task) {
-				taskDescription = options.task
-				verboseLog(`Using task from option: ${taskDescription}`)
-			} else if (!silent) {
-				taskDescription = await prompt("Task description: ")
-				if (!taskDescription) {
-					log(
-						info(
-							"Skipping task description (TASK.md will use default placeholder)",
-						),
-					)
-					taskDescription = undefined
-				}
+			const isRoot = yield* git.isGitRoot(targetPath)
+			if (!isRoot) {
+				return yield* Effect.fail(
+					new Error(
+						"The specified path is not the root of a git repository. Please provide a path to the top-level directory of a git checkout.",
+					),
+				)
 			}
-		}
-	}
-
-	if (!isFeature) {
-		// If a branch name was provided, create it
-		if (branchName) {
-			// Get or prompt for base branch
-			let baseBranch: string | undefined =
-				(await getMainBranchConfig(targetPath)) ||
-				(await findMainBranch(targetPath)) ||
-				undefined
-
-			// If no base branch is configured and not in silent mode, prompt for it
-			if (!baseBranch && !silent) {
-				const suggestions = await getSuggestedBaseBranches(targetPath)
-				if (suggestions.length > 0) {
-					baseBranch = await promptForBaseBranch(suggestions)
-					verboseLog(`Selected base branch: ${baseBranch}`)
-
-					// Save the main branch config if it's not already set
-					const mainBranchConfig = await getMainBranchConfig(targetPath)
-					if (!mainBranchConfig) {
-						await setMainBranchConfig(baseBranch, targetPath)
-						log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
-					}
-				} else {
-					throw new Error(
-						"Could not find any base branches. Please ensure your repository has at least one branch.",
-					)
-				}
-			} else if (!baseBranch && silent) {
-				throw new Error(
-					"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
+		} else {
+			// If no path provided, use git root of current directory
+			const isRepo = yield* git.isInsideGitRepo(process.cwd())
+			if (!isRepo) {
+				return yield* Effect.fail(
+					new Error(
+						"Not in a git repository. Please run this command inside a git repo.",
+					),
 				)
 			}
 
-			await createBranch(branchName, targetPath, baseBranch)
-			log(
-				done(
-					`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+			targetPath = yield* git.getGitRoot(process.cwd())
+		}
+
+		const createdFiles: string[] = []
+		const injectedFiles: string[] = []
+
+		// Check if initialized (has template in git config)
+		const templateName = yield* git.getGitConfig("agency.template", targetPath)
+
+		if (!templateName) {
+			return yield* Effect.fail(new RepositoryNotInitializedError())
+		}
+
+		verboseLog(`Using template: ${templateName}`)
+
+		// Check if TASK.md already exists - if so, abort
+		const taskMdPath = resolve(targetPath, "TASK.md")
+		const taskMdExists = yield* fs.exists(taskMdPath)
+		if (taskMdExists) {
+			return yield* Effect.fail(
+				new Error(
+					"TASK.md already exists in the repository. This indicates something has gone wrong.\n" +
+						"Please remove TASK.md manually before running 'agency task'.",
 				),
 			)
 		}
-	}
 
-	// Get managed files for later use
-	const managedFiles = await initializeManagedFiles()
+		// Check if we're on a feature branch
+		const currentBranch = yield* git.getCurrentBranch(targetPath)
+		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+		const isFeature = yield* git.isFeatureBranch(currentBranch, targetPath)
+		verboseLog(`Is feature branch: ${isFeature}`)
 
-	// Get template directory (it may or may not exist yet)
-	const templateDir = getTemplateDir(templateName)
+		// If on main branch without a branch name, prompt for it (unless in silent mode)
+		let branchName = options.branch
+		if (!isFeature && !branchName) {
+			if (silent) {
+				return yield* Effect.fail(
+					new Error(
+						`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
+							`To initialize on a feature branch, either:\n` +
+							`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
+							`  2. Provide a new branch name: 'agency task <branch-name>'`,
+					),
+				)
+			}
+			branchName = yield* promptService.prompt("Branch name: ")
+			if (!branchName) {
+				return yield* Effect.fail(
+					new Error("Branch name is required when on main branch."),
+				)
+			}
+			verboseLog(`Branch name from prompt: ${branchName}`)
+		}
 
-	// Prompt for task if TASK.md will be created (only if not already prompted earlier)
-	if (taskDescription === undefined) {
-		const taskMdPath = resolve(targetPath, "TASK.md")
-		const taskMdFile = Bun.file(taskMdPath)
-		if (!(await taskMdFile.exists())) {
-			if (options.task) {
-				taskDescription = options.task
-				verboseLog(`Using task from option: ${taskDescription}`)
-			} else if (!silent) {
-				taskDescription = await prompt("Task description: ")
-				if (!taskDescription) {
-					log(
-						info(
-							"Skipping task description (TASK.md will use default placeholder)",
+		// If we have a branch name and we're not on a feature branch, check if branch already exists
+		if (!isFeature && branchName) {
+			const exists = yield* git.branchExists(targetPath, branchName)
+			if (exists) {
+				return yield* Effect.fail(
+					new Error(
+						`Branch ${highlight.branch(branchName)} already exists.\n` +
+							`Either switch to it first or choose a different branch name.`,
+					),
+				)
+			}
+			verboseLog(`Branch ${branchName} does not exist, will create it`)
+		}
+
+		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
+		let taskDescription: string | undefined
+		if (!isFeature && branchName) {
+			const taskMdExists = yield* fs.exists(taskMdPath)
+			if (!taskMdExists) {
+				if (options.task) {
+					taskDescription = options.task
+					verboseLog(`Using task from option: ${taskDescription}`)
+				} else if (!silent) {
+					taskDescription = yield* promptService.prompt("Task description: ")
+					if (!taskDescription) {
+						log(
+							info(
+								"Skipping task description (TASK.md will use default placeholder)",
+							),
+						)
+						taskDescription = undefined
+					}
+				}
+			}
+		}
+
+		if (!isFeature) {
+			// If a branch name was provided, create it
+			if (branchName) {
+				// Get or prompt for base branch
+				let baseBranch: string | undefined =
+					(yield* git.getMainBranchConfig(targetPath)) ||
+					(yield* git.findMainBranch(targetPath)) ||
+					undefined
+
+				// If no base branch is configured and not in silent mode, prompt for it
+				if (!baseBranch && !silent) {
+					const suggestions = yield* git.getSuggestedBaseBranches(targetPath)
+					if (suggestions.length > 0) {
+						baseBranch = yield* promptService.promptForSelection(
+							"Select base branch",
+							suggestions,
+						)
+						verboseLog(`Selected base branch: ${baseBranch}`)
+
+						// Save the main branch config if it's not already set
+						const mainBranchConfig = yield* git.getMainBranchConfig(targetPath)
+						if (!mainBranchConfig) {
+							yield* git.setMainBranchConfig(baseBranch, targetPath)
+							log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
+						}
+					} else {
+						return yield* Effect.fail(
+							new Error(
+								"Could not find any base branches. Please ensure your repository has at least one branch.",
+							),
+						)
+					}
+				} else if (!baseBranch && silent) {
+					return yield* Effect.fail(
+						new Error(
+							"No base branch configured. Run without --silent to configure, or set agency.mainBranch in git config.",
 						),
 					)
-					taskDescription = undefined
+				}
+
+				yield* git.createBranch(branchName, targetPath, baseBranch)
+				log(
+					done(
+						`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+					),
+				)
+			}
+		}
+
+		// Get managed files for later use
+		const managedFiles = yield* Effect.promise(() => initializeManagedFiles())
+
+		// Get template directory (it may or may not exist yet)
+		const templateDir = yield* templateService.getTemplateDir(templateName)
+
+		// Prompt for task if TASK.md will be created (only if not already prompted earlier)
+		if (taskDescription === undefined) {
+			const taskMdExists = yield* fs.exists(taskMdPath)
+			if (!taskMdExists) {
+				if (options.task) {
+					taskDescription = options.task
+					verboseLog(`Using task from option: ${taskDescription}`)
+				} else if (!silent) {
+					taskDescription = yield* promptService.prompt("Task description: ")
+					if (!taskDescription) {
+						log(
+							info(
+								"Skipping task description (TASK.md will use default placeholder)",
+							),
+						)
+						taskDescription = undefined
+					}
 				}
 			}
 		}
-	}
 
-	// Build list of files to create, combining managed files with any additional template files
-	const filesToCreate = new Map<string, string>() // fileName -> content source
+		// Build list of files to create, combining managed files with any additional template files
+		const filesToCreate = new Map<string, string>() // fileName -> content source
 
-	// Start with all managed files (these should always be created)
-	for (const managedFile of managedFiles) {
-		filesToCreate.set(managedFile.name, "default")
-	}
+		// Start with all managed files (these should always be created)
+		for (const managedFile of managedFiles) {
+			filesToCreate.set(managedFile.name, "default")
+		}
 
-	// Discover all files from the template directory
-	const templateFiles: string[] = []
-	try {
-		const result = Bun.spawnSync(["find", templateDir, "-type", "f"], {
-			stdout: "pipe",
-			stderr: "ignore",
-		})
-		const output = new TextDecoder().decode(result.stdout)
-		if (output) {
-			const foundFiles = output
-				.trim()
-				.split("\n")
-				.filter((f: string) => f.length > 0)
-			for (const file of foundFiles) {
-				// Get relative path from template directory
-				const relativePath = file.replace(templateDir + "/", "")
-				if (relativePath && !relativePath.startsWith(".")) {
-					templateFiles.push(relativePath)
-					// Mark that this file should use template content
-					filesToCreate.set(relativePath, "template")
-				}
+		// Discover all files from the template directory
+		const templateFiles = yield* discoverTemplateFiles(templateDir, verboseLog)
+		for (const relativePath of templateFiles) {
+			filesToCreate.set(relativePath, "template")
+		}
+
+		verboseLog(
+			`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
+		)
+
+		// Process each file to create
+		for (const [fileName, source] of filesToCreate) {
+			const targetFilePath = resolve(targetPath, fileName)
+
+			// Check if file exists in repo - if so, skip injection
+			const exists = yield* fs.exists(targetFilePath)
+			if (exists) {
+				log(info(`Skipped ${highlight.file(fileName)} (exists in repo)`))
+				continue
 			}
-		}
-	} catch (err) {
-		verboseLog(`Error discovering template files: ${err}`)
-	}
 
-	verboseLog(
-		`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
-	)
+			let content: string
 
-	// Process each file to create
-	for (const [fileName, source] of filesToCreate) {
-		const targetFilePath = resolve(targetPath, fileName)
-		const targetFile = Bun.file(targetFilePath)
+			// Try to read from template first, fall back to default content
+			if (source === "template") {
+				const templateFilePath = join(templateDir, fileName)
+				content = yield* fs.readFile(templateFilePath)
+			} else {
+				// Use default content from managed files
+				const managedFile = managedFiles.find((f) => f.name === fileName)
+				content = managedFile?.defaultContent ?? ""
+			}
 
-		// Check if file exists in repo - if so, skip injection
-		if (await targetFile.exists()) {
-			log(info(`Skipped ${highlight.file(fileName)} (exists in repo)`))
-			continue
-		}
+			// Replace {task} placeholder in TASK.md if task description was provided
+			if (fileName === "TASK.md" && taskDescription) {
+				content = content.replace("{task}", taskDescription)
+				verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
+			}
 
-		let content: string
+			yield* fs.writeFile(targetFilePath, content)
+			createdFiles.push(fileName)
 
-		// Try to read from template first, fall back to default content
-		if (source === "template") {
-			const templateFilePath = join(templateDir, fileName)
-			const templateFile = Bun.file(templateFilePath)
-			content = await templateFile.text()
-		} else {
-			// Use default content from managed files
-			const managedFile = managedFiles.find((f) => f.name === fileName)
-			content = managedFile?.defaultContent ?? ""
+			// Track injected files (excluding TASK.md and AGENCY.md which are always filtered)
+			if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
+				injectedFiles.push(fileName)
+			}
+
+			log(done(`Created ${highlight.file(fileName)}`))
 		}
 
-		// Replace {task} placeholder in TASK.md if task description was provided
-		if (fileName === "TASK.md" && taskDescription) {
-			content = content.replace("{task}", taskDescription)
-			verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
-		}
+		// Auto-detect base branch for this feature branch
+		let baseBranch: string | undefined
 
-		await Bun.write(targetFilePath, content)
-		createdFiles.push(fileName)
-
-		// Track injected files (excluding TASK.md and AGENCY.md which are always filtered)
-		if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
-			injectedFiles.push(fileName)
-		}
-
-		log(done(`Created ${highlight.file(fileName)}`))
-	}
-
-	// Auto-detect base branch for this feature branch
-	let baseBranch: string | undefined
-
-	// Check repository-level default in git config
-	baseBranch = (await getDefaultBaseBranchConfig(targetPath)) || undefined
-
-	// If no repo-level default, try to auto-detect
-	if (!baseBranch) {
-		// Try main branch config
+		// Check repository-level default in git config
 		baseBranch =
-			(await getMainBranchConfig(targetPath)) ||
-			(await findMainBranch(targetPath)) ||
-			undefined
+			(yield* git.getDefaultBaseBranchConfig(targetPath)) || undefined
 
-		// Try common base branches
+		// If no repo-level default, try to auto-detect
 		if (!baseBranch) {
-			const commonBases = ["origin/main", "origin/master", "main", "master"]
-			for (const base of commonBases) {
-				if (await branchExists(targetPath, base)) {
-					baseBranch = base
-					break
+			// Try main branch config
+			baseBranch =
+				(yield* git.getMainBranchConfig(targetPath)) ||
+				(yield* git.findMainBranch(targetPath)) ||
+				undefined
+
+			// Try common base branches
+			if (!baseBranch) {
+				const commonBases = ["origin/main", "origin/master", "main", "master"]
+				for (const base of commonBases) {
+					const exists = yield* git.branchExists(targetPath, base)
+					if (exists) {
+						baseBranch = base
+						break
+					}
 				}
 			}
 		}
-	}
 
-	if (baseBranch) {
-		verboseLog(`Auto-detected base branch: ${highlight.branch(baseBranch)}`)
-	}
+		if (baseBranch) {
+			verboseLog(`Auto-detected base branch: ${highlight.branch(baseBranch)}`)
+		}
 
-	// Create agency.json metadata file
-	const metadata = {
-		version: 1,
-		injectedFiles,
-		baseBranch, // Save the base branch if detected
-		template: templateName,
-		createdAt: new Date().toISOString(),
-	}
-	await writeAgencyMetadata(targetPath, metadata)
-	createdFiles.push("agency.json")
-	log(done(`Created ${highlight.file("agency.json")}`))
-	if (baseBranch) {
-		log(info(`Base branch: ${highlight.branch(baseBranch)}`))
-	}
-	verboseLog(
-		`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
-	)
+		// Create agency.json metadata file
+		const metadata = {
+			version: 1 as const,
+			injectedFiles,
+			baseBranch, // Save the base branch if detected
+			template: templateName,
+			createdAt: new Date().toISOString(),
+		}
+		yield* Effect.promise(() =>
+			writeAgencyMetadata(targetPath, metadata as any),
+		)
+		createdFiles.push("agency.json")
+		log(done(`Created ${highlight.file("agency.json")}`))
+		if (baseBranch) {
+			log(info(`Base branch: ${highlight.branch(baseBranch)}`))
+		}
+		verboseLog(
+			`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
+		)
 
-	// Git add and commit the created files
-	if (createdFiles.length > 0) {
+		// Git add and commit the created files
+		if (createdFiles.length > 0) {
+			try {
+				yield* git.gitAdd(createdFiles, targetPath)
+				yield* git.gitCommit("chore: agency task", targetPath, {
+					noVerify: true,
+				})
+				log(
+					done(
+						`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
+					),
+				)
+			} catch (err) {
+				// If commit fails, it might be because there are no changes (e.g., files already staged)
+				// We can ignore this error and let the user handle it manually
+				verboseLog(`Failed to commit: ${err}`)
+			}
+		}
+	})
+
+// Helper: Discover template files
+const discoverTemplateFiles = (templateDir: string, verboseLog: Function) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+
 		try {
-			await gitAdd(createdFiles, targetPath)
-			await gitCommit("chore: agency task", targetPath, { noVerify: true })
-			log(
-				done(
-					`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
+			const result = yield* fs.runCommand(["find", templateDir, "-type", "f"], {
+				captureOutput: true,
+			})
+
+			if (result.stdout) {
+				const foundFiles = result.stdout
+					.trim()
+					.split("\n")
+					.filter((f: string) => f.length > 0)
+				const templateFiles: string[] = []
+
+				for (const file of foundFiles) {
+					// Get relative path from template directory
+					const relativePath = file.replace(templateDir + "/", "")
+					if (relativePath && !relativePath.startsWith(".")) {
+						templateFiles.push(relativePath)
+					}
+				}
+
+				return templateFiles
+			}
+		} catch (err) {
+			verboseLog(`Error discovering template files: ${err}`)
+		}
+
+		return []
+	})
+
+// Effect-based taskEdit implementation
+export const taskEditEffect = (options: TaskEditOptions = {}) =>
+	Effect.gen(function* () {
+		const { silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
+
+		const git = yield* GitService
+		const fs = yield* FileSystemService
+
+		// Check if in a git repository
+		const isRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
 				),
 			)
-		} catch (err) {
-			// If commit fails, it might be because there are no changes (e.g., files already staged)
-			// We can ignore this error and let the user handle it manually
-			verboseLog(`Failed to commit: ${err}`)
 		}
-	}
-}
 
-export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
-	const { silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+		const gitRoot = yield* git.getGitRoot(process.cwd())
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+		const taskFilePath = resolve(gitRoot, "TASK.md")
+		verboseLog(`TASK.md path: ${taskFilePath}`)
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
+		// Check if TASK.md exists
+		const exists = yield* fs.exists(taskFilePath)
+		if (!exists) {
+			return yield* Effect.fail(
+				new Error(
+					"TASK.md not found in repository root. Run 'agency task' first to create it.",
+				),
+			)
+		}
 
-	const taskFilePath = resolve(gitRoot, "TASK.md")
-	verboseLog(`TASK.md path: ${taskFilePath}`)
+		// Get editor from environment or use sensible defaults
+		const editor =
+			process.env.VISUAL ||
+			process.env.EDITOR ||
+			(process.platform === "darwin" ? "open" : "vim")
 
-	// Check if TASK.md exists
-	const taskFile = Bun.file(taskFilePath)
-	if (!(await taskFile.exists())) {
-		throw new Error(
-			"TASK.md not found in repository root. Run 'agency task' first to create it.",
-		)
-	}
+		verboseLog(`Using editor: ${editor}`)
 
-	// Get editor from environment or use sensible defaults
-	const editor =
-		process.env.VISUAL ||
-		process.env.EDITOR ||
-		(process.platform === "darwin" ? "open" : "vim")
+		const result = yield* fs.runCommand([editor, taskFilePath])
 
-	verboseLog(`Using editor: ${editor}`)
-
-	try {
-		// Spawn the editor process
-		const proc = Bun.spawn([editor, taskFilePath], {
-			stdio: ["inherit", "inherit", "inherit"],
-		})
-
-		// Wait for the editor to close
-		const exitCode = await proc.exited
-
-		if (exitCode !== 0) {
-			throw new Error(`Editor exited with code ${exitCode}`)
+		if (result.exitCode !== 0) {
+			return yield* Effect.fail(
+				new Error(`Editor exited with code ${result.exitCode}`),
+			)
 		}
 
 		log(done("TASK.md edited"))
-	} catch (err) {
-		if (err instanceof Error) {
-			throw new Error(`Failed to open editor: ${err.message}`)
-		}
-		throw err
-	}
+	})
+
+// Backward-compatible Promise wrappers
+export async function task(options: TaskOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+	const { PromptServiceLive } = await import("../services/PromptServiceLive")
+	const { TemplateServiceLive } = await import(
+		"../services/TemplateServiceLive"
+	)
+
+	const program = taskEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.provide(PromptServiceLive),
+		Effect.provide(TemplateServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
+
+	await Effect.runPromise(program)
+}
+
+export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+
+	const program = taskEditEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
+
+	await Effect.runPromise(program)
 }
 
 export const help = `
@@ -472,10 +534,3 @@ Notes:
   - Template selection is stored in .git/config (not committed)
   - To edit TASK.md after creation, use 'agency edit'
 `
-
-// Effect-based wrapper for backward compatibility
-export const taskEffect = (options: TaskOptions = {}) =>
-	Effect.tryPromise({
-		try: () => task(options),
-		catch: (error) => error as Error,
-	})

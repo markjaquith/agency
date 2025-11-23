@@ -47,9 +47,9 @@ export const FileSystemServiceLive = Layer.succeed(
 					}),
 			}),
 
-		readJSON: <T>(path: string) =>
+		readJSON: <T = unknown>(path: string) =>
 			Effect.tryPromise({
-				try: async () => {
+				try: async (): Promise<T> => {
 					const file = Bun.file(path)
 					const exists = await file.exists()
 					if (!exists) {
@@ -60,7 +60,7 @@ export const FileSystemServiceLive = Layer.succeed(
 				catch: () => new FileNotFoundError({ path }),
 			}),
 
-		writeJSON: <T>(path: string, data: T) =>
+		writeJSON: <T = unknown>(path: string, data: T) =>
 			Effect.tryPromise({
 				try: () => Bun.write(path, JSON.stringify(data, null, 2) + "\n"),
 				catch: (error) =>
