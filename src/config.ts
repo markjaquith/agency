@@ -38,9 +38,7 @@ export async function loadConfig(configPath?: string): Promise<AgencyConfig> {
 		)
 	} catch (error) {
 		// If there's an error, return default config
-		console.error(
-			`Warning: Could not load config. Using defaults. Error: ${error}`,
-		)
+		// Note: We don't log here as per error handling policy - let caller handle
 		return DEFAULT_CONFIG
 	}
 }

@@ -74,7 +74,7 @@ Phase 4: Testing & Cleanup
 - ✅ Run full test suite (all 159 tests pass)
 - ✅ Update documentation to reflect Effect patterns
 - ✅ Add Effect wrappers for remaining commands (pr, task)
-- Clean up old patterns
+- ✅ Clean up old patterns (removed console.error violations)
 
 ## Progress Update
 
