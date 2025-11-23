@@ -156,7 +156,8 @@ const pushEffect = (options: PushOptions = {}) =>
 					})
 					await checkoutProc.exited
 				},
-				catch: () => {},
+				catch: (error) =>
+					new Error(`Failed to checkout source branch: ${error}`),
 			})
 			yield* checkoutEffect
 			return yield* Effect.fail(error)

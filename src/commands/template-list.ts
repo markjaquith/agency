@@ -10,7 +10,7 @@ interface ListOptions extends BaseCommandOptions {}
 
 function collectFilesRecursively(
 	dirPath: string,
-): Effect.Effect<string[], unknown> {
+): Effect.Effect<string[], Error> {
 	return Effect.tryPromise({
 		try: async () => {
 			const files: string[] = []
@@ -42,7 +42,7 @@ function collectFilesRecursively(
 
 			return files.sort()
 		},
-		catch: () => [],
+		catch: (error) => new Error(`Failed to collect files: ${error}`),
 	})
 }
 
@@ -73,7 +73,8 @@ const templateListEffect = (options: ListOptions = {}) =>
 				const stat = await file.stat()
 				return stat?.isDirectory?.() ?? false
 			},
-			catch: () => false,
+			catch: (error) =>
+				new Error(`Failed to check template directory: ${error}`),
 		})
 		if (!isDirectory) {
 			return yield* Effect.fail(

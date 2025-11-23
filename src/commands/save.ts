@@ -11,7 +11,7 @@ interface SaveOptions extends BaseCommandOptions {
 	files?: string[]
 }
 
-function isDirectory(filePath: string): Effect.Effect<boolean, unknown> {
+function isDirectory(filePath: string): Effect.Effect<boolean, Error> {
 	return Effect.tryPromise({
 		try: async () => {
 			try {
@@ -22,14 +22,15 @@ function isDirectory(filePath: string): Effect.Effect<boolean, unknown> {
 				return false
 			}
 		},
-		catch: () => false,
+		catch: (error) =>
+			new Error(`Failed to check if path is directory: ${error}`),
 	})
 }
 
 function collectFilesRecursively(
 	dirPath: string,
 	gitRoot: string,
-): Effect.Effect<string[], unknown> {
+): Effect.Effect<string[], Error> {
 	return Effect.tryPromise({
 		try: async () => {
 			const files: string[] = []
@@ -58,7 +59,7 @@ function collectFilesRecursively(
 
 			return files
 		},
-		catch: () => [],
+		catch: (error) => new Error(`Failed to collect files: ${error}`),
 	})
 }
 

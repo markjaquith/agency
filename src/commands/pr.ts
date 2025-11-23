@@ -161,7 +161,8 @@ const getBaseBranchEffect = (gitRoot: string, providedBaseBranch?: string) =>
 		// Check if we have a branch-specific base branch in agency.json
 		const savedBaseBranch = yield* Effect.tryPromise({
 			try: () => getBaseBranchFromMetadata(gitRoot),
-			catch: () => null,
+			catch: (error) =>
+				new Error(`Failed to get base branch from metadata: ${error}`),
 		})
 		if (savedBaseBranch) {
 			const exists = yield* git.branchExists(gitRoot, savedBaseBranch)
