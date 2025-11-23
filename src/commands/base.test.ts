@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
-import { base, baseSet, baseGet } from "./base"
+import { base } from "./base"
 import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
 import { getGitConfig } from "../utils/git"
 import { getBaseBranchFromMetadata, writeAgencyMetadata } from "../types"
@@ -38,8 +38,9 @@ describe("base", () => {
 			} as any)
 
 			// Set base branch
-			await baseSet({
-				baseBranch: "main",
+			await base({
+				subcommand: "set",
+				args: ["main"],
 				silent: true,
 			})
 
@@ -50,8 +51,9 @@ describe("base", () => {
 
 		test("sets repository-level default base branch", async () => {
 			// Set repo-level base branch
-			await baseSet({
-				baseBranch: "main",
+			await base({
+				subcommand: "set",
+				args: ["main"],
 				repo: true,
 				silent: true,
 			})
@@ -63,8 +65,9 @@ describe("base", () => {
 
 		test("throws error if base branch does not exist", async () => {
 			await expect(
-				baseSet({
-					baseBranch: "nonexistent",
+				base({
+					subcommand: "set",
+					args: ["nonexistent"],
 					silent: true,
 				}),
 			).rejects.toThrow("does not exist")
@@ -95,7 +98,11 @@ describe("base", () => {
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
 			try {
-				await baseGet({ silent: false })
+				await base({
+					subcommand: "get",
+					args: [],
+					silent: false,
+				})
 				expect(logs[0]).toBe("main")
 			} finally {
 				console.log = originalLog
@@ -118,9 +125,13 @@ describe("base", () => {
 				createdAt: new Date().toISOString(),
 			} as any)
 
-			await expect(baseGet({ silent: true })).rejects.toThrow(
-				"No base branch configured",
-			)
+			await expect(
+				base({
+					subcommand: "get",
+					args: [],
+					silent: true,
+				}),
+			).rejects.toThrow("No base branch configured")
 		})
 	})
 
@@ -131,7 +142,7 @@ describe("base", () => {
 			)
 		})
 
-		test("calls baseSet for 'set' subcommand", async () => {
+		test("handles 'set' subcommand", async () => {
 			await Bun.spawn(["git", "checkout", "-b", "feature"], {
 				cwd: testDir,
 				stdout: "pipe",

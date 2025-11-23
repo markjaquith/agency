@@ -3,7 +3,7 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { setBaseBranchInMetadata, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo, runEffect } from "../utils/effect"
 
 interface BaseOptions {
 	subcommand?: string
@@ -170,44 +170,11 @@ const baseEffect = (options: BaseOptions) =>
 		}
 	})
 
-// Backward-compatible Promise wrappers
-export async function baseSet(options: BaseSetOptions): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-
-	const program = baseSetEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
-}
-
-export async function baseGet(options: BaseGetOptions): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-
-	const program = baseGetEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
-}
-
+// Backward-compatible Promise wrapper
 export async function base(options: BaseOptions): Promise<void> {
 	const { GitServiceLive } = await import("../services/GitServiceLive")
 
-	const program = baseEffect(options).pipe(
-		Effect.provide(GitServiceLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-
-	await Effect.runPromise(program)
+	await runEffect(baseEffect(options), [GitServiceLive])
 }
 
 export const help = `
