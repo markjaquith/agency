@@ -1,5 +1,6 @@
 import { resolve, join } from "path"
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
 import { PromptService } from "../services/PromptService"
@@ -7,25 +8,15 @@ import { TemplateService } from "../services/TemplateService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
-import {
-	runEffect,
-	createLoggers,
-	ensureGitRepo,
-	getTemplateName,
-} from "../utils/effect"
+import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface TaskOptions {
+export interface TaskOptions extends BaseCommandOptions {
 	path?: string
-	silent?: boolean
-	verbose?: boolean
 	task?: string
 	branch?: string
 }
 
-export interface TaskEditOptions {
-	silent?: boolean
-	verbose?: boolean
-}
+export interface TaskEditOptions extends BaseCommandOptions {}
 
 // Effect-based implementation
 export const taskEffect = (options: TaskOptions = {}) =>
@@ -437,38 +428,7 @@ export const taskEditEffect = (options: TaskEditOptions = {}) =>
 		log(done("TASK.md edited"))
 	})
 
-// Backward-compatible Promise wrappers
-export async function task(options: TaskOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-	const { PromptServiceLive } = await import("../services/PromptServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-
-	await runEffect(taskEffect(options), [
-		GitServiceLive,
-		FileSystemServiceLive,
-		PromptServiceLive,
-		TemplateServiceLive,
-	])
-}
-
-export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(taskEditEffect(options), [
-		GitServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency task [branch-name] [options]
 
 Initialize template files (AGENTS.md, TASK.md, opencode.json) in a git repository.
@@ -517,3 +477,28 @@ Notes:
   - Template selection is stored in .git/config (not committed)
   - To edit TASK.md after creation, use 'agency edit'
 `
+
+export const {
+	effect,
+	execute: task,
+	help,
+} = createCommand<TaskOptions>({
+	name: "task",
+	services: ["git", "filesystem", "prompt", "template"],
+	effect: taskEffect,
+	help: helpText,
+})
+
+export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+
+	// Manually run the Effect since taskEdit is a separate command
+	const { runEffect } = await import("../utils/effect")
+	await runEffect(taskEditEffect(options), [
+		GitServiceLive,
+		FileSystemServiceLive,
+	])
+}

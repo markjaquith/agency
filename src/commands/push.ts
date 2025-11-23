@@ -1,21 +1,19 @@
 import { Effect, Either } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { prEffect } from "./pr"
+import { effect as prEffect } from "./pr"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface PushOptions {
+export interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
 	branch?: string
-	silent?: boolean
 	force?: boolean
-	verbose?: boolean
 }
 
-// Effect-based implementation
-export const pushEffect = (options: PushOptions = {}) =>
+const pushEffect = (options: PushOptions = {}) =>
 	Effect.gen(function* () {
 		const { verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -199,22 +197,7 @@ export const pushEffect = (options: PushOptions = {}) =>
 		)
 	})
 
-// Backward-compatible Promise wrapper
-export async function push(options: PushOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(pushEffect(options), [
-		GitServiceLive,
-		ConfigServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency push [base-branch] [options]
 
 Create a PR branch, push it to remote, and return to the source branch.
@@ -255,3 +238,14 @@ Notes:
   - Automatically returns to source branch after pushing
   - If any step fails, the command stops and reports the error
 `
+
+export const {
+	effect,
+	execute: push,
+	help,
+} = createCommand<PushOptions>({
+	name: "push",
+	services: ["git", "config", "filesystem"],
+	effect: pushEffect,
+	help: helpText,
+})

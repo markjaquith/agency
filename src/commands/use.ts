@@ -1,18 +1,16 @@
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { TemplateService } from "../services/TemplateService"
 import { PromptService } from "../services/PromptService"
 import highlight from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface UseOptions {
+export interface UseOptions extends BaseCommandOptions {
 	template?: string
-	silent?: boolean
-	verbose?: boolean
 }
 
-// Effect-based implementation
-export const useEffect = (options: UseOptions = {}) =>
+const useEffect = (options: UseOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -85,22 +83,7 @@ export const useEffect = (options: UseOptions = {}) =>
 		yield* git.setGitConfig("agency.template", templateName, gitRoot)
 	})
 
-// Backward-compatible Promise wrapper
-export async function use(options: UseOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-	const { PromptServiceLive } = await import("../services/PromptServiceLive")
-
-	await runEffect(useEffect(options), [
-		GitServiceLive,
-		TemplateServiceLive,
-		PromptServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency template use [template] [options]
 
 Set the template to use for this repository.
@@ -132,3 +115,14 @@ Notes:
   - Use 'agency task' after changing template to create/update files
   - Template directory is created when you save files to it
 `
+
+export const {
+	effect,
+	execute: use,
+	help,
+} = createCommand<UseOptions>({
+	name: "use",
+	services: ["git", "template", "prompt"],
+	effect: useEffect,
+	help: helpText,
+})

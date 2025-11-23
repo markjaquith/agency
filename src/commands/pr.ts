@@ -1,22 +1,20 @@
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface PrOptions {
+export interface PrOptions extends BaseCommandOptions {
 	branch?: string
 	baseBranch?: string
-	silent?: boolean
 	force?: boolean
-	verbose?: boolean
 }
 
-// Effect-based implementation
-export const prEffect = (options: PrOptions = {}) =>
+const prEffect = (options: PrOptions = {}) =>
 	Effect.gen(function* () {
 		const { force = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -234,22 +232,7 @@ const createOrResetBranchEffect = (
 		yield* git.checkoutBranch(gitRoot, targetBranch)
 	})
 
-// Backward-compatible Promise wrapper
-export async function pr(options: PrOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(prEffect(options), [
-		GitServiceLive,
-		ConfigServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency pr [base-branch] [options]
 
 Create a PR branch from the current branch with managed files (AGENTS.md)
@@ -313,9 +296,20 @@ Notes:
   - Base branch is set when you run 'agency task' to initialize the feature branch
   - Only commits since the branch diverged are rewritten (uses merge-base range)
   - Managed files are reverted to their merge-base state (or removed if they didn't exist)
-  - Only commits since divergence that touched these files will have different hashes
+  - Only commits from the base branch remain unchanged (shared history is preserved)
   - All commits from the base branch remain unchanged (shared history is preserved)
   - Original branch is never modified
   - If PR branch exists, it will be deleted and recreated
    - Command will refuse to create PR branch from a PR branch unless --force is used
 `
+
+export const {
+	effect,
+	execute: pr,
+	help,
+} = createCommand<PrOptions>({
+	name: "pr",
+	services: ["git", "config", "filesystem"],
+	effect: prEffect,
+	help: helpText,
+})

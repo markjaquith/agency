@@ -1,19 +1,12 @@
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
-import {
-	runEffect,
-	createLoggers,
-	ensureGitRepo,
-	getTemplateName,
-} from "../utils/effect"
+import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface ListOptions {
-	silent?: boolean
-	verbose?: boolean
-}
+export interface ListOptions extends BaseCommandOptions {}
 
 function collectFilesRecursively(
 	dirPath: string,
@@ -103,24 +96,7 @@ export const templateListEffect = (options: ListOptions = {}) =>
 		}
 	})
 
-// Backward-compatible Promise wrapper
-export async function templateList(options: ListOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(templateListEffect(options), [
-		GitServiceLive,
-		TemplateServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency template list [options]
 
 List all files in the configured template directory.
@@ -142,3 +118,14 @@ Notes:
   - Files are listed in alphabetical order
   - Template directory must exist (created when you save files)
 `
+
+export const {
+	effect,
+	execute: templateList,
+	help,
+} = createCommand<ListOptions>({
+	name: "template-list",
+	services: ["git", "template", "filesystem"],
+	effect: templateListEffect,
+	help: helpText,
+})

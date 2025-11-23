@@ -1,16 +1,13 @@
 import { join } from "node:path"
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface WorkOptions {
-	silent?: boolean
-	verbose?: boolean
-}
+export interface WorkOptions extends BaseCommandOptions {}
 
-// Effect-based implementation
-export const workEffect = (options: WorkOptions = {}) =>
+const workEffect = (options: WorkOptions = {}) =>
 	Effect.gen(function* () {
 		const { verboseLog } = createLoggers(options)
 
@@ -48,17 +45,7 @@ export const workEffect = (options: WorkOptions = {}) =>
 		}
 	})
 
-// Backward-compatible Promise wrapper
-export async function work(options: WorkOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(workEffect(options), [GitServiceLive, FileSystemServiceLive])
-}
-
-export const help = `
+const helpText = `
 Usage: agency work [options]
 
 Start working on the task described in TASK.md using OpenCode.
@@ -74,3 +61,14 @@ Notes:
   - Requires opencode to be installed and available in PATH
   - Opens an interactive OpenCode session
 `
+
+export const {
+	effect,
+	execute: work,
+	help,
+} = createCommand<WorkOptions>({
+	name: "work",
+	services: ["git", "filesystem"],
+	effect: workEffect,
+	help: helpText,
+})

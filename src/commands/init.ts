@@ -1,24 +1,17 @@
 import { basename } from "path"
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
 import highlight, { done } from "../utils/colors"
-import {
-	runEffect,
-	createLoggers,
-	ensureGitRepo,
-	getTemplateName,
-} from "../utils/effect"
+import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface InitOptions {
+export interface InitOptions extends BaseCommandOptions {
 	template?: string
-	silent?: boolean
-	verbose?: boolean
 }
 
-// Effect-based implementation
-export const initEffect = (options: InitOptions = {}) =>
+const initEffect = (options: InitOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -119,22 +112,7 @@ export const initEffect = (options: InitOptions = {}) =>
 		)
 	})
 
-// Backward-compatible Promise wrapper
-export async function init(options: InitOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { PromptServiceLive } = await import("../services/PromptServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-
-	await runEffect(initEffect(options), [
-		GitServiceLive,
-		PromptServiceLive,
-		TemplateServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency init [options]
 
 Initialize agency for this repository by selecting a template.
@@ -164,3 +142,14 @@ Notes:
   - To change template later, run 'agency init --template <name>'
   - Run 'agency task' after initialization to create template files
 `
+
+export const {
+	effect,
+	execute: init,
+	help,
+} = createCommand<InitOptions>({
+	name: "init",
+	services: ["git", "prompt", "template"],
+	effect: initEffect,
+	help: helpText,
+})

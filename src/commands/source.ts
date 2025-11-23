@@ -1,17 +1,14 @@
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface SourceOptions {
-	silent?: boolean
-	verbose?: boolean
-}
+export interface SourceOptions extends BaseCommandOptions {}
 
-// Effect-based implementation
-export const sourceEffect = (options: SourceOptions = {}) =>
+const sourceEffect = (options: SourceOptions = {}) =>
 	Effect.gen(function* () {
 		const { log, verboseLog } = createLoggers(options)
 
@@ -51,15 +48,7 @@ export const sourceEffect = (options: SourceOptions = {}) =>
 		log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
 	})
 
-// Backward-compatible Promise wrapper
-export async function source(options: SourceOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
-
-	await runEffect(sourceEffect(options), [GitServiceLive, ConfigServiceLive])
-}
-
-export const help = `
+const helpText = `
 Usage: agency source [options]
 
 Switch back to the source branch from a PR branch.
@@ -75,3 +64,14 @@ Notes:
   - Source branch must exist
   - Uses PR branch pattern from ~/.config/agency/agency.json
 `
+
+export const {
+	effect,
+	execute: source,
+	help,
+} = createCommand<SourceOptions>({
+	name: "source",
+	services: ["git", "config"],
+	effect: sourceEffect,
+	help: helpText,
+})

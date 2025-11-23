@@ -1,21 +1,15 @@
 import { resolve } from "path"
 import { rm } from "node:fs/promises"
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
-import {
-	runEffect,
-	createLoggers,
-	ensureGitRepo,
-	getTemplateName,
-} from "../utils/effect"
+import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface DeleteOptions {
+export interface DeleteOptions extends BaseCommandOptions {
 	files?: string[]
-	silent?: boolean
-	verbose?: boolean
 }
 
 // Effect-based implementation
@@ -73,26 +67,7 @@ export const templateDeleteEffect = (options: DeleteOptions = {}) =>
 		}
 	})
 
-// Backward-compatible Promise wrapper
-export async function templateDelete(
-	options: DeleteOptions = {},
-): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(templateDeleteEffect(options), [
-		GitServiceLive,
-		TemplateServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency template delete <file> [file ...] [options]
 
 Delete specified files from the configured template directory.
@@ -121,3 +96,14 @@ Notes:
   - Non-existent files are skipped with a warning in verbose mode
   - Directories are deleted recursively
 `
+
+export const {
+	effect,
+	execute: templateDelete,
+	help,
+} = createCommand<DeleteOptions>({
+	name: "template-delete",
+	services: ["git", "template", "filesystem"],
+	effect: templateDeleteEffect,
+	help: helpText,
+})

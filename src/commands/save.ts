@@ -1,20 +1,14 @@
 import { resolve, join, dirname, basename } from "path"
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
-import {
-	runEffect,
-	createLoggers,
-	ensureGitRepo,
-	getTemplateName,
-} from "../utils/effect"
+import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface SaveOptions {
+export interface SaveOptions extends BaseCommandOptions {
 	files?: string[]
-	silent?: boolean
-	verbose?: boolean
 }
 
 function isDirectory(filePath: string): Effect.Effect<boolean, unknown> {
@@ -164,24 +158,7 @@ export const saveEffect = (options: SaveOptions = {}) =>
 		}
 	})
 
-// Backward-compatible Promise wrapper
-export async function save(options: SaveOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(saveEffect(options), [
-		GitServiceLive,
-		TemplateServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency save <file|dir> [file|dir ...] [options]
 
 Save specified files or directories to the configured template.
@@ -216,3 +193,14 @@ Notes:
   - Directory structure is preserved in the template
   - TASK.md files cannot be saved - agency controls their creation
 `
+
+export const {
+	effect,
+	execute: save,
+	help,
+} = createCommand<SaveOptions>({
+	name: "save",
+	services: ["git", "template", "filesystem"],
+	effect: saveEffect,
+	help: helpText,
+})

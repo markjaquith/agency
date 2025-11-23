@@ -1,15 +1,14 @@
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { GitService, GitCommandError } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { getBaseBranchFromMetadata } from "../types"
 import { pr } from "./pr"
 import highlight, { done } from "../utils/colors"
-import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
-export interface MergeOptions {
-	silent?: boolean
-	verbose?: boolean
+export interface MergeOptions extends BaseCommandOptions {
 	squash?: boolean
 }
 
@@ -48,8 +47,7 @@ const mergeBranchEffect = (
 		}
 	})
 
-// Effect-based implementation
-export const mergeEffect = (options: MergeOptions = {}) =>
+const mergeEffect = (options: MergeOptions = {}) =>
 	Effect.gen(function* () {
 		const { squash = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -196,15 +194,7 @@ export const mergeEffect = (options: MergeOptions = {}) =>
 		}
 	})
 
-// Backward-compatible Promise wrapper
-export async function merge(options: MergeOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
-
-	await runEffect(mergeEffect(options), [GitServiceLive, ConfigServiceLive])
-}
-
-export const help = `
+const helpText = `
 Usage: agency merge [options]
 
 Merge the current PR branch into the configured base branch.
@@ -244,3 +234,14 @@ Notes:
   - Merge conflicts must be resolved manually if they occur
   - With --squash, changes are staged but not committed (you must commit manually)
 `
+
+export const {
+	effect,
+	execute: merge,
+	help,
+} = createCommand<MergeOptions>({
+	name: "merge",
+	services: ["git", "config"],
+	effect: mergeEffect,
+	help: helpText,
+})

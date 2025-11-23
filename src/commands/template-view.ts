@@ -1,20 +1,14 @@
 import { resolve } from "path"
 import { Effect } from "effect"
+import { createCommand, type BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
-import {
-	runEffect,
-	createLoggers,
-	ensureGitRepo,
-	getTemplateName,
-} from "../utils/effect"
+import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
-export interface ViewOptions {
+export interface ViewOptions extends BaseCommandOptions {
 	file?: string
-	silent?: boolean
-	verbose?: boolean
 }
 
 // Effect-based implementation
@@ -65,24 +59,7 @@ export const templateViewEffect = (options: ViewOptions = {}) =>
 		}
 	})
 
-// Backward-compatible Promise wrapper
-export async function templateView(options: ViewOptions = {}): Promise<void> {
-	const { GitServiceLive } = await import("../services/GitServiceLive")
-	const { TemplateServiceLive } = await import(
-		"../services/TemplateServiceLive"
-	)
-	const { FileSystemServiceLive } = await import(
-		"../services/FileSystemServiceLive"
-	)
-
-	await runEffect(templateViewEffect(options), [
-		GitServiceLive,
-		TemplateServiceLive,
-		FileSystemServiceLive,
-	])
-}
-
-export const help = `
+const helpText = `
 Usage: agency template view <file> [options]
 
 View the contents of a file in the configured template directory.
@@ -107,3 +84,14 @@ Notes:
   - File path is relative to template root directory
   - File content is displayed directly to stdout
 `
+
+export const {
+	effect,
+	execute: templateView,
+	help,
+} = createCommand<ViewOptions>({
+	name: "template-view",
+	services: ["git", "template", "filesystem"],
+	effect: templateViewEffect,
+	help: helpText,
+})
