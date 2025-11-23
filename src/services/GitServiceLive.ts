@@ -698,5 +698,21 @@ export const GitServiceLive = Layer.succeed(
 								: "Failed to set base branch config",
 					}),
 			}),
+
+		getMergeBase: (gitRoot: string, branch1: string, branch2: string) =>
+			pipe(
+				runGitCommand(["git", "merge-base", branch1, branch2], gitRoot),
+				Effect.flatMap((result) =>
+					result.exitCode === 0
+						? Effect.succeed(result.stdout.trim())
+						: Effect.fail(
+								new GitCommandError({
+									command: `git merge-base ${branch1} ${branch2}`,
+									exitCode: result.exitCode,
+									stderr: result.stderr,
+								}),
+							),
+				),
+			),
 	}),
 )

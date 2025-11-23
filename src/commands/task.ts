@@ -1,4 +1,5 @@
 import { resolve, join } from "path"
+import { Effect } from "effect"
 import {
 	isInsideGitRepo,
 	getGitRoot,
@@ -471,3 +472,10 @@ Notes:
   - Template selection is stored in .git/config (not committed)
   - To edit TASK.md after creation, use 'agency edit'
 `
+
+// Effect-based wrapper for backward compatibility
+export const taskEffect = (options: TaskOptions = {}) =>
+	Effect.tryPromise({
+		try: () => task(options),
+		catch: (error) => error as Error,
+	})

@@ -92,5 +92,10 @@ export class GitService extends Context.Tag("GitService")<
 			baseBranch: string,
 			gitRoot: string,
 		) => Effect.Effect<void, GitError>
+		readonly getMergeBase: (
+			gitRoot: string,
+			branch1: string,
+			branch2: string,
+		) => Effect.Effect<string, GitCommandError>
 	}
 >() {}
