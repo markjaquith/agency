@@ -1,7 +1,11 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { use } from "./use"
-import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-import { getGitConfig } from "../utils/git"
+import {
+	createTempDir,
+	cleanupTempDir,
+	initGitRepo,
+	getGitConfig,
+} from "../test-utils"
 
 describe("use command", () => {
 	let tempDir: string

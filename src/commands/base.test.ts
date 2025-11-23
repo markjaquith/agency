@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { base } from "./base"
-import { createTempDir, cleanupTempDir, initGitRepo } from "../test-utils"
-import { getGitConfig } from "../utils/git"
+import {
+	createTempDir,
+	cleanupTempDir,
+	initGitRepo,
+	getGitConfig,
+} from "../test-utils"
 import { getBaseBranchFromMetadata, writeAgencyMetadata } from "../types"
 
 describe("base", () => {

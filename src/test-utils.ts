@@ -202,3 +202,23 @@ export async function initAgency(
 		},
 	).exited
 }
+
+/**
+ * Get a git config value for testing
+ */
+export async function getGitConfig(
+	key: string,
+	gitRoot: string,
+): Promise<string | null> {
+	try {
+		const proc = Bun.spawn(["git", "config", "--local", "--get", key], {
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		const output = await new Response(proc.stdout).text()
+		return output.trim() || null
+	} catch {
+		return null
+	}
+}
