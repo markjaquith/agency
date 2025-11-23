@@ -70,8 +70,11 @@ export const pushEffect = (options: PushOptions = {}) =>
 
 		const prResult = yield* Effect.either(prEffectWithOptions)
 		if (Either.isLeft(prResult)) {
+			const error = prResult.left
 			return yield* Effect.fail(
-				new Error(`Failed to create PR branch: ${prResult.left.message}`),
+				new Error(
+					`Failed to create PR branch: ${error instanceof Error ? error.message : String(error)}`,
+				),
 			)
 		}
 
@@ -211,10 +214,14 @@ export const pushEffect = (options: PushOptions = {}) =>
 export async function push(options: PushOptions = {}): Promise<void> {
 	const { GitServiceLive } = await import("../services/GitServiceLive")
 	const { ConfigServiceLive } = await import("../services/ConfigServiceLive")
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
 
 	const program = pushEffect(options).pipe(
 		Effect.provide(GitServiceLive),
 		Effect.provide(ConfigServiceLive),
+		Effect.provide(FileSystemServiceLive),
 		Effect.catchAllDefect((defect) =>
 			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
 		),

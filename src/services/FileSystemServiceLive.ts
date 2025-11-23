@@ -102,5 +102,60 @@ export const FileSystemServiceLive = Layer.succeed(
 						cause: error,
 					}),
 			}),
+
+		deleteDirectory: (path: string) =>
+			Effect.tryPromise({
+				try: async () => {
+					const proc = Bun.spawn(["rm", "-rf", path], {
+						stdout: "pipe",
+						stderr: "pipe",
+					})
+					await proc.exited
+					if (proc.exitCode !== 0) {
+						const stderr = await new Response(proc.stderr).text()
+						throw new Error(`Failed to delete directory: ${stderr}`)
+					}
+				},
+				catch: (error) =>
+					new FileSystemError({
+						message: `Failed to delete directory: ${path}`,
+						cause: error,
+					}),
+			}),
+
+		runCommand: (
+			args: readonly string[],
+			options?: {
+				readonly cwd?: string
+				readonly captureOutput?: boolean
+			},
+		) =>
+			Effect.tryPromise({
+				try: async () => {
+					const proc = Bun.spawn([...args], {
+						cwd: options?.cwd || process.cwd(),
+						stdout: options?.captureOutput ? "pipe" : "inherit",
+						stderr: "pipe",
+					})
+
+					await proc.exited
+
+					const stdout = options?.captureOutput
+						? await new Response(proc.stdout).text()
+						: ""
+					const stderr = await new Response(proc.stderr).text()
+
+					return {
+						stdout: stdout.trim(),
+						stderr: stderr.trim(),
+						exitCode: proc.exitCode ?? 0,
+					}
+				},
+				catch: (error) =>
+					new FileSystemError({
+						message: `Failed to run command: ${args.join(" ")}`,
+						cause: error,
+					}),
+			}),
 	}),
 )

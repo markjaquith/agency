@@ -41,5 +41,18 @@ export class FileSystemService extends Context.Tag("FileSystemService")<
 			from: string,
 			to: string,
 		) => Effect.Effect<void, FileSystemError>
+		readonly deleteDirectory: (
+			path: string,
+		) => Effect.Effect<void, FileSystemError>
+		readonly runCommand: (
+			args: readonly string[],
+			options?: {
+				readonly cwd?: string
+				readonly captureOutput?: boolean
+			},
+		) => Effect.Effect<
+			{ stdout: string; stderr: string; exitCode: number },
+			FileSystemError
+		>
 	}
 >() {}

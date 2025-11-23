@@ -97,5 +97,29 @@ export class GitService extends Context.Tag("GitService")<
 			branch1: string,
 			branch2: string,
 		) => Effect.Effect<string, GitCommandError>
+		readonly deleteBranch: (
+			gitRoot: string,
+			branchName: string,
+			force?: boolean,
+		) => Effect.Effect<void, GitCommandError>
+		readonly unsetGitConfig: (
+			key: string,
+			gitRoot: string,
+		) => Effect.Effect<void, GitError>
+		readonly checkCommandExists: (
+			command: string,
+		) => Effect.Effect<boolean, GitError>
+		readonly runGitCommand: (
+			args: readonly string[],
+			gitRoot: string,
+			options?: {
+				readonly env?: Record<string, string>
+				readonly stdin?: string
+				readonly captureOutput?: boolean
+			},
+		) => Effect.Effect<
+			{ stdout: string; stderr: string; exitCode: number },
+			GitCommandError
+		>
 	}
 >() {}
