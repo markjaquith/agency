@@ -37,6 +37,40 @@ const runGitCommand = (args: readonly string[], cwd: string) =>
 			}),
 	})
 
+// Helper to run git commands and check exit code (DRY pattern)
+const runGitCommandOrFail = (args: readonly string[], cwd: string) =>
+	pipe(
+		runGitCommand(args, cwd),
+		Effect.flatMap((result) =>
+			result.exitCode === 0
+				? Effect.succeed(result.stdout)
+				: Effect.fail(
+						new GitCommandError({
+							command: args.join(" "),
+							exitCode: result.exitCode,
+							stderr: result.stderr,
+						}),
+					),
+		),
+	)
+
+// Helper to run git commands that don't return output (void)
+const runGitCommandVoid = (args: readonly string[], cwd: string) =>
+	pipe(
+		runGitCommand(args, cwd),
+		Effect.flatMap((result) =>
+			result.exitCode === 0
+				? Effect.void
+				: Effect.fail(
+						new GitCommandError({
+							command: args.join(" "),
+							exitCode: result.exitCode,
+							stderr: result.stderr,
+						}),
+					),
+		),
+	)
+
 // Create the live implementation
 export const GitServiceLive = Layer.succeed(
 	GitService,
@@ -154,20 +188,7 @@ export const GitServiceLive = Layer.succeed(
 			}),
 
 		getCurrentBranch: (gitRoot: string) =>
-			pipe(
-				runGitCommand(["git", "branch", "--show-current"], gitRoot),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.succeed(result.stdout)
-						: Effect.fail(
-								new GitCommandError({
-									command: "git branch --show-current",
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
-			),
+			runGitCommandOrFail(["git", "branch", "--show-current"], gitRoot),
 
 		branchExists: (gitRoot: string, branch: string) =>
 			Effect.tryPromise({
@@ -222,53 +243,14 @@ export const GitServiceLive = Layer.succeed(
 				args.push(baseBranch)
 			}
 
-			return pipe(
-				runGitCommand(args, gitRoot),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.void
-						: Effect.fail(
-								new GitCommandError({
-									command: args.join(" "),
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
-			)
+			return runGitCommandVoid(args, gitRoot)
 		},
 
 		checkoutBranch: (gitRoot: string, branch: string) =>
-			pipe(
-				runGitCommand(["git", "checkout", branch], gitRoot),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.void
-						: Effect.fail(
-								new GitCommandError({
-									command: `git checkout ${branch}`,
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
-			),
+			runGitCommandVoid(["git", "checkout", branch], gitRoot),
 
 		gitAdd: (files: readonly string[], gitRoot: string) =>
-			pipe(
-				runGitCommand(["git", "add", ...files], gitRoot),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.void
-						: Effect.fail(
-								new GitCommandError({
-									command: `git add ${files.join(" ")}`,
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
-			),
+			runGitCommandVoid(["git", "add", ...files], gitRoot),
 
 		gitCommit: (
 			message: string,
@@ -280,20 +262,7 @@ export const GitServiceLive = Layer.succeed(
 				args.push("--no-verify")
 			}
 
-			return pipe(
-				runGitCommand(args, gitRoot),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.void
-						: Effect.fail(
-								new GitCommandError({
-									command: args.join(" "),
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
-			)
+			return runGitCommandVoid(args, gitRoot)
 		},
 
 		getDefaultRemoteBranch: (gitRoot: string) =>
@@ -700,38 +669,12 @@ export const GitServiceLive = Layer.succeed(
 			}),
 
 		getMergeBase: (gitRoot: string, branch1: string, branch2: string) =>
-			pipe(
-				runGitCommand(["git", "merge-base", branch1, branch2], gitRoot),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.succeed(result.stdout.trim())
-						: Effect.fail(
-								new GitCommandError({
-									command: `git merge-base ${branch1} ${branch2}`,
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
-			),
+			runGitCommandOrFail(["git", "merge-base", branch1, branch2], gitRoot),
 
 		deleteBranch: (gitRoot: string, branchName: string, force = false) =>
-			pipe(
-				runGitCommand(
-					["git", "branch", force ? "-D" : "-d", branchName],
-					gitRoot,
-				),
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.void
-						: Effect.fail(
-								new GitCommandError({
-									command: `git branch ${force ? "-D" : "-d"} ${branchName}`,
-									exitCode: result.exitCode,
-									stderr: result.stderr,
-								}),
-							),
-				),
+			runGitCommandVoid(
+				["git", "branch", force ? "-D" : "-d", branchName],
+				gitRoot,
 			),
 
 		unsetGitConfig: (key: string, gitRoot: string) =>
