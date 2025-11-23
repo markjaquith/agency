@@ -3,7 +3,7 @@ import { GitService } from "../services/GitService"
 import { TemplateService } from "../services/TemplateService"
 import { PromptService } from "../services/PromptService"
 import highlight from "../utils/colors"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface UseOptions {
 	template?: string
@@ -14,26 +14,14 @@ export interface UseOptions {
 // Effect-based implementation
 export const useEffect = (options: UseOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false, verbose = false } = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { silent = false } = options
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const templateService = yield* TemplateService
 		const promptService = yield* PromptService
 
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		let templateName = options.template
 

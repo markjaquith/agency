@@ -3,6 +3,7 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { setBaseBranchInMetadata, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface BaseOptions {
 	subcommand?: string
@@ -28,29 +29,11 @@ export interface BaseGetOptions {
 // Effect-based implementation
 export const baseSetEffect = (options: BaseSetOptions) =>
 	Effect.gen(function* () {
-		const {
-			baseBranch,
-			repo = false,
-			silent = false,
-			verbose = false,
-		} = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { baseBranch, repo = false } = options
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
-
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		// Validate that the base branch exists
 		const exists = yield* git.branchExists(gitRoot, baseBranch)
@@ -92,24 +75,11 @@ export const baseSetEffect = (options: BaseSetOptions) =>
 // Effect-based implementation
 export const baseGetEffect = (options: BaseGetOptions) =>
 	Effect.gen(function* () {
-		const { repo = false, silent = false, verbose = false } = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { repo = false } = options
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
-
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		let currentBase: string | null
 

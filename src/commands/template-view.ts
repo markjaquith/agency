@@ -5,7 +5,7 @@ import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight from "../utils/colors"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface ViewOptions {
 	file?: string
@@ -16,25 +16,14 @@ export interface ViewOptions {
 // Effect-based implementation
 export const templateViewEffect = (options: ViewOptions = {}) =>
 	Effect.gen(function* () {
-		const { file: fileToView, silent = false, verbose = false } = options
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { file: fileToView, silent = false } = options
+		const { verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const templateService = yield* TemplateService
 		const fs = yield* FileSystemService
 
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		// Get template name from git config
 		const templateName = yield* git.getGitConfig("agency.template", gitRoot)

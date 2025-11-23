@@ -2,7 +2,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface WorkOptions {
 	silent?: boolean
@@ -12,24 +12,11 @@ export interface WorkOptions {
 // Effect-based implementation
 export const workEffect = (options: WorkOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false, verbose = false } = options
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { verboseLog } = createLoggers(options)
 
-		const git = yield* GitService
 		const fs = yield* FileSystemService
 
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		// Check if TASK.md exists
 		const taskPath = join(gitRoot, "TASK.md")

@@ -5,7 +5,7 @@ import { FileSystemService } from "../services/FileSystemService"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
 import { getFilesToFilter, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface PrOptions {
 	branch?: string
@@ -18,25 +18,14 @@ export interface PrOptions {
 // Effect-based implementation
 export const prEffect = (options: PrOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false, force = false, verbose = false } = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { force = false, verbose = false } = options
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
 		const fs = yield* FileSystemService
 
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		// Check if git-filter-repo is installed
 		const hasFilterRepo = yield* git.checkCommandExists("git-filter-repo")
@@ -135,12 +124,10 @@ export const prEffect = (options: PrOptions = {}) =>
 
 		const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
 			env: { GIT_CONFIG_GLOBAL: "" },
-			captureOutput: !verbose,
+			captureOutput: true,
 		})
 
-		if (verbose) {
-			verboseLog("git-filter-repo completed")
-		}
+		verboseLog("git-filter-repo completed")
 
 		if (result.exitCode !== 0) {
 			return yield* Effect.fail(

@@ -5,7 +5,7 @@ import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface SaveOptions {
 	files?: string[]
@@ -67,26 +67,14 @@ function collectFilesRecursively(
 // Effect-based implementation
 export const saveEffect = (options: SaveOptions = {}) =>
 	Effect.gen(function* () {
-		const { files: filesToSave = [], silent = false, verbose = false } = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { files: filesToSave = [] } = options
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const templateService = yield* TemplateService
 		const fs = yield* FileSystemService
 
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		// Get template name from git config
 		const templateName = yield* git.getGitConfig("agency.template", gitRoot)

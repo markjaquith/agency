@@ -7,7 +7,7 @@ import { TemplateService } from "../services/TemplateService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface TaskOptions {
 	path?: string
@@ -25,9 +25,8 @@ export interface TaskEditOptions {
 // Effect-based implementation
 export const taskEffect = (options: TaskOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false, verbose = false } = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { silent = false } = options
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const fs = yield* FileSystemService
@@ -394,24 +393,12 @@ const discoverTemplateFiles = (templateDir: string, verboseLog: Function) =>
 // Effect-based taskEdit implementation
 export const taskEditEffect = (options: TaskEditOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false, verbose = false } = options
-		const log = silent ? () => {} : console.log
-		const verboseLog = verbose && !silent ? console.log : () => {}
+		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const fs = yield* FileSystemService
 
-		// Check if in a git repository
-		const isRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		const taskFilePath = resolve(gitRoot, "TASK.md")
 		verboseLog(`TASK.md path: ${taskFilePath}`)

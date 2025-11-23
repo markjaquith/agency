@@ -3,7 +3,7 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
-import { runEffect } from "../utils/effect"
+import { runEffect, createLoggers, ensureGitRepo } from "../utils/effect"
 
 export interface SwitchOptions {
 	silent?: boolean
@@ -13,24 +13,12 @@ export interface SwitchOptions {
 // Effect-based implementation
 export const switchBranchEffect = (options: SwitchOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false } = options
-		const log = silent ? () => {} : console.log
+		const { log } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
 
-		// Check if in a git repository
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
-		if (!isGitRepo) {
-			return yield* Effect.fail(
-				new Error(
-					"Not in a git repository. Please run this command inside a git repo.",
-				),
-			)
-		}
-
-		// Get git root
-		const gitRoot = yield* git.getGitRoot(process.cwd())
+		const gitRoot = yield* ensureGitRepo()
 
 		// Load config
 		const config = yield* configService.loadConfig()
