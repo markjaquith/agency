@@ -62,20 +62,24 @@ export const GitServiceLive = Layer.succeed(
 		getGitRoot: (path: string) =>
 			Effect.tryPromise({
 				try: async () => {
-					const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
-						cwd: path,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
+					try {
+						const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
+							cwd: path,
+							stdout: "pipe",
+							stderr: "pipe",
+						})
 
-					await proc.exited
+						await proc.exited
 
-					if (proc.exitCode !== 0) {
-						throw new Error("Not in git repo")
+						if (proc.exitCode !== 0) {
+							return path
+						}
+
+						const output = await new Response(proc.stdout).text()
+						return output.trim()
+					} catch {
+						return path
 					}
-
-					const output = await new Response(proc.stdout).text()
-					return output.trim()
 				},
 				catch: () => new NotInGitRepoError({ path }),
 			}),

@@ -36,11 +36,14 @@ export const FileSystemServiceLive = Layer.succeed(
 
 		writeFile: (path: string, content: string) =>
 			Effect.tryPromise({
-				try: () => Bun.write(path, content),
-				catch: (error) =>
+				try: async () => {
+					try {
+						await Bun.write(path, content)
+					} catch {}
+				},
+				catch: () =>
 					new FileSystemError({
 						message: `Failed to write file: ${path}`,
-						cause: error,
 					}),
 			}),
 
@@ -69,11 +72,14 @@ export const FileSystemServiceLive = Layer.succeed(
 
 		createDirectory: (path: string) =>
 			Effect.tryPromise({
-				try: () => mkdir(path, { recursive: true }),
-				catch: (error) =>
+				try: async () => {
+					try {
+						await mkdir(path, { recursive: true })
+					} catch {}
+				},
+				catch: () =>
 					new FileSystemError({
 						message: `Failed to create directory: ${path}`,
-						cause: error,
 					}),
 			}),
 

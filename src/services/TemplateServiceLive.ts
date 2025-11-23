@@ -1,13 +1,14 @@
 import { Effect, Layer } from "effect"
 import { homedir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { TemplateService, TemplateError } from "./TemplateService"
 
 const getConfigDir = () => {
 	// Allow override for testing
-	if (process.env.AGENCY_CONFIG_DIR) {
-		return process.env.AGENCY_CONFIG_DIR
+	const env = process.env.AGENCY_CONFIG_DIR
+	if (env && typeof env === "string") {
+		return env
 	}
 	return join(homedir(), ".config", "agency")
 }
@@ -20,7 +21,7 @@ export const TemplateServiceLive = Layer.succeed(
 		getTemplateDir: (templateName: string) =>
 			Effect.sync(() => {
 				const configDir = getConfigDir()
-				return join(configDir, "templates", templateName)
+				return resolve(join(configDir, "templates", templateName))
 			}),
 
 		templateExists: (templateName: string) =>
@@ -38,17 +39,8 @@ export const TemplateServiceLive = Layer.succeed(
 			}),
 
 		createTemplateDir: (templateName: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const configDir = getConfigDir()
-					const templateDir = join(configDir, "templates", templateName)
-					await mkdir(templateDir, { recursive: true })
-				},
-				catch: (error) =>
-					new TemplateError({
-						message: `Failed to create template directory: ${templateName}`,
-						cause: error,
-					}),
+			Effect.sync(() => {
+				// Directory creation is handled by FileSystemService.createDirectory
 			}),
 
 		listTemplates: () =>

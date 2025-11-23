@@ -1,7 +1,8 @@
 import { resolve, join, dirname, basename } from "path"
-import { mkdir } from "node:fs/promises"
-import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
-import { getTemplateDir } from "../utils/template"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { TemplateService } from "../services/TemplateService"
+import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
 
@@ -11,112 +12,132 @@ export interface SaveOptions {
 	verbose?: boolean
 }
 
-async function isDirectory(filePath: string): Promise<boolean> {
-	try {
-		const file = Bun.file(filePath)
-		const stat = await file.stat()
-		return stat?.isDirectory?.() ?? false
-	} catch {
-		return false
-	}
+function isDirectory(filePath: string): Effect.Effect<boolean, unknown> {
+	return Effect.tryPromise({
+		try: async () => {
+			try {
+				const file = Bun.file(filePath)
+				const stat = await file.stat()
+				return stat?.isDirectory?.() ?? false
+			} catch {
+				return false
+			}
+		},
+		catch: () => false,
+	})
 }
 
-async function collectFilesRecursively(
+function collectFilesRecursively(
 	dirPath: string,
 	gitRoot: string,
-): Promise<string[]> {
-	const files: string[] = []
+): Effect.Effect<string[], unknown> {
+	return Effect.tryPromise({
+		try: async () => {
+			const files: string[] = []
 
-	// Use find to recursively get all files
-	const result = Bun.spawnSync(["find", dirPath, "-type", "f"], {
-		stdout: "pipe",
-		stderr: "ignore",
-	})
+			// Use find to recursively get all files
+			const result = Bun.spawnSync(["find", dirPath, "-type", "f"], {
+				stdout: "pipe",
+				stderr: "ignore",
+			})
 
-	const output = new TextDecoder().decode(result.stdout)
-	if (output) {
-		const foundFiles = output
-			.trim()
-			.split("\n")
-			.filter((f: string) => f.length > 0)
+			const output = new TextDecoder().decode(result.stdout)
+			if (output) {
+				const foundFiles = output
+					.trim()
+					.split("\n")
+					.filter((f: string) => f.length > 0)
 
-		for (const file of foundFiles) {
-			// Get relative path from git root
-			const relativePath = file.replace(gitRoot + "/", "")
-			if (relativePath) {
-				files.push(relativePath)
+				for (const file of foundFiles) {
+					// Get relative path from git root
+					const relativePath = file.replace(gitRoot + "/", "")
+					if (relativePath) {
+						files.push(relativePath)
+					}
+				}
 			}
-		}
-	}
 
-	return files
+			return files
+		},
+		catch: () => [],
+	})
 }
 
-export async function save(options: SaveOptions = {}): Promise<void> {
-	const { files: filesToSave = [], silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+// Effect-based implementation
+export const saveEffect = (options: SaveOptions = {}) =>
+	Effect.gen(function* () {
+		const { files: filesToSave = [], silent = false, verbose = false } = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+		const git = yield* GitService
+		const templateService = yield* TemplateService
+		const fs = yield* FileSystemService
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
-
-	// Get template name from git config
-	const templateName = await getGitConfig("agency.template", gitRoot)
-	if (!templateName) {
-		throw new RepositoryNotInitializedError()
-	}
-
-	verboseLog(`Saving to template: ${highlight.template(templateName)}`)
-
-	const templateDir = getTemplateDir(templateName)
-
-	// Create template directory if it doesn't exist
-	await mkdir(templateDir, { recursive: true })
-	verboseLog(`Ensured template directory exists: ${templateDir}`)
-
-	// Determine which files to save
-	let filesToProcess: string[] = []
-
-	if (filesToSave.length > 0) {
-		// Process provided file/dir names
-		for (const fileOrDir of filesToSave) {
-			const fullPath = resolve(gitRoot, fileOrDir)
-			const isDir = await isDirectory(fullPath)
-
-			if (isDir) {
-				// Recursively collect files from directory
-				const collected = await collectFilesRecursively(fullPath, gitRoot)
-				filesToProcess.push(...collected)
-			} else {
-				// Add file path relative to git root
-				const relativePath = fileOrDir.startsWith(gitRoot)
-					? fileOrDir.replace(gitRoot + "/", "")
-					: fileOrDir
-				filesToProcess.push(relativePath)
-			}
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
 		}
-	} else {
-		throw new Error(
-			"No files specified. Usage: agency save <file|dir> [file|dir ...]",
-		)
-	}
 
-	try {
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
+
+		// Get template name from git config
+		const templateName = yield* git.getGitConfig("agency.template", gitRoot)
+		if (!templateName) {
+			return yield* Effect.fail(new RepositoryNotInitializedError())
+		}
+
+		verboseLog(`Saving to template: ${highlight.template(templateName)}`)
+
+		// Get template directory
+		const templateDir = yield* templateService.getTemplateDir(templateName)
+
+		// Create template directory if it doesn't exist
+		yield* templateService.createTemplateDir(templateName)
+		verboseLog(`Ensured template directory exists: ${templateDir}`)
+
+		// Determine which files to save
+		let filesToProcess: string[] = []
+
+		if (filesToSave.length > 0) {
+			// Process provided file/dir names
+			for (const fileOrDir of filesToSave) {
+				const fullPath = resolve(gitRoot, fileOrDir)
+				const isDir = yield* isDirectory(fullPath)
+
+				if (isDir) {
+					// Recursively collect files from directory
+					const collected = yield* collectFilesRecursively(fullPath, gitRoot)
+					filesToProcess.push(...collected)
+				} else {
+					// Add file path relative to git root
+					const relativePath = fileOrDir.startsWith(gitRoot)
+						? fileOrDir.replace(gitRoot + "/", "")
+						: fileOrDir
+					filesToProcess.push(relativePath)
+				}
+			}
+		} else {
+			return yield* Effect.fail(
+				new Error(
+					"No files specified. Usage: agency save <file|dir> [file|dir ...]",
+				),
+			)
+		}
+
 		// Save each file
 		for (const filePath of filesToProcess) {
 			const sourceFilePath = resolve(gitRoot, filePath)
-			const sourceFile = Bun.file(sourceFilePath)
 
-			if (!(await sourceFile.exists())) {
+			// Check if file exists
+			const exists = yield* fs.exists(sourceFilePath)
+			if (!exists) {
 				verboseLog(`Skipping ${filePath} (does not exist)`)
 				continue
 			}
@@ -124,31 +145,53 @@ export async function save(options: SaveOptions = {}): Promise<void> {
 			// Refuse to save TASK.md files - agency itself must control these
 			const fileName = basename(filePath)
 			if (fileName === "TASK.md") {
-				throw new Error(
-					`Cannot save ${filePath}: TASK.md files cannot be saved to templates. ` +
-						`Agency itself must control the creation of TASK.md files to ensure consistency.`,
+				return yield* Effect.fail(
+					new Error(
+						`Cannot save ${filePath}: TASK.md files cannot be saved to templates. ` +
+							`Agency itself must control the creation of TASK.md files.`,
+					),
 				)
 			}
 
-			const content = await sourceFile.text()
+			// Read content
+			const content = yield* fs.readFile(sourceFilePath)
 
 			const templateFilePath = join(templateDir, filePath)
 
 			// Ensure directory exists
 			const dir = dirname(templateFilePath)
-			await Bun.write(dir + "/.gitkeep", "")
+			yield* fs.createDirectory(dir)
 
-			await Bun.write(templateFilePath, content)
+			// Write to template
+			yield* fs.writeFile(templateFilePath, content)
 			log(
 				done(
 					`Saved ${highlight.file(filePath)} to ${highlight.template(templateName)} template`,
 				),
 			)
 		}
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
-	}
+	})
+
+// Backward-compatible Promise wrapper
+export async function save(options: SaveOptions = {}): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { TemplateServiceLive } = await import(
+		"../services/TemplateServiceLive"
+	)
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+
+	const program = saveEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(TemplateServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
+
+	await Effect.runPromise(program)
 }
 
 export const help = `
@@ -171,11 +214,11 @@ Options:
 
 Examples:
    agency save AGENTS.md              # Save specific file
-  agency save .config                # Save entire directory
-  agency save src/                   # Save src directory to template
-  agency save AGENTS.md docs/        # Save file and directory
-  agency save --verbose              # Save with verbose output
-  agency save --help                 # Show this help message
+   agency save .config                # Save entire directory
+   agency save src/                   # Save src directory to template
+   agency save AGENTS.md docs/        # Save file and directory
+   agency save --verbose              # Save with verbose output
+   agency save --help                 # Show this help message
 
 Notes:
   - Requires agency.template to be set (run 'agency init' first)
