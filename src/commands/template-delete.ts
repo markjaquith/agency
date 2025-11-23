@@ -1,7 +1,9 @@
 import { resolve } from "path"
 import { rm } from "node:fs/promises"
-import { isInsideGitRepo, getGitRoot, getGitConfig } from "../utils/git"
-import { getTemplateDir } from "../utils/template"
+import { Effect } from "effect"
+import { GitService } from "../services/GitService"
+import { TemplateService } from "../services/TemplateService"
+import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done } from "../utils/colors"
 
@@ -11,73 +13,100 @@ export interface DeleteOptions {
 	verbose?: boolean
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
-	try {
-		const file = Bun.file(filePath)
-		return await file.exists()
-	} catch {
-		return false
-	}
-}
+// Effect-based implementation
+export const templateDeleteEffect = (options: DeleteOptions = {}) =>
+	Effect.gen(function* () {
+		const {
+			files: filesToDelete = [],
+			silent = false,
+			verbose = false,
+		} = options
+		const log = silent ? () => {} : console.log
+		const verboseLog = verbose && !silent ? console.log : () => {}
 
-export async function templateDelete(
-	options: DeleteOptions = {},
-): Promise<void> {
-	const { files: filesToDelete = [], silent = false, verbose = false } = options
-	const log = silent ? () => {} : console.log
-	const verboseLog = verbose && !silent ? console.log : () => {}
+		const git = yield* GitService
+		const templateService = yield* TemplateService
+		const fs = yield* FileSystemService
 
-	// Check if in a git repository
-	if (!(await isInsideGitRepo(process.cwd()))) {
-		throw new Error(
-			"Not in a git repository. Please run this command inside a git repo.",
-		)
-	}
+		// Check if in a git repository
+		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		if (!isGitRepo) {
+			return yield* Effect.fail(
+				new Error(
+					"Not in a git repository. Please run this command inside a git repo.",
+				),
+			)
+		}
 
-	const gitRoot = await getGitRoot(process.cwd())
-	if (!gitRoot) {
-		throw new Error("Failed to determine the root of the git repository.")
-	}
+		// Get git root
+		const gitRoot = yield* git.getGitRoot(process.cwd())
 
-	// Get template name from git config
-	const templateName = await getGitConfig("agency.template", gitRoot)
-	if (!templateName) {
-		throw new RepositoryNotInitializedError()
-	}
+		// Get template name from git config
+		const templateName = yield* git.getGitConfig("agency.template", gitRoot)
+		if (!templateName) {
+			return yield* Effect.fail(new RepositoryNotInitializedError())
+		}
 
-	if (filesToDelete.length === 0) {
-		throw new Error(
-			"No files specified. Usage: agency template delete <file> [file ...]",
-		)
-	}
+		if (filesToDelete.length === 0) {
+			return yield* Effect.fail(
+				new Error(
+					"No files specified. Usage: agency template delete <file> [file ...]",
+				),
+			)
+		}
 
-	verboseLog(`Deleting from template: ${highlight.template(templateName)}`)
+		verboseLog(`Deleting from template: ${highlight.template(templateName)}`)
 
-	const templateDir = getTemplateDir(templateName)
+		// Get template directory
+		const templateDir = yield* templateService.getTemplateDir(templateName)
 
-	try {
 		// Delete each file
 		for (const filePath of filesToDelete) {
 			const templateFilePath = resolve(templateDir, filePath)
 
 			// Check if file exists
-			if (!(await fileExists(templateFilePath))) {
+			const exists = yield* fs.exists(templateFilePath)
+			if (!exists) {
 				verboseLog(`Skipping ${filePath} (does not exist in template)`)
 				continue
 			}
 
-			// Delete the file
-			await rm(templateFilePath, { recursive: true, force: true })
+			// Delete the file/directory
+			yield* Effect.tryPromise({
+				try: () => rm(templateFilePath, { recursive: true, force: true }),
+				catch: (error) => new Error(`Failed to delete ${filePath}: ${error}`),
+			})
+
 			log(
 				done(
 					`Deleted ${highlight.file(filePath)} from ${highlight.template(templateName)} template`,
 				),
 			)
 		}
-	} catch (err) {
-		// Re-throw errors for CLI handler to display
-		throw err
-	}
+	})
+
+// Backward-compatible Promise wrapper
+export async function templateDelete(
+	options: DeleteOptions = {},
+): Promise<void> {
+	const { GitServiceLive } = await import("../services/GitServiceLive")
+	const { TemplateServiceLive } = await import(
+		"../services/TemplateServiceLive"
+	)
+	const { FileSystemServiceLive } = await import(
+		"../services/FileSystemServiceLive"
+	)
+
+	const program = templateDeleteEffect(options).pipe(
+		Effect.provide(GitServiceLive),
+		Effect.provide(TemplateServiceLive),
+		Effect.provide(FileSystemServiceLive),
+		Effect.catchAllDefect((defect) =>
+			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+		),
+	)
+
+	await Effect.runPromise(program)
 }
 
 export const help = `
