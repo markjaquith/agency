@@ -8,20 +8,33 @@ import {
 	GitCommandError,
 } from "./GitService"
 
-// Helper to run git commands with proper error handling
-const runGitCommand = (args: readonly string[], cwd: string) =>
+// Generic helper to spawn a process with proper error handling
+const spawnProcess = (
+	args: readonly string[],
+	cwd: string,
+	options?: {
+		readonly stdout?: "pipe" | "inherit"
+		readonly stderr?: "pipe" | "inherit"
+	},
+) =>
 	Effect.tryPromise({
 		try: async () => {
 			const proc = Bun.spawn([...args], {
 				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
+				stdout: options?.stdout ?? "pipe",
+				stderr: options?.stderr ?? "pipe",
 			})
 
 			await proc.exited
 
-			const stdout = await new Response(proc.stdout).text()
-			const stderr = await new Response(proc.stderr).text()
+			const stdout =
+				options?.stdout === "inherit"
+					? ""
+					: await new Response(proc.stdout).text()
+			const stderr =
+				options?.stderr === "inherit"
+					? ""
+					: await new Response(proc.stderr).text()
 
 			return {
 				stdout: stdout.trim(),
@@ -36,6 +49,10 @@ const runGitCommand = (args: readonly string[], cwd: string) =>
 				stderr: error instanceof Error ? error.message : String(error),
 			}),
 	})
+
+// Helper to run git commands with proper error handling
+const runGitCommand = (args: readonly string[], cwd: string) =>
+	spawnProcess(args, cwd)
 
 // Helper to run git commands and check exit code
 const runGitCommandOrFail = (args: readonly string[], cwd: string) =>
@@ -71,123 +88,80 @@ const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 		),
 	)
 
-// Helper to find main branch (shared logic)
-const findMainBranchHelper = async (
-	gitRoot: string,
-): Promise<string | null> => {
-	// First check for origin/HEAD
-	const proc1 = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "origin/HEAD"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc1.exited
-
-	if (proc1.exitCode === 0) {
-		const output = await new Response(proc1.stdout).text()
-		const defaultRemote = output.trim()
-
-		// Check if it exists
-		if (await branchExistsHelper(gitRoot, defaultRemote)) {
-			// Strip the remote prefix if present
-			const match = defaultRemote.match(/^origin\/(.+)$/)
-			if (match?.[1]) {
-				return match[1]
-			}
-			return defaultRemote
-		}
-	}
-
-	// Try common base branches in order
-	const commonBases = ["main", "master"]
-	for (const base of commonBases) {
-		if (await branchExistsHelper(gitRoot, base)) {
-			return base
-		}
-	}
-
-	return null
-}
-
 // Helper to get git config value
-const getGitConfigHelper = async (
-	gitRoot: string,
-	key: string,
-): Promise<string | null> => {
-	const proc = Bun.spawn(["git", "config", "--local", "--get", key], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-
-	if (proc.exitCode === 0) {
-		const output = await new Response(proc.stdout).text()
-		return output.trim()
-	}
-
-	return null
-}
-
-// Helper to set git config value
-const setGitConfigHelper = async (
-	gitRoot: string,
-	key: string,
-	value: string,
-): Promise<void> => {
-	const proc = Bun.spawn(["git", "config", "--local", key, value], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		const stderr = await new Response(proc.stderr).text()
-		throw new Error(`Failed to set git config ${key}: ${stderr}`)
-	}
-}
-
-// Helper to get main branch config
-const getMainBranchConfigHelper = async (
-	gitRoot: string,
-): Promise<string | null> => {
-	return await getGitConfigHelper(gitRoot, "agency.mainBranch")
-}
-
-// Helper to check if branch exists
-const branchExistsHelper = async (
-	gitRoot: string,
-	branch: string,
-): Promise<boolean> => {
-	// Check if it's a remote branch
-	const remotePattern = /^(origin|upstream|fork)\//
-	if (remotePattern.test(branch)) {
-		const proc = Bun.spawn(
-			["git", "show-ref", "--verify", "--quiet", `refs/remotes/${branch}`],
-			{
-				cwd: gitRoot,
-				stdout: "pipe",
-				stderr: "pipe",
-			},
-		)
-		await proc.exited
-		return proc.exitCode === 0
-	}
-
-	// Check for local branch
-	const proc = Bun.spawn(
-		["git", "show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
-		{
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
+const getGitConfigEffect = (key: string, gitRoot: string) =>
+	pipe(
+		runGitCommand(["git", "config", "--local", "--get", key], gitRoot),
+		Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
 	)
 
-	await proc.exited
-	return proc.exitCode === 0
-}
+// Helper to set git config value
+const setGitConfigEffect = (key: string, value: string, gitRoot: string) =>
+	pipe(
+		runGitCommandVoid(["git", "config", "--local", key, value], gitRoot),
+		Effect.mapError(
+			(error) =>
+				new GitError({
+					message:
+						error instanceof GitCommandError
+							? `Failed to set git config ${key}: ${error.stderr}`
+							: `Failed to set git config ${key}`,
+					cause: error,
+				}),
+		),
+	)
+
+// Helper to check if branch exists
+const branchExistsEffect = (gitRoot: string, branch: string) =>
+	Effect.gen(function* () {
+		// Check if it's a remote branch
+		const remotePattern = /^(origin|upstream|fork)\//
+		const ref = remotePattern.test(branch)
+			? `refs/remotes/${branch}`
+			: `refs/heads/${branch}`
+
+		const result = yield* runGitCommand(
+			["git", "show-ref", "--verify", "--quiet", ref],
+			gitRoot,
+		)
+		return result.exitCode === 0
+	})
+
+// Helper to find main branch (shared logic)
+const findMainBranchEffect = (gitRoot: string) =>
+	Effect.gen(function* () {
+		// First check for origin/HEAD
+		const originHeadResult = yield* runGitCommand(
+			["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
+			gitRoot,
+		)
+
+		if (originHeadResult.exitCode === 0) {
+			const defaultRemote = originHeadResult.stdout
+
+			// Check if it exists
+			const exists = yield* branchExistsEffect(gitRoot, defaultRemote)
+			if (exists) {
+				// Strip the remote prefix if present
+				const match = defaultRemote.match(/^origin\/(.+)$/)
+				if (match?.[1]) {
+					return match[1]
+				}
+				return defaultRemote
+			}
+		}
+
+		// Try common base branches in order
+		const commonBases = ["main", "master"]
+		for (const base of commonBases) {
+			const exists = yield* branchExistsEffect(gitRoot, base)
+			if (exists) {
+				return base
+			}
+		}
+
+		return null
+	})
 
 // Create the live implementation
 export const GitServiceLive = Layer.succeed(
@@ -259,63 +233,27 @@ export const GitServiceLive = Layer.succeed(
 			}),
 
 		getGitConfig: (key: string, gitRoot: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(["git", "config", "--local", "--get", key], {
-						cwd: gitRoot,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-
-					await proc.exited
-
-					if (proc.exitCode !== 0) {
-						return null
-					}
-
-					const output = await new Response(proc.stdout).text()
-					return output.trim()
-				},
-				catch: () =>
-					new GitError({ message: `Failed to get git config ${key}` }),
-			}),
+			pipe(
+				getGitConfigEffect(key, gitRoot),
+				Effect.catchAll(() => Effect.succeed(null)),
+			),
 
 		setGitConfig: (key: string, value: string, gitRoot: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(["git", "config", "--local", key, value], {
-						cwd: gitRoot,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-
-					await proc.exited
-
-					if (proc.exitCode !== 0) {
-						const stderr = await new Response(proc.stderr).text()
-						throw new Error(`Failed to set git config ${key}: ${stderr}`)
-					}
-				},
-				catch: (error) =>
-					new GitError({
-						message:
-							error instanceof Error
-								? error.message
-								: "Failed to set git config",
-					}),
-			}),
+			setGitConfigEffect(key, value, gitRoot),
 
 		getCurrentBranch: (gitRoot: string) =>
 			runGitCommandOrFail(["git", "branch", "--show-current"], gitRoot),
 
 		branchExists: (gitRoot: string, branch: string) =>
-			Effect.tryPromise({
-				try: () => branchExistsHelper(gitRoot, branch),
-				catch: () =>
-					new GitError({
-						message: `Failed to check if branch exists: ${branch}`,
-					}),
-			}),
+			pipe(
+				branchExistsEffect(gitRoot, branch),
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to check if branch exists: ${branch}`,
+						}),
+				),
+			),
 
 		createBranch: (
 			branchName: string,
@@ -350,145 +288,114 @@ export const GitServiceLive = Layer.succeed(
 		},
 
 		getDefaultRemoteBranch: (gitRoot: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(
-						["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-						{
-							cwd: gitRoot,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-
-					await proc.exited
-
-					if (proc.exitCode === 0) {
-						const output = await new Response(proc.stdout).text()
-						return output.trim()
-					}
-
-					return null
-				},
-				catch: () =>
-					new GitError({ message: "Failed to get default remote branch" }),
-			}),
+			pipe(
+				runGitCommand(
+					["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
+					gitRoot,
+				),
+				Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
+				Effect.catchAll(() => Effect.succeed(null)),
+			),
 
 		findMainBranch: (gitRoot: string) =>
-			Effect.tryPromise({
-				try: () => findMainBranchHelper(gitRoot),
-				catch: () => new GitError({ message: "Failed to find main branch" }),
-			}),
+			pipe(
+				findMainBranchEffect(gitRoot),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to find main branch" }),
+				),
+			),
 
 		getSuggestedBaseBranches: (gitRoot: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const suggestions: string[] = []
+			Effect.gen(function* () {
+				const suggestions: string[] = []
 
-					// Get the main branch from config or find it
-					const mainBranch =
-						(await getMainBranchConfigHelper(gitRoot)) ||
-						(await findMainBranchHelper(gitRoot))
+				// Get the main branch from config or find it
+				const mainBranchFromConfig = yield* getGitConfigEffect(
+					"agency.mainBranch",
+					gitRoot,
+				)
+				const mainBranch =
+					mainBranchFromConfig || (yield* findMainBranchEffect(gitRoot))
 
-					if (mainBranch) {
-						suggestions.push(mainBranch)
+				if (mainBranch) {
+					suggestions.push(mainBranch)
+				}
+
+				// Check for other common base branches
+				const commonBases = ["develop", "development", "staging"]
+				for (const base of commonBases) {
+					const exists = yield* branchExistsEffect(gitRoot, base)
+					if (exists && !suggestions.includes(base)) {
+						suggestions.push(base)
 					}
+				}
 
-					// Check for other common base branches
-					const commonBases = ["develop", "development", "staging"]
-					for (const base of commonBases) {
-						if (
-							(await branchExistsHelper(gitRoot, base)) &&
-							!suggestions.includes(base)
-						) {
-							suggestions.push(base)
-						}
-					}
+				// Get current branch as a suggestion too
+				const currentBranch = yield* runGitCommandOrFail(
+					["git", "branch", "--show-current"],
+					gitRoot,
+				)
+				if (currentBranch && !suggestions.includes(currentBranch)) {
+					suggestions.push(currentBranch)
+				}
 
-					// Get current branch as a suggestion too
-					const currentProc = Bun.spawn(["git", "branch", "--show-current"], {
-						cwd: gitRoot,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-					await currentProc.exited
-
-					if (currentProc.exitCode === 0) {
-						const output = await new Response(currentProc.stdout).text()
-						const currentBranch = output.trim()
-						if (currentBranch && !suggestions.includes(currentBranch)) {
-							suggestions.push(currentBranch)
-						}
-					}
-
-					return suggestions as readonly string[]
-				},
-				catch: () =>
-					new GitError({ message: "Failed to get suggested base branches" }),
-			}),
+				return suggestions as readonly string[]
+			}).pipe(
+				Effect.mapError(
+					() =>
+						new GitError({ message: "Failed to get suggested base branches" }),
+				),
+			),
 
 		isFeatureBranch: (currentBranch: string, gitRoot: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					// Get the main branch from config or find it
-					const configBranch = await getMainBranchConfigHelper(gitRoot)
-					const mainBranch =
-						configBranch || (await findMainBranchHelper(gitRoot))
+			Effect.gen(function* () {
+				// Get the main branch from config or find it
+				const configBranch = yield* getGitConfigEffect(
+					"agency.mainBranch",
+					gitRoot,
+				)
+				const mainBranch =
+					configBranch || (yield* findMainBranchEffect(gitRoot))
 
-					// If we couldn't determine a main branch, assume current is a feature branch
-					if (!mainBranch) {
-						return true
-					}
+				// If we couldn't determine a main branch, assume current is a feature branch
+				if (!mainBranch) {
+					return true
+				}
 
-					// Save it for future use if we found it and it wasn't in config
-					if (!configBranch) {
-						await setGitConfigHelper(gitRoot, "agency.mainBranch", mainBranch)
-					}
+				// Save it for future use if we found it and it wasn't in config
+				if (!configBranch) {
+					yield* setGitConfigEffect("agency.mainBranch", mainBranch, gitRoot)
+				}
 
-					// Current branch is not a feature branch if it's the main branch
-					return currentBranch !== mainBranch
-				},
-				catch: () =>
-					new GitError({ message: "Failed to check if feature branch" }),
-			}),
+				// Current branch is not a feature branch if it's the main branch
+				return currentBranch !== mainBranch
+			}).pipe(
+				Effect.mapError(
+					() => new GitError({ message: "Failed to check if feature branch" }),
+				),
+			),
 
 		getMainBranchConfig: (gitRoot: string) =>
-			Effect.tryPromise({
-				try: () => getMainBranchConfigHelper(gitRoot),
-				catch: () =>
-					new GitError({ message: "Failed to get main branch config" }),
-			}),
+			pipe(
+				getGitConfigEffect("agency.mainBranch", gitRoot),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get main branch config" }),
+				),
+			),
 
 		setMainBranchConfig: (mainBranch: string, gitRoot: string) =>
-			Effect.tryPromise({
-				try: () => setGitConfigHelper(gitRoot, "agency.mainBranch", mainBranch),
-				catch: (error) =>
-					new GitError({
-						message:
-							error instanceof Error
-								? error.message
-								: "Failed to set main branch config",
-					}),
-			}),
+			setGitConfigEffect("agency.mainBranch", mainBranch, gitRoot),
 
 		getDefaultBaseBranchConfig: (gitRoot: string) =>
-			Effect.tryPromise({
-				try: () => getGitConfigHelper(gitRoot, "agency.baseBranch"),
-				catch: () =>
-					new GitError({ message: "Failed to get base branch config" }),
-			}),
+			pipe(
+				getGitConfigEffect("agency.baseBranch", gitRoot),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get base branch config" }),
+				),
+			),
 
 		setDefaultBaseBranchConfig: (baseBranch: string, gitRoot: string) =>
-			Effect.tryPromise({
-				try: () => setGitConfigHelper(gitRoot, "agency.baseBranch", baseBranch),
-				catch: (error) =>
-					new GitError({
-						message:
-							error instanceof Error
-								? error.message
-								: "Failed to set base branch config",
-					}),
-			}),
+			setGitConfigEffect("agency.baseBranch", baseBranch, gitRoot),
 
 		getMergeBase: (gitRoot: string, branch1: string, branch2: string) =>
 			runGitCommandOrFail(["git", "merge-base", branch1, branch2], gitRoot),
