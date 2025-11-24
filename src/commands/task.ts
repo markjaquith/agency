@@ -1,6 +1,6 @@
 import { resolve, join } from "path"
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
 import { PromptService } from "../services/PromptService"
@@ -18,8 +18,7 @@ interface TaskOptions extends BaseCommandOptions {
 
 interface TaskEditOptions extends BaseCommandOptions {}
 
-// Effect-based implementation
-const taskEffect = (options: TaskOptions = {}) =>
+export const task = (options: TaskOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -440,7 +439,7 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 		log(done("TASK.md edited"))
 	})
 
-const helpText = `
+export const help = `
 Usage: agency task [branch-name] [options]
 
 Initialize template files (AGENTS.md, TASK.md, opencode.json) in a git repository.
@@ -490,21 +489,5 @@ Notes:
   - To edit TASK.md after creation, use 'agency edit'
 `
 
-export const { execute: task, help } = createCommand<TaskOptions>({
-	name: "task",
-	services: ["git", "filesystem", "prompt", "template"],
-	effect: taskEffect,
-	help: helpText,
-})
-
-export async function taskEdit(options: TaskEditOptions = {}): Promise<void> {
-	const { GitService } = await import("../services/GitService")
-	const { FileSystemService } = await import("../services/FileSystemService")
-
-	// Manually run the Effect since taskEdit is a separate command
-	const { runEffect } = await import("../utils/effect")
-	await runEffect(taskEditEffect(options), [
-		GitService.Default,
-		FileSystemService.Default,
-	])
-}
+export const taskEdit = (options: TaskEditOptions = {}) =>
+	taskEditEffect(options)

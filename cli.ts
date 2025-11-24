@@ -193,12 +193,14 @@ const commands: Record<string, Command> = {
 			}
 			// Initialize with optional branch name
 			const branch = args[0] || options.branch
-			await task({
-				branch,
-				silent: options.silent,
-				verbose: options.verbose,
-				task: options.task,
-			})
+			await runCommand(
+				task({
+					branch,
+					silent: options.silent,
+					verbose: options.verbose,
+					task: options.task,
+				}),
+			)
 		},
 		help: taskHelp,
 	},
@@ -224,10 +226,12 @@ Example:
 				`)
 				return
 			}
-			await taskEdit({
-				silent: options.silent,
-				verbose: options.verbose,
-			})
+			await runCommand(
+				taskEdit({
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
 		},
 		help: `Open TASK.md in system editor`,
 	},
