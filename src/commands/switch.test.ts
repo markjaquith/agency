@@ -9,6 +9,7 @@ import {
 	getCurrentBranch,
 	createCommit,
 	checkoutBranch,
+	runTestEffect,
 } from "../test-utils"
 
 async function createBranch(cwd: string, branchName: string): Promise<void> {
@@ -58,7 +59,7 @@ describe("switch command", () => {
 			await createBranch(tempDir, "main--PR")
 
 			// Run switch command
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 
 			// Should be on main now
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -73,7 +74,7 @@ describe("switch command", () => {
 			await checkoutBranch(tempDir, "main")
 
 			// Run switch command
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 
 			// Should be on main--PR now
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -85,15 +86,15 @@ describe("switch command", () => {
 			await createBranch(tempDir, "main--PR")
 
 			// Switch to main
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("main")
 
 			// Switch back to main--PR
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("main--PR")
 
 			// And back to main
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("main")
 		})
 
@@ -109,11 +110,11 @@ describe("switch command", () => {
 			await createBranch(tempDir, "PR/feature")
 
 			// Switch to feature
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
 			// Switch back to PR/feature
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("PR/feature")
 		})
 	})
@@ -121,9 +122,9 @@ describe("switch command", () => {
 	describe("error handling", () => {
 		test("throws error when PR branch doesn't exist", async () => {
 			// We're on main, and main--PR doesn't exist
-			await expect(switchBranch({ silent: true })).rejects.toThrow(
-				/PR branch .* does not exist/,
-			)
+			await expect(
+				runTestEffect(switchBranch({ silent: true })),
+			).rejects.toThrow(/PR branch .* does not exist/)
 		})
 
 		test("throws error when source branch doesn't exist", async () => {
@@ -131,18 +132,18 @@ describe("switch command", () => {
 			await createBranch(tempDir, "feature--PR")
 			// We never created 'feature', so it doesn't exist
 
-			await expect(switchBranch({ silent: true })).rejects.toThrow(
-				/Source branch .* does not exist/,
-			)
+			await expect(
+				runTestEffect(switchBranch({ silent: true })),
+			).rejects.toThrow(/Source branch .* does not exist/)
 		})
 
 		test("throws error when not in a git repository", async () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			await expect(switchBranch({ silent: true })).rejects.toThrow(
-				"Not in a git repository",
-			)
+			await expect(
+				runTestEffect(switchBranch({ silent: true })),
+			).rejects.toThrow("Not in a git repository")
 
 			await cleanupTempDir(nonGitDir)
 		})
@@ -159,7 +160,7 @@ describe("switch command", () => {
 				logCalled = true
 			}
 
-			await switchBranch({ silent: true })
+			await runTestEffect(switchBranch({ silent: true }))
 
 			console.log = originalLog
 			expect(logCalled).toBe(false)

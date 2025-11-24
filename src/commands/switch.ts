@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
@@ -8,7 +8,7 @@ import { createLoggers, ensureGitRepo } from "../utils/effect"
 
 interface SwitchOptions extends BaseCommandOptions {}
 
-const switchEffect = (options: SwitchOptions = {}) =>
+export const switchBranch = (options: SwitchOptions = {}) =>
 	Effect.gen(function* () {
 		const { log } = createLoggers(options)
 
@@ -57,7 +57,7 @@ const switchEffect = (options: SwitchOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency switch [options]
 
 Toggle between source branch and PR branch.
@@ -75,10 +75,3 @@ Notes:
   - Uses PR branch pattern from ~/.config/agency/agency.json
   - If PR branch doesn't exist, run 'agency pr' to create it
 `
-
-export const { execute: switchBranch, help } = createCommand<SwitchOptions>({
-	name: "switch",
-	services: ["git", "config"],
-	effect: switchEffect,
-	help: helpText,
-})

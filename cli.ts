@@ -155,7 +155,9 @@ const commands: Record<string, Command> = {
 				console.log(switchHelp)
 				return
 			}
-			await switchBranch({ silent: options.silent, verbose: options.verbose })
+			await runCommand(
+				switchBranch({ silent: options.silent, verbose: options.verbose }),
+			)
 		},
 		help: switchHelp,
 	},
