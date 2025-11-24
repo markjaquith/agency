@@ -63,11 +63,13 @@ const commands: Record<string, Command> = {
 				console.log(initHelp)
 				return
 			}
-			await init({
-				template: options.template,
-				silent: options.silent,
-				verbose: options.verbose,
-			})
+			await runCommand(
+				init({
+					template: options.template,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
 		},
 		help: initHelp,
 	},
