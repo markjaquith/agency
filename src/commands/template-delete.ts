@@ -66,7 +66,8 @@ export const templateDelete = (options: DeleteOptions = {}) =>
 		}
 	})
 
-export const help = `
+// Help text for reference (not exported as it's handled by template command)
+const help = `
 Usage: agency template delete <file> [file ...] [options]
 
 Delete specified files from the configured template directory.

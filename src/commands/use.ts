@@ -83,7 +83,8 @@ export const use = (options: UseOptions = {}) =>
 		yield* git.setGitConfig("agency.template", templateName, gitRoot)
 	})
 
-export const help = `
+// Help text for reference (not exported as it's handled by template command)
+const help = `
 Usage: agency template use [template] [options]
 
 Set the template to use for this repository.

@@ -58,7 +58,8 @@ export const templateView = (options: ViewOptions = {}) =>
 		}
 	})
 
-export const help = `
+// Help text for reference (not exported as it's handled by template command)
+const help = `
 Usage: agency template view <file> [options]
 
 View the contents of a file in the configured template directory.

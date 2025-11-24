@@ -158,7 +158,8 @@ export const save = (options: SaveOptions = {}) =>
 		}
 	})
 
-export const help = `
+// Help text for reference (not exported as it's handled by template command)
+const help = `
 Usage: agency save <file|dir> [file|dir ...] [options]
 
 Save specified files or directories to the configured template.

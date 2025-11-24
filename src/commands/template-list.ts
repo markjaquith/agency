@@ -96,7 +96,8 @@ export const templateList = (options: ListOptions = {}) =>
 		}
 	})
 
-export const help = `
+// Help text for reference (not exported as it's handled by template command)
+const help = `
 Usage: agency template list [options]
 
 List all files in the configured template directory.
