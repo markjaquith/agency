@@ -1,13 +1,13 @@
 import { join } from "node:path"
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
 interface WorkOptions extends BaseCommandOptions {}
 
-const workEffect = (options: WorkOptions = {}) =>
+export const work = (options: WorkOptions = {}) =>
 	Effect.gen(function* () {
 		const { verboseLog } = createLoggers(options)
 
@@ -45,7 +45,7 @@ const workEffect = (options: WorkOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency work [options]
 
 Start working on the task described in TASK.md using OpenCode.
@@ -61,10 +61,3 @@ Notes:
   - Requires opencode to be installed and available in PATH
   - Opens an interactive OpenCode session
 `
-
-export const { execute: work, help } = createCommand<WorkOptions>({
-	name: "work",
-	services: ["git", "filesystem"],
-	effect: workEffect,
-	help: helpText,
-})

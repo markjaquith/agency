@@ -5,6 +5,8 @@ import {
 	createTempDir,
 	cleanupTempDir,
 	initGitRepo,
+	initAgency,
+	runTestEffect,
 	createCommit,
 } from "../test-utils"
 import { writeFileSync } from "node:fs"
@@ -30,7 +32,7 @@ describe("work command", () => {
 
 	describe("error handling", () => {
 		test("throws error when TASK.md doesn't exist", async () => {
-			expect(work({ silent: true })).rejects.toThrow(
+			expect(runTestEffect(work({ silent: true }))).rejects.toThrow(
 				"TASK.md not found. Run 'agency task' first to create it.",
 			)
 		})
@@ -39,7 +41,9 @@ describe("work command", () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			expect(work({ silent: true })).rejects.toThrow("Not in a git repository")
+			expect(runTestEffect(work({ silent: true }))).rejects.toThrow(
+				"Not in a git repository",
+			)
 
 			await cleanupTempDir(nonGitDir)
 		})
@@ -70,7 +74,7 @@ describe("work command", () => {
 				}
 			}
 
-			await work({ silent: true })
+			await runTestEffect(work({ silent: true }))
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
@@ -108,7 +112,7 @@ describe("work command", () => {
 				}
 			}
 
-			await work({ silent: true })
+			await runTestEffect(work({ silent: true }))
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
@@ -145,7 +149,7 @@ describe("work command", () => {
 				}
 			}
 
-			expect(work({ silent: true })).rejects.toThrow(
+			expect(runTestEffect(work({ silent: true }))).rejects.toThrow(
 				"opencode exited with code 1",
 			)
 

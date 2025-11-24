@@ -247,10 +247,12 @@ Example:
 				console.log(workHelp)
 				return
 			}
-			await work({
-				silent: options.silent,
-				verbose: options.verbose,
-			})
+			await runCommand(
+				work({
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
 		},
 		help: workHelp,
 	},
