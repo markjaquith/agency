@@ -5,6 +5,7 @@ import {
 	cleanupTempDir,
 	initGitRepo,
 	getGitConfig,
+	runTestEffect,
 } from "../test-utils"
 
 describe("use command", () => {
@@ -69,7 +70,7 @@ describe("use command", () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
-		await expect(use({ silent: true })).rejects.toThrow(
+		await expect(runTestEffect(use({ silent: true }))).rejects.toThrow(
 			"Template name required",
 		)
 	})

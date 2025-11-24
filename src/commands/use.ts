@@ -10,7 +10,7 @@ interface UseOptions extends BaseCommandOptions {
 	template?: string
 }
 
-const useEffect = (options: UseOptions = {}) =>
+export const use = (options: UseOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -115,9 +115,3 @@ Notes:
   - Use 'agency task' after changing template to create/update files
   - Template directory is created when you save files to it
 `
-
-export const { execute: use } = createCommand<UseOptions>({
-	name: "use",
-	services: ["git", "template", "prompt"],
-	effect: useEffect,
-})
