@@ -167,7 +167,9 @@ const commands: Record<string, Command> = {
 				console.log(sourceHelp)
 				return
 			}
-			await source({ silent: options.silent, verbose: options.verbose })
+			await runCommand(
+				source({ silent: options.silent, verbose: options.verbose }),
+			)
 		},
 		help: sourceHelp,
 	},

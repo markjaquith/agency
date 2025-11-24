@@ -8,6 +8,7 @@ import {
 	getGitOutput,
 	getCurrentBranch,
 	createCommit,
+	runTestEffect,
 } from "../test-utils"
 
 async function createBranch(cwd: string, branchName: string): Promise<void> {
@@ -57,7 +58,7 @@ describe("source command", () => {
 			await createBranch(tempDir, "main--PR")
 
 			// Run source command
-			await source({ silent: true })
+			await runTestEffect(source({ silent: true }))
 
 			// Should be on main now
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -76,7 +77,7 @@ describe("source command", () => {
 			await createBranch(tempDir, "PR/feature")
 
 			// Run source command
-			await source({ silent: true })
+			await runTestEffect(source({ silent: true }))
 
 			// Should be on feature now
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -87,7 +88,7 @@ describe("source command", () => {
 	describe("error handling", () => {
 		test("throws error when not on a PR branch", async () => {
 			// We're on main, which is not a PR branch
-			await expect(source({ silent: true })).rejects.toThrow(
+			await expect(runTestEffect(source({ silent: true }))).rejects.toThrow(
 				"Not on a PR branch",
 			)
 		})
@@ -97,14 +98,16 @@ describe("source command", () => {
 			await createBranch(tempDir, "feature--PR")
 			// We never created 'feature', so it doesn't exist
 
-			await expect(source({ silent: true })).rejects.toThrow("Source branch")
+			await expect(runTestEffect(source({ silent: true }))).rejects.toThrow(
+				"Source branch",
+			)
 		})
 
 		test("throws error when not in a git repository", async () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			await expect(source({ silent: true })).rejects.toThrow(
+			await expect(runTestEffect(source({ silent: true }))).rejects.toThrow(
 				"Not in a git repository",
 			)
 
@@ -123,7 +126,7 @@ describe("source command", () => {
 				logCalled = true
 			}
 
-			await source({ silent: true })
+			await runTestEffect(source({ silent: true }))
 
 			console.log = originalLog
 			expect(logCalled).toBe(false)
