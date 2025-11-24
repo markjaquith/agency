@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
@@ -18,7 +18,7 @@ interface PrOptions extends BaseCommandOptions {
 	force?: boolean
 }
 
-export const prEffect = (options: PrOptions = {}) =>
+export const pr = (options: PrOptions = {}) =>
 	Effect.gen(function* () {
 		const { force = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -171,7 +171,7 @@ const createOrResetBranchEffect = (
 		yield* git.checkoutBranch(gitRoot, targetBranch)
 	})
 
-const helpText = `
+export const help = `
 Usage: agency pr [base-branch] [options]
 
 Create a PR branch from the current branch with managed files (AGENTS.md)
@@ -241,10 +241,3 @@ Notes:
   - If PR branch exists, it will be deleted and recreated
    - Command will refuse to create PR branch from a PR branch unless --force is used
 `
-
-export const { execute: pr, help } = createCommand<PrOptions>({
-	name: "pr",
-	services: ["git", "config", "filesystem"],
-	effect: prEffect,
-	help: helpText,
-})

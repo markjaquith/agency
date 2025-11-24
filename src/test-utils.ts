@@ -222,3 +222,37 @@ export async function getGitConfig(
 		return null
 	}
 }
+
+/**
+ * Run an Effect in tests with all services provided
+ */
+import { Effect, Layer } from "effect"
+import { GitService } from "./services/GitService"
+import { ConfigService } from "./services/ConfigService"
+import { FileSystemService } from "./services/FileSystemService"
+import { PromptService } from "./services/PromptService"
+import { TemplateService } from "./services/TemplateService"
+
+// Create test layer with all services
+const TestLayer = Layer.mergeAll(
+	GitService.Default,
+	ConfigService.Default,
+	FileSystemService.Default,
+	PromptService.Default,
+	TemplateService.Default,
+)
+
+export async function runTestEffect<A, E>(
+	effect: Effect.Effect<A, E, any>,
+): Promise<A> {
+	const providedEffect = Effect.provide(effect, TestLayer) as Effect.Effect<
+		A,
+		E,
+		never
+	>
+	const program = Effect.catchAllDefect(providedEffect, (defect) =>
+		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+	) as Effect.Effect<A, E | Error, never>
+
+	return await Effect.runPromise(program)
+}

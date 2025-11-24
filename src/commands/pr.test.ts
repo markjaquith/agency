@@ -11,6 +11,7 @@ import {
 	getGitOutput,
 	getCurrentBranch,
 	createCommit,
+	runTestEffect,
 } from "../test-utils"
 
 async function isGitFilterRepoAvailable(): Promise<boolean> {
@@ -111,7 +112,7 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			expect(pr({ silent: true })).rejects.toThrow(
+			expect(runTestEffect(pr({ silent: true }))).rejects.toThrow(
 				"git-filter-repo is not installed",
 			)
 		})
@@ -131,7 +132,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Check that PR branch exists
 			const branches = await getGitOutput(tempDir, [
@@ -159,7 +160,7 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			await pr({ branch: "custom-pr", silent: true })
+			await runTestEffect(pr({ branch: "custom-pr", silent: true }))
 
 			const branches = await getGitOutput(tempDir, [
 				"branch",
@@ -186,7 +187,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Should complete without throwing
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Should be on PR branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -206,7 +207,7 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Check that test file still exists
 			expect(await fileExists(join(tempDir, "test.txt"))).toBe(true)
@@ -229,7 +230,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -276,7 +277,7 @@ describe("pr command", () => {
 			expect(featureAgentsContent).toContain("Modified by feature branch")
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -351,7 +352,7 @@ describe("pr command", () => {
 
 			// Create PR branch
 			process.chdir(freshDir)
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// AGENTS.md should NOT exist (it was removed)
 			const files = await getGitOutput(freshDir, ["ls-files"])
@@ -374,7 +375,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Switch back to feature branch
 			await Bun.spawn(["git", "checkout", "feature"], {
@@ -416,7 +417,7 @@ describe("pr command", () => {
 			).exited
 
 			// Run pr command first time
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Switch back to feature branch
 			await Bun.spawn(["git", "checkout", "feature"], {
@@ -430,7 +431,7 @@ describe("pr command", () => {
 
 			// Run pr command second time - this would trigger the "already_ran" prompt
 			// without the cleanup code
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Should complete successfully without interactive prompts
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -451,7 +452,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch with explicit base branch
-			await pr({ baseBranch: "main", silent: true })
+			await runTestEffect(pr({ baseBranch: "main", silent: true }))
 
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature--PR")
@@ -470,9 +471,9 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			expect(pr({ baseBranch: "nonexistent", silent: true })).rejects.toThrow(
-				"does not exist",
-			)
+			expect(
+				runTestEffect(pr({ baseBranch: "nonexistent", silent: true })),
+			).rejects.toThrow("does not exist")
 		})
 
 		test("handles PR branch recreation after source branch rebase", async () => {
@@ -502,7 +503,7 @@ describe("pr command", () => {
 			])
 
 			// Create initial PR branch
-			await pr({ silent: true, baseBranch: "main" })
+			await runTestEffect(pr({ silent: true, baseBranch: "main" }))
 
 			// Verify AGENTS.md is filtered on PR branch (it was added on test-feature)
 			let files = await getGitOutput(tempDir, ["ls-files"])
@@ -559,7 +560,7 @@ describe("pr command", () => {
 			expect(newMergeBase.trim()).not.toBe(initialMergeBase.trim())
 
 			// Recreate PR branch after rebase (this is where the bug would manifest)
-			await pr({ silent: true, baseBranch: "main" })
+			await runTestEffect(pr({ silent: true, baseBranch: "main" }))
 
 			// Verify AGENTS.md is still filtered and no extraneous changes
 			files = await getGitOutput(tempDir, ["ls-files"])
@@ -583,7 +584,9 @@ describe("pr command", () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			expect(pr({ silent: true })).rejects.toThrow("Not in a git repository")
+			expect(runTestEffect(pr({ silent: true }))).rejects.toThrow(
+				"Not in a git repository",
+			)
 
 			await cleanupTempDir(nonGitDir)
 		})
@@ -607,7 +610,7 @@ describe("pr command", () => {
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			console.log = originalLog
 
