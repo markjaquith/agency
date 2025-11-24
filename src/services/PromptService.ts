@@ -2,7 +2,7 @@ import { Effect, Data } from "effect"
 import { createInterface } from "node:readline"
 
 // Error types for Prompt operations
-export class PromptError extends Data.TaggedError("PromptError")<{
+class PromptError extends Data.TaggedError("PromptError")<{
 	message: string
 	cause?: unknown
 }> {}

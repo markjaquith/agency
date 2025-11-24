@@ -37,6 +37,7 @@ const tasks: Task[] = [
 		args: ["run", "format:check"],
 		color: "\x1b[36m",
 	}, // cyan
+	{ name: "knip", command: "bun", args: ["run", "knip"], color: "\x1b[32m" }, // green
 	{
 		name: "typescript",
 		command: "bunx",

@@ -2,12 +2,12 @@ import { Effect, Data } from "effect"
 import { mkdir, copyFile as fsCopyFile, unlink } from "node:fs/promises"
 
 // Error types for FileSystem operations
-export class FileSystemError extends Data.TaggedError("FileSystemError")<{
+class FileSystemError extends Data.TaggedError("FileSystemError")<{
 	message: string
 	cause?: unknown
 }> {}
 
-export class FileNotFoundError extends Data.TaggedError("FileNotFoundError")<{
+class FileNotFoundError extends Data.TaggedError("FileNotFoundError")<{
 	path: string
 }> {}
 

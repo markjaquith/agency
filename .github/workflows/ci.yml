@@ -35,3 +35,6 @@ jobs:
 
       - name: Run tests
         run: bun test
+
+      - name: Check for unused exports
+        run: bun run knip

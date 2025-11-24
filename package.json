@@ -13,6 +13,7 @@
     "test": "bun test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "knip": "knip --production",
     "pushable": "./scripts/pushable",
     "check-commit-msg": "./scripts/check-commit-msg"
   },
@@ -38,6 +39,7 @@
   ],
   "devDependencies": {
     "@types/bun": "latest",
+    "knip": "^5.70.1",
     "prettier": "^3.6.2"
   },
   "peerDependencies": {

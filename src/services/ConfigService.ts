@@ -6,12 +6,12 @@ import { mkdir } from "node:fs/promises"
 import { AgencyConfig } from "../schemas"
 
 // Error types for Config operations
-export class ConfigError extends Data.TaggedError("ConfigError")<{
+class ConfigError extends Data.TaggedError("ConfigError")<{
 	message: string
 	cause?: unknown
 }> {}
 
-export class ConfigWriteError extends Data.TaggedError("ConfigWriteError")<{
+class ConfigWriteError extends Data.TaggedError("ConfigWriteError")<{
 	path: string
 	cause?: unknown
 }> {}

@@ -3,12 +3,12 @@ import { resolve } from "path"
 import { realpath } from "fs/promises"
 
 // Error types for Git operations
-export class GitError extends Data.TaggedError("GitError")<{
+class GitError extends Data.TaggedError("GitError")<{
 	message: string
 	cause?: unknown
 }> {}
 
-export class NotInGitRepoError extends Data.TaggedError("NotInGitRepoError")<{
+class NotInGitRepoError extends Data.TaggedError("NotInGitRepoError")<{
 	path: string
 }> {}
 

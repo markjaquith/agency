@@ -3,7 +3,7 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 
 // Error types for Template operations
-export class TemplateError extends Data.TaggedError("TemplateError")<{
+class TemplateError extends Data.TaggedError("TemplateError")<{
 	message: string
 	cause?: unknown
 }> {}
