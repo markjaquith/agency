@@ -8,6 +8,7 @@ import {
 	getCurrentBranch,
 	createCommit,
 	checkoutBranch,
+	runTestEffect,
 } from "../test-utils"
 
 async function createBranch(cwd: string, branchName: string): Promise<void> {
@@ -114,7 +115,7 @@ describe("push command", () => {
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
 			// Run push command
-			await push({ baseBranch: "main", silent: true })
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			// Should be back on feature branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
@@ -146,11 +147,13 @@ describe("push command", () => {
 		})
 
 		test("works with custom branch name", async () => {
-			await push({
-				baseBranch: "main",
-				branch: "custom-pr-branch",
-				silent: true,
-			})
+			await runTestEffect(
+				push({
+					baseBranch: "main",
+					branch: "custom-pr-branch",
+					silent: true,
+				}),
+			)
 
 			// Should be back on feature branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
@@ -168,14 +171,14 @@ describe("push command", () => {
 
 		test("recreates PR branch if it already exists", async () => {
 			// First push
-			await push({ baseBranch: "main", silent: true })
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			// Make more changes on feature branch
 			await checkoutBranch(tempDir, "feature")
 			await createCommit(tempDir, "More feature work")
 
 			// Second push should recreate the PR branch
-			await push({ baseBranch: "main", silent: true })
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			// Should still be back on feature branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
@@ -188,18 +191,18 @@ describe("push command", () => {
 			await createBranch(tempDir, "feature--PR")
 
 			// Try to run push from PR branch
-			await expect(push({ baseBranch: "main", silent: true })).rejects.toThrow(
-				/Already on PR branch/,
-			)
+			await expect(
+				runTestEffect(push({ baseBranch: "main", silent: true })),
+			).rejects.toThrow(/Already on PR branch/)
 		})
 
 		test("throws error when not in a git repository", async () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			await expect(push({ baseBranch: "main", silent: true })).rejects.toThrow(
-				"Not in a git repository",
-			)
+			await expect(
+				runTestEffect(push({ baseBranch: "main", silent: true })),
+			).rejects.toThrow("Not in a git repository")
 
 			await cleanupTempDir(nonGitDir)
 		})
@@ -213,9 +216,9 @@ describe("push command", () => {
 			}).exited
 
 			// Push should fail
-			await expect(push({ baseBranch: "main", silent: true })).rejects.toThrow(
-				/Failed to push/,
-			)
+			await expect(
+				runTestEffect(push({ baseBranch: "main", silent: true })),
+			).rejects.toThrow(/Failed to push/)
 		})
 	})
 
@@ -228,7 +231,7 @@ describe("push command", () => {
 				logCalled = true
 			}
 
-			await push({ baseBranch: "main", silent: true })
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			console.log = originalLog
 			expect(logCalled).toBe(false)
@@ -238,7 +241,7 @@ describe("push command", () => {
 	describe("force push", () => {
 		test("force pushes when branch has diverged and --force is provided", async () => {
 			// First push
-			await push({ baseBranch: "main", silent: true })
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			// Make changes on feature branch
 			await checkoutBranch(tempDir, "feature")
@@ -263,7 +266,9 @@ describe("push command", () => {
 				logMessages.push(msg)
 			}
 
-			await push({ baseBranch: "main", force: true, silent: false })
+			await runTestEffect(
+				push({ baseBranch: "main", force: true, silent: false }),
+			)
 
 			console.log = originalLog
 
@@ -276,7 +281,7 @@ describe("push command", () => {
 
 		test("suggests using --force when push is rejected without it", async () => {
 			// First push
-			await push({ baseBranch: "main", silent: true })
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			// Make changes on feature branch
 			await checkoutBranch(tempDir, "feature")
@@ -295,9 +300,9 @@ describe("push command", () => {
 			await checkoutBranch(tempDir, "feature")
 
 			// Should throw error suggesting --force
-			await expect(push({ baseBranch: "main", silent: true })).rejects.toThrow(
-				/agency push --force/,
-			)
+			await expect(
+				runTestEffect(push({ baseBranch: "main", silent: true })),
+			).rejects.toThrow(/agency push --force/)
 
 			// Should still be on feature branch (not left in intermediate state)
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
@@ -312,7 +317,9 @@ describe("push command", () => {
 			}
 
 			// First push with --force (but it won't actually need force)
-			await push({ baseBranch: "main", force: true, silent: false })
+			await runTestEffect(
+				push({ baseBranch: "main", force: true, silent: false }),
+			)
 
 			console.log = originalLog
 

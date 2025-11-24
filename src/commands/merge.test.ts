@@ -12,6 +12,7 @@ import {
 	getCurrentBranch,
 	createCommit,
 	branchExists,
+	runTestEffect,
 } from "../test-utils"
 
 async function isGitFilterRepoAvailable(): Promise<boolean> {
@@ -75,7 +76,7 @@ describe("merge command", () => {
 		// Initialize AGENTS.md on feature branch
 		await initAgency(tempDir, "test")
 
-		await task({ silent: true })
+		await runTestEffect(task({ silent: true }))
 
 		// Ensure agency.json has baseBranch set (task should auto-detect it, but ensure it's there)
 		const agencyJsonPath = join(tempDir, "agency.json")
@@ -125,7 +126,7 @@ describe("merge command", () => {
 			expect(currentBranch).toBe("feature")
 
 			// Run merge - should create feature--PR and merge it to main
-			await merge({ silent: true })
+			await runTestEffect(merge({ silent: true }))
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)
@@ -147,7 +148,7 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch first
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Go back to feature branch
 			await Bun.spawn(["git", "checkout", "feature"], {
@@ -160,7 +161,7 @@ describe("merge command", () => {
 			await createCommit(tempDir, "More feature work")
 
 			// Run merge - should recreate PR branch with new changes
-			await merge({ silent: true })
+			await runTestEffect(merge({ silent: true }))
 
 			// Should be on main after merge
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -176,14 +177,14 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// We're on feature--PR now
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature--PR")
 
 			// Run merge - should merge feature--PR to main
-			await merge({ silent: true })
+			await runTestEffect(merge({ silent: true }))
 
 			// Should be on main after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)
@@ -201,7 +202,7 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Delete the source branch
 			await Bun.spawn(["git", "branch", "-D", "feature"], {
@@ -211,7 +212,9 @@ describe("merge command", () => {
 			}).exited
 
 			// Try to merge - should fail
-			expect(merge({ silent: true })).rejects.toThrow("source branch")
+			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow(
+				"source branch",
+			)
 		})
 	})
 
@@ -220,7 +223,9 @@ describe("merge command", () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			expect(merge({ silent: true })).rejects.toThrow("Not in a git repository")
+			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow(
+				"Not in a git repository",
+			)
 
 			await cleanupTempDir(nonGitDir)
 		})
@@ -232,7 +237,7 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch
-			await pr({ silent: true })
+			await runTestEffect(pr({ silent: true }))
 
 			// Delete main branch (the base)
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
@@ -247,7 +252,9 @@ describe("merge command", () => {
 			}).exited
 
 			// Try to merge - should fail
-			expect(merge({ silent: true })).rejects.toThrow("does not exist locally")
+			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow(
+				"does not exist locally",
+			)
 		})
 	})
 
@@ -262,7 +269,7 @@ describe("merge command", () => {
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await merge({ silent: true })
+			await runTestEffect(merge({ silent: true }))
 
 			console.log = originalLog
 
@@ -282,7 +289,7 @@ describe("merge command", () => {
 			expect(currentBranch).toBe("feature")
 
 			// Run merge with squash flag
-			await merge({ silent: true, squash: true })
+			await runTestEffect(merge({ silent: true, squash: true }))
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)
@@ -325,7 +332,7 @@ describe("merge command", () => {
 			expect(currentBranch).toBe("feature")
 
 			// Run merge without squash flag
-			await merge({ silent: true, squash: false })
+			await runTestEffect(merge({ silent: true, squash: false }))
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)

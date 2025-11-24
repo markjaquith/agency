@@ -1,7 +1,7 @@
 import { resolve } from "path"
 import { rm } from "node:fs/promises"
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
@@ -12,8 +12,7 @@ interface DeleteOptions extends BaseCommandOptions {
 	files?: string[]
 }
 
-// Effect-based implementation
-const templateDeleteEffect = (options: DeleteOptions = {}) =>
+export const templateDelete = (options: DeleteOptions = {}) =>
 	Effect.gen(function* () {
 		const { files: filesToDelete = [] } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -67,7 +66,7 @@ const templateDeleteEffect = (options: DeleteOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency template delete <file> [file ...] [options]
 
 Delete specified files from the configured template directory.
@@ -96,9 +95,3 @@ Notes:
   - Non-existent files are skipped with a warning in verbose mode
   - Directories are deleted recursively
 `
-
-export const { execute: templateDelete } = createCommand<DeleteOptions>({
-	name: "template-delete",
-	services: ["git", "template", "filesystem"],
-	effect: templateDeleteEffect,
-})

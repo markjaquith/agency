@@ -3,6 +3,7 @@ import { templateView } from "./template-view"
 import { mkdir, writeFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { runTestEffect } from "../test-utils"
 
 describe("template view command", () => {
 	let testDir: string
@@ -56,7 +57,7 @@ describe("template view command", () => {
 
 		try {
 			// Just verify the command doesn't throw - output goes to stdout
-			await templateView({ file: "test.md", silent: true })
+			await runTestEffect(templateView({ file: "test.md", silent: true }))
 
 			// Verify the file exists and has expected content
 			const fileContent = await Bun.file(testFile).text()
@@ -80,7 +81,9 @@ describe("template view command", () => {
 
 		try {
 			// Just verify the command doesn't throw - output goes to stdout
-			await templateView({ file: "docs/README.md", silent: true })
+			await runTestEffect(
+				templateView({ file: "docs/README.md", silent: true }),
+			)
 
 			// Verify the file exists and has expected content
 			const fileContent = await Bun.file(testFile).text()
@@ -97,7 +100,7 @@ describe("template view command", () => {
 
 		try {
 			await expect(
-				templateView({ file: "nonexistent.md", silent: true }),
+				runTestEffect(templateView({ file: "nonexistent.md", silent: true })),
 			).rejects.toThrow("does not exist in template")
 		} finally {
 			process.chdir(originalCwd)
@@ -109,9 +112,9 @@ describe("template view command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await expect(templateView({ silent: true })).rejects.toThrow(
-				"File path is required",
-			)
+			await expect(
+				runTestEffect(templateView({ silent: true })),
+			).rejects.toThrow("File path is required")
 		} finally {
 			process.chdir(originalCwd)
 		}
@@ -126,7 +129,7 @@ describe("template view command", () => {
 
 		try {
 			await expect(
-				templateView({ file: "test.md", silent: true }),
+				runTestEffect(templateView({ file: "test.md", silent: true })),
 			).rejects.toThrow("Not in a git repository")
 		} finally {
 			process.chdir(originalCwd)
@@ -146,7 +149,7 @@ describe("template view command", () => {
 
 		try {
 			await expect(
-				templateView({ file: "test.md", silent: true }),
+				runTestEffect(templateView({ file: "test.md", silent: true })),
 			).rejects.toThrow("Repository not initialized")
 		} finally {
 			process.chdir(originalCwd)

@@ -8,6 +8,7 @@ import {
 	initGitRepo,
 	initAgency,
 	readFile,
+	runTestEffect,
 } from "../test-utils"
 
 describe("save command", () => {
@@ -51,7 +52,7 @@ describe("save command", () => {
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Modified content")
 
 		// Save specific files to template
-		await save({ files: ["AGENTS.md"], silent: true })
+		await runTestEffect(save({ files: ["AGENTS.md"], silent: true }))
 
 		// Check template files were updated
 		const configDir = process.env.AGENCY_CONFIG_DIR!
@@ -73,26 +74,26 @@ describe("save command", () => {
 			branch: "test-feature",
 		})
 
-		await expect(save({ files: [], silent: true })).rejects.toThrow(
-			"No files specified",
-		)
+		await expect(
+			runTestEffect(save({ files: [], silent: true })),
+		).rejects.toThrow("No files specified")
 	})
 
 	test("throws error when no template configured", async () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
-		await expect(save({ files: ["AGENTS.md"], silent: true })).rejects.toThrow(
-			"Repository not initialized",
-		)
+		await expect(
+			runTestEffect(save({ files: ["AGENTS.md"], silent: true })),
+		).rejects.toThrow("Repository not initialized")
 	})
 
 	test("throws error when not in git repo", async () => {
 		process.chdir(tempDir)
 
-		await expect(save({ files: ["AGENTS.md"], silent: true })).rejects.toThrow(
-			"Not in a git repository",
-		)
+		await expect(
+			runTestEffect(save({ files: ["AGENTS.md"], silent: true })),
+		).rejects.toThrow("Not in a git repository")
 	})
 
 	test("skips files that don't exist", async () => {
@@ -118,7 +119,9 @@ describe("save command", () => {
 		await Bun.write(join(tempDir, "test.txt"), "# Test content")
 
 		// Save should succeed but skip the missing file
-		await save({ files: ["AGENTS.md", "test.txt"], silent: true })
+		await runTestEffect(
+			save({ files: ["AGENTS.md", "test.txt"], silent: true }),
+		)
 
 		// Check test.txt was updated
 		const configDir = process.env.AGENCY_CONFIG_DIR!
@@ -142,7 +145,7 @@ describe("save command", () => {
 		await Bun.write(join(docsDir, "guide.md"), "# Guide")
 
 		// Save the directory
-		await save({ files: ["docs"], silent: true })
+		await runTestEffect(save({ files: ["docs"], silent: true }))
 
 		// Check files were saved to template
 		const configDir = process.env.AGENCY_CONFIG_DIR!
@@ -169,9 +172,9 @@ describe("save command", () => {
 		await Bun.write(join(tempDir, "TASK.md"), "{task}\n\n## Notes")
 
 		// Save should fail regardless of content
-		await expect(save({ files: ["TASK.md"], silent: true })).rejects.toThrow(
-			"TASK.md files cannot be saved to templates",
-		)
+		await expect(
+			runTestEffect(save({ files: ["TASK.md"], silent: true })),
+		).rejects.toThrow("TASK.md files cannot be saved to templates")
 	})
 
 	test("refuses to save TASK.md even without {task} placeholder", async () => {
@@ -192,9 +195,9 @@ describe("save command", () => {
 		)
 
 		// Save should fail
-		await expect(save({ files: ["TASK.md"], silent: true })).rejects.toThrow(
-			"TASK.md files cannot be saved to templates",
-		)
+		await expect(
+			runTestEffect(save({ files: ["TASK.md"], silent: true })),
+		).rejects.toThrow("TASK.md files cannot be saved to templates")
 	})
 
 	test("refuses to save TASK.md in subdirectories", async () => {
@@ -214,7 +217,7 @@ describe("save command", () => {
 
 		// Save should fail regardless of content
 		await expect(
-			save({ files: ["projects/TASK.md"], silent: true }),
+			runTestEffect(save({ files: ["projects/TASK.md"], silent: true })),
 		).rejects.toThrow("TASK.md files cannot be saved to templates")
 	})
 
@@ -238,7 +241,7 @@ describe("save command", () => {
 
 		// Save should fail
 		await expect(
-			save({ files: ["projects/TASK.md"], silent: true }),
+			runTestEffect(save({ files: ["projects/TASK.md"], silent: true })),
 		).rejects.toThrow("TASK.md files cannot be saved to templates")
 	})
 })

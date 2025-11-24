@@ -5,6 +5,7 @@ import {
 	cleanupTempDir,
 	initGitRepo,
 	getGitConfig,
+	runTestEffect,
 } from "../test-utils"
 import { getBaseBranchFromMetadata, writeAgencyMetadata } from "../types"
 
@@ -42,11 +43,13 @@ describe("base", () => {
 			} as any)
 
 			// Set base branch
-			await base({
-				subcommand: "set",
-				args: ["main"],
-				silent: true,
-			})
+			await runTestEffect(
+				base({
+					subcommand: "set",
+					args: ["main"],
+					silent: true,
+				}),
+			)
 
 			// Verify it was saved
 			const savedBase = await getBaseBranchFromMetadata(testDir)
@@ -55,12 +58,14 @@ describe("base", () => {
 
 		test("sets repository-level default base branch", async () => {
 			// Set repo-level base branch
-			await base({
-				subcommand: "set",
-				args: ["main"],
-				repo: true,
-				silent: true,
-			})
+			await runTestEffect(
+				base({
+					subcommand: "set",
+					args: ["main"],
+					repo: true,
+					silent: true,
+				}),
+			)
 
 			// Verify it was saved to git config
 			const savedBase = await getGitConfig("agency.baseBranch", testDir)
@@ -69,11 +74,13 @@ describe("base", () => {
 
 		test("throws error if base branch does not exist", async () => {
 			await expect(
-				base({
-					subcommand: "set",
-					args: ["nonexistent"],
-					silent: true,
-				}),
+				runTestEffect(
+					base({
+						subcommand: "set",
+						args: ["nonexistent"],
+						silent: true,
+					}),
+				),
 			).rejects.toThrow("does not exist")
 		})
 	})
@@ -102,11 +109,13 @@ describe("base", () => {
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
 			try {
-				await base({
-					subcommand: "get",
-					args: [],
-					silent: false,
-				})
+				await runTestEffect(
+					base({
+						subcommand: "get",
+						args: [],
+						silent: false,
+					}),
+				)
 				expect(logs[0]).toBe("main")
 			} finally {
 				console.log = originalLog
@@ -130,20 +139,22 @@ describe("base", () => {
 			} as any)
 
 			await expect(
-				base({
-					subcommand: "get",
-					args: [],
-					silent: true,
-				}),
+				runTestEffect(
+					base({
+						subcommand: "get",
+						args: [],
+						silent: true,
+					}),
+				),
 			).rejects.toThrow("No base branch configured")
 		})
 	})
 
 	describe("base command", () => {
 		test("requires subcommand", async () => {
-			await expect(base({ args: [], silent: true })).rejects.toThrow(
-				"Subcommand is required",
-			)
+			await expect(
+				runTestEffect(base({ args: [], silent: true })),
+			).rejects.toThrow("Subcommand is required")
 		})
 
 		test("handles 'set' subcommand", async () => {
@@ -160,11 +171,13 @@ describe("base", () => {
 				createdAt: new Date().toISOString(),
 			} as any)
 
-			await base({
-				subcommand: "set",
-				args: ["main"],
-				silent: true,
-			})
+			await runTestEffect(
+				base({
+					subcommand: "set",
+					args: ["main"],
+					silent: true,
+				}),
+			)
 
 			const savedBase = await getBaseBranchFromMetadata(testDir)
 			expect(savedBase).toBe("main")
@@ -172,11 +185,13 @@ describe("base", () => {
 
 		test("throws error for unknown subcommand", async () => {
 			await expect(
-				base({
-					subcommand: "unknown",
-					args: [],
-					silent: true,
-				}),
+				runTestEffect(
+					base({
+						subcommand: "unknown",
+						args: [],
+						silent: true,
+					}),
+				),
 			).rejects.toThrow("Unknown subcommand")
 		})
 	})

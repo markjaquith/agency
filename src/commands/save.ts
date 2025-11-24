@@ -1,6 +1,6 @@
 import { resolve, join, dirname, basename } from "path"
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
@@ -63,8 +63,7 @@ function collectFilesRecursively(
 	})
 }
 
-// Effect-based implementation
-const saveEffect = (options: SaveOptions = {}) =>
+export const save = (options: SaveOptions = {}) =>
 	Effect.gen(function* () {
 		const { files: filesToSave = [] } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -159,7 +158,7 @@ const saveEffect = (options: SaveOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency save <file|dir> [file|dir ...] [options]
 
 Save specified files or directories to the configured template.
@@ -194,9 +193,3 @@ Notes:
   - Directory structure is preserved in the template
   - TASK.md files cannot be saved - agency controls their creation
 `
-
-export const { execute: save } = createCommand<SaveOptions>({
-	name: "save",
-	services: ["git", "template", "filesystem"],
-	effect: saveEffect,
-})

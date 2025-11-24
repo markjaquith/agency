@@ -1,3 +1,4 @@
+import { Effect } from "effect"
 import { use } from "./use"
 import { save } from "./save"
 import { templateList } from "./template-list"
@@ -26,64 +27,70 @@ For more information about a subcommand, run:
   agency template <subcommand> --help
 `
 
-export async function template(options: {
+export const template = (options: {
 	subcommand?: string
 	args: string[]
 	silent?: boolean
 	verbose?: boolean
 	template?: string
-}) {
-	const { subcommand, args, silent, verbose, template: templateName } = options
+}) =>
+	Effect.gen(function* () {
+		const {
+			subcommand,
+			args,
+			silent,
+			verbose,
+			template: templateName,
+		} = options
 
-	if (!subcommand) {
-		throw new Error(
-			"Subcommand is required. Available subcommands: use, save, list, view, delete\n\nRun 'agency template --help' for usage information.",
-		)
-	}
-
-	switch (subcommand) {
-		case "use":
-			await use({
-				template: args[0] || templateName,
-				silent,
-				verbose,
-			})
-			break
-
-		case "save":
-			await save({
-				files: args,
-				silent,
-				verbose,
-			})
-			break
-
-		case "list":
-			await templateList({
-				silent,
-				verbose,
-			})
-			break
-
-		case "view":
-			await templateView({
-				file: args[0],
-				silent,
-				verbose,
-			})
-			break
-
-		case "delete":
-			await templateDelete({
-				files: args,
-				silent,
-				verbose,
-			})
-			break
-
-		default:
-			throw new Error(
-				`Unknown template subcommand '${subcommand}'. Available: use, save, list, view, delete`,
+		if (!subcommand) {
+			return yield* Effect.fail(
+				new Error(
+					"Subcommand is required. Available subcommands: use, save, list, view, delete\n\nRun 'agency template --help' for usage information.",
+				),
 			)
-	}
-}
+		}
+
+		switch (subcommand) {
+			case "use":
+				return yield* use({
+					template: args[0] || templateName,
+					silent,
+					verbose,
+				})
+
+			case "save":
+				return yield* save({
+					files: args,
+					silent,
+					verbose,
+				})
+
+			case "list":
+				return yield* templateList({
+					silent,
+					verbose,
+				})
+
+			case "view":
+				return yield* templateView({
+					file: args[0],
+					silent,
+					verbose,
+				})
+
+			case "delete":
+				return yield* templateDelete({
+					files: args,
+					silent,
+					verbose,
+				})
+
+			default:
+				return yield* Effect.fail(
+					new Error(
+						`Unknown template subcommand '${subcommand}'. Available: use, save, list, view, delete`,
+					),
+				)
+		}
+	})

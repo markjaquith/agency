@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { TemplateService } from "../services/TemplateService"
 import { PromptService } from "../services/PromptService"
@@ -83,7 +83,7 @@ export const use = (options: UseOptions = {}) =>
 		yield* git.setGitConfig("agency.template", templateName, gitRoot)
 	})
 
-const helpText = `
+export const help = `
 Usage: agency template use [template] [options]
 
 Set the template to use for this repository.

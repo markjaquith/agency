@@ -1,6 +1,6 @@
 import { resolve } from "path"
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
@@ -11,8 +11,7 @@ interface ViewOptions extends BaseCommandOptions {
 	file?: string
 }
 
-// Effect-based implementation
-const templateViewEffect = (options: ViewOptions = {}) =>
+export const templateView = (options: ViewOptions = {}) =>
 	Effect.gen(function* () {
 		const { file: fileToView, silent = false } = options
 		const { verboseLog } = createLoggers(options)
@@ -59,7 +58,7 @@ const templateViewEffect = (options: ViewOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency template view <file> [options]
 
 View the contents of a file in the configured template directory.
@@ -84,9 +83,3 @@ Notes:
   - File path is relative to template root directory
   - File content is displayed directly to stdout
 `
-
-export const { execute: templateView } = createCommand<ViewOptions>({
-	name: "template-view",
-	services: ["git", "template", "filesystem"],
-	effect: templateViewEffect,
-})

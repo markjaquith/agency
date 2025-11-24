@@ -101,13 +101,15 @@ const commands: Record<string, Command> = {
 				console.log(pushHelp)
 				return
 			}
-			await push({
-				baseBranch: args[0],
-				branch: options.branch,
-				silent: options.silent,
-				force: options.force,
-				verbose: options.verbose,
-			})
+			await runCommand(
+				push({
+					baseBranch: args[0],
+					branch: options.branch,
+					silent: options.silent,
+					force: options.force,
+					verbose: options.verbose,
+				}),
+			)
 		},
 		help: pushHelp,
 	},
@@ -119,13 +121,15 @@ const commands: Record<string, Command> = {
 				console.log(templateHelp)
 				return
 			}
-			await template({
-				subcommand: args[0],
-				args: args.slice(1),
-				silent: options.silent,
-				verbose: options.verbose,
-				template: options.template,
-			})
+			await runCommand(
+				template({
+					subcommand: args[0],
+					args: args.slice(1),
+					silent: options.silent,
+					verbose: options.verbose,
+					template: options.template,
+				}),
+			)
 		},
 		help: templateHelp,
 	},
@@ -137,13 +141,15 @@ const commands: Record<string, Command> = {
 				console.log(baseHelp)
 				return
 			}
-			await base({
-				subcommand: args[0],
-				args: args.slice(1),
-				repo: options.repo,
-				silent: options.silent,
-				verbose: options.verbose,
-			})
+			await runCommand(
+				base({
+					subcommand: args[0],
+					args: args.slice(1),
+					repo: options.repo,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
 		},
 		help: baseHelp,
 	},
@@ -183,7 +189,9 @@ const commands: Record<string, Command> = {
 				console.log(mergeHelp)
 				return
 			}
-			await merge({ silent: options.silent, verbose: options.verbose })
+			await runCommand(
+				merge({ silent: options.silent, verbose: options.verbose }),
+			)
 		},
 		help: mergeHelp,
 	},

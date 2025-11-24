@@ -9,6 +9,7 @@ import {
 	createSubdir,
 	fileExists,
 	readFile,
+	runTestEffect,
 } from "../test-utils"
 
 describe("task command", () => {
@@ -47,7 +48,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -58,7 +59,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toContain("Repo Instructions")
@@ -72,7 +73,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 			expect(await fileExists(join(subdir, "AGENTS.md"))).toBe(false)
@@ -87,7 +88,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toBe(existingContent)
@@ -96,7 +97,7 @@ describe("task command", () => {
 		test("throws error when not in a git repository", async () => {
 			process.chdir(tempDir)
 
-			await expect(task({ silent: true })).rejects.toThrow(
+			await expect(runTestEffect(task({ silent: true }))).rejects.toThrow(
 				"Not in a git repository",
 			)
 		})
@@ -107,11 +108,13 @@ describe("task command", () => {
 			await initGitRepo(tempDir)
 
 			await initAgency(tempDir, "test")
-			await task({
-				path: tempDir,
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					path: tempDir,
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -120,15 +123,15 @@ describe("task command", () => {
 			await initGitRepo(tempDir)
 			const subdir = await createSubdir(tempDir, "subdir")
 
-			expect(task({ path: subdir, silent: true })).rejects.toThrow(
-				"not the root of a git repository",
-			)
+			expect(
+				runTestEffect(task({ path: subdir, silent: true })),
+			).rejects.toThrow("not the root of a git repository")
 		})
 
 		test("throws error when path is not a git repository at all", async () => {
-			expect(task({ path: tempDir, silent: true })).rejects.toThrow(
-				"not the root of a git repository",
-			)
+			expect(
+				runTestEffect(task({ path: tempDir, silent: true })),
+			).rejects.toThrow("not the root of a git repository")
 		})
 
 		test("resolves relative paths correctly", async () => {
@@ -137,11 +140,13 @@ describe("task command", () => {
 			process.chdir(subdir)
 
 			await initAgency(tempDir, "test")
-			await task({
-				path: "..",
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					path: "..",
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -154,7 +159,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(true)
 		})
@@ -165,7 +170,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			const parsed = JSON.parse(content)
@@ -185,7 +190,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			expect(content).toBe(existingContent)
@@ -210,10 +215,12 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "custom-template")
 
-			await task({
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			expect(content).toBe(customConfig)
@@ -227,7 +234,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "TASK.md"))).toBe(true)
 		})
@@ -238,7 +245,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "TASK.md"))
 			expect(content).toContain("{task}")
@@ -249,11 +256,13 @@ describe("task command", () => {
 			process.chdir(tempDir)
 
 			await initAgency(tempDir, "test")
-			await task({
-				silent: true,
-				task: "Build new feature",
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: true,
+					task: "Build new feature",
+					branch: "test-feature",
+				}),
+			)
 
 			const content = await readFile(join(tempDir, "TASK.md"))
 			expect(content).toContain("Build new feature")
@@ -270,7 +279,9 @@ describe("task command", () => {
 			await expect(
 				(async () => {
 					await initAgency(tempDir, "test")
-					return await task({ silent: true, branch: "test-feature" })
+					return await runTestEffect(
+						task({ silent: true, branch: "test-feature" }),
+					)
 				})(),
 			).rejects.toThrow("TASK.md already exists in the repository")
 		})
@@ -291,10 +302,12 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "custom-template")
 
-			await task({
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			const content = await readFile(join(tempDir, "TASK.md"))
 			expect(content).toBe(customTask)
@@ -313,7 +326,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			console.log = originalLog
 
@@ -339,11 +352,13 @@ describe("task command", () => {
 
 			// Provide task to avoid interactive prompt
 			await initAgency(tempDir, "test")
-			await task({
-				silent: false,
-				task: "Test task",
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: false,
+					task: "Test task",
+					branch: "test-feature",
+				}),
+			)
 
 			console.log = originalLog
 
@@ -358,7 +373,9 @@ describe("task command", () => {
 			process.chdir(tempDir)
 
 			await initAgency(tempDir, "test")
-			await expect(task({ silent: true })).rejects.toThrow("main branch")
+			await expect(runTestEffect(task({ silent: true }))).rejects.toThrow(
+				"main branch",
+			)
 		})
 
 		test("creates branch when on main branch with branch name provided", async () => {
@@ -367,7 +384,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "my-feature" })
+			await runTestEffect(task({ silent: true, branch: "my-feature" }))
 
 			// Verify we're now on the new branch
 			const proc = Bun.spawn(["git", "branch", "--show-current"], {
@@ -405,11 +422,13 @@ describe("task command", () => {
 			await expect(
 				(async () => {
 					await initAgency(tempDir, "test")
-					return await task({
-						silent: true,
-						branch: "existing-branch",
-						task: "This should not be asked for",
-					})
+					return await runTestEffect(
+						task({
+							silent: true,
+							branch: "existing-branch",
+							task: "This should not be asked for",
+						}),
+					)
 				})(),
 			).rejects.toThrow("already exists")
 		})
@@ -428,7 +447,7 @@ describe("task command", () => {
 			// Should succeed without needing branch option
 			await initAgency(tempDir, "test")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -471,7 +490,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "custom")
 
-			await task({ silent: true, branch: "test-feature" })
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toBe(sourceContent)
@@ -483,10 +502,12 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "custom-template")
 
-			await task({
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			const agentsContent = await readFile(join(tempDir, "AGENTS.md"))
 
@@ -499,10 +520,12 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "auto-created")
 
-			await task({
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			// Template should NOT have AGENTS.md (not populated automatically)
 			const templateDir = join(configDir, "templates", "auto-created")
@@ -522,10 +545,12 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await task({
-				silent: true,
-				branch: "test-feature",
-			})
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "test-feature",
+				}),
+			)
 
 			// Read agency.json metadata
 			const metadata = JSON.parse(await readFile(join(tempDir, "agency.json")))

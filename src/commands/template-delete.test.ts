@@ -3,6 +3,7 @@ import { templateDelete } from "./template-delete"
 import { mkdir, writeFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { runTestEffect } from "../test-utils"
 
 describe("template delete command", () => {
 	let testDir: string
@@ -54,7 +55,7 @@ describe("template delete command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await templateDelete({ files: ["test.md"], silent: true })
+			await runTestEffect(templateDelete({ files: ["test.md"], silent: true }))
 
 			// Verify file was deleted
 			const file = Bun.file(testFile)
@@ -74,10 +75,12 @@ describe("template delete command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await templateDelete({
-				files: ["file1.md", "file2.md"],
-				silent: true,
-			})
+			await runTestEffect(
+				templateDelete({
+					files: ["file1.md", "file2.md"],
+					silent: true,
+				}),
+			)
 
 			// Verify files were deleted
 			expect(await Bun.file(join(templateDir, "file1.md")).exists()).toBe(false)
@@ -100,7 +103,7 @@ describe("template delete command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await templateDelete({ files: ["docs"], silent: true })
+			await runTestEffect(templateDelete({ files: ["docs"], silent: true }))
 
 			// Verify directory was deleted
 			const dir = Bun.file(docsDir)
@@ -116,7 +119,9 @@ describe("template delete command", () => {
 
 		try {
 			// Should not throw error for non-existent file
-			await templateDelete({ files: ["nonexistent.md"], silent: true })
+			await runTestEffect(
+				templateDelete({ files: ["nonexistent.md"], silent: true }),
+			)
 		} finally {
 			process.chdir(originalCwd)
 		}
@@ -127,9 +132,9 @@ describe("template delete command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await expect(templateDelete({ files: [], silent: true })).rejects.toThrow(
-				"No files specified",
-			)
+			await expect(
+				runTestEffect(templateDelete({ files: [], silent: true })),
+			).rejects.toThrow("No files specified")
 		} finally {
 			process.chdir(originalCwd)
 		}
@@ -144,7 +149,7 @@ describe("template delete command", () => {
 
 		try {
 			await expect(
-				templateDelete({ files: ["test.md"], silent: true }),
+				runTestEffect(templateDelete({ files: ["test.md"], silent: true })),
 			).rejects.toThrow("Not in a git repository")
 		} finally {
 			process.chdir(originalCwd)
@@ -164,7 +169,7 @@ describe("template delete command", () => {
 
 		try {
 			await expect(
-				templateDelete({ files: ["test.md"], silent: true }),
+				runTestEffect(templateDelete({ files: ["test.md"], silent: true })),
 			).rejects.toThrow("Repository not initialized")
 		} finally {
 			process.chdir(originalCwd)

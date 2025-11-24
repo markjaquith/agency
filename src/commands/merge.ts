@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService, GitCommandError } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
@@ -50,7 +50,7 @@ const mergeBranchEffect = (
 		}
 	})
 
-const mergeEffect = (options: MergeOptions = {}) =>
+export const merge = (options: MergeOptions = {}) =>
 	Effect.gen(function* () {
 		const { squash = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -135,7 +135,7 @@ const mergeEffect = (options: MergeOptions = {}) =>
 
 			// Run 'agency pr' to create/update the PR branch
 			verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
-			yield* Effect.promise(() => pr({ silent: true, verbose }))
+			yield* pr({ silent: true, verbose })
 
 			// Switch back to source branch and get the base branch from agency.json
 			yield* git.checkoutBranch(gitRoot, currentBranch)
@@ -193,7 +193,7 @@ const mergeEffect = (options: MergeOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency merge [options]
 
 Merge the current PR branch into the configured base branch.
@@ -233,10 +233,3 @@ Notes:
   - Merge conflicts must be resolved manually if they occur
   - With --squash, changes are staged but not committed (you must commit manually)
 `
-
-export const { execute: merge, help } = createCommand<MergeOptions>({
-	name: "merge",
-	services: ["git", "config"],
-	effect: mergeEffect,
-	help: helpText,
-})

@@ -3,6 +3,7 @@ import { templateList } from "./template-list"
 import { mkdir, writeFile, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { runTestEffect } from "../test-utils"
 
 describe("template list command", () => {
 	let testDir: string
@@ -63,7 +64,7 @@ describe("template list command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await templateList({ silent: false })
+			await runTestEffect(templateList({ silent: false }))
 		} finally {
 			process.chdir(originalCwd)
 			console.log = originalLog
@@ -87,7 +88,7 @@ describe("template list command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await templateList({ silent: false })
+			await runTestEffect(templateList({ silent: false }))
 		} finally {
 			process.chdir(originalCwd)
 			console.log = originalLog
@@ -104,9 +105,9 @@ describe("template list command", () => {
 		process.chdir(nonGitDir)
 
 		try {
-			await expect(templateList({ silent: true })).rejects.toThrow(
-				"Not in a git repository",
-			)
+			await expect(
+				runTestEffect(templateList({ silent: true })),
+			).rejects.toThrow("Not in a git repository")
 		} finally {
 			process.chdir(originalCwd)
 		}
@@ -124,9 +125,9 @@ describe("template list command", () => {
 		process.chdir(gitRoot)
 
 		try {
-			await expect(templateList({ silent: true })).rejects.toThrow(
-				"Repository not initialized",
-			)
+			await expect(
+				runTestEffect(templateList({ silent: true })),
+			).rejects.toThrow("Repository not initialized")
 		} finally {
 			process.chdir(originalCwd)
 		}

@@ -41,7 +41,7 @@ describe("use command", () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
-		await use({ template: "work", silent: true })
+		await runTestEffect(use({ template: "work", silent: true }))
 
 		const templateName = await getGitConfig("agency.template", tempDir)
 		expect(templateName).toBe("work")
@@ -51,8 +51,8 @@ describe("use command", () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
-		await use({ template: "work", silent: true })
-		await use({ template: "personal", silent: true })
+		await runTestEffect(use({ template: "work", silent: true }))
+		await runTestEffect(use({ template: "personal", silent: true }))
 
 		const templateName = await getGitConfig("agency.template", tempDir)
 		expect(templateName).toBe("personal")
@@ -61,9 +61,9 @@ describe("use command", () => {
 	test("throws error when not in git repo", async () => {
 		process.chdir(tempDir)
 
-		await expect(use({ template: "work", silent: true })).rejects.toThrow(
-			"Not in a git repository",
-		)
+		await expect(
+			runTestEffect(use({ template: "work", silent: true })),
+		).rejects.toThrow("Not in a git repository")
 	})
 
 	test("throws error when no template provided in silent mode", async () => {
@@ -79,7 +79,7 @@ describe("use command", () => {
 		await initGitRepo(tempDir)
 		process.chdir(tempDir)
 
-		await use({ template: "client", silent: true })
+		await runTestEffect(use({ template: "client", silent: true }))
 
 		const templateName = await getGitConfig("agency.template", tempDir)
 		expect(templateName).toBe("client")

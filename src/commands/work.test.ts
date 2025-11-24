@@ -184,7 +184,7 @@ describe("work command", () => {
 				logMessages.push(msg)
 			}
 
-			await work({ silent: false, verbose: true })
+			await runTestEffect(work({ silent: false, verbose: true }))
 
 			console.log = originalLog
 			// @ts-ignore - restore

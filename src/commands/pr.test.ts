@@ -63,7 +63,7 @@ describe("pr command", () => {
 		// Initialize AGENTS.md and commit in one go
 		await initAgency(tempDir, "test")
 
-		await task({ silent: true })
+		await runTestEffect(task({ silent: true }))
 		await Bun.spawn(["git", "add", "AGENTS.md"], {
 			cwd: tempDir,
 			stdout: "pipe",

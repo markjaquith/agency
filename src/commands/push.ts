@@ -1,9 +1,9 @@
 import { Effect, Either } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch } from "../utils/pr-branch"
-import { prEffect } from "./pr"
+import { pr } from "./pr"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
@@ -13,7 +13,7 @@ interface PushOptions extends BaseCommandOptions {
 	force?: boolean
 }
 
-const pushEffect = (options: PushOptions = {}) =>
+export const push = (options: PushOptions = {}) =>
 	Effect.gen(function* () {
 		const { verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -46,8 +46,8 @@ const pushEffect = (options: PushOptions = {}) =>
 
 		// Step 1: Create PR branch (agency pr)
 		verboseLog("Step 1: Creating PR branch...")
-		// Use prEffect which wraps the pr command
-		const prEffectWithOptions = prEffect({
+		// Use pr command
+		const prEffectWithOptions = pr({
 			baseBranch: options.baseBranch,
 			branch: options.branch,
 			silent: true, // Suppress pr command output, we'll provide our own
@@ -213,7 +213,7 @@ const pushBranchToRemoteEffect = (
 		return usedForce
 	})
 
-const helpText = `
+export const help = `
 Usage: agency push [base-branch] [options]
 
 Create a PR branch, push it to remote, and return to the source branch.
@@ -254,10 +254,3 @@ Notes:
   - Automatically returns to source branch after pushing
   - If any step fails, the command stops and reports the error
 `
-
-export const { execute: push, help } = createCommand<PushOptions>({
-	name: "push",
-	services: ["git", "config", "filesystem"],
-	effect: pushEffect,
-	help: helpText,
-})

@@ -3,7 +3,7 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { setBaseBranchInMetadata, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo, runEffect } from "../utils/effect"
+import { createLoggers, ensureGitRepo } from "../utils/effect"
 
 interface BaseOptions {
 	subcommand?: string
@@ -121,8 +121,7 @@ const baseGetEffect = (options: BaseGetOptions) =>
 		log(currentBase)
 	})
 
-// Effect-based implementation
-const baseEffect = (options: BaseOptions) =>
+export const base = (options: BaseOptions) =>
 	Effect.gen(function* () {
 		const {
 			subcommand,
@@ -169,13 +168,6 @@ const baseEffect = (options: BaseOptions) =>
 				)
 		}
 	})
-
-// Backward-compatible Promise wrapper
-export async function base(options: BaseOptions): Promise<void> {
-	const { GitService } = await import("../services/GitService")
-
-	await runEffect(baseEffect(options), [GitService.Default])
-}
 
 export const help = `
 Usage: agency base <subcommand> [options]

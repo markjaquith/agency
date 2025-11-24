@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { createCommand, type BaseCommandOptions } from "../utils/command"
+import type { BaseCommandOptions } from "../utils/command"
 import { TemplateService } from "../services/TemplateService"
 import { FileSystemService } from "../services/FileSystemService"
 import { RepositoryNotInitializedError } from "../errors"
@@ -46,8 +46,7 @@ function collectFilesRecursively(
 	})
 }
 
-// Effect-based implementation
-const templateListEffect = (options: ListOptions = {}) =>
+export const templateList = (options: ListOptions = {}) =>
 	Effect.gen(function* () {
 		const { log, verboseLog } = createLoggers(options)
 
@@ -97,7 +96,7 @@ const templateListEffect = (options: ListOptions = {}) =>
 		}
 	})
 
-const helpText = `
+export const help = `
 Usage: agency template list [options]
 
 List all files in the configured template directory.
@@ -119,9 +118,3 @@ Notes:
   - Files are listed in alphabetical order
   - Template directory must exist (created when you save files)
 `
-
-export const { execute: templateList } = createCommand<ListOptions>({
-	name: "template-list",
-	services: ["git", "template", "filesystem"],
-	effect: templateListEffect,
-})
