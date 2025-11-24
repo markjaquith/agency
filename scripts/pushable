@@ -54,6 +54,10 @@ const cross = "✗"
 // Spinner frames
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+// Detect if running in an interactive terminal
+// In OpenCode or other non-interactive environments, process.stdout.isTTY will be false
+const isInteractive = process.stdout.isTTY ?? false
+
 // Calculate max name length for padding
 const maxNameLength = Math.max(...tasks.map((t) => t.name.length))
 
@@ -88,6 +92,15 @@ function updateTaskLine(
 	duration: string | null = null,
 	frame: string | null = null,
 ): void {
+	if (!isInteractive) {
+		// In non-interactive mode, don't use cursor movement - just print updates
+		// Only print when task completes (not during spinner frames)
+		if (status === "passed" || status === "failed") {
+			process.stdout.write(formatTaskLine(task, status, duration, frame) + "\n")
+		}
+		return
+	}
+
 	// Move cursor up to the task's line
 	readline.moveCursor(process.stdout, 0, -lineOffset)
 	// Move cursor to beginning of line
@@ -101,6 +114,11 @@ function updateTaskLine(
 }
 
 function startSpinner(): void {
+	// Skip spinner in non-interactive environments (like OpenCode)
+	if (!isInteractive) {
+		return
+	}
+
 	let frameIndex = 0
 	spinnerInterval = setInterval(() => {
 		const frame = spinnerFrames[frameIndex]
@@ -133,8 +151,10 @@ async function runTask(task: Task, index: number): Promise<TaskResult> {
 			startSpinner()
 		}
 
-		// Initial update to show first spinner frame
-		updateTaskLine(task, lineOffset, "running", null, spinnerFrames[0])
+		// Initial update to show first spinner frame (only in interactive mode)
+		if (isInteractive) {
+			updateTaskLine(task, lineOffset, "running", null, spinnerFrames[0])
+		}
 
 		const proc: ChildProcess = spawn(task.command, task.args, {
 			env: { ...process.env, FORCE_COLOR: "1" },
@@ -171,24 +191,30 @@ async function runTask(task: Task, index: number): Promise<TaskResult> {
 }
 
 async function main(): Promise<void> {
-	// Hide cursor
-	process.stdout.write("\x1b[?25l")
+	// Hide cursor (only in interactive mode)
+	if (isInteractive) {
+		process.stdout.write("\x1b[?25l")
+	}
 
-	// Print initial state for all tasks (just the colored brackets)
-	tasks.forEach((task) => {
-		console.log(formatTaskLine(task, "pending"))
-	})
+	// Print initial state for all tasks (only in interactive mode)
+	if (isInteractive) {
+		tasks.forEach((task) => {
+			console.log(formatTaskLine(task, "pending"))
+		})
+	}
 
 	// Run all tasks concurrently
 	const results = await Promise.all(
 		tasks.map((task, index) => runTask(task, index)),
 	)
 
-	// Show cursor again
-	process.stdout.write("\x1b[?25h")
+	// Show cursor again (only in interactive mode)
+	if (isInteractive) {
+		process.stdout.write("\x1b[?25h")
 
-	// Move to a new line after all tasks
-	console.log("")
+		// Move to a new line after all tasks
+		console.log("")
+	}
 
 	// Print failures with their output
 	const failures = results.filter((r) => !r.success)
