@@ -66,3 +66,50 @@ export function extractSourceBranch(
 		return sourceBranch.length > 0 ? sourceBranch : null
 	}
 }
+
+/**
+ * Result of resolving a branch pair (source and PR branches).
+ */
+export interface BranchPair {
+	/** The source branch name (without PR suffix) */
+	sourceBranch: string
+	/** The PR branch name (with PR suffix) */
+	prBranch: string
+	/** Whether the current branch is the PR branch */
+	isOnPrBranch: boolean
+}
+
+/**
+ * Resolve the source and PR branch names from a current branch and pattern.
+ * This determines whether we're on a PR branch or source branch and provides
+ * both branch names.
+ *
+ * @example
+ * resolveBranchPair("feature-foo", "%branch%--PR")
+ * // { sourceBranch: "feature-foo", prBranch: "feature-foo--PR", isOnPrBranch: false }
+ *
+ * resolveBranchPair("feature-foo--PR", "%branch%--PR")
+ * // { sourceBranch: "feature-foo", prBranch: "feature-foo--PR", isOnPrBranch: true }
+ */
+export function resolveBranchPair(
+	currentBranch: string,
+	pattern: string,
+): BranchPair {
+	const sourceBranch = extractSourceBranch(currentBranch, pattern)
+
+	if (sourceBranch) {
+		// Current branch is a PR branch
+		return {
+			sourceBranch,
+			prBranch: currentBranch,
+			isOnPrBranch: true,
+		}
+	} else {
+		// Current branch is a source branch
+		return {
+			sourceBranch: currentBranch,
+			prBranch: makePrBranchName(currentBranch, pattern),
+			isOnPrBranch: false,
+		}
+	}
+}

@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
+import { resolveBranchPair, type BranchPair } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
@@ -24,13 +24,15 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 		// Load config
 		const config = yield* configService.loadConfig()
 
-		// Get current branch
+		// Get current branch and resolve the branch pair
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
+		const branches: BranchPair = resolveBranchPair(
+			currentBranch,
+			config.prBranch,
+		)
+		const { sourceBranch, prBranch, isOnPrBranch } = branches
 
-		// Try to extract source branch (are we on a PR branch?)
-		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
-
-		if (sourceBranch) {
+		if (isOnPrBranch) {
 			// We're on a PR branch, switch to source
 			yield* ensureBranchExists(
 				gitRoot,
@@ -42,8 +44,6 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 			log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
 		} else {
 			// We're on a source branch, switch to PR branch
-			const prBranch = makePrBranchName(currentBranch, config.prBranch)
-
 			yield* ensureBranchExists(
 				gitRoot,
 				prBranch,

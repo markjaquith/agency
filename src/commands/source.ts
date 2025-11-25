@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { extractSourceBranch } from "../utils/pr-branch"
+import { resolveBranchPair } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
@@ -14,7 +14,7 @@ interface SourceOptions extends BaseCommandOptions {}
 
 export const source = (options: SourceOptions = {}) =>
 	Effect.gen(function* () {
-		const { log, verboseLog } = createLoggers(options)
+		const { log } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
@@ -24,13 +24,14 @@ export const source = (options: SourceOptions = {}) =>
 		// Load config
 		const config = yield* configService.loadConfig()
 
-		// Get current branch
+		// Get current branch and resolve the branch pair
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
+		const { sourceBranch, isOnPrBranch } = resolveBranchPair(
+			currentBranch,
+			config.prBranch,
+		)
 
-		// Extract source branch name
-		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
-
-		if (!sourceBranch) {
+		if (!isOnPrBranch) {
 			return yield* Effect.fail(
 				new Error(`Not on a PR branch. Current branch: ${currentBranch}`),
 			)
