@@ -4,7 +4,11 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	ensureBranchExists,
+} from "../utils/effect"
 
 interface SourceOptions extends BaseCommandOptions {}
 
@@ -33,14 +37,11 @@ export const source = (options: SourceOptions = {}) =>
 		}
 
 		// Check if source branch exists
-		const exists = yield* git.branchExists(gitRoot, sourceBranch)
-		if (!exists) {
-			return yield* Effect.fail(
-				new Error(
-					`Source branch ${highlight.branch(sourceBranch)} does not exist`,
-				),
-			)
-		}
+		yield* ensureBranchExists(
+			gitRoot,
+			sourceBranch,
+			`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+		)
 
 		// Checkout source branch
 		yield* git.checkoutBranch(gitRoot, sourceBranch)

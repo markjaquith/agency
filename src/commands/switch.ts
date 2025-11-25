@@ -4,7 +4,11 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	ensureBranchExists,
+} from "../utils/effect"
 
 interface SwitchOptions extends BaseCommandOptions {}
 
@@ -28,14 +32,11 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 
 		if (sourceBranch) {
 			// We're on a PR branch, switch to source
-			const exists = yield* git.branchExists(gitRoot, sourceBranch)
-			if (!exists) {
-				return yield* Effect.fail(
-					new Error(
-						`Source branch ${highlight.branch(sourceBranch)} does not exist`,
-					),
-				)
-			}
+			yield* ensureBranchExists(
+				gitRoot,
+				sourceBranch,
+				`Source branch ${highlight.branch(sourceBranch)} does not exist`,
+			)
 
 			yield* git.checkoutBranch(gitRoot, sourceBranch)
 			log(done(`Switched to source branch: ${highlight.branch(sourceBranch)}`))
@@ -43,14 +44,11 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 			// We're on a source branch, switch to PR branch
 			const prBranch = makePrBranchName(currentBranch, config.prBranch)
 
-			const exists = yield* git.branchExists(gitRoot, prBranch)
-			if (!exists) {
-				return yield* Effect.fail(
-					new Error(
-						`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
-					),
-				)
-			}
+			yield* ensureBranchExists(
+				gitRoot,
+				prBranch,
+				`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
+			)
 
 			yield* git.checkoutBranch(gitRoot, prBranch)
 			log(done(`Switched to PR branch: ${highlight.branch(prBranch)}`))

@@ -1,9 +1,12 @@
 import { Effect } from "effect"
 import { GitService } from "../services/GitService"
-import { ConfigService } from "../services/ConfigService"
 import { setBaseBranchInMetadata, getBaseBranchFromMetadata } from "../types"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	ensureBranchExists,
+} from "../utils/effect"
 
 interface BaseOptions {
 	subcommand?: string
@@ -36,14 +39,11 @@ const baseSetEffect = (options: BaseSetOptions) =>
 		const gitRoot = yield* ensureGitRepo()
 
 		// Validate that the base branch exists
-		const exists = yield* git.branchExists(gitRoot, baseBranch)
-		if (!exists) {
-			return yield* Effect.fail(
-				new Error(
-					`Base branch ${highlight.branch(baseBranch)} does not exist. Please provide a valid branch name.`,
-				),
-			)
-		}
+		yield* ensureBranchExists(
+			gitRoot,
+			baseBranch,
+			`Base branch ${highlight.branch(baseBranch)} does not exist. Please provide a valid branch name.`,
+		)
 
 		if (repo) {
 			// Set repository-level default base branch in git config

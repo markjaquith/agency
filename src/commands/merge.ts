@@ -8,6 +8,7 @@ import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
 	ensureGitRepo,
+	ensureBranchExists,
 	getBaseBranchFromMetadataEffect,
 } from "../utils/effect"
 
@@ -75,15 +76,12 @@ export const merge = (options: MergeOptions = {}) =>
 				`Current branch appears to be a PR branch for source: ${highlight.branch(sourceBranch)}`,
 			)
 
-			const sourceExists = yield* git.branchExists(gitRoot, sourceBranch)
-			if (!sourceExists) {
-				return yield* Effect.fail(
-					new Error(
-						`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
-							`Cannot merge without a valid source branch.`,
-					),
-				)
-			}
+			yield* ensureBranchExists(
+				gitRoot,
+				sourceBranch,
+				`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
+					`Cannot merge without a valid source branch.`,
+			)
 
 			// Get the base branch from the source branch's agency.json
 			// We need to temporarily switch to the source branch to read its agency.json
@@ -106,15 +104,12 @@ export const merge = (options: MergeOptions = {}) =>
 			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
 
 			// Verify local base branch exists
-			const baseExists = yield* git.branchExists(gitRoot, baseBranchToMergeInto)
-			if (!baseExists) {
-				return yield* Effect.fail(
-					new Error(
-						`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
-							`You may need to checkout the branch first or update your base branch configuration.`,
-					),
-				)
-			}
+			yield* ensureBranchExists(
+				gitRoot,
+				baseBranchToMergeInto,
+				`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
+					`You may need to checkout the branch first or update your base branch configuration.`,
+			)
 
 			prBranchToMerge = currentBranch
 		} else {
@@ -155,15 +150,12 @@ export const merge = (options: MergeOptions = {}) =>
 			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
 
 			// Verify local base branch exists
-			const baseExists = yield* git.branchExists(gitRoot, baseBranchToMergeInto)
-			if (!baseExists) {
-				return yield* Effect.fail(
-					new Error(
-						`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
-							`You may need to checkout the branch first or update your base branch configuration.`,
-					),
-				)
-			}
+			yield* ensureBranchExists(
+				gitRoot,
+				baseBranchToMergeInto,
+				`Base branch ${highlight.branch(baseBranchToMergeInto)} does not exist locally.\n` +
+					`You may need to checkout the branch first or update your base branch configuration.`,
+			)
 
 			prBranchToMerge = prBranch
 		}

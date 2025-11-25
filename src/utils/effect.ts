@@ -4,6 +4,27 @@ import { getBaseBranchFromMetadata } from "../types"
 import highlight from "./colors"
 
 /**
+ * Ensure a branch exists, failing with an error if it doesn't
+ */
+export function ensureBranchExists(
+	gitRoot: string,
+	branch: string,
+	errorMessage?: string,
+) {
+	return Effect.gen(function* () {
+		const git = yield* GitService
+		const exists = yield* git.branchExists(gitRoot, branch)
+		if (!exists) {
+			return yield* Effect.fail(
+				new Error(
+					errorMessage ?? `Branch ${highlight.branch(branch)} does not exist`,
+				),
+			)
+		}
+	})
+}
+
+/**
  * Create logging functions based on options
  */
 export function createLoggers(options: {
@@ -63,14 +84,7 @@ export function resolveBaseBranch(
 
 		// If explicitly provided, use it
 		if (providedBaseBranch) {
-			const exists = yield* git.branchExists(gitRoot, providedBaseBranch)
-			if (!exists) {
-				return yield* Effect.fail(
-					new Error(
-						`Provided base branch ${highlight.branch(providedBaseBranch)} does not exist`,
-					),
-				)
-			}
+			yield* ensureBranchExists(gitRoot, providedBaseBranch)
 			return providedBaseBranch
 		}
 
