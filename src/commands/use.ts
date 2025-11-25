@@ -50,31 +50,10 @@ export const use = (options: UseOptions = {}) =>
 				log(`Current template: ${highlight.template(currentTemplate)}`)
 			}
 
-			log("\nAvailable templates:")
-			templates.forEach((t, i) => {
-				const current = t === currentTemplate ? " (current)" : ""
-				log(`  ${highlight.value(i + 1)}. ${highlight.template(t)}${current}`)
+			templateName = yield* promptService.promptForTemplate(templates, {
+				currentTemplate: currentTemplate ?? undefined,
+				allowNew: false,
 			})
-
-			const answer = yield* promptService.prompt(
-				"\nTemplate name (or number): ",
-			)
-
-			if (!answer) {
-				return yield* Effect.fail(new Error("Template name is required."))
-			}
-
-			// Check if answer is a number (template selection)
-			const num = parseInt(answer, 10)
-			if (!isNaN(num) && num >= 1 && num <= templates.length) {
-				templateName = templates[num - 1]!
-			} else {
-				templateName = answer
-			}
-		}
-
-		if (!templateName) {
-			return yield* Effect.fail(new Error("Template name is required."))
 		}
 
 		verboseLog(`Setting template to: ${templateName}`)

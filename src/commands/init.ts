@@ -59,35 +59,19 @@ export const init = (options: InitOptions = {}) =>
 				verboseLog(`Suggesting default template name: ${defaultTemplateName}`)
 			}
 
-			if (existingTemplates.length > 0) {
-				log("\nAvailable templates:")
-				existingTemplates.forEach((t, i) => {
-					log(`  ${highlight.value(i + 1)}. ${highlight.template(t)}`)
-				})
-				log("")
-			}
-
-			const answer = yield* promptService.prompt(
-				existingTemplates.length > 0
-					? `Template name (1-${existingTemplates.length}) or enter new name: `
-					: "Template name: ",
-				defaultTemplateName,
+			const selectedName = yield* promptService.promptForTemplate(
+				existingTemplates,
+				{
+					defaultValue: defaultTemplateName,
+					allowNew: true,
+				},
 			)
 
-			if (!answer) {
-				return yield* Effect.fail(new Error("Template name is required."))
-			}
-
-			// Check if answer is a number (template selection)
-			const num = parseInt(answer, 10)
-			if (!isNaN(num) && num >= 1 && num <= existingTemplates.length) {
-				const selected = existingTemplates[num - 1]
-				if (!selected) {
-					return yield* Effect.fail(new Error("Invalid selection"))
-				}
-				templateName = selected
+			// If selected from list, use as-is; otherwise sanitize new name
+			if (existingTemplates.includes(selectedName)) {
+				templateName = selectedName
 			} else {
-				templateName = yield* promptService.sanitizeTemplateName(answer)
+				templateName = yield* promptService.sanitizeTemplateName(selectedName)
 			}
 
 			verboseLog(`Selected template: ${templateName}`)

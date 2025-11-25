@@ -1,5 +1,6 @@
 import { Effect, Data } from "effect"
 import { createInterface } from "node:readline"
+import highlight from "../utils/colors"
 
 // Error types for Prompt operations
 class PromptError extends Data.TaggedError("PromptError")<{
@@ -94,6 +95,88 @@ export class PromptService extends Effect.Service<PromptService>()(
 						.replace(/-+/g, "-")
 						.replace(/^-|-$/g, "")
 						.toLowerCase()
+				}),
+
+			/**
+			 * Prompt user to select a template from a list.
+			 * Returns the selected template name or a new name entered by user.
+			 */
+			promptForTemplate: (
+				templates: readonly string[],
+				options?: {
+					readonly currentTemplate?: string
+					readonly defaultValue?: string
+					readonly allowNew?: boolean
+				},
+			) =>
+				Effect.tryPromise({
+					try: () =>
+						new Promise<string>((resolve, reject) => {
+							const {
+								currentTemplate,
+								defaultValue,
+								allowNew = true,
+							} = options ?? {}
+
+							// Display template list
+							if (templates.length > 0) {
+								console.log("\nAvailable templates:")
+								templates.forEach((t, i) => {
+									const current = t === currentTemplate ? " (current)" : ""
+									console.log(
+										`  ${highlight.value(i + 1)}. ${highlight.template(t)}${current}`,
+									)
+								})
+								console.log("")
+							}
+
+							const rl = createInterface({
+								input: process.stdin,
+								output: process.stdout,
+							})
+
+							const promptText =
+								templates.length > 0
+									? allowNew
+										? `Template name (1-${templates.length}) or enter new name: `
+										: `Template name (or number): `
+									: "Template name: "
+
+							rl.question(promptText, (answer) => {
+								rl.close()
+
+								const trimmed = answer.trim()
+								if (!trimmed) {
+									reject(new Error("Template name is required."))
+									return
+								}
+
+								// Check if answer is a number (template selection)
+								const num = parseInt(trimmed, 10)
+								if (!isNaN(num) && num >= 1 && num <= templates.length) {
+									const selected = templates[num - 1]
+									if (!selected) {
+										reject(new Error("Invalid selection"))
+										return
+									}
+									resolve(selected)
+									return
+								}
+
+								// Otherwise treat as template name
+								resolve(trimmed)
+							})
+
+							// Pre-fill default value if provided
+							if (defaultValue) {
+								rl.write(defaultValue)
+							}
+						}),
+					catch: (error) =>
+						new PromptError({
+							message: "Failed to prompt user for template selection",
+							cause: error,
+						}),
 				}),
 		}),
 	},
