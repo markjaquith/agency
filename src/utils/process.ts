@@ -3,7 +3,7 @@ import { Effect, Data } from "effect"
 /**
  * Result of a process execution
  */
-export interface ProcessResult {
+interface ProcessResult {
 	readonly stdout: string
 	readonly stderr: string
 	readonly exitCode: number
@@ -12,7 +12,7 @@ export interface ProcessResult {
 /**
  * Options for spawning a process
  */
-export interface SpawnOptions {
+interface SpawnOptions {
 	readonly cwd?: string
 	readonly stdout?: "pipe" | "inherit"
 	readonly stderr?: "pipe" | "inherit"
@@ -70,16 +70,6 @@ export const spawnProcess = (
 				stderr: error instanceof Error ? error.message : String(error),
 			}),
 	})
-
-/**
- * Helper to check if a process result indicates success (exit code 0)
- */
-export const checkExitCode =
-	<E>(errorMapper: (result: ProcessResult) => E) =>
-	(result: ProcessResult): Effect.Effect<ProcessResult, E> =>
-		result.exitCode === 0
-			? Effect.succeed(result)
-			: Effect.fail(errorMapper(result))
 
 /**
  * Helper to check exit code and return stdout on success
