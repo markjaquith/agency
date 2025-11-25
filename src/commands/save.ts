@@ -27,42 +27,6 @@ function isDirectory(filePath: string): Effect.Effect<boolean, Error> {
 	})
 }
 
-function collectFilesRecursively(
-	dirPath: string,
-	gitRoot: string,
-): Effect.Effect<string[], Error> {
-	return Effect.tryPromise({
-		try: async () => {
-			const files: string[] = []
-
-			// Use find to recursively get all files
-			const result = Bun.spawnSync(["find", dirPath, "-type", "f"], {
-				stdout: "pipe",
-				stderr: "ignore",
-			})
-
-			const output = new TextDecoder().decode(result.stdout)
-			if (output) {
-				const foundFiles = output
-					.trim()
-					.split("\n")
-					.filter((f: string) => f.length > 0)
-
-				for (const file of foundFiles) {
-					// Get relative path from git root
-					const relativePath = file.replace(gitRoot + "/", "")
-					if (relativePath) {
-						files.push(relativePath)
-					}
-				}
-			}
-
-			return files
-		},
-		catch: (error) => new Error(`Failed to collect files: ${error}`),
-	})
-}
-
 export const save = (options: SaveOptions = {}) =>
 	Effect.gen(function* () {
 		const { files: filesToSave = [] } = options
@@ -99,7 +63,9 @@ export const save = (options: SaveOptions = {}) =>
 
 				if (isDir) {
 					// Recursively collect files from directory
-					const collected = yield* collectFilesRecursively(fullPath, gitRoot)
+					const collected = yield* fs.collectFiles(fullPath, {
+						relativeTo: gitRoot,
+					})
 					filesToProcess.push(...collected)
 				} else {
 					// Add file path relative to git root

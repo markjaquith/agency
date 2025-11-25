@@ -164,6 +164,55 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 							cause: error,
 						}),
 				}),
+
+			/**
+			 * Recursively collect all files in a directory.
+			 * Returns paths relative to the directory (or relativeTo if specified).
+			 */
+			collectFiles: (
+				dirPath: string,
+				options?: {
+					readonly relativeTo?: string
+					readonly exclude?: readonly string[]
+					readonly sort?: boolean
+				},
+			) =>
+				Effect.tryPromise({
+					try: async () => {
+						const { relativeTo, exclude = [], sort = false } = options ?? {}
+						const basePath = relativeTo ?? dirPath
+
+						// Build find command with exclusions
+						const findArgs = ["find", dirPath, "-type", "f"]
+						for (const pattern of exclude) {
+							findArgs.push("!", "-name", pattern)
+						}
+
+						const result = Bun.spawnSync(findArgs, {
+							stdout: "pipe",
+							stderr: "ignore",
+						})
+
+						const output = new TextDecoder().decode(result.stdout)
+						if (!output) {
+							return []
+						}
+
+						const files = output
+							.trim()
+							.split("\n")
+							.filter((f: string) => f.length > 0)
+							.map((file) => file.replace(basePath + "/", ""))
+							.filter((f) => f.length > 0)
+
+						return sort ? files.sort() : files
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to collect files from ${dirPath}`,
+							cause: error,
+						}),
+				}),
 		}),
 	},
 ) {}

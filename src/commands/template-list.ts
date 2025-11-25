@@ -8,49 +8,12 @@ import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
 interface ListOptions extends BaseCommandOptions {}
 
-function collectFilesRecursively(
-	dirPath: string,
-): Effect.Effect<string[], Error> {
-	return Effect.tryPromise({
-		try: async () => {
-			const files: string[] = []
-
-			// Use find to recursively get all files, excluding .gitkeep
-			const result = Bun.spawnSync(
-				["find", dirPath, "-type", "f", "!", "-name", ".gitkeep"],
-				{
-					stdout: "pipe",
-					stderr: "ignore",
-				},
-			)
-
-			const output = new TextDecoder().decode(result.stdout)
-			if (output) {
-				const foundFiles = output
-					.trim()
-					.split("\n")
-					.filter((f: string) => f.length > 0)
-
-				for (const file of foundFiles) {
-					// Get relative path from template directory
-					const relativePath = file.replace(dirPath + "/", "")
-					if (relativePath) {
-						files.push(relativePath)
-					}
-				}
-			}
-
-			return files.sort()
-		},
-		catch: (error) => new Error(`Failed to collect files: ${error}`),
-	})
-}
-
 export const templateList = (options: ListOptions = {}) =>
 	Effect.gen(function* () {
 		const { log, verboseLog } = createLoggers(options)
 
 		const templateService = yield* TemplateService
+		const fs = yield* FileSystemService
 
 		const gitRoot = yield* ensureGitRepo()
 
@@ -84,7 +47,10 @@ export const templateList = (options: ListOptions = {}) =>
 		}
 
 		// Collect all files recursively
-		const files = yield* collectFilesRecursively(templateDir)
+		const files = yield* fs.collectFiles(templateDir, {
+			exclude: [".gitkeep"],
+			sort: true,
+		})
 
 		if (files.length === 0) {
 			log(`Template ${highlight.template(templateName)} has no files`)
