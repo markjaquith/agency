@@ -1,7 +1,39 @@
-import { Effect } from "effect"
+import { Effect, Data } from "effect"
 import { GitService } from "../services/GitService"
 import { getBaseBranchFromMetadata } from "../types"
 import highlight from "./colors"
+
+/**
+ * Helper to create a generic error catch function for Effect.tryPromise
+ * This reduces boilerplate for common error handling patterns
+ */
+export const catchAs =
+	<E extends { message: string; cause?: unknown }>(
+		ErrorConstructor: new (args: { message: string; cause?: unknown }) => E,
+	) =>
+	(message: string) =>
+	(error: unknown): E =>
+		new ErrorConstructor({
+			message,
+			cause: error,
+		})
+
+/**
+ * Helper to wrap Effect.tryPromise with a consistent error type
+ * Usage: tryPromiseWith(MyError, "error message", () => someAsyncOperation())
+ */
+export const tryPromiseWith = <
+	A,
+	E extends { message: string; cause?: unknown },
+>(
+	ErrorConstructor: new (args: { message: string; cause?: unknown }) => E,
+	message: string,
+	fn: () => Promise<A>,
+): Effect.Effect<A, E> =>
+	Effect.tryPromise({
+		try: fn,
+		catch: catchAs(ErrorConstructor)(message),
+	})
 
 /**
  * Ensure a branch exists, failing with an error if it doesn't
@@ -44,8 +76,9 @@ export function createLoggers(options: {
 export function ensureGitRepo() {
 	return Effect.gen(function* () {
 		const git = yield* GitService
+		const cwd = process.cwd()
 
-		const isGitRepo = yield* git.isInsideGitRepo(process.cwd())
+		const isGitRepo = yield* git.isInsideGitRepo(cwd)
 		if (!isGitRepo) {
 			return yield* Effect.fail(
 				new Error(
@@ -54,7 +87,7 @@ export function ensureGitRepo() {
 			)
 		}
 
-		return yield* git.getGitRoot(process.cwd())
+		return yield* git.getGitRoot(cwd)
 	})
 }
 
@@ -62,10 +95,9 @@ export function ensureGitRepo() {
  * Get the configured template name for the current repository
  */
 export function getTemplateName(gitRoot: string) {
-	return Effect.gen(function* () {
-		const git = yield* GitService
-		return yield* git.getGitConfig("agency.template", gitRoot)
-	})
+	return Effect.flatMap(GitService, (git) =>
+		git.getGitConfig("agency.template", gitRoot),
+	)
 }
 
 /**

@@ -1,6 +1,12 @@
 import { Effect, Data, pipe } from "effect"
 import { resolve } from "path"
 import { realpath } from "fs/promises"
+import {
+	spawnProcess,
+	checkExitCodeAndReturnStdout,
+	checkExitCodeAndReturnVoid,
+	createErrorMapper,
+} from "../utils/process"
 
 // Error types for Git operations
 class GitError extends Data.TaggedError("GitError")<{
@@ -18,84 +24,35 @@ export class GitCommandError extends Data.TaggedError("GitCommandError")<{
 	stderr: string
 }> {}
 
-// Generic helper to spawn a process with proper error handling
-const spawnProcess = (
-	args: readonly string[],
-	cwd: string,
-	options?: {
-		readonly stdout?: "pipe" | "inherit"
-		readonly stderr?: "pipe" | "inherit"
-	},
-) =>
-	Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn([...args], {
-				cwd,
-				stdout: options?.stdout ?? "pipe",
-				stderr: options?.stderr ?? "pipe",
-			})
-
-			await proc.exited
-
-			const stdout =
-				options?.stdout === "inherit"
-					? ""
-					: await new Response(proc.stdout).text()
-			const stderr =
-				options?.stderr === "inherit"
-					? ""
-					: await new Response(proc.stderr).text()
-
-			return {
-				stdout: stdout.trim(),
-				stderr: stderr.trim(),
-				exitCode: proc.exitCode ?? 0,
-			}
-		},
-		catch: (error) =>
-			new GitCommandError({
-				command: args.join(" "),
-				exitCode: -1,
-				stderr: error instanceof Error ? error.message : String(error),
-			}),
-	})
+// Error mapper for git command failures
+const mapToGitCommandError = createErrorMapper(GitCommandError)
 
 // Helper to run git commands with proper error handling
 const runGitCommand = (args: readonly string[], cwd: string) =>
-	spawnProcess(args, cwd)
+	pipe(
+		spawnProcess(args, { cwd }),
+		Effect.mapError(
+			(processError) =>
+				new GitCommandError({
+					command: processError.command,
+					exitCode: processError.exitCode,
+					stderr: processError.stderr,
+				}),
+		),
+	)
 
 // Helper to run git commands and check exit code
 const runGitCommandOrFail = (args: readonly string[], cwd: string) =>
 	pipe(
 		runGitCommand(args, cwd),
-		Effect.flatMap((result) =>
-			result.exitCode === 0
-				? Effect.succeed(result.stdout)
-				: Effect.fail(
-						new GitCommandError({
-							command: args.join(" "),
-							exitCode: result.exitCode,
-							stderr: result.stderr,
-						}),
-					),
-		),
+		Effect.flatMap(checkExitCodeAndReturnStdout(mapToGitCommandError(args))),
 	)
 
 // Helper to run git commands that return void
 const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 	pipe(
 		runGitCommand(args, cwd),
-		Effect.flatMap((result) =>
-			result.exitCode === 0
-				? Effect.void
-				: Effect.fail(
-						new GitCommandError({
-							command: args.join(" "),
-							exitCode: result.exitCode,
-							stderr: result.stderr,
-						}),
-					),
-		),
+		Effect.flatMap(checkExitCodeAndReturnVoid(mapToGitCommandError(args))),
 	)
 
 // Helper to get git config value
@@ -177,68 +134,53 @@ const findMainBranchEffect = (gitRoot: string) =>
 export class GitService extends Effect.Service<GitService>()("GitService", {
 	sync: () => ({
 		isInsideGitRepo: (path: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(
-						["git", "rev-parse", "--is-inside-work-tree"],
-						{
-							cwd: path,
-							stdout: "pipe",
-							stderr: "pipe",
-						},
-					)
-					await proc.exited
-					return proc.exitCode === 0
-				},
-				catch: () =>
-					new GitError({ message: "Failed to check git repo status" }),
-			}),
+			pipe(
+				spawnProcess(["git", "rev-parse", "--is-inside-work-tree"], {
+					cwd: path,
+				}),
+				Effect.map((result) => result.exitCode === 0),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to check git repo status" }),
+				),
+			),
 
 		getGitRoot: (path: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
-						cwd: path,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-
-					await proc.exited
-
-					if (proc.exitCode !== 0) {
-						throw new Error("Not in git repo")
-					}
-
-					const output = await new Response(proc.stdout).text()
-					return output.trim()
-				},
-				catch: () => new NotInGitRepoError({ path }),
-			}),
+			pipe(
+				spawnProcess(["git", "rev-parse", "--show-toplevel"], { cwd: path }),
+				Effect.flatMap((result) =>
+					result.exitCode === 0
+						? Effect.succeed(result.stdout)
+						: Effect.fail(new NotInGitRepoError({ path })),
+				),
+				Effect.mapError(() => new NotInGitRepoError({ path })),
+			),
 
 		isGitRoot: (path: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const absolutePath = await realpath(resolve(path))
+			Effect.gen(function* () {
+				const absolutePath = yield* Effect.tryPromise({
+					try: () => realpath(resolve(path)),
+					catch: () => new GitError({ message: "Failed to check if git root" }),
+				})
 
-					const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
+				const result = yield* pipe(
+					spawnProcess(["git", "rev-parse", "--show-toplevel"], {
 						cwd: absolutePath,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
+					}),
+					Effect.mapError(
+						() => new GitError({ message: "Failed to check if git root" }),
+					),
+				)
 
-					await proc.exited
+				if (result.exitCode !== 0) {
+					return false
+				}
 
-					if (proc.exitCode !== 0) {
-						return false
-					}
+				const gitRootReal = yield* Effect.tryPromise({
+					try: () => realpath(result.stdout),
+					catch: () => new GitError({ message: "Failed to check if git root" }),
+				})
 
-					const output = await new Response(proc.stdout).text()
-					const gitRoot = output.trim()
-
-					const gitRootReal = await realpath(gitRoot)
-					return gitRootReal === absolutePath
-				},
-				catch: () => new GitError({ message: "Failed to check if git root" }),
+				return gitRootReal === absolutePath
 			}),
 
 		getGitConfig: (key: string, gitRoot: string) =>
@@ -416,32 +358,24 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			),
 
 		unsetGitConfig: (key: string, gitRoot: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(["git", "config", "--unset", key], {
-						cwd: gitRoot,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-					await proc.exited
-					// Ignore errors - the config might not exist, which is fine
-				},
-				catch: () => new GitError({ message: `Failed to unset config ${key}` }),
-			}),
+			pipe(
+				spawnProcess(["git", "config", "--unset", key], { cwd: gitRoot }),
+				Effect.asVoid,
+				// Ignore errors - the config might not exist, which is fine
+				Effect.mapError(
+					() => new GitError({ message: `Failed to unset config ${key}` }),
+				),
+			),
 
 		checkCommandExists: (command: string) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn(["which", command], {
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-					await proc.exited
-					return proc.exitCode === 0
-				},
-				catch: () =>
-					new GitError({ message: `Failed to check if ${command} exists` }),
-			}),
+			pipe(
+				spawnProcess(["which", command]),
+				Effect.map((result) => result.exitCode === 0),
+				Effect.mapError(
+					() =>
+						new GitError({ message: `Failed to check if ${command} exists` }),
+				),
+			),
 
 		runGitCommand: (
 			args: readonly string[],
@@ -452,36 +386,21 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				readonly captureOutput?: boolean
 			},
 		) =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn([...args], {
-						cwd: gitRoot,
-						stdout: options?.captureOutput ? "pipe" : "inherit",
-						stderr: "pipe",
-						env: options?.env
-							? { ...process.env, ...options.env }
-							: process.env,
-					})
-
-					await proc.exited
-
-					const stdout = options?.captureOutput
-						? await new Response(proc.stdout).text()
-						: ""
-					const stderr = await new Response(proc.stderr).text()
-
-					return {
-						stdout: stdout.trim(),
-						stderr: stderr.trim(),
-						exitCode: proc.exitCode ?? 0,
-					}
-				},
-				catch: (error) =>
-					new GitCommandError({
-						command: args.join(" "),
-						exitCode: -1,
-						stderr: error instanceof Error ? error.message : String(error),
-					}),
-			}),
+			pipe(
+				spawnProcess(args, {
+					cwd: gitRoot,
+					stdout: options?.captureOutput ? "pipe" : "inherit",
+					stderr: "pipe",
+					env: options?.env,
+				}),
+				Effect.mapError(
+					(processError) =>
+						new GitCommandError({
+							command: processError.command,
+							exitCode: processError.exitCode,
+							stderr: processError.stderr,
+						}),
+				),
+			),
 	}),
 }) {}

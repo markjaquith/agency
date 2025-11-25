@@ -1,5 +1,6 @@
-import { Effect, Data } from "effect"
+import { Effect, Data, pipe } from "effect"
 import { mkdir, copyFile as fsCopyFile, unlink } from "node:fs/promises"
+import { spawnProcess } from "../utils/process"
 
 // Error types for FileSystem operations
 class FileSystemError extends Data.TaggedError("FileSystemError")<{
@@ -111,24 +112,26 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 				}),
 
 			deleteDirectory: (path: string) =>
-				Effect.tryPromise({
-					try: async () => {
-						const proc = Bun.spawn(["rm", "-rf", path], {
-							stdout: "pipe",
-							stderr: "pipe",
-						})
-						await proc.exited
-						if (proc.exitCode !== 0) {
-							const stderr = await new Response(proc.stderr).text()
-							throw new Error(`Failed to delete directory: ${stderr}`)
-						}
-					},
-					catch: (error) =>
-						new FileSystemError({
-							message: `Failed to delete directory: ${path}`,
-							cause: error,
-						}),
-				}),
+				pipe(
+					spawnProcess(["rm", "-rf", path]),
+					Effect.flatMap((result) =>
+						result.exitCode === 0
+							? Effect.void
+							: Effect.fail(
+									new FileSystemError({
+										message: `Failed to delete directory: ${path}`,
+										cause: result.stderr,
+									}),
+								),
+					),
+					Effect.mapError(
+						(error) =>
+							new FileSystemError({
+								message: `Failed to delete directory: ${path}`,
+								cause: error,
+							}),
+					),
+				),
 
 			runCommand: (
 				args: readonly string[],
@@ -137,33 +140,20 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					readonly captureOutput?: boolean
 				},
 			) =>
-				Effect.tryPromise({
-					try: async () => {
-						const proc = Bun.spawn([...args], {
-							cwd: options?.cwd || process.cwd(),
-							stdout: options?.captureOutput ? "pipe" : "inherit",
-							stderr: "pipe",
-						})
-
-						await proc.exited
-
-						const stdout = options?.captureOutput
-							? await new Response(proc.stdout).text()
-							: ""
-						const stderr = await new Response(proc.stderr).text()
-
-						return {
-							stdout: stdout.trim(),
-							stderr: stderr.trim(),
-							exitCode: proc.exitCode ?? 0,
-						}
-					},
-					catch: (error) =>
-						new FileSystemError({
-							message: `Failed to run command: ${args.join(" ")}`,
-							cause: error,
-						}),
-				}),
+				pipe(
+					spawnProcess(args, {
+						cwd: options?.cwd,
+						stdout: options?.captureOutput ? "pipe" : "inherit",
+						stderr: "pipe",
+					}),
+					Effect.mapError(
+						(processError) =>
+							new FileSystemError({
+								message: `Failed to run command: ${args.join(" ")}`,
+								cause: processError,
+							}),
+					),
+				),
 
 			/**
 			 * Recursively collect all files in a directory.
