@@ -333,4 +333,49 @@ describe("push command", () => {
 			expect(logMessages.some((msg) => msg.includes("Pushed"))).toBe(true)
 		})
 	})
+
+	describe("--gh flag", () => {
+		test("handles gh CLI failure gracefully and continues", async () => {
+			// Capture error output
+			const originalError = console.error
+			let errorMessages: string[] = []
+			console.error = (msg: string) => {
+				errorMessages.push(msg)
+			}
+
+			// Should not throw - command should complete despite gh failure
+			// (gh will fail in test environment because there's no GitHub remote)
+			await runTestEffect(push({ baseBranch: "main", gh: true, silent: true }))
+
+			console.error = originalError
+
+			// Should be back on feature branch (command completes despite gh failure)
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
+
+			// Should have warned about gh failure
+			expect(
+				errorMessages.some((msg) => msg.includes("Failed to open GitHub PR")),
+			).toBe(true)
+		})
+
+		test("does not call gh when --gh flag is not set", async () => {
+			// Capture error output
+			const originalError = console.error
+			let errorMessages: string[] = []
+			console.error = (msg: string) => {
+				errorMessages.push(msg)
+			}
+
+			// Push without --gh flag
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
+
+			console.error = originalError
+
+			// Should be back on feature branch
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
+
+			// gh should NOT have been called (no error about GitHub PR)
+			expect(errorMessages.some((msg) => msg.includes("GitHub PR"))).toBe(false)
+		})
+	})
 })

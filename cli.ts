@@ -108,6 +108,7 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					force: options.force,
 					verbose: options.verbose,
+					gh: options.gh,
 				}),
 			)
 		},
@@ -399,6 +400,9 @@ try {
 				type: "string",
 			},
 			repo: {
+				type: "boolean",
+			},
+			gh: {
 				type: "boolean",
 			},
 		},

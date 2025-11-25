@@ -11,6 +11,7 @@ interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
 	branch?: string
 	force?: boolean
+	gh?: boolean
 }
 
 export const push = (options: PushOptions = {}) =>
@@ -96,10 +97,33 @@ export const push = (options: PushOptions = {}) =>
 			log(done(`Pushed ${highlight.branch(prBranchName)} to origin`))
 		}
 
-		// Step 3: Switch back to source branch
+		// Step 3 (optional): Open GitHub PR if --gh flag is set
+		if (options.gh) {
+			verboseLog("Step 3: Opening GitHub PR...")
+
+			const ghEither = yield* Effect.either(
+				openGitHubPR(gitRoot, prBranchName, {
+					verbose: options.verbose,
+				}),
+			)
+
+			if (Either.isLeft(ghEither)) {
+				const error = ghEither.left
+				// Don't fail the entire command if gh fails, just warn
+				console.error(
+					`⚠ Failed to open GitHub PR: ${error instanceof Error ? error.message : String(error)}`,
+				)
+			} else {
+				log(done("Opened GitHub PR in browser"))
+			}
+		}
+
+		// Step 4: Switch back to source branch
 		// We switch back directly to the source branch we started on,
 		// rather than using the source command, to support custom branch names
-		verboseLog("Step 3: Switching back to source branch...")
+		verboseLog(
+			`Step ${options.gh ? "4" : "3"}: Switching back to source branch...`,
+		)
 
 		yield* git.checkoutBranch(gitRoot, sourceBranch)
 
@@ -186,15 +210,46 @@ const pushBranchToRemoteEffect = (
 		return usedForce
 	})
 
+// Helper: Open GitHub PR using gh CLI
+const openGitHubPR = (
+	gitRoot: string,
+	branchName: string,
+	options: {
+		readonly verbose?: boolean
+	},
+) =>
+	Effect.gen(function* () {
+		const { verbose = false } = options
+
+		// Run gh pr create --web to open PR in browser
+		const ghProc = Bun.spawn(["gh", "pr", "create", "--web"], {
+			cwd: gitRoot,
+			stdout: verbose ? "inherit" : "pipe",
+			stderr: "pipe",
+		})
+
+		yield* Effect.promise(() => ghProc.exited)
+
+		if (ghProc.exitCode !== 0) {
+			const stderr = yield* Effect.promise(() =>
+				new Response(ghProc.stderr).text(),
+			)
+			return yield* Effect.fail(
+				new Error(`gh CLI command failed: ${stderr.trim()}`),
+			)
+		}
+	})
+
 export const help = `
 Usage: agency push [base-branch] [options]
 
 Create a PR branch, push it to remote, and return to the source branch.
 
-This command is a convenience wrapper that runs three operations in sequence:
+This command is a convenience wrapper that runs operations in sequence:
   1. agency pr [base-branch]  - Create PR branch with managed files reverted
   2. git push -u origin <pr-branch>  - Push PR branch to remote
-  3. git checkout <source-branch>  - Switch back to source branch
+  3. gh pr create --web (optional with --gh)  - Open GitHub PR in browser
+  4. git checkout <source-branch>  - Switch back to source branch
 
 The command ensures you end up back on your source branch after pushing
 the PR branch, making it easy to continue working locally while having
@@ -214,11 +269,13 @@ Arguments:
 Options:
   -b, --branch      Custom name for PR branch (defaults to pattern from config)
   -f, --force       Force push to remote if branch has diverged
+  --gh              Open GitHub PR in browser after pushing (requires gh CLI)
 
 Examples:
   agency push                          # Create PR, push, return to source
   agency push origin/main              # Explicitly use origin/main as base
   agency push --force                  # Force push if branch has diverged
+  agency push --gh                     # Push and open GitHub PR in browser
 
 Notes:
   - Must be run from a source branch (not a PR branch)
