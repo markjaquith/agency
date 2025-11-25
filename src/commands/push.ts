@@ -84,19 +84,7 @@ export const push = (options: PushOptions = {}) =>
 			verboseLog(
 				"Push failed, switching back to source branch before reporting error...",
 			)
-			const checkoutEffect = Effect.tryPromise({
-				try: async () => {
-					const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
-						cwd: gitRoot,
-						stdout: "pipe",
-						stderr: "pipe",
-					})
-					await checkoutProc.exited
-				},
-				catch: (error) =>
-					new Error(`Failed to checkout source branch: ${error}`),
-			})
-			yield* checkoutEffect
+			yield* git.checkoutBranch(gitRoot, sourceBranch)
 			return yield* Effect.fail(error)
 		}
 
@@ -113,22 +101,7 @@ export const push = (options: PushOptions = {}) =>
 		// rather than using the source command, to support custom branch names
 		verboseLog("Step 3: Switching back to source branch...")
 
-		const checkoutEffect = Effect.tryPromise({
-			try: async () => {
-				const checkoutProc = Bun.spawn(["git", "checkout", sourceBranch], {
-					cwd: gitRoot,
-					stdout: "pipe",
-					stderr: "pipe",
-				})
-				await checkoutProc.exited
-			},
-			catch: (error) => error as Error,
-		})
-
-		const checkoutEither = yield* Effect.either(checkoutEffect)
-		if (Either.isLeft(checkoutEither)) {
-			return yield* Effect.fail(checkoutEither.left)
-		}
+		yield* git.checkoutBranch(gitRoot, sourceBranch)
 
 		log(
 			done(`Switched back to source branch: ${highlight.branch(sourceBranch)}`),

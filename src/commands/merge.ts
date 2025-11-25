@@ -23,29 +23,21 @@ const mergeBranchEffect = (
 	squash: boolean = false,
 ) =>
 	Effect.gen(function* () {
-		const args = ["git", "merge"]
-		if (squash) {
-			args.push("--squash")
-		}
-		args.push(branch)
+		const git = yield* GitService
+		const args = squash
+			? ["git", "merge", "--squash", branch]
+			: ["git", "merge", branch]
 
-		const proc = Bun.spawn(args, {
-			cwd: gitRoot,
-			stdout: "pipe",
-			stderr: "pipe",
+		const result = yield* git.runGitCommand(args, gitRoot, {
+			captureOutput: true,
 		})
 
-		yield* Effect.promise(() => proc.exited)
-
-		if (proc.exitCode !== 0) {
-			const stderr = yield* Effect.promise(() =>
-				new Response(proc.stderr).text(),
-			)
+		if (result.exitCode !== 0) {
 			return yield* Effect.fail(
 				new GitCommandError({
 					command: args.join(" "),
-					exitCode: proc.exitCode || 1,
-					stderr,
+					exitCode: result.exitCode,
+					stderr: result.stderr,
 				}),
 			)
 		}
