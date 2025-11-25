@@ -1,9 +1,8 @@
 import { Effect, Data } from "effect"
 import { Schema } from "@effect/schema"
-import { homedir } from "node:os"
-import { join } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { AgencyConfig } from "../schemas"
+import { getAgencyConfigDir, getAgencyConfigPath } from "../utils/paths"
 
 // Error types for Config operations
 class ConfigError extends Data.TaggedError("ConfigError")<{
@@ -20,36 +19,19 @@ const DEFAULT_CONFIG: AgencyConfig = new AgencyConfig({
 	prBranch: "%branch%--PR",
 })
 
-// Helper to get config directory
-const getConfigDir = (): string => {
-	// Allow override for testing
-	if (process.env.AGENCY_CONFIG_DIR) {
-		return process.env.AGENCY_CONFIG_DIR
-	}
-	return join(homedir(), ".config", "agency")
-}
-
-// Helper to get config file path
-const getConfigPath = (): string => {
-	// Allow override for testing
-	if (process.env.AGENCY_CONFIG_PATH) {
-		return process.env.AGENCY_CONFIG_PATH
-	}
-	return join(getConfigDir(), "agency.json")
-}
-
 // Config Service using Effect.Service pattern
 export class ConfigService extends Effect.Service<ConfigService>()(
 	"ConfigService",
 	{
 		sync: () => ({
-			getConfigDir: () => Effect.sync(() => getConfigDir()),
+			getConfigDir: () => Effect.sync(() => getAgencyConfigDir()),
 
-			getConfigPath: () => Effect.sync(() => getConfigPath()),
+			getConfigPath: () => Effect.sync(() => getAgencyConfigPath()),
 
 			loadConfig: (configPath?: string) =>
 				Effect.gen(function* () {
-					const path = configPath || (yield* Effect.sync(() => getConfigPath()))
+					const path =
+						configPath || (yield* Effect.sync(() => getAgencyConfigPath()))
 
 					// Check if file exists
 					const file = Bun.file(path)
@@ -91,10 +73,11 @@ export class ConfigService extends Effect.Service<ConfigService>()(
 
 			saveConfig: (config: AgencyConfig, configPath?: string) =>
 				Effect.gen(function* () {
-					const path = configPath || (yield* Effect.sync(() => getConfigPath()))
+					const path =
+						configPath || (yield* Effect.sync(() => getAgencyConfigPath()))
 
 					// Ensure the config directory exists
-					const configDir = yield* Effect.sync(() => getConfigDir())
+					const configDir = yield* Effect.sync(() => getAgencyConfigDir())
 
 					yield* Effect.tryPromise({
 						try: () => mkdir(configDir, { recursive: true }),
