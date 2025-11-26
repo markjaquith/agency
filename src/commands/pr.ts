@@ -45,27 +45,26 @@ export const pr = (options: PrOptions = {}) =>
 		const config = yield* configService.loadConfig()
 
 		// Get current branch
-		const currentBranch = yield* git.getCurrentBranch(gitRoot)
+		let currentBranch = yield* git.getCurrentBranch(gitRoot)
 
 		// Check if current branch looks like a PR branch already
 		const possibleSourceBranch = extractSourceBranch(
 			currentBranch,
 			config.prBranch,
 		)
-		if (possibleSourceBranch && !force) {
+		if (possibleSourceBranch) {
 			// Check if the possible source branch exists
 			const sourceExists = yield* git.branchExists(
 				gitRoot,
 				possibleSourceBranch,
 			)
 			if (sourceExists) {
-				return yield* Effect.fail(
-					new Error(
-						`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch for ${highlight.branch(possibleSourceBranch)}.\n` +
-							`Creating a PR branch from a PR branch is likely a mistake.\n` +
-							`Use --force to override this check.`,
-					),
+				// Switch to the source branch and continue
+				verboseLog(
+					`Currently on PR branch ${highlight.branch(currentBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
 				)
+				yield* git.checkoutBranch(gitRoot, possibleSourceBranch)
+				currentBranch = possibleSourceBranch
 			}
 		}
 

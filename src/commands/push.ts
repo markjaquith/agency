@@ -28,19 +28,28 @@ export const push = (options: PushOptions = {}) =>
 		const config = yield* configService.loadConfig()
 
 		// Get current branch (this is our source branch we'll return to)
-		const sourceBranch = yield* git.getCurrentBranch(gitRoot)
+		let sourceBranch = yield* git.getCurrentBranch(gitRoot)
 
 		// Check if we're already on a PR branch
-		const isOnPrBranch = extractSourceBranch(sourceBranch, config.prBranch)
+		const possibleSourceBranch = extractSourceBranch(
+			sourceBranch,
+			config.prBranch,
+		)
 
-		// If we're on a PR branch, throw an error
-		if (isOnPrBranch) {
-			return yield* Effect.fail(
-				new Error(
-					`Already on PR branch ${highlight.branch(sourceBranch)}. ` +
-						`Run 'agency source' first to switch to the source branch, then run 'agency push'.`,
-				),
+		// If we're on a PR branch, switch to the source branch first
+		if (possibleSourceBranch) {
+			// Check if the possible source branch exists
+			const sourceExists = yield* git.branchExists(
+				gitRoot,
+				possibleSourceBranch,
 			)
+			if (sourceExists) {
+				verboseLog(
+					`Currently on PR branch ${highlight.branch(sourceBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
+				)
+				yield* git.checkoutBranch(gitRoot, possibleSourceBranch)
+				sourceBranch = possibleSourceBranch
+			}
 		}
 
 		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)

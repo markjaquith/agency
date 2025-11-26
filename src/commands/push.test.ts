@@ -186,14 +186,29 @@ describe("push command", () => {
 	})
 
 	describe("error handling", () => {
-		test("throws error when already on PR branch", async () => {
-			// Create and switch to PR branch
-			await createBranch(tempDir, "feature--PR")
+		test("switches to source branch when run from PR branch", async () => {
+			// First create the PR branch from feature branch
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
-			// Try to run push from PR branch
-			await expect(
-				runTestEffect(push({ baseBranch: "main", silent: true })),
-			).rejects.toThrow(/Already on PR branch/)
+			// Now we're on feature, switch to the PR branch
+			await checkoutBranch(tempDir, "feature--PR")
+
+			// Verify we're on the PR branch
+			expect(await getCurrentBranch(tempDir)).toBe("feature--PR")
+
+			// Make a change on feature branch that we'll push
+			await checkoutBranch(tempDir, "feature")
+			await createCommit(tempDir, "Another feature commit")
+
+			// Switch back to PR branch
+			await checkoutBranch(tempDir, "feature--PR")
+
+			// Run push from PR branch - should detect we're on PR branch,
+			// switch to source (feature), and continue
+			await runTestEffect(push({ baseBranch: "main", silent: true }))
+
+			// Should be back on feature branch (the source branch)
+			expect(await getCurrentBranch(tempDir)).toBe("feature")
 		})
 
 		test("throws error when not in a git repository", async () => {
