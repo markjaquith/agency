@@ -226,7 +226,7 @@ export const task = (options: TaskOptions = {}) =>
 			yield* fs.writeFile(targetFilePath, content)
 			createdFiles.push(fileName)
 
-			// Track injected files (excluding TASK.md and AGENCY.md which are always filtered)
+			// Track backpack files (excluding TASK.md and AGENCY.md which are always filtered)
 			if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
 				injectedFiles.push(fileName)
 			}
@@ -282,9 +282,7 @@ export const task = (options: TaskOptions = {}) =>
 		if (baseBranch) {
 			log(info(`Base branch: ${highlight.branch(baseBranch)}`))
 		}
-		verboseLog(
-			`Tracked ${injectedFiles.length} injected file${plural(injectedFiles.length)}`,
-		)
+		verboseLog(`Tracked backpack file${plural(injectedFiles.length)}`)
 
 		// Git add and commit the created files
 		if (createdFiles.length > 0) {

@@ -94,7 +94,7 @@ export const pr = (options: PrOptions = {}) =>
 		yield* git.unsetGitConfig(`branch.${prBranchName}.merge`, gitRoot)
 
 		verboseLog(
-			`Filtering managed files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranchName)}`,
+			`Filtering backpack files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranchName)}`,
 		)
 		verboseLog(
 			`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
@@ -173,7 +173,7 @@ const createOrResetBranchEffect = (
 export const help = `
 Usage: agency pr [base-branch] [options]
 
-Create a PR branch from the current branch with managed files (AGENTS.md)
+Create a PR branch from the current branch with backpack files (AGENTS.md, TASK.md, etc.)
 reverted to their state on the base branch.
 
 This command creates a new branch (or recreates it if it exists) based on your current
@@ -233,7 +233,7 @@ Notes:
   - PR branch is created from your current branch (not the base)
   - Base branch is set when you run 'agency task' to initialize the feature branch
   - Only commits since the branch diverged are rewritten (uses merge-base range)
-  - Managed files are reverted to their merge-base state (or removed if they didn't exist)
+  - Backpack files are reverted to their merge-base state (or removed if they didn't exist)
   - Only commits from the base branch remain unchanged (shared history is preserved)
   - All commits from the base branch remain unchanged (shared history is preserved)
   - Original branch is never modified

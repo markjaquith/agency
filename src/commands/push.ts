@@ -255,7 +255,7 @@ Usage: agency push [base-branch] [options]
 Create a PR branch, push it to remote, and return to the source branch.
 
 This command is a convenience wrapper that runs operations in sequence:
-  1. agency pr [base-branch]  - Create PR branch with managed files reverted
+  1. agency pr [base-branch]  - Create PR branch with backpack files reverted
   2. git push -u origin <pr-branch>  - Push PR branch to remote
   3. gh pr create --web (optional with --gh)  - Open GitHub PR in browser
   4. git checkout <source-branch>  - Switch back to source branch

@@ -12,6 +12,7 @@ import { source, help as sourceHelp } from "./src/commands/source"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { template, help as templateHelp } from "./src/commands/template"
 import { work, help as workHelp } from "./src/commands/work"
+import { status, help as statusHelp } from "./src/commands/status"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -265,6 +266,24 @@ Example:
 		},
 		help: workHelp,
 	},
+	status: {
+		name: "status",
+		description: "Show agency status for this repository",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(statusHelp)
+				return
+			}
+			await runCommand(
+				status({
+					silent: options.silent,
+					verbose: options.verbose,
+					json: options.json,
+				}),
+			)
+		},
+		help: statusHelp,
+	},
 }
 
 function showMainHelp() {
@@ -284,7 +303,7 @@ Commands:
     list                   List all files in configured template
     view <file>            View contents of a file in template
     delete <file> ...      Delete files from configured template
-  pr [base-branch]       Create a PR branch with managed files reverted
+  pr [base-branch]       Create a PR branch with backpack files reverted
   push [base-branch]     Create PR branch, push to remote, return to source
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
@@ -292,6 +311,7 @@ Commands:
   switch                 Toggle between source and PR branch
   source                 Switch to source branch from PR branch
   merge                  Merge PR branch into base branch
+  status                 Show agency status for this repository
 
 Global Options:
   -h, --help             Show help for a command
@@ -398,6 +418,9 @@ try {
 			},
 			task: {
 				type: "string",
+			},
+			json: {
+				type: "boolean",
 			},
 			repo: {
 				type: "boolean",
