@@ -12,3 +12,7 @@ The `TASK.md` file describes the task being performed and should be kept updated
 All work on this repository should begin by reading and understanding `TASK.md`. Whenever any significant progress is made, `TASK.md` should be updated to reflect the current state of work.
 
 See `TASK.md` for the current task description and progress.
+
+## Commit Messages
+
+When creating commit messages, do not reference changes to `TASK.md`, `AGENTS.md`, or any files tracked in `agency.json` (such as `opencode.json`). These are project management and configuration files that should not be mentioned in commit messages. Focus commit messages on actual code changes, features, fixes, and refactoring.
