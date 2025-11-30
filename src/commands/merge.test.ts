@@ -363,4 +363,131 @@ describe("merge command", () => {
 			expect(log).toContain("Feature work")
 		})
 	})
+
+	describe("push flag", () => {
+		test("pushes base branch to origin when --push flag is set", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			// We're on feature branch (source)
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Get the current commit on main before merge
+			await Bun.spawn(["git", "checkout", "main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			const beforeCommitProc = Bun.spawn(["git", "rev-parse", "HEAD"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await beforeCommitProc.exited
+			const beforeCommit = (
+				await new Response(beforeCommitProc.stdout).text()
+			).trim()
+
+			// Go back to feature branch
+			await Bun.spawn(["git", "checkout", "feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Run merge with push flag
+			await runTestEffect(merge({ silent: true, push: true }))
+
+			// Should be on main branch after merge
+			const afterMergeBranch = await getCurrentBranch(tempDir)
+			expect(afterMergeBranch).toBe("main")
+
+			// Get the current commit on main after merge
+			const afterCommitProc = Bun.spawn(["git", "rev-parse", "HEAD"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await afterCommitProc.exited
+			const afterCommit = (
+				await new Response(afterCommitProc.stdout).text()
+			).trim()
+
+			// The commit should have changed (merge happened)
+			expect(afterCommit).not.toBe(beforeCommit)
+
+			// Verify that origin/main points to the same commit as local main
+			const originMainProc = Bun.spawn(["git", "rev-parse", "origin/main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await originMainProc.exited
+			const originMainCommit = (
+				await new Response(originMainProc.stdout).text()
+			).trim()
+
+			// origin/main should be at the same commit as local main (push succeeded)
+			expect(originMainCommit).toBe(afterCommit)
+		})
+
+		test("does not push when --push flag is not set", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			// We're on feature branch (source)
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Get the current commit on origin/main before merge
+			const beforeOriginProc = Bun.spawn(["git", "rev-parse", "origin/main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await beforeOriginProc.exited
+			const beforeOriginCommit = (
+				await new Response(beforeOriginProc.stdout).text()
+			).trim()
+
+			// Run merge without push flag
+			await runTestEffect(merge({ silent: true }))
+
+			// Should be on main branch after merge
+			const afterMergeBranch = await getCurrentBranch(tempDir)
+			expect(afterMergeBranch).toBe("main")
+
+			// Get the current commit on origin/main after merge
+			const afterOriginProc = Bun.spawn(["git", "rev-parse", "origin/main"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await afterOriginProc.exited
+			const afterOriginCommit = (
+				await new Response(afterOriginProc.stdout).text()
+			).trim()
+
+			// origin/main should still be at the same commit (no push happened)
+			expect(afterOriginCommit).toBe(beforeOriginCommit)
+
+			// But local main should have moved forward
+			const localMainProc = Bun.spawn(["git", "rev-parse", "HEAD"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await localMainProc.exited
+			const localMainCommit = (
+				await new Response(localMainProc.stdout).text()
+			).trim()
+
+			expect(localMainCommit).not.toBe(beforeOriginCommit)
+		})
+	})
 })

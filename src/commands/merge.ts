@@ -14,6 +14,7 @@ import {
 
 interface MergeOptions extends BaseCommandOptions {
 	squash?: boolean
+	push?: boolean
 }
 
 // Helper to merge a branch using git
@@ -45,7 +46,7 @@ const mergeBranchEffect = (
 
 export const merge = (options: MergeOptions = {}) =>
 	Effect.gen(function* () {
-		const { squash = false, verbose = false } = options
+		const { squash = false, push = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
@@ -175,6 +176,29 @@ export const merge = (options: MergeOptions = {}) =>
 				),
 			)
 		}
+
+		// Push the base branch if --push flag is set
+		if (push) {
+			verboseLog(`Pushing ${highlight.branch(baseBranchToMergeInto)}...`)
+
+			const pushResult = yield* git.runGitCommand(
+				["git", "push", "origin", baseBranchToMergeInto],
+				gitRoot,
+				{ captureOutput: true },
+			)
+
+			if (pushResult.exitCode !== 0) {
+				return yield* Effect.fail(
+					new GitCommandError({
+						command: `git push origin ${baseBranchToMergeInto}`,
+						exitCode: pushResult.exitCode,
+						stderr: pushResult.stderr,
+					}),
+				)
+			}
+
+			log(done(`Pushed ${highlight.branch(baseBranchToMergeInto)} to origin`))
+		}
 	})
 
 export const help = `
@@ -204,10 +228,12 @@ Prerequisites:
 
 Options:
   --squash                       # Use squash merge instead of regular merge
+  --push                         # Push the base branch to origin after merging
 
 Examples:
   agency merge                   # From source branch: creates PR branch then merges
   agency merge --squash          # Squash merge (stages changes, requires manual commit)
+  agency merge --push            # Merge and push the base branch to origin
 
 Notes:
   - The command determines the base branch from git config (agency.pr.<branch>.baseBranch)
@@ -216,4 +242,5 @@ Notes:
   - After merge, you remain on the base branch
   - Merge conflicts must be resolved manually if they occur
   - With --squash, changes are staged but not committed (you must commit manually)
+  - With --push, the base branch is pushed to origin after a successful merge
 `

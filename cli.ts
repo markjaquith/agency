@@ -192,7 +192,12 @@ const commands: Record<string, Command> = {
 				return
 			}
 			await runCommand(
-				merge({ silent: options.silent, verbose: options.verbose }),
+				merge({
+					silent: options.silent,
+					verbose: options.verbose,
+					squash: options.squash,
+					push: options.push,
+				}),
 			)
 		},
 		help: mergeHelp,
@@ -426,6 +431,12 @@ try {
 				type: "boolean",
 			},
 			gh: {
+				type: "boolean",
+			},
+			squash: {
+				type: "boolean",
+			},
+			push: {
 				type: "boolean",
 			},
 		},
