@@ -76,7 +76,7 @@ const commands: Record<string, Command> = {
 	},
 	emit: {
 		name: "emit",
-		description: "Create a PR branch without AGENTS.md",
+		description: "Create an emit branch without AGENTS.md",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(emitHelp)
@@ -96,7 +96,7 @@ const commands: Record<string, Command> = {
 	},
 	push: {
 		name: "push",
-		description: "Create PR branch, push to remote, return to source",
+		description: "Create emit branch, push to remote, return to source",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(pushHelp)
@@ -157,7 +157,7 @@ const commands: Record<string, Command> = {
 	},
 	switch: {
 		name: "switch",
-		description: "Toggle between source and PR branch",
+		description: "Toggle between source and emit branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(switchHelp)
@@ -171,7 +171,7 @@ const commands: Record<string, Command> = {
 	},
 	source: {
 		name: "source",
-		description: "Switch to source branch from PR branch",
+		description: "Switch to source branch from emit branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(sourceHelp)
@@ -185,7 +185,7 @@ const commands: Record<string, Command> = {
 	},
 	merge: {
 		name: "merge",
-		description: "Merge PR branch into base branch",
+		description: "Merge emit branch into base branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(mergeHelp)
@@ -308,14 +308,14 @@ Commands:
     list                   List all files in configured template
     view <file>            View contents of a file in template
     delete <file> ...      Delete files from configured template
-  emit [base-branch]     Create a PR branch with backpack files reverted
-  push [base-branch]     Create PR branch, push to remote, return to source
+  emit [base-branch]     Create an emit branch with backpack files reverted
+  push [base-branch]     Create emit branch, push to remote, return to source
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
     get                    Get the configured base branch
-  switch                 Toggle between source and PR branch
-  source                 Switch to source branch from PR branch
-  merge                  Merge PR branch into base branch
+  switch                 Toggle between source and emit branch
+  source                 Switch to source branch from emit branch
+  merge                  Merge emit branch into base branch
   status                 Show agency status for this repository
 
 Global Options:
@@ -329,8 +329,8 @@ Examples:
   agency init                         # Initialize with template (run first)
   agency task                         # Initialize on current feature branch
   agency task my-feature              # Create 'my-feature' branch and initialize
-  agency emit                         # Create PR branch (prompts for base branch)
-  agency switch                       # Toggle between source and PR branch
+  agency emit                         # Create emit branch (prompts for base branch)
+  agency switch                       # Toggle between source and emit branch
 
 For more information about a command, run:
   agency <command> --help

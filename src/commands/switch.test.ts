@@ -54,8 +54,8 @@ describe("switch command", () => {
 	})
 
 	describe("basic functionality", () => {
-		test("switches from PR branch to source branch", async () => {
-			// Create a PR branch
+		test("switches from emit branch to source branch", async () => {
+			// Create a emit branch
 			await createBranch(tempDir, "main--PR")
 
 			// Run switch command
@@ -66,8 +66,8 @@ describe("switch command", () => {
 			expect(currentBranch).toBe("main")
 		})
 
-		test("switches from source branch to PR branch", async () => {
-			// Create a PR branch first
+		test("switches from source branch to emit branch", async () => {
+			// Create a emit branch first
 			await createBranch(tempDir, "main--PR")
 
 			// Go back to main
@@ -82,7 +82,7 @@ describe("switch command", () => {
 		})
 
 		test("toggles back and forth", async () => {
-			// Create a PR branch
+			// Create a emit branch
 			await createBranch(tempDir, "main--PR")
 
 			// Switch to main
@@ -98,13 +98,13 @@ describe("switch command", () => {
 			expect(await getCurrentBranch(tempDir)).toBe("main")
 		})
 
-		test("works with custom PR branch pattern", async () => {
+		test("works with custom emit branch pattern", async () => {
 			// Create custom config
 			const configPath = join(tempDir, "custom-config.json")
 			await Bun.write(configPath, JSON.stringify({ emitBranch: "PR/%branch%" }))
 			process.env.AGENCY_CONFIG_PATH = configPath
 
-			// Create feature branch and its PR branch
+			// Create feature branch and its emit branch
 			await createBranch(tempDir, "feature")
 			await createCommit(tempDir, "Feature work")
 			await createBranch(tempDir, "PR/feature")
@@ -128,7 +128,7 @@ describe("switch command", () => {
 		})
 
 		test("throws error when source branch doesn't exist", async () => {
-			// Create PR branch but delete source
+			// Create emit branch but delete source
 			await createBranch(tempDir, "feature--PR")
 			// We never created 'feature', so it doesn't exist
 

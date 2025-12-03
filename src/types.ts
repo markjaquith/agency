@@ -52,16 +52,16 @@ Agency is a CLI tool for managing \`AGENTS.md\`, \`TASK.md\`, and \`opencode.jso
 - \`agency edit\` - Open TASK.md in system editor
 - \`agency template save\` - Save current file versions back to a template
 - \`agency template use\` - Switch to a different template
-- \`agency emit\` - Create a PR branch with managed files reverted to their merge-base state
-- \`agency switch\` - Toggle between feature and PR branches
+- \`agency emit\` - Create an emit branch with managed files reverted to their merge-base state
+- \`agency switch\` - Toggle between feature and emit branches
 - \`agency template source\` - Get the path to a template's source directory
-- \`agency set-base\` - Update the saved base branch for PR creation
+- \`agency set-base\` - Update the saved base branch for emit creation
 
 ## Features
 
 - **Template-based workflow** - Reusable templates stored in \`~/.config/agency/templates/\`
 - **Git integration** - Saves template configuration in \`.git/config\`
-- **PR branch management** - Automatically creates clean PR branches without local modifications
+- **Emit branch management** - Automatically creates clean emit branches without local modifications
 - **Multi-file support** - Manages AGENTS.md, TASK.md, and opencode.json
 `,
 		"TASK.md": `{task}

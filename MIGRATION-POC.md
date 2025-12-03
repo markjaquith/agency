@@ -96,8 +96,8 @@ await runTestEffect(pr({ silent: true }))
 **Updated Tests:**
 
 - ✅ "throws error when git-filter-repo is not installed"
-- ✅ "creates PR branch with default name"
-- ✅ "creates PR branch with custom name"
+- ✅ "creates emit branch with default name"
+- ✅ "creates emit branch with custom name"
 
 ### 4. Updated CLI (cli.ts)
 

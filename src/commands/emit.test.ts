@@ -117,7 +117,7 @@ describe("emit command", () => {
 			)
 		})
 
-		test("creates PR branch with default name", async () => {
+		test("creates emit branch with default name", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -131,10 +131,10 @@ describe("emit command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
-			// Check that PR branch exists
+			// Check that emit branch exists
 			const branches = await getGitOutput(tempDir, [
 				"branch",
 				"--list",
@@ -147,7 +147,7 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("feature")
 		})
 
-		test("creates PR branch with custom name", async () => {
+		test("creates emit branch with custom name", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -195,7 +195,7 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("feature")
 		})
 
-		test("preserves other files in PR branch", async () => {
+		test("preserves other files in emit branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -214,7 +214,7 @@ describe("emit command", () => {
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature")
 
-			// Switch to PR branch to verify files
+			// Switch to emit branch to verify files
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -228,7 +228,7 @@ describe("emit command", () => {
 			expect(files).toContain("test.txt")
 		})
 
-		test("removes AGENTS.md on PR branch even when not modified on feature branch", async () => {
+		test("removes AGENTS.md on emit branch even when not modified on feature branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -241,21 +241,21 @@ describe("emit command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature")
 
-			// Switch to PR branch to verify files
+			// Switch to emit branch to verify files
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
 			}).exited
 
-			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
+			// AGENCY.md is always filtered on emit branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).not.toContain("AGENTS.md")
 			expect(files).not.toContain("AGENCY.md")
@@ -264,7 +264,7 @@ describe("emit command", () => {
 			expect(files).toContain("test.txt")
 		})
 
-		test("removes AGENTS.md modifications on PR branch", async () => {
+		test("removes AGENTS.md modifications on emit branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -299,21 +299,21 @@ describe("emit command", () => {
 			).text()
 			expect(featureAgentsContent).toContain("Modified by feature branch")
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature")
 
-			// Switch to PR branch to verify files
+			// Switch to emit branch to verify files
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
 			}).exited
 
-			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
+			// AGENCY.md is always filtered on emit branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).not.toContain("AGENTS.md")
 			expect(files).not.toContain("AGENCY.md")
@@ -384,7 +384,7 @@ describe("emit command", () => {
 				stderr: "pipe",
 			}).exited
 
-			// Create PR branch
+			// Create emit branch
 			process.chdir(freshDir)
 			await runTestEffect(emit({ silent: true }))
 
@@ -392,7 +392,7 @@ describe("emit command", () => {
 			let branchName = await getCurrentBranch(freshDir)
 			expect(branchName).toBe("feature")
 
-			// Switch to PR branch to verify files
+			// Switch to emit branch to verify files
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: freshDir,
 				stdout: "pipe",
@@ -419,7 +419,7 @@ describe("emit command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
@@ -493,7 +493,7 @@ describe("emit command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			// Create PR branch with explicit base branch
+			// Create emit branch with explicit base branch
 			await runTestEffect(emit({ baseBranch: "main", silent: true }))
 
 			// Should stay on source branch
@@ -519,7 +519,7 @@ describe("emit command", () => {
 			).rejects.toThrow("does not exist")
 		})
 
-		test("handles PR branch recreation after source branch rebase", async () => {
+		test("handles emit branch recreation after source branch rebase", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -545,14 +545,14 @@ describe("emit command", () => {
 				"main",
 			])
 
-			// Create initial PR branch
+			// Create initial emit branch
 			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
 
 			// Should still be on test-feature branch
 			let currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("test-feature")
 
-			// Switch to PR branch to verify AGENTS.md is filtered
+			// Switch to emit branch to verify AGENTS.md is filtered
 			await Bun.spawn(["git", "checkout", "test-feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -612,14 +612,14 @@ describe("emit command", () => {
 			])
 			expect(newMergeBase.trim()).not.toBe(initialMergeBase.trim())
 
-			// Recreate PR branch after rebase (this is where the bug would manifest)
+			// Recreate emit branch after rebase (this is where the bug would manifest)
 			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
 
 			// Should still be on test-feature branch
 			currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("test-feature")
 
-			// Switch to PR branch to verify files
+			// Switch to emit branch to verify files
 			await Bun.spawn(["git", "checkout", "test-feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",

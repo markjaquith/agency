@@ -115,7 +115,7 @@ describe("merge command", () => {
 	})
 
 	describe("merge from source branch", () => {
-		test("creates PR branch and merges when run from source branch", async () => {
+		test("creates emit branch and merges when run from source branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -132,7 +132,7 @@ describe("merge command", () => {
 			const afterMergeBranch = await getCurrentBranch(tempDir)
 			expect(afterMergeBranch).toBe("main")
 
-			// PR branch should exist
+			// emit branch should exist
 			const prExists = await branchExists(tempDir, "feature--PR")
 			expect(prExists).toBe(true)
 
@@ -141,13 +141,13 @@ describe("merge command", () => {
 			expect(files).not.toContain("AGENTS.md")
 		})
 
-		test("recreates PR branch if it already exists", async () => {
+		test("recreates emit branch if it already exists", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
 			}
 
-			// Create PR branch first
+			// Create emit branch first
 			await runTestEffect(emit({ silent: true }))
 
 			// Go back to feature branch
@@ -160,7 +160,7 @@ describe("merge command", () => {
 			// Make additional changes
 			await createCommit(tempDir, "More feature work")
 
-			// Run merge - should recreate PR branch with new changes
+			// Run merge - should recreate emit branch with new changes
 			await runTestEffect(merge({ silent: true }))
 
 			// Should be on main after merge
@@ -169,17 +169,17 @@ describe("merge command", () => {
 		})
 	})
 
-	describe("merge from PR branch", () => {
-		test("merges PR branch directly when run from PR branch", async () => {
+	describe("merge from emit branch", () => {
+		test("merges emit branch directly when run from emit branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
 			}
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
-			// emit() now stays on source branch, so we need to checkout to PR branch
+			// emit() now stays on source branch, so we need to checkout to emit branch
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -202,16 +202,16 @@ describe("merge command", () => {
 			expect(files).not.toContain("AGENTS.md")
 		})
 
-		test("throws error if PR branch has no corresponding source branch", async () => {
+		test("throws error if emit branch has no corresponding source branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
 			}
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
-			// pr() now stays on source branch, so checkout to PR branch
+			// pr() now stays on source branch, so checkout to emit branch
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -250,7 +250,7 @@ describe("merge command", () => {
 				return
 			}
 
-			// Create PR branch
+			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
 			// Delete main branch (the base)

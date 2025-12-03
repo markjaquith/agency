@@ -24,19 +24,19 @@ export const push = (options: PushOptions = {}) =>
 
 		const gitRoot = yield* ensureGitRepo()
 
-		// Load config to check PR branch pattern
+		// Load config to check emit branch pattern
 		const config = yield* configService.loadConfig()
 
 		// Get current branch (this is our source branch we'll return to)
 		let sourceBranch = yield* git.getCurrentBranch(gitRoot)
 
-		// Check if we're already on a PR branch
+		// Check if we're already on a emit branch
 		const possibleSourceBranch = extractSourceBranch(
 			sourceBranch,
 			config.emitBranch,
 		)
 
-		// If we're on a PR branch, switch to the source branch first
+		// If we're on a emit branch, switch to the source branch first
 		if (possibleSourceBranch) {
 			// Check if the possible source branch exists
 			const sourceExists = yield* git.branchExists(
@@ -45,7 +45,7 @@ export const push = (options: PushOptions = {}) =>
 			)
 			if (sourceExists) {
 				verboseLog(
-					`Currently on PR branch ${highlight.branch(sourceBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
+					`Currently on emit branch ${highlight.branch(sourceBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
 				)
 				yield* git.checkoutBranch(gitRoot, possibleSourceBranch)
 				sourceBranch = possibleSourceBranch
@@ -54,8 +54,8 @@ export const push = (options: PushOptions = {}) =>
 
 		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
 
-		// Step 1: Create PR branch (agency emit)
-		verboseLog("Step 1: Creating PR branch...")
+		// Step 1: Create emit branch (agency emit)
+		verboseLog("Step 1: Creating emit branch...")
 		// Use emit command
 		const prEffectWithOptions = emit({
 			baseBranch: options.baseBranch,
@@ -70,15 +70,15 @@ export const push = (options: PushOptions = {}) =>
 			const error = prResult.left
 			return yield* Effect.fail(
 				new Error(
-					`Failed to create PR branch: ${error instanceof Error ? error.message : String(error)}`,
+					`Failed to create emit branch: ${error instanceof Error ? error.message : String(error)}`,
 				),
 			)
 		}
 
-		// Compute the PR branch name (emit() command now stays on source branch)
+		// Compute the emit branch name (emit() command now stays on source branch)
 		const emitBranchName =
 			options.branch || makePrBranchName(sourceBranch, config.emitBranch)
-		log(done(`Created PR branch: ${highlight.branch(emitBranchName)}`))
+		log(done(`Created emit branch: ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
 		verboseLog(
@@ -254,17 +254,17 @@ const openGitHubPR = (
 export const help = `
 Usage: agency push [base-branch] [options]
 
-Create a PR branch, push it to remote, and return to the source branch.
+Create a emit branch, push it to remote, and return to the source branch.
 
 This command is a convenience wrapper that runs operations in sequence:
-  1. agency emit [base-branch]  - Create PR branch with backpack files reverted
-  2. git push -u origin <pr-branch>  - Push PR branch to remote
+  1. agency emit [base-branch]  - Create emit branch with backpack files reverted
+  2. git push -u origin <pr-branch>  - Push emit branch to remote
   3. gh pr create --web (optional with --gh)  - Open GitHub PR in browser
   4. git checkout <source-branch>  - Switch back to source branch
 
 The command ensures you end up back on your source branch after pushing
-the PR branch, making it easy to continue working locally while having
-a clean PR branch ready on the remote.
+the emit branch, making it easy to continue working locally while having
+a clean emit branch ready on the remote.
 
 Base Branch Selection:
   Same as 'agency emit' - see 'agency emit --help' for details
@@ -278,7 +278,7 @@ Arguments:
                     If not provided, will use saved config or auto-detect
 
 Options:
-  -b, --branch      Custom name for PR branch (defaults to pattern from config)
+  -b, --branch      Custom name for emit branch (defaults to pattern from config)
   -f, --force       Force push to remote if branch has diverged
   --gh              Open GitHub PR in browser after pushing (requires gh CLI)
 
@@ -289,8 +289,8 @@ Examples:
   agency push --gh                     # Push and open GitHub PR in browser
 
 Notes:
-  - Must be run from a source branch (not a PR branch)
-  - Creates or recreates the PR branch
+  - Must be run from a source branch (not a emit branch)
+  - Creates or recreates the emit branch
   - Pushes with -u flag to set up tracking
   - Automatically returns to source branch after pushing
   - If any step fails, the command stops and reports the error

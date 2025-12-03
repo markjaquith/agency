@@ -24,7 +24,7 @@ Launch Opencode to work on the current task defined in `TASK.md`. All your conte
 
 ### `agency pr [base-branch]`
 
-Create a PR branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
+Create an emit branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
 
 ### `agency push`
 
@@ -54,11 +54,11 @@ Set the base branch for the current feature branch.
 
 ### `agency switch`
 
-Toggle between source branch and PR branch. If on a PR branch (e.g., `foo--PR`), switches to source branch (e.g., `foo`). If on source branch and PR branch exists, switches to PR branch.
+Toggle between source branch and emit branch. If on an emit branch (e.g., `foo--PR`), switches to source branch (e.g., `foo`). If on source branch and emit branch exists, switches to emit branch.
 
 ### `agency source`
 
-Switch to the source branch for the current PR branch.
+Switch to the source branch for the current emit branch.
 
 ## Requirements
 

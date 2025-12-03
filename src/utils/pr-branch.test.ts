@@ -37,7 +37,7 @@ describe("makePrBranchName", () => {
 
 describe("extractSourceBranch", () => {
 	describe("with %branch% placeholder", () => {
-		test("extracts source branch from PR branch name", () => {
+		test("extracts source branch from emit branch name", () => {
 			expect(extractSourceBranch("feature-foo--PR", "%branch%--PR")).toBe(
 				"feature-foo",
 			)
@@ -47,7 +47,7 @@ describe("extractSourceBranch", () => {
 			expect(extractSourceBranch("feature-foo", "%branch%")).toBe("feature-foo")
 		})
 
-		test("returns null when PR branch name doesn't match pattern", () => {
+		test("returns null when emit branch name doesn't match pattern", () => {
 			expect(extractSourceBranch("feature-foo", "%branch%--PR")).toBeNull()
 			expect(extractSourceBranch("feature-foo--PR", "PR/%branch%")).toBeNull()
 			expect(extractSourceBranch("main", "%branch%--PR")).toBeNull()
@@ -190,7 +190,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 			stderr: "pipe",
 		}).exited
 
-		// Create the PR branch from main (so it doesn't have agency.json)
+		// Create the emit branch from main (so it doesn't have agency.json)
 		await Bun.spawn(["git", "checkout", "main"], {
 			cwd: tempDir,
 			stdout: "pipe",
@@ -229,11 +229,11 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		expect(result.isOnEmitBranch).toBe(false)
 	})
 
-	test("falls back to pattern-based resolution on PR branch when no matching agency.json", async () => {
+	test("falls back to pattern-based resolution on emit branch when no matching agency.json", async () => {
 		tempDir = await createTempDir()
 		await initGitRepo(tempDir)
 
-		// Create PR branch without corresponding source branch agency.json
+		// Create emit branch without corresponding source branch agency.json
 		await Bun.spawn(["git", "checkout", "-b", "feature-qux--PR"], {
 			cwd: tempDir,
 			stdout: "pipe",

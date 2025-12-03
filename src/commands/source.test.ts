@@ -53,8 +53,8 @@ describe("source command", () => {
 	})
 
 	describe("basic functionality", () => {
-		test("switches from PR branch to source branch", async () => {
-			// Create a PR branch
+		test("switches from emit branch to source branch", async () => {
+			// Create a emit branch
 			await createBranch(tempDir, "main--PR")
 
 			// Run source command
@@ -65,13 +65,13 @@ describe("source command", () => {
 			expect(currentBranch).toBe("main")
 		})
 
-		test("works with custom PR branch pattern", async () => {
+		test("works with custom emit branch pattern", async () => {
 			// Create custom config
 			const configPath = join(tempDir, "custom-config.json")
 			await Bun.write(configPath, JSON.stringify({ emitBranch: "PR/%branch%" }))
 			process.env.AGENCY_CONFIG_PATH = configPath
 
-			// Create feature branch and its PR branch
+			// Create feature branch and its emit branch
 			await createBranch(tempDir, "feature")
 			await createCommit(tempDir, "Feature work")
 			await createBranch(tempDir, "PR/feature")
@@ -94,7 +94,7 @@ describe("source command", () => {
 		})
 
 		test("throws error when source branch doesn't exist", async () => {
-			// Create PR branch but delete source
+			// Create emit branch but delete source
 			await createBranch(tempDir, "feature--PR")
 			// We never created 'feature', so it doesn't exist
 

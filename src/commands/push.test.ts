@@ -110,7 +110,7 @@ describe("push command", () => {
 	})
 
 	describe("basic functionality", () => {
-		test("creates PR branch, pushes it, and returns to source", async () => {
+		test("creates emit branch, pushes it, and returns to source", async () => {
 			// We're on feature branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
@@ -120,7 +120,7 @@ describe("push command", () => {
 			// Should be back on feature branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
-			// PR branch should exist locally
+			// emit branch should exist locally
 			const branchesProc = Bun.spawn(["git", "branch"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -130,7 +130,7 @@ describe("push command", () => {
 			const branches = await new Response(branchesProc.stdout).text()
 			expect(branches).toContain("feature--PR")
 
-			// PR branch should exist on remote
+			// emit branch should exist on remote
 			const remoteBranchesProc = Bun.spawn(
 				["git", "ls-remote", "--heads", "origin", "feature--PR"],
 				{
@@ -169,7 +169,7 @@ describe("push command", () => {
 			expect(branches).toContain("custom-pr-branch")
 		})
 
-		test("recreates PR branch if it already exists", async () => {
+		test("recreates emit branch if it already exists", async () => {
 			// First push
 			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
@@ -177,7 +177,7 @@ describe("push command", () => {
 			await checkoutBranch(tempDir, "feature")
 			await createCommit(tempDir, "More feature work")
 
-			// Second push should recreate the PR branch
+			// Second push should recreate the emit branch
 			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			// Should still be back on feature branch
@@ -186,24 +186,24 @@ describe("push command", () => {
 	})
 
 	describe("error handling", () => {
-		test("switches to source branch when run from PR branch", async () => {
-			// First create the PR branch from feature branch
+		test("switches to source branch when run from emit branch", async () => {
+			// First create the emit branch from feature branch
 			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
-			// Now we're on feature, switch to the PR branch
+			// Now we're on feature, switch to the emit branch
 			await checkoutBranch(tempDir, "feature--PR")
 
-			// Verify we're on the PR branch
+			// Verify we're on the emit branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature--PR")
 
 			// Make a change on feature branch that we'll push
 			await checkoutBranch(tempDir, "feature")
 			await createCommit(tempDir, "Another feature commit")
 
-			// Switch back to PR branch
+			// Switch back to emit branch
 			await checkoutBranch(tempDir, "feature--PR")
 
-			// Run push from PR branch - should detect we're on PR branch,
+			// Run push from emit branch - should detect we're on emit branch,
 			// switch to source (feature), and continue
 			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
@@ -262,9 +262,9 @@ describe("push command", () => {
 			await checkoutBranch(tempDir, "feature")
 			await createCommit(tempDir, "More feature work")
 
-			// Modify the PR branch to create divergence
+			// Modify the emit branch to create divergence
 			await checkoutBranch(tempDir, "feature--PR")
-			await createCommit(tempDir, "Direct PR branch commit")
+			await createCommit(tempDir, "Direct emit branch commit")
 			await Bun.spawn(["git", "push"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -302,9 +302,9 @@ describe("push command", () => {
 			await checkoutBranch(tempDir, "feature")
 			await createCommit(tempDir, "More feature work")
 
-			// Modify the PR branch to create divergence
+			// Modify the emit branch to create divergence
 			await checkoutBranch(tempDir, "feature--PR")
-			await createCommit(tempDir, "Direct PR branch commit")
+			await createCommit(tempDir, "Direct emit branch commit")
 			await Bun.spawn(["git", "push"], {
 				cwd: tempDir,
 				stdout: "pipe",

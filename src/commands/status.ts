@@ -17,7 +17,7 @@ interface StatusOptions extends BaseCommandOptions {
 /**
  * Branch type for status output
  */
-type BranchType = "source" | "pr" | "neither"
+type BranchType = "source" | "emit" | "neither"
 
 /**
  * Base files that are always in the backpack
@@ -83,13 +83,13 @@ export const status = (options: StatusOptions = {}) =>
 
 		const gitRoot = yield* ensureGitRepo()
 
-		// Load config for PR branch pattern
+		// Load config for emit branch pattern
 		const config = yield* configService.loadConfig()
 
 		// Get current branch
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
 
-		// Resolve branch pair to determine if we're on source or PR branch
+		// Resolve branch pair to determine if we're on source or emit branch
 		const branches = resolveBranchPair(currentBranch, config.emitBranch)
 		const { sourceBranch, emitBranch, isOnEmitBranch } = branches
 
@@ -100,7 +100,7 @@ export const status = (options: StatusOptions = {}) =>
 		// Determine branch type
 		let branchType: BranchType = "neither"
 		if (initialized) {
-			branchType = isOnEmitBranch ? "pr" : "source"
+			branchType = isOnEmitBranch ? "emit" : "source"
 		}
 
 		// Check if the corresponding branch exists
@@ -155,7 +155,9 @@ export const status = (options: StatusOptions = {}) =>
 				log(`Current branch: ${highlight.branch(currentBranch)}`)
 
 				// Branch type
-				const branchTypeDisplay = isOnEmitBranch ? "PR branch" : "Source branch"
+				const branchTypeDisplay = isOnEmitBranch
+					? "Emit branch"
+					: "Source branch"
 				log(`Branch type: ${branchTypeDisplay}`)
 
 				// Show corresponding branch only if it exists
@@ -163,7 +165,7 @@ export const status = (options: StatusOptions = {}) =>
 					if (isOnEmitBranch) {
 						log(`Source branch: ${highlight.branch(statusData.sourceBranch!)}`)
 					} else {
-						log(`PR branch: ${highlight.branch(statusData.emitBranch!)}`)
+						log(`Emit branch: ${highlight.branch(statusData.emitBranch!)}`)
 					}
 				}
 
@@ -203,11 +205,11 @@ Display the current status of the agency setup in this repository.
 
 Information shown:
   - Whether agency is initialized (agency.json exists)
-  - Current branch and branch type (source, PR, or neither)
-  - Source and PR branch names
+  - Current branch and branch type (source, emit, or neither)
+  - Source and emit branch names
   - Whether the corresponding branch exists
   - Configured template name
-  - Backpack (files carried in and filtered during PR creation)
+  - Backpack (files carried in and filtered during emit)
   - Base branch and creation timestamp
 
 Options:

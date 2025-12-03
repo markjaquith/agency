@@ -117,8 +117,8 @@ The codebase maintains backward compatibility during the Effect migration:
 - `agency template use [template]`: Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
 - `agency save`: Saves current `AGENTS.md` file back to the configured template directory.
 - `agency source [template]`: Returns the path to a template's source directory. Shows interactive selection if no template name provided.
-- `agency switch`: Toggles between source branch and PR branch. If on a PR branch (e.g., `main--PR`), switches to source branch (e.g., `main`). If on source branch, switches to PR branch. PR branch must exist first.
-- `agency emit [branch]`: Creates a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
+- `agency switch`: Toggles between source branch and emit branch. If on an emit branch (e.g., `main--PR`), switches to source branch (e.g., `main`). If on source branch, switches to emit branch. Emit branch must exist first.
+- `agency emit [branch]`: Creates an emit branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
 
 ## Error Handling
 

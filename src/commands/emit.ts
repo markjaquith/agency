@@ -175,7 +175,7 @@ const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
 			return
 		}
 
-		// Determine the PR branch name that will be created
+		// Determine the emit branch name that will be created
 		const config = yield* ConfigService
 		const configData = yield* config.loadConfig()
 		const emitBranchName = makePrBranchName(

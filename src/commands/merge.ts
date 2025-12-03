@@ -66,13 +66,13 @@ export const merge = (options: MergeOptions = {}) =>
 
 		if (sourceBranch) {
 			verboseLog(
-				`Current branch appears to be a PR branch for source: ${highlight.branch(sourceBranch)}`,
+				`Current branch appears to be an emit branch for source: ${highlight.branch(sourceBranch)}`,
 			)
 
 			yield* ensureBranchExists(
 				gitRoot,
 				sourceBranch,
-				`Current branch ${highlight.branch(currentBranch)} appears to be a PR branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
+				`Current branch ${highlight.branch(currentBranch)} appears to be an emit branch, but source branch ${highlight.branch(sourceBranch)} does not exist.\n` +
 					`Cannot merge without a valid source branch.`,
 			)
 
@@ -106,9 +106,9 @@ export const merge = (options: MergeOptions = {}) =>
 
 			emitBranchToMerge = currentBranch
 		} else {
-			// We're on a source branch - need to create/update PR branch first
+			// We're on a source branch - need to create/update emit branch first
 			verboseLog(
-				`Current branch appears to be a source branch, will create PR branch first`,
+				`Current branch appears to be a source branch, will create emit branch first`,
 			)
 
 			// Check if a corresponding emit branch already exists
@@ -157,7 +157,7 @@ export const merge = (options: MergeOptions = {}) =>
 		verboseLog(`Switching to ${highlight.branch(baseBranchToMergeInto)}...`)
 		yield* git.checkoutBranch(gitRoot, baseBranchToMergeInto)
 
-		// Merge the PR branch
+		// Merge the emit branch
 		verboseLog(
 			`Merging ${highlight.branch(emitBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}${squash ? " (squash)" : ""}...`,
 		)
@@ -204,41 +204,41 @@ export const merge = (options: MergeOptions = {}) =>
 export const help = `
 Usage: agency merge [options]
 
-Merge the current PR branch into the configured base branch.
+Merge the current emit branch into the configured base branch.
 
 This command handles two scenarios:
-  1. If on a PR branch (e.g., feature--PR): Switches to the base branch and merges the PR branch
-  2. If on a source branch (e.g., feature): Runs 'agency emit' first to create/update the PR branch, then merges it
+  1. If on an emit branch (e.g., feature--PR): Switches to the base branch and merges the emit branch
+  2. If on a source branch (e.g., feature): Runs 'agency emit' first to create/update the emit branch, then merges it
 
 Behavior:
-  - Automatically detects whether you're on a source or PR branch
+  - Automatically detects whether you're on a source or emit branch
   - Retrieves the configured base branch (e.g., 'main') from git config
   - Switches to the base branch
-  - Merges the PR branch into the base branch
+  - Merges the emit branch into the base branch
   - Leaves you on the base branch after merge
 
 This is useful for local development workflows where you want to test merging
-your clean PR branch (without AGENTS.md modifications) into the base branch
+your clean emit branch (without AGENTS.md modifications) into the base branch
 before pushing.
 
 Prerequisites:
-  - Must be on either a source branch or its corresponding PR branch
+  - Must be on either a source branch or its corresponding emit branch
   - Base branch must exist locally
-  - For source branches: Must have a corresponding PR branch or be able to create one
+  - For source branches: Must have a corresponding emit branch or be able to create one
 
 Options:
   --squash                       # Use squash merge instead of regular merge
   --push                         # Push the base branch to origin after merging
 
 Examples:
-  agency merge                   # From source branch: creates PR branch then merges
+  agency merge                   # From source branch: creates emit branch then merges
   agency merge --squash          # Squash merge (stages changes, requires manual commit)
   agency merge --push            # Merge and push the base branch to origin
 
 Notes:
   - The command determines the base branch from git config (agency.pr.<branch>.baseBranch)
   - If you're on a source branch, 'agency emit' is run automatically
-  - The PR branch must have both a source branch and base branch configured
+  - The emit branch must have both a source branch and base branch configured
   - After merge, you remain on the base branch
   - Merge conflicts must be resolved manually if they occur
   - With --squash, changes are staged but not committed (you must commit manually)

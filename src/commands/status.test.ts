@@ -126,7 +126,7 @@ describe("status command", () => {
 			expect(output).toContain("Source branch")
 		})
 
-		test("shows PR branch type when on PR branch", async () => {
+		test("shows emit branch type when on emit branch", async () => {
 			await initAgency(tempDir, "test-template")
 
 			// Create feature branch with agency.json
@@ -139,7 +139,7 @@ describe("status command", () => {
 			} as any)
 			await createCommit(tempDir, "Feature work")
 
-			// Create and switch to PR branch
+			// Create and switch to emit branch
 			await createBranch(tempDir, "feature--PR")
 
 			let output = ""
@@ -152,7 +152,7 @@ describe("status command", () => {
 
 			console.log = originalLog
 			expect(output).toContain("Branch type:")
-			expect(output).toContain("PR branch")
+			expect(output).toContain("Emit branch")
 		})
 
 		test("shows corresponding branch when it exists", async () => {
@@ -165,7 +165,7 @@ describe("status command", () => {
 				createdAt: new Date().toISOString(),
 			} as any)
 
-			// Create PR branch
+			// Create emit branch
 			await createBranch(tempDir, "feature--PR")
 			await checkoutBranch(tempDir, "feature")
 
@@ -178,7 +178,7 @@ describe("status command", () => {
 			await runTestEffect(status({}))
 
 			console.log = originalLog
-			expect(output).toContain("PR branch: ")
+			expect(output).toContain("Emit branch: ")
 			expect(output).toContain("feature--PR")
 		})
 

@@ -1,5 +1,5 @@
 /**
- * Utilities for working with PR branch names and patterns
+ * Utilities for working with emit branch names and patterns
  */
 
 import { Effect, pipe } from "effect"
@@ -10,14 +10,14 @@ import { AgencyMetadata } from "../schemas"
 import { Schema } from "@effect/schema"
 
 /**
- * Generate a PR branch name from a pattern and source branch name.
+ * Generate an emit branch name from a pattern and source branch name.
  * If pattern contains %branch%, it replaces it with the branch name.
  * Otherwise, treats the pattern as a suffix.
  *
  * @example
- * makePrBranchName("feature-foo", "%branch%--PR") // "feature-foo--PR"
- * makePrBranchName("feature-foo", "PR/%branch%") // "PR/feature-foo"
- * makePrBranchName("feature-foo", "--PR") // "feature-foo--PR"
+ * makeEmitBranchName("feature-foo", "%branch%--PR") // "feature-foo--PR"
+ * makeEmitBranchName("feature-foo", "PR/%branch%") // "PR/feature-foo"
+ * makeEmitBranchName("feature-foo", "--PR") // "feature-foo--PR"
  */
 export function makePrBranchName(branchName: string, pattern: string): string {
 	if (pattern.includes("%branch%")) {
