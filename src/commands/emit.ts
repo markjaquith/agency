@@ -80,14 +80,16 @@ export const emit = (options: EmitOptions = {}) =>
 
 		verboseLog(`Using base branch: ${highlight.branch(baseBranch)}`)
 
-		// Get the merge-base (where the branch diverged)
-		const mergeBase = yield* git.getMergeBase(
+		// Get the fork-point (where the branch actually forked from, using reflog)
+		// This is more accurate than merge-base because it accounts for rebases
+		const forkPoint = yield* findBestForkPoint(
 			gitRoot,
 			currentBranch,
 			baseBranch,
+			verbose,
 		)
 
-		verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
+		verboseLog(`Branch forked at commit: ${highlight.commit(forkPoint)}`)
 
 		// Determine emit branch name using config pattern
 		const emitBranchName =
@@ -101,10 +103,10 @@ export const emit = (options: EmitOptions = {}) =>
 		yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
 
 		verboseLog(
-			`Filtering backpack files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(emitBranchName)}`,
+			`Filtering backpack files from commits in range: ${highlight.commit(forkPoint.substring(0, 8))}..${highlight.branch(emitBranchName)}`,
 		)
 		verboseLog(
-			`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
+			`Files will revert to their state at fork-point (base branch: ${highlight.branch(baseBranch)})`,
 		)
 
 		// Clean up .git/filter-repo directory
@@ -127,7 +129,7 @@ export const emit = (options: EmitOptions = {}) =>
 			"--invert-paths",
 			"--force",
 			"--refs",
-			`${mergeBase}..${emitBranchName}`,
+			`${forkPoint}..${emitBranchName}`,
 		]
 
 		const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
@@ -198,6 +200,93 @@ const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
 		// Stage and commit the change
 		yield* git.gitAdd(["agency.json"], gitRoot)
 		yield* git.gitCommit("chore: agency emit", gitRoot, { noVerify: true })
+	})
+
+// Helper: Find the best fork point by checking both local and remote tracking branches
+const findBestForkPoint = (
+	gitRoot: string,
+	featureBranch: string,
+	baseBranch: string,
+	verbose: boolean,
+) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const { verboseLog } = createLoggers({ verbose })
+
+		// Try fork-point with the configured base branch
+		const localForkPoint = yield* git
+			.getMergeBaseForkPoint(gitRoot, baseBranch, featureBranch)
+			.pipe(
+				Effect.catchAll(() =>
+					// Fall back to regular merge-base if fork-point fails
+					git.getMergeBase(gitRoot, featureBranch, baseBranch),
+				),
+			)
+
+		verboseLog(
+			`Fork-point with ${highlight.branch(baseBranch)}: ${highlight.commit(localForkPoint.substring(0, 8))}`,
+		)
+
+		// If the base branch is a local branch, check if it has a remote tracking branch
+		const remote = yield* git
+			.getGitConfig(`branch.${baseBranch}.remote`, gitRoot)
+			.pipe(Effect.option)
+		const remoteBranch = yield* git
+			.getGitConfig(`branch.${baseBranch}.merge`, gitRoot)
+			.pipe(Effect.option)
+
+		// If the base branch tracks a remote, also try fork-point with the remote tracking branch
+		if (
+			remote._tag === "Some" &&
+			remoteBranch._tag === "Some" &&
+			remoteBranch.value
+		) {
+			const remoteTrackingBranch = `${remote.value}/${remoteBranch.value.replace("refs/heads/", "")}`
+
+			const remoteForkPoint = yield* git
+				.getMergeBaseForkPoint(gitRoot, remoteTrackingBranch, featureBranch)
+				.pipe(
+					Effect.catchAll(() =>
+						// Fall back to regular merge-base if fork-point fails
+						git.getMergeBase(gitRoot, featureBranch, remoteTrackingBranch),
+					),
+				)
+
+			verboseLog(
+				`Fork-point with ${highlight.branch(remoteTrackingBranch)}: ${highlight.commit(remoteForkPoint.substring(0, 8))}`,
+			)
+
+			// Check if one is an ancestor of the other
+			const localIsAncestor = yield* git
+				.runGitCommand(
+					[
+						"git",
+						"merge-base",
+						"--is-ancestor",
+						localForkPoint,
+						remoteForkPoint,
+					],
+					gitRoot,
+					{},
+				)
+				.pipe(
+					Effect.map((result) => result.exitCode === 0),
+					Effect.catchAll(() => Effect.succeed(false)),
+				)
+
+			if (localIsAncestor) {
+				verboseLog(
+					`Using remote fork-point ${highlight.commit(remoteForkPoint.substring(0, 8))} (local is ancestor)`,
+				)
+				return remoteForkPoint
+			}
+
+			verboseLog(
+				`Using local fork-point ${highlight.commit(localForkPoint.substring(0, 8))}`,
+			)
+		}
+
+		return localForkPoint
 	})
 
 // Helper: Create or reset branch

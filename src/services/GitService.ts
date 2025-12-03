@@ -351,6 +351,16 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		getMergeBase: (gitRoot: string, branch1: string, branch2: string) =>
 			runGitCommandOrFail(["git", "merge-base", branch1, branch2], gitRoot),
 
+		getMergeBaseForkPoint: (
+			gitRoot: string,
+			baseBranch: string,
+			featureBranch: string,
+		) =>
+			runGitCommandOrFail(
+				["git", "merge-base", "--fork-point", baseBranch, featureBranch],
+				gitRoot,
+			),
+
 		deleteBranch: (gitRoot: string, branchName: string, force = false) =>
 			runGitCommandVoid(
 				["git", "branch", force ? "-D" : "-d", branchName],
