@@ -2,6 +2,7 @@
 
 import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
+import { clean, help as cleanHelp } from "./src/commands/clean"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { emit, help as emitHelp } from "./src/commands/emit"
@@ -288,6 +289,24 @@ Example:
 			)
 		},
 		help: statusHelp,
+	},
+	clean: {
+		name: "clean",
+		description: "Delete all emit branches",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(cleanHelp)
+				return
+			}
+			await runCommand(
+				clean({
+					silent: options.silent,
+					verbose: options.verbose,
+					dryRun: options["dry-run"],
+				}),
+			)
+		},
+		help: cleanHelp,
 	},
 }
 
