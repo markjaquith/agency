@@ -1,9 +1,17 @@
-import { describe, test, expect } from "bun:test"
+import { describe, test, expect, afterEach } from "bun:test"
 import {
 	makePrBranchName,
 	extractSourceBranch,
 	resolveBranchPair,
+	resolveBranchPairWithAgencyJson,
 } from "./pr-branch"
+import {
+	createTempDir,
+	cleanupTempDir,
+	initGitRepo,
+	runTestEffect,
+} from "../test-utils"
+import { join } from "path"
 
 describe("makePrBranchName", () => {
 	test("replaces %branch% placeholder with branch name", () => {
@@ -117,5 +125,145 @@ describe("resolveBranchPair", () => {
 		expect(prResult.sourceBranch).toBe("feature-foo")
 		expect(prResult.prBranch).toBe("feature-foo--PR")
 		expect(prResult.isOnPrBranch).toBe(true)
+	})
+})
+
+describe("resolveBranchPairWithAgencyJson", () => {
+	let tempDir: string
+
+	afterEach(async () => {
+		if (tempDir) {
+			await cleanupTempDir(tempDir)
+		}
+	})
+
+	test("uses agency.json emitBranch when on source branch", async () => {
+		tempDir = await createTempDir()
+		await initGitRepo(tempDir)
+
+		// Create agency.json with emitBranch
+		const agencyJson = {
+			version: 1,
+			injectedFiles: [],
+			template: "test",
+			createdAt: new Date().toISOString(),
+			emitBranch: "feature-foo--custom-pr",
+		}
+		await Bun.write(join(tempDir, "agency.json"), JSON.stringify(agencyJson))
+
+		const result = await runTestEffect(
+			resolveBranchPairWithAgencyJson(tempDir, "main", "%branch%--PR"),
+		)
+
+		expect(result.sourceBranch).toBe("main")
+		expect(result.prBranch).toBe("feature-foo--custom-pr")
+		expect(result.isOnPrBranch).toBe(false)
+	})
+
+	test("finds source branch by searching for matching emitBranch", async () => {
+		tempDir = await createTempDir()
+		await initGitRepo(tempDir)
+
+		// Create a feature branch with agency.json
+		await Bun.spawn(["git", "checkout", "-b", "feature-bar"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		const agencyJson = {
+			version: 1,
+			injectedFiles: [],
+			template: "test",
+			createdAt: new Date().toISOString(),
+			emitBranch: "feature-bar--PR",
+		}
+		await Bun.write(join(tempDir, "agency.json"), JSON.stringify(agencyJson))
+		await Bun.spawn(["git", "add", "agency.json"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "-m", "Add agency.json"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		// Create the PR branch from main (so it doesn't have agency.json)
+		await Bun.spawn(["git", "checkout", "main"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "checkout", "-b", "feature-bar--PR"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		const result = await runTestEffect(
+			resolveBranchPairWithAgencyJson(
+				tempDir,
+				"feature-bar--PR",
+				"%branch%--PR",
+			),
+		)
+
+		expect(result.sourceBranch).toBe("feature-bar")
+		expect(result.prBranch).toBe("feature-bar--PR")
+		expect(result.isOnPrBranch).toBe(true)
+	})
+
+	test("falls back to pattern-based resolution when agency.json not found", async () => {
+		tempDir = await createTempDir()
+		await initGitRepo(tempDir)
+
+		// No agency.json, should fall back to pattern-based resolution
+		const result = await runTestEffect(
+			resolveBranchPairWithAgencyJson(tempDir, "feature-baz", "%branch%--PR"),
+		)
+
+		expect(result.sourceBranch).toBe("feature-baz")
+		expect(result.prBranch).toBe("feature-baz--PR")
+		expect(result.isOnPrBranch).toBe(false)
+	})
+
+	test("falls back to pattern-based resolution on PR branch when no matching agency.json", async () => {
+		tempDir = await createTempDir()
+		await initGitRepo(tempDir)
+
+		// Create PR branch without corresponding source branch agency.json
+		await Bun.spawn(["git", "checkout", "-b", "feature-qux--PR"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		const result = await runTestEffect(
+			resolveBranchPairWithAgencyJson(
+				tempDir,
+				"feature-qux--PR",
+				"%branch%--PR",
+			),
+		)
+
+		expect(result.sourceBranch).toBe("feature-qux")
+		expect(result.prBranch).toBe("feature-qux--PR")
+		expect(result.isOnPrBranch).toBe(true)
+	})
+
+	test("handles branches with no agency.json on current branch", async () => {
+		tempDir = await createTempDir()
+		await initGitRepo(tempDir)
+
+		// Just test pattern-based resolution with no agency.json anywhere
+		const result = await runTestEffect(
+			resolveBranchPairWithAgencyJson(tempDir, "main", "%branch%--PR"),
+		)
+
+		expect(result.sourceBranch).toBe("main")
+		expect(result.prBranch).toBe("main--PR")
+		expect(result.isOnPrBranch).toBe(false)
 	})
 })

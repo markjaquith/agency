@@ -2,7 +2,8 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { resolveBranchPair } from "../utils/pr-branch"
+import { FileSystemService } from "../services/FileSystemService"
+import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
@@ -26,10 +27,12 @@ export const source = (options: SourceOptions = {}) =>
 
 		// Get current branch and resolve the branch pair
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
-		const { sourceBranch, isOnPrBranch } = resolveBranchPair(
-			currentBranch,
-			config.prBranch,
-		)
+		const { sourceBranch, isOnPrBranch } =
+			yield* resolveBranchPairWithAgencyJson(
+				gitRoot,
+				currentBranch,
+				config.prBranch,
+			)
 
 		if (!isOnPrBranch) {
 			return yield* Effect.fail(

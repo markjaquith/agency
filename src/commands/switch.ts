@@ -2,7 +2,11 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { resolveBranchPair, type BranchPair } from "../utils/pr-branch"
+import { FileSystemService } from "../services/FileSystemService"
+import {
+	resolveBranchPairWithAgencyJson,
+	type BranchPair,
+} from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
@@ -26,7 +30,8 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 
 		// Get current branch and resolve the branch pair
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
-		const branches: BranchPair = resolveBranchPair(
+		const branches: BranchPair = yield* resolveBranchPairWithAgencyJson(
+			gitRoot,
 			currentBranch,
 			config.prBranch,
 		)
