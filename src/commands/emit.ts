@@ -197,7 +197,7 @@ const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
 
 		// Stage and commit the change
 		yield* git.gitAdd(["agency.json"], gitRoot)
-		yield* git.gitCommit("chore: agency emit", gitRoot)
+		yield* git.gitCommit("chore: agency emit", gitRoot, { noVerify: true })
 	})
 
 // Helper: Create or reset branch
