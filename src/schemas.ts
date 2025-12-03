@@ -19,6 +19,7 @@ export class AgencyMetadata extends Schema.Class<AgencyMetadata>(
 	baseBranch: Schema.optional(Schema.String),
 	template: Schema.String,
 	createdAt: Schema.DateTimeUtc,
+	emitBranch: Schema.optional(Schema.String),
 }) {}
 
 /**

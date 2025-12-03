@@ -115,7 +115,7 @@ let MANAGED_FILES: ManagedFile[] = []
 /**
  * Read agency.json metadata from a repository.
  */
-async function readAgencyMetadata(
+export async function readAgencyMetadata(
 	gitRoot: string,
 ): Promise<AgencyMetadata | null> {
 	const metadataPath = join(gitRoot, "agency.json")

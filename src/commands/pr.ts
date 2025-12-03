@@ -4,7 +4,11 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
 import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
-import { getFilesToFilter } from "../types"
+import {
+	getFilesToFilter,
+	readAgencyMetadata,
+	writeAgencyMetadata,
+} from "../types"
 import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
@@ -67,6 +71,9 @@ export const pr = (options: PrOptions = {}) =>
 				currentBranch = possibleSourceBranch
 			}
 		}
+
+		// Check and update agency.json with emitBranch if needed
+		yield* ensureEmitBranchInMetadata(gitRoot, currentBranch)
 
 		// Find the base branch this was created from
 		const baseBranch = yield* resolveBaseBranch(gitRoot, options.baseBranch)
@@ -144,6 +151,50 @@ export const pr = (options: PrOptions = {}) =>
 				`Created ${highlight.branch(prBranchName)} from ${highlight.branch(currentBranch)} (stayed on ${highlight.branch(currentBranch)})`,
 			),
 		)
+	})
+
+// Helper: Ensure emitBranch is set in agency.json metadata
+const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const fs = yield* FileSystemService
+
+		// Read existing metadata
+		const metadata = yield* Effect.tryPromise({
+			try: () => readAgencyMetadata(gitRoot),
+			catch: (error) => new Error(`Failed to read agency metadata: ${error}`),
+		})
+
+		// If no metadata exists, skip this step
+		if (!metadata) {
+			return
+		}
+
+		// If emitBranch is already set, nothing to do
+		if (metadata.emitBranch) {
+			return
+		}
+
+		// Determine the PR branch name that will be created
+		const config = yield* ConfigService
+		const configData = yield* config.loadConfig()
+		const prBranchName = makePrBranchName(currentBranch, configData.prBranch)
+
+		// Add emitBranch to metadata
+		const updatedMetadata = {
+			...metadata,
+			emitBranch: prBranchName,
+		}
+
+		// Write updated metadata
+		yield* Effect.tryPromise({
+			try: () => writeAgencyMetadata(gitRoot, updatedMetadata),
+			catch: (error) => new Error(`Failed to write agency metadata: ${error}`),
+		})
+
+		// Stage and commit the change
+		yield* git.gitAdd(["agency.json"], gitRoot)
+		yield* git.gitCommit("chore: agency emit", gitRoot)
 	})
 
 // Helper: Create or reset branch
