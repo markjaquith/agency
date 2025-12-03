@@ -5,7 +5,7 @@ import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
-import { resolveBranchPair } from "../utils/pr-branch"
+import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
 import { AgencyMetadata } from "../schemas"
 import highlight, { plural } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
@@ -41,9 +41,9 @@ interface StatusData {
 }
 
 /**
- * Read agency.json metadata from a repository.
+ * Read agency.json metadata from the current working directory.
  */
-const readAgencyMetadata = (gitRoot: string) =>
+const readAgencyMetadataFromDisk = (gitRoot: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const metadataPath = join(gitRoot, "agency.json")
@@ -54,6 +54,35 @@ const readAgencyMetadata = (gitRoot: string) =>
 		}
 
 		const content = yield* fs.readFile(metadataPath)
+		return yield* parseAgencyMetadata(content)
+	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+/**
+ * Read agency.json metadata from a specific branch using git show.
+ */
+const readAgencyMetadataFromBranch = (gitRoot: string, branch: string) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+
+		// Try to read agency.json from the branch using git show
+		const result = yield* git.runGitCommand(
+			["git", "show", `${branch}:agency.json`],
+			gitRoot,
+			{ captureOutput: true },
+		)
+
+		if (result.exitCode !== 0 || !result.stdout) {
+			return null
+		}
+
+		return yield* parseAgencyMetadata(result.stdout)
+	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+/**
+ * Parse and validate agency.json content.
+ */
+const parseAgencyMetadata = (content: string) =>
+	Effect.gen(function* () {
 		const data = yield* Effect.try({
 			try: () => JSON.parse(content),
 			catch: () => new Error("Failed to parse agency.json"),
@@ -90,11 +119,18 @@ export const status = (options: StatusOptions = {}) =>
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
 
 		// Resolve branch pair to determine if we're on source or emit branch
-		const branches = resolveBranchPair(currentBranch, config.emitBranch)
+		const branches = yield* resolveBranchPairWithAgencyJson(
+			gitRoot,
+			currentBranch,
+			config.emitBranch,
+		)
 		const { sourceBranch, emitBranch, isOnEmitBranch } = branches
 
-		// Check if agency is initialized (agency.json exists)
-		const metadata = yield* readAgencyMetadata(gitRoot)
+		// Check if agency is initialized
+		// If on emit branch, read agency.json from source branch; otherwise read from disk
+		const metadata = isOnEmitBranch
+			? yield* readAgencyMetadataFromBranch(gitRoot, sourceBranch)
+			: yield* readAgencyMetadataFromDisk(gitRoot)
 		const initialized = metadata !== null
 
 		// Determine branch type

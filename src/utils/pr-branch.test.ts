@@ -2,7 +2,6 @@ import { describe, test, expect, afterEach } from "bun:test"
 import {
 	makePrBranchName,
 	extractSourceBranch,
-	resolveBranchPair,
 	resolveBranchPairWithAgencyJson,
 } from "./pr-branch"
 import {
@@ -83,48 +82,6 @@ describe("extractSourceBranch", () => {
 			expect(extractSourceBranch("--PR", "--PR")).toBeNull()
 			expect(extractSourceBranch("-pr", "-pr")).toBeNull()
 		})
-	})
-})
-
-describe("resolveBranchPair", () => {
-	test("resolves source branch correctly", () => {
-		const result = resolveBranchPair("feature-foo", "%branch%--PR")
-
-		expect(result.sourceBranch).toBe("feature-foo")
-		expect(result.emitBranch).toBe("feature-foo--PR")
-		expect(result.isOnEmitBranch).toBe(false)
-	})
-
-	test("resolves emit branch correctly", () => {
-		const result = resolveBranchPair("feature-foo--PR", "%branch%--PR")
-
-		expect(result.sourceBranch).toBe("feature-foo")
-		expect(result.emitBranch).toBe("feature-foo--PR")
-		expect(result.isOnEmitBranch).toBe(true)
-	})
-
-	test("works with prefix pattern", () => {
-		const sourceResult = resolveBranchPair("feature-foo", "PR/%branch%")
-		expect(sourceResult.sourceBranch).toBe("feature-foo")
-		expect(sourceResult.emitBranch).toBe("PR/feature-foo")
-		expect(sourceResult.isOnEmitBranch).toBe(false)
-
-		const prResult = resolveBranchPair("PR/feature-foo", "PR/%branch%")
-		expect(prResult.sourceBranch).toBe("feature-foo")
-		expect(prResult.emitBranch).toBe("PR/feature-foo")
-		expect(prResult.isOnEmitBranch).toBe(true)
-	})
-
-	test("works with suffix mode (no placeholder)", () => {
-		const sourceResult = resolveBranchPair("feature-foo", "--PR")
-		expect(sourceResult.sourceBranch).toBe("feature-foo")
-		expect(sourceResult.emitBranch).toBe("feature-foo--PR")
-		expect(sourceResult.isOnEmitBranch).toBe(false)
-
-		const prResult = resolveBranchPair("feature-foo--PR", "--PR")
-		expect(prResult.sourceBranch).toBe("feature-foo")
-		expect(prResult.emitBranch).toBe("feature-foo--PR")
-		expect(prResult.isOnEmitBranch).toBe(true)
 	})
 })
 

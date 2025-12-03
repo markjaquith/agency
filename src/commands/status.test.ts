@@ -137,6 +137,12 @@ describe("status command", () => {
 				template: "test-template",
 				createdAt: new Date().toISOString(),
 			} as any)
+			// Stage and commit agency.json
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 			await createCommit(tempDir, "Feature work")
 
 			// Create and switch to emit branch
@@ -368,6 +374,104 @@ describe("status command", () => {
 
 			console.log = originalLog
 			expect(logCalled).toBe(false)
+		})
+	})
+
+	describe("emit branch behavior", () => {
+		test("reads metadata from source branch when on emit branch without agency.json on disk", async () => {
+			await initAgency(tempDir, "test-template")
+
+			// Create feature branch with agency.json committed
+			await createBranch(tempDir, "feature")
+			await writeAgencyMetadata(tempDir, {
+				version: 1,
+				injectedFiles: ["AGENTS.md", "opencode.json"],
+				template: "test-template",
+				baseBranch: "main",
+				createdAt: new Date().toISOString(),
+			} as any)
+			// Stage and commit agency.json
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Feature work")
+
+			// Create emit branch and remove agency.json from working tree
+			await createBranch(tempDir, "feature--PR")
+			await Bun.spawn(["rm", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			let output = ""
+			const originalLog = console.log
+			console.log = (msg: string) => {
+				output += msg + "\n"
+			}
+
+			await runTestEffect(status({ json: true }))
+
+			console.log = originalLog
+
+			const data = JSON.parse(output.trim())
+			// Verify that we're recognized as on an emit branch
+			expect(data.branchType).toBe("emit")
+			expect(data.initialized).toBe(true)
+			// Verify metadata is correctly read from source branch
+			expect(data.baseBranch).toBe("main")
+			expect(data.managedFiles).toContain("AGENTS.md")
+			expect(data.managedFiles).toContain("opencode.json")
+			expect(data.sourceBranch).toBe("feature")
+		})
+
+		test("shows correct backpack when on emit branch", async () => {
+			await initAgency(tempDir, "test-template")
+
+			// Create feature branch with agency.json committed
+			await createBranch(tempDir, "feature")
+			await writeAgencyMetadata(tempDir, {
+				version: 1,
+				injectedFiles: ["AGENTS.md"],
+				template: "test-template",
+				createdAt: new Date().toISOString(),
+			} as any)
+			// Stage and commit agency.json
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Feature work")
+
+			// Create emit branch and remove agency.json from disk to simulate clean emit branch
+			await createBranch(tempDir, "feature--PR")
+			await Bun.spawn(["rm", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			let output = ""
+			const originalLog = console.log
+			console.log = (msg: string) => {
+				output += msg + "\n"
+			}
+
+			await runTestEffect(status({ json: true }))
+
+			console.log = originalLog
+
+			const data = JSON.parse(output.trim())
+			expect(data.branchType).toBe("emit")
+			expect(data.initialized).toBe(true)
+			// Backpack should include injected files from source branch
+			expect(data.managedFiles).toContain("AGENTS.md")
+			expect(data.managedFiles).toContain("TASK.md")
+			expect(data.managedFiles).toContain("AGENCY.md")
+			expect(data.managedFiles).toContain("agency.json")
 		})
 	})
 })

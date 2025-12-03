@@ -101,10 +101,7 @@ export interface BranchPair {
  * resolveBranchPair("feature-foo--PR", "%branch%--PR")
  * // { sourceBranch: "feature-foo", emitBranch: "feature-foo--PR", isOnEmitBranch: true }
  */
-export function resolveBranchPair(
-	currentBranch: string,
-	pattern: string,
-): BranchPair {
+function resolveBranchPair(currentBranch: string, pattern: string): BranchPair {
 	const sourceBranch = extractSourceBranch(currentBranch, pattern)
 
 	if (sourceBranch) {
