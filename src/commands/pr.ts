@@ -136,9 +136,12 @@ export const pr = (options: PrOptions = {}) =>
 			)
 		}
 
+		// Switch back to source branch (git-filter-repo may have checked out the PR branch)
+		yield* git.checkoutBranch(gitRoot, currentBranch)
+
 		log(
 			done(
-				`Created ${highlight.branch(prBranchName)} from ${highlight.branch(currentBranch)}`,
+				`Created ${highlight.branch(prBranchName)} from ${highlight.branch(currentBranch)} (stayed on ${highlight.branch(currentBranch)})`,
 			),
 		)
 	})
@@ -167,7 +170,6 @@ const createOrResetBranchEffect = (
 
 		// Create new branch from source
 		yield* git.createBranch(targetBranch, gitRoot, sourceBranch)
-		yield* git.checkoutBranch(gitRoot, targetBranch)
 	})
 
 export const help = `

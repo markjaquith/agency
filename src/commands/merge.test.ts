@@ -179,6 +179,13 @@ describe("merge command", () => {
 			// Create PR branch
 			await runTestEffect(pr({ silent: true }))
 
+			// pr() now stays on source branch, so we need to checkout to PR branch
+			await Bun.spawn(["git", "checkout", "feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
 			// We're on feature--PR now
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("feature--PR")
@@ -203,6 +210,13 @@ describe("merge command", () => {
 
 			// Create PR branch
 			await runTestEffect(pr({ silent: true }))
+
+			// pr() now stays on source branch, so checkout to PR branch
+			await Bun.spawn(["git", "checkout", "feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 
 			// Delete the source branch
 			await Bun.spawn(["git", "branch", "-D", "feature"], {

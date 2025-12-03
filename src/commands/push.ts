@@ -2,7 +2,7 @@ import { Effect, Either } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { extractSourceBranch } from "../utils/pr-branch"
+import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { pr } from "./pr"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
@@ -75,8 +75,9 @@ export const push = (options: PushOptions = {}) =>
 			)
 		}
 
-		// Get the PR branch name that was created
-		const prBranchName = yield* git.getCurrentBranch(gitRoot)
+		// Compute the PR branch name (pr() command now stays on source branch)
+		const prBranchName =
+			options.branch || makePrBranchName(sourceBranch, config.prBranch)
 		log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
 
 		// Step 2: Push to remote (git push)
@@ -127,18 +128,17 @@ export const push = (options: PushOptions = {}) =>
 			}
 		}
 
-		// Step 4: Switch back to source branch
-		// We switch back directly to the source branch we started on,
-		// rather than using the source command, to support custom branch names
-		verboseLog(
-			`Step ${options.gh ? "4" : "3"}: Switching back to source branch...`,
-		)
+		// Verify we're still on the source branch (pr() now stays on source branch)
+		const currentBranch = yield* git.getCurrentBranch(gitRoot)
+		if (currentBranch !== sourceBranch) {
+			// This shouldn't happen with the new pr() behavior, but check anyway
+			verboseLog(
+				`Switching back to source branch ${highlight.branch(sourceBranch)}...`,
+			)
+			yield* git.checkoutBranch(gitRoot, sourceBranch)
+		}
 
-		yield* git.checkoutBranch(gitRoot, sourceBranch)
-
-		log(
-			done(`Switched back to source branch: ${highlight.branch(sourceBranch)}`),
-		)
+		log(done(`Ready to continue work on ${highlight.branch(sourceBranch)}`))
 	})
 
 // Helper: Push branch to remote with optional force and retry logic

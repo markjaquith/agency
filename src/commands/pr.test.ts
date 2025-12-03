@@ -142,9 +142,9 @@ describe("pr command", () => {
 			])
 			expect(branches.trim()).toContain("feature--PR")
 
-			// Check we're on the PR branch
+			// Check we're still on the source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature--PR")
+			expect(currentBranch).toBe("feature")
 		})
 
 		test("creates PR branch with custom name", async () => {
@@ -169,8 +169,9 @@ describe("pr command", () => {
 			])
 			expect(branches.trim()).toContain("custom-pr")
 
+			// Check we're still on the source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("custom-pr")
+			expect(currentBranch).toBe("feature")
 		})
 
 		test("runs git-filter-repo successfully", async () => {
@@ -189,9 +190,9 @@ describe("pr command", () => {
 			// Should complete without throwing
 			await runTestEffect(pr({ silent: true }))
 
-			// Should be on PR branch
+			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature--PR")
+			expect(currentBranch).toBe("feature")
 		})
 
 		test("preserves other files in PR branch", async () => {
@@ -208,6 +209,17 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			await runTestEffect(pr({ silent: true }))
+
+			// Should still be on feature branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Switch to PR branch to verify files
+			await Bun.spawn(["git", "checkout", "feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 
 			// Check that test file still exists
 			expect(await fileExists(join(tempDir, "test.txt"))).toBe(true)
@@ -231,6 +243,17 @@ describe("pr command", () => {
 
 			// Create PR branch
 			await runTestEffect(pr({ silent: true }))
+
+			// Should still be on feature branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Switch to PR branch to verify files
+			await Bun.spawn(["git", "checkout", "feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 
 			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -278,6 +301,17 @@ describe("pr command", () => {
 
 			// Create PR branch
 			await runTestEffect(pr({ silent: true }))
+
+			// Should still be on feature branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
+
+			// Switch to PR branch to verify files
+			await Bun.spawn(["git", "checkout", "feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 
 			// AGENCY.md is always filtered on PR branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -354,6 +388,17 @@ describe("pr command", () => {
 			process.chdir(freshDir)
 			await runTestEffect(pr({ silent: true }))
 
+			// Should still be on feature branch
+			let branchName = await getCurrentBranch(freshDir)
+			expect(branchName).toBe("feature")
+
+			// Switch to PR branch to verify files
+			await Bun.spawn(["git", "checkout", "feature--PR"], {
+				cwd: freshDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
 			// AGENTS.md should NOT exist (it was removed)
 			const files = await getGitOutput(freshDir, ["ls-files"])
 			expect(files).not.toContain("AGENTS.md")
@@ -377,12 +422,9 @@ describe("pr command", () => {
 			// Create PR branch
 			await runTestEffect(pr({ silent: true }))
 
-			// Switch back to feature branch
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			// Should still be on feature branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("feature")
 
 			// Check that AGENTS.md still exist on original branch
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -433,9 +475,9 @@ describe("pr command", () => {
 			// without the cleanup code
 			await runTestEffect(pr({ silent: true }))
 
-			// Should complete successfully without interactive prompts
+			// Should complete successfully without interactive prompts and stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature--PR")
+			expect(currentBranch).toBe("feature")
 		})
 
 		test("accepts explicit base branch argument", async () => {
@@ -454,8 +496,9 @@ describe("pr command", () => {
 			// Create PR branch with explicit base branch
 			await runTestEffect(pr({ baseBranch: "main", silent: true }))
 
+			// Should stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature--PR")
+			expect(currentBranch).toBe("feature")
 		})
 
 		test("throws error if provided base branch does not exist", async () => {
@@ -505,7 +548,17 @@ describe("pr command", () => {
 			// Create initial PR branch
 			await runTestEffect(pr({ silent: true, baseBranch: "main" }))
 
-			// Verify AGENTS.md is filtered on PR branch (it was added on test-feature)
+			// Should still be on test-feature branch
+			let currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("test-feature")
+
+			// Switch to PR branch to verify AGENTS.md is filtered
+			await Bun.spawn(["git", "checkout", "test-feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
 			let files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).not.toContain("AGENTS.md")
 			expect(files).toContain("feature.txt")
@@ -561,6 +614,17 @@ describe("pr command", () => {
 
 			// Recreate PR branch after rebase (this is where the bug would manifest)
 			await runTestEffect(pr({ silent: true, baseBranch: "main" }))
+
+			// Should still be on test-feature branch
+			currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("test-feature")
+
+			// Switch to PR branch to verify files
+			await Bun.spawn(["git", "checkout", "test-feature--PR"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 
 			// Verify AGENTS.md is still filtered and no extraneous changes
 			files = await getGitOutput(tempDir, ["ls-files"])
