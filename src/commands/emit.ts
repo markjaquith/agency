@@ -290,9 +290,15 @@ Notes:
   - Base branch is set when you run 'agency task' to initialize the feature branch
   - Only commits since the branch diverged are rewritten (uses merge-base range)
   - Backpack files are reverted to their merge-base state (or removed if they didn't exist)
-  - Only commits from the base branch remain unchanged (shared history is preserved)
   - All commits from the base branch remain unchanged (shared history is preserved)
   - Original branch is never modified
   - If emit branch exists, it will be deleted and recreated
-   - Command will refuse to create emit branch from an emit branch unless --force is used
+  - Command will refuse to create emit branch from an emit branch unless --force is used
+  
+Important: If using a remote base branch (e.g., origin/main):
+  - Always fetch before rebasing: git fetch origin && git rebase origin/main
+  - Or use: git pull --rebase origin main
+  - This ensures your local origin/main ref is up to date
+  - If origin/main is stale when you rebase and emit, the emit branch may not be 
+    properly based on the remote, requiring manual rebasing of the emit branch
 `
