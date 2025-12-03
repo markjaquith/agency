@@ -16,7 +16,7 @@ class ConfigWriteError extends Data.TaggedError("ConfigWriteError")<{
 }> {}
 
 const DEFAULT_CONFIG: AgencyConfig = new AgencyConfig({
-	prBranch: "%branch%--PR",
+	emitBranch: "%branch%--PR",
 })
 
 // Config Service using Effect.Service pattern

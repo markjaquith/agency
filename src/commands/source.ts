@@ -27,16 +27,16 @@ export const source = (options: SourceOptions = {}) =>
 
 		// Get current branch and resolve the branch pair
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
-		const { sourceBranch, isOnPrBranch } =
+		const { sourceBranch, isOnEmitBranch } =
 			yield* resolveBranchPairWithAgencyJson(
 				gitRoot,
 				currentBranch,
-				config.prBranch,
+				config.emitBranch,
 			)
 
-		if (!isOnPrBranch) {
+		if (!isOnEmitBranch) {
 			return yield* Effect.fail(
-				new Error(`Not on a PR branch. Current branch: ${currentBranch}`),
+				new Error(`Not on an emit branch. Current branch: ${currentBranch}`),
 			)
 		}
 
@@ -56,16 +56,16 @@ export const source = (options: SourceOptions = {}) =>
 export const help = `
 Usage: agency source [options]
 
-Switch back to the source branch from a PR branch.
+Switch back to the source branch from an emit branch.
 
-This command extracts the source branch name from your current PR branch name
+This command extracts the source branch name from your current emit branch name
 using the configured pattern, and switches back to it.
 
 Example:
   agency source                  # From main--PR, switch to main
 
 Notes:
-  - Must be run from a PR branch
+  - Must be run from an emit branch
   - Source branch must exist
-  - Uses PR branch pattern from ~/.config/agency/agency.json
+  - Uses emit branch pattern from ~/.config/agency/agency.json
 `

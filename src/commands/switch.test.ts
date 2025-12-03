@@ -101,7 +101,7 @@ describe("switch command", () => {
 		test("works with custom PR branch pattern", async () => {
 			// Create custom config
 			const configPath = join(tempDir, "custom-config.json")
-			await Bun.write(configPath, JSON.stringify({ prBranch: "PR/%branch%" }))
+			await Bun.write(configPath, JSON.stringify({ emitBranch: "PR/%branch%" }))
 			process.env.AGENCY_CONFIG_PATH = configPath
 
 			// Create feature branch and its PR branch
@@ -120,11 +120,11 @@ describe("switch command", () => {
 	})
 
 	describe("error handling", () => {
-		test("throws error when PR branch doesn't exist", async () => {
+		test("throws error when emit branch doesn't exist", async () => {
 			// We're on main, and main--PR doesn't exist
 			await expect(
 				runTestEffect(switchBranch({ silent: true })),
-			).rejects.toThrow(/PR branch .* does not exist/)
+			).rejects.toThrow(/Emit branch .* does not exist/)
 		})
 
 		test("throws error when source branch doesn't exist", async () => {

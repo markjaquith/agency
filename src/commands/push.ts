@@ -33,7 +33,7 @@ export const push = (options: PushOptions = {}) =>
 		// Check if we're already on a PR branch
 		const possibleSourceBranch = extractSourceBranch(
 			sourceBranch,
-			config.prBranch,
+			config.emitBranch,
 		)
 
 		// If we're on a PR branch, switch to the source branch first
@@ -76,15 +76,17 @@ export const push = (options: PushOptions = {}) =>
 		}
 
 		// Compute the PR branch name (emit() command now stays on source branch)
-		const prBranchName =
-			options.branch || makePrBranchName(sourceBranch, config.prBranch)
-		log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
+		const emitBranchName =
+			options.branch || makePrBranchName(sourceBranch, config.emitBranch)
+		log(done(`Created PR branch: ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
-		verboseLog(`Step 2: Pushing ${highlight.branch(prBranchName)} to remote...`)
+		verboseLog(
+			`Step 2: Pushing ${highlight.branch(emitBranchName)} to remote...`,
+		)
 
 		const pushEither = yield* Effect.either(
-			pushBranchToRemoteEffect(gitRoot, prBranchName, {
+			pushBranchToRemoteEffect(gitRoot, emitBranchName, {
 				force: options.force,
 				verbose: options.verbose,
 			}),
@@ -102,9 +104,9 @@ export const push = (options: PushOptions = {}) =>
 		const usedForce = pushEither.right
 
 		if (usedForce) {
-			log(done(`Force pushed ${highlight.branch(prBranchName)} to origin`))
+			log(done(`Force pushed ${highlight.branch(emitBranchName)} to origin`))
 		} else {
-			log(done(`Pushed ${highlight.branch(prBranchName)} to origin`))
+			log(done(`Pushed ${highlight.branch(emitBranchName)} to origin`))
 		}
 
 		// Step 3 (optional): Open GitHub PR if --gh flag is set
@@ -112,7 +114,7 @@ export const push = (options: PushOptions = {}) =>
 			verboseLog("Step 3: Opening GitHub PR...")
 
 			const ghEither = yield* Effect.either(
-				openGitHubPR(gitRoot, prBranchName, {
+				openGitHubPR(gitRoot, emitBranchName, {
 					verbose: options.verbose,
 				}),
 			)

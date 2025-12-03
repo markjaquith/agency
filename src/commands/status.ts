@@ -32,7 +32,7 @@ interface StatusData {
 	branchType: BranchType
 	currentBranch: string
 	sourceBranch: string | null
-	prBranch: string | null
+	emitBranch: string | null
 	correspondingBranchExists: boolean
 	template: string | null
 	managedFiles: string[]
@@ -90,8 +90,8 @@ export const status = (options: StatusOptions = {}) =>
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
 
 		// Resolve branch pair to determine if we're on source or PR branch
-		const branches = resolveBranchPair(currentBranch, config.prBranch)
-		const { sourceBranch, prBranch, isOnPrBranch } = branches
+		const branches = resolveBranchPair(currentBranch, config.emitBranch)
+		const { sourceBranch, emitBranch, isOnEmitBranch } = branches
 
 		// Check if agency is initialized (agency.json exists)
 		const metadata = yield* readAgencyMetadata(gitRoot)
@@ -100,11 +100,11 @@ export const status = (options: StatusOptions = {}) =>
 		// Determine branch type
 		let branchType: BranchType = "neither"
 		if (initialized) {
-			branchType = isOnPrBranch ? "pr" : "source"
+			branchType = isOnEmitBranch ? "pr" : "source"
 		}
 
 		// Check if the corresponding branch exists
-		const correspondingBranch = isOnPrBranch ? sourceBranch : prBranch
+		const correspondingBranch = isOnEmitBranch ? sourceBranch : emitBranch
 		const correspondingBranchExists = yield* git.branchExists(
 			gitRoot,
 			correspondingBranch,
@@ -123,8 +123,8 @@ export const status = (options: StatusOptions = {}) =>
 			initialized,
 			branchType,
 			currentBranch,
-			sourceBranch: isOnPrBranch ? sourceBranch : currentBranch,
-			prBranch: isOnPrBranch ? currentBranch : prBranch,
+			sourceBranch: isOnEmitBranch ? sourceBranch : currentBranch,
+			emitBranch: isOnEmitBranch ? currentBranch : emitBranch,
 			correspondingBranchExists,
 			template,
 			managedFiles: backpackFiles,
@@ -155,15 +155,15 @@ export const status = (options: StatusOptions = {}) =>
 				log(`Current branch: ${highlight.branch(currentBranch)}`)
 
 				// Branch type
-				const branchTypeDisplay = isOnPrBranch ? "PR branch" : "Source branch"
+				const branchTypeDisplay = isOnEmitBranch ? "PR branch" : "Source branch"
 				log(`Branch type: ${branchTypeDisplay}`)
 
 				// Show corresponding branch only if it exists
 				if (correspondingBranchExists) {
-					if (isOnPrBranch) {
+					if (isOnEmitBranch) {
 						log(`Source branch: ${highlight.branch(statusData.sourceBranch!)}`)
 					} else {
-						log(`PR branch: ${highlight.branch(statusData.prBranch!)}`)
+						log(`PR branch: ${highlight.branch(statusData.emitBranch!)}`)
 					}
 				}
 

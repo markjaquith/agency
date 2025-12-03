@@ -91,40 +91,40 @@ describe("resolveBranchPair", () => {
 		const result = resolveBranchPair("feature-foo", "%branch%--PR")
 
 		expect(result.sourceBranch).toBe("feature-foo")
-		expect(result.prBranch).toBe("feature-foo--PR")
-		expect(result.isOnPrBranch).toBe(false)
+		expect(result.emitBranch).toBe("feature-foo--PR")
+		expect(result.isOnEmitBranch).toBe(false)
 	})
 
-	test("resolves PR branch correctly", () => {
+	test("resolves emit branch correctly", () => {
 		const result = resolveBranchPair("feature-foo--PR", "%branch%--PR")
 
 		expect(result.sourceBranch).toBe("feature-foo")
-		expect(result.prBranch).toBe("feature-foo--PR")
-		expect(result.isOnPrBranch).toBe(true)
+		expect(result.emitBranch).toBe("feature-foo--PR")
+		expect(result.isOnEmitBranch).toBe(true)
 	})
 
 	test("works with prefix pattern", () => {
 		const sourceResult = resolveBranchPair("feature-foo", "PR/%branch%")
 		expect(sourceResult.sourceBranch).toBe("feature-foo")
-		expect(sourceResult.prBranch).toBe("PR/feature-foo")
-		expect(sourceResult.isOnPrBranch).toBe(false)
+		expect(sourceResult.emitBranch).toBe("PR/feature-foo")
+		expect(sourceResult.isOnEmitBranch).toBe(false)
 
 		const prResult = resolveBranchPair("PR/feature-foo", "PR/%branch%")
 		expect(prResult.sourceBranch).toBe("feature-foo")
-		expect(prResult.prBranch).toBe("PR/feature-foo")
-		expect(prResult.isOnPrBranch).toBe(true)
+		expect(prResult.emitBranch).toBe("PR/feature-foo")
+		expect(prResult.isOnEmitBranch).toBe(true)
 	})
 
 	test("works with suffix mode (no placeholder)", () => {
 		const sourceResult = resolveBranchPair("feature-foo", "--PR")
 		expect(sourceResult.sourceBranch).toBe("feature-foo")
-		expect(sourceResult.prBranch).toBe("feature-foo--PR")
-		expect(sourceResult.isOnPrBranch).toBe(false)
+		expect(sourceResult.emitBranch).toBe("feature-foo--PR")
+		expect(sourceResult.isOnEmitBranch).toBe(false)
 
 		const prResult = resolveBranchPair("feature-foo--PR", "--PR")
 		expect(prResult.sourceBranch).toBe("feature-foo")
-		expect(prResult.prBranch).toBe("feature-foo--PR")
-		expect(prResult.isOnPrBranch).toBe(true)
+		expect(prResult.emitBranch).toBe("feature-foo--PR")
+		expect(prResult.isOnEmitBranch).toBe(true)
 	})
 })
 
@@ -156,8 +156,8 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		)
 
 		expect(result.sourceBranch).toBe("main")
-		expect(result.prBranch).toBe("feature-foo--custom-pr")
-		expect(result.isOnPrBranch).toBe(false)
+		expect(result.emitBranch).toBe("feature-foo--custom-pr")
+		expect(result.isOnEmitBranch).toBe(false)
 	})
 
 	test("finds source branch by searching for matching emitBranch", async () => {
@@ -211,8 +211,8 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		)
 
 		expect(result.sourceBranch).toBe("feature-bar")
-		expect(result.prBranch).toBe("feature-bar--PR")
-		expect(result.isOnPrBranch).toBe(true)
+		expect(result.emitBranch).toBe("feature-bar--PR")
+		expect(result.isOnEmitBranch).toBe(true)
 	})
 
 	test("falls back to pattern-based resolution when agency.json not found", async () => {
@@ -225,8 +225,8 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		)
 
 		expect(result.sourceBranch).toBe("feature-baz")
-		expect(result.prBranch).toBe("feature-baz--PR")
-		expect(result.isOnPrBranch).toBe(false)
+		expect(result.emitBranch).toBe("feature-baz--PR")
+		expect(result.isOnEmitBranch).toBe(false)
 	})
 
 	test("falls back to pattern-based resolution on PR branch when no matching agency.json", async () => {
@@ -249,8 +249,8 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		)
 
 		expect(result.sourceBranch).toBe("feature-qux")
-		expect(result.prBranch).toBe("feature-qux--PR")
-		expect(result.isOnPrBranch).toBe(true)
+		expect(result.emitBranch).toBe("feature-qux--PR")
+		expect(result.isOnEmitBranch).toBe(true)
 	})
 
 	test("handles branches with no agency.json on current branch", async () => {
@@ -263,7 +263,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		)
 
 		expect(result.sourceBranch).toBe("main")
-		expect(result.prBranch).toBe("main--PR")
-		expect(result.isOnPrBranch).toBe(false)
+		expect(result.emitBranch).toBe("main--PR")
+		expect(result.isOnEmitBranch).toBe(false)
 	})
 })

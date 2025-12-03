@@ -59,9 +59,9 @@ export const merge = (options: MergeOptions = {}) =>
 
 		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
-		const sourceBranch = extractSourceBranch(currentBranch, config.prBranch)
+		const sourceBranch = extractSourceBranch(currentBranch, config.emitBranch)
 
-		let prBranchToMerge: string
+		let emitBranchToMerge: string
 		let baseBranchToMergeInto: string
 
 		if (sourceBranch) {
@@ -104,25 +104,25 @@ export const merge = (options: MergeOptions = {}) =>
 					`You may need to checkout the branch first or update your base branch configuration.`,
 			)
 
-			prBranchToMerge = currentBranch
+			emitBranchToMerge = currentBranch
 		} else {
 			// We're on a source branch - need to create/update PR branch first
 			verboseLog(
 				`Current branch appears to be a source branch, will create PR branch first`,
 			)
 
-			// Check if a corresponding PR branch already exists
-			const prBranch = makePrBranchName(currentBranch, config.prBranch)
-			const prExists = yield* git.branchExists(gitRoot, prBranch)
+			// Check if a corresponding emit branch already exists
+			const emitBranch = makePrBranchName(currentBranch, config.emitBranch)
+			const emitExists = yield* git.branchExists(gitRoot, emitBranch)
 
-			if (prExists) {
+			if (emitExists) {
 				verboseLog(
-					`PR branch ${highlight.branch(prBranch)} already exists, will recreate it`,
+					`Emit branch ${highlight.branch(emitBranch)} already exists, will recreate it`,
 				)
 			}
 
-			// Run 'agency emit' to create/update the PR branch
-			verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
+			// Run 'agency emit' to create/update the emit branch
+			verboseLog(`Creating emit branch ${highlight.branch(emitBranch)}...`)
 			yield* emit({ silent: true, verbose })
 
 			// Switch back to source branch and get the base branch from agency.json
@@ -150,7 +150,7 @@ export const merge = (options: MergeOptions = {}) =>
 					`You may need to checkout the branch first or update your base branch configuration.`,
 			)
 
-			prBranchToMerge = prBranch
+			emitBranchToMerge = emitBranch
 		}
 
 		// Now switch to the base branch
@@ -159,20 +159,20 @@ export const merge = (options: MergeOptions = {}) =>
 
 		// Merge the PR branch
 		verboseLog(
-			`Merging ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}${squash ? " (squash)" : ""}...`,
+			`Merging ${highlight.branch(emitBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}${squash ? " (squash)" : ""}...`,
 		)
-		yield* mergeBranchEffect(gitRoot, prBranchToMerge, squash)
+		yield* mergeBranchEffect(gitRoot, emitBranchToMerge, squash)
 
 		if (squash) {
 			log(
 				done(
-					`Squash merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)} (staged, not committed)`,
+					`Squash merged ${highlight.branch(emitBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)} (staged, not committed)`,
 				),
 			)
 		} else {
 			log(
 				done(
-					`Merged ${highlight.branch(prBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
+					`Merged ${highlight.branch(emitBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
 				),
 			)
 		}

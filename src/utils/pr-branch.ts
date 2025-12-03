@@ -29,8 +29,8 @@ export function makePrBranchName(branchName: string, pattern: string): string {
 }
 
 /**
- * Extract the source branch name from a PR branch name using a pattern.
- * Returns null if the PR branch name doesn't match the pattern.
+ * Extract the source branch name from an emit branch name using a pattern.
+ * Returns null if the emit branch name doesn't match the pattern.
  *
  * @example
  * extractSourceBranch("feature-foo--PR", "%branch%--PR") // "feature-foo"
@@ -39,7 +39,7 @@ export function makePrBranchName(branchName: string, pattern: string): string {
  * extractSourceBranch("main", "%branch%--PR") // null
  */
 export function extractSourceBranch(
-	prBranchName: string,
+	emitBranchName: string,
 	pattern: string,
 ): string | null {
 	if (pattern.includes("%branch%")) {
@@ -50,53 +50,56 @@ export function extractSourceBranch(
 		const prefix = parts[0]!
 		const suffix = parts[1]!
 
-		// Check if PR branch name matches the pattern
-		if (!prBranchName.startsWith(prefix) || !prBranchName.endsWith(suffix)) {
+		// Check if emit branch name matches the pattern
+		if (
+			!emitBranchName.startsWith(prefix) ||
+			!emitBranchName.endsWith(suffix)
+		) {
 			return null
 		}
 
 		// Extract the branch name by removing prefix and suffix
-		const sourceBranch = prBranchName.slice(
+		const sourceBranch = emitBranchName.slice(
 			prefix.length,
-			prBranchName.length - suffix.length,
+			emitBranchName.length - suffix.length,
 		)
 
 		// Ensure we extracted something (not empty string)
 		return sourceBranch.length > 0 ? sourceBranch : null
 	} else {
 		// Pattern is a suffix - check if branch ends with it
-		if (!prBranchName.endsWith(pattern)) {
+		if (!emitBranchName.endsWith(pattern)) {
 			return null
 		}
 
-		const sourceBranch = prBranchName.slice(0, -pattern.length)
+		const sourceBranch = emitBranchName.slice(0, -pattern.length)
 		return sourceBranch.length > 0 ? sourceBranch : null
 	}
 }
 
 /**
- * Result of resolving a branch pair (source and PR branches).
+ * Result of resolving a branch pair (source and emit branches).
  */
 export interface BranchPair {
-	/** The source branch name (without PR suffix) */
+	/** The source branch name (without emit suffix) */
 	sourceBranch: string
-	/** The PR branch name (with PR suffix) */
-	prBranch: string
-	/** Whether the current branch is the PR branch */
-	isOnPrBranch: boolean
+	/** The emit branch name (with emit suffix) */
+	emitBranch: string
+	/** Whether the current branch is the emit branch */
+	isOnEmitBranch: boolean
 }
 
 /**
- * Resolve the source and PR branch names from a current branch and pattern.
- * This determines whether we're on a PR branch or source branch and provides
+ * Resolve the source and emit branch names from a current branch and pattern.
+ * This determines whether we're on an emit branch or source branch and provides
  * both branch names.
  *
  * @example
  * resolveBranchPair("feature-foo", "%branch%--PR")
- * // { sourceBranch: "feature-foo", prBranch: "feature-foo--PR", isOnPrBranch: false }
+ * // { sourceBranch: "feature-foo", emitBranch: "feature-foo--PR", isOnEmitBranch: false }
  *
  * resolveBranchPair("feature-foo--PR", "%branch%--PR")
- * // { sourceBranch: "feature-foo", prBranch: "feature-foo--PR", isOnPrBranch: true }
+ * // { sourceBranch: "feature-foo", emitBranch: "feature-foo--PR", isOnEmitBranch: true }
  */
 export function resolveBranchPair(
 	currentBranch: string,
@@ -105,18 +108,18 @@ export function resolveBranchPair(
 	const sourceBranch = extractSourceBranch(currentBranch, pattern)
 
 	if (sourceBranch) {
-		// Current branch is a PR branch
+		// Current branch is an emit branch
 		return {
 			sourceBranch,
-			prBranch: currentBranch,
-			isOnPrBranch: true,
+			emitBranch: currentBranch,
+			isOnEmitBranch: true,
 		}
 	} else {
 		// Current branch is a source branch
 		return {
 			sourceBranch: currentBranch,
-			prBranch: makePrBranchName(currentBranch, pattern),
-			isOnPrBranch: false,
+			emitBranch: makePrBranchName(currentBranch, pattern),
+			isOnEmitBranch: false,
 		}
 	}
 }
@@ -281,7 +284,7 @@ const findSourceBranchByEmitBranch = (
  *
  * Priority order:
  * 1. If on source branch (has agency.json), use its emitBranch value
- * 2. If on PR branch, search other branches for matching emitBranch
+ * 2. If on emit branch, search other branches for matching emitBranch
  * 3. Fall back to pattern-based resolution
  */
 export const resolveBranchPairWithAgencyJson = (
@@ -297,12 +300,12 @@ export const resolveBranchPairWithAgencyJson = (
 			// We're on a source branch and know the emit branch
 			return {
 				sourceBranch: currentBranch,
-				prBranch: currentMetadata.emitBranch,
-				isOnPrBranch: false,
+				emitBranch: currentMetadata.emitBranch,
+				isOnEmitBranch: false,
 			}
 		}
 
-		// If we don't have agency.json on current branch, we might be on a PR branch
+		// If we don't have agency.json on current branch, we might be on an emit branch
 		// Search other branches for an agency.json with matching emitBranch
 		const sourceBranch = yield* findSourceBranchByEmitBranch(
 			gitRoot,
@@ -313,8 +316,8 @@ export const resolveBranchPairWithAgencyJson = (
 			// Found the source branch via agency.json
 			return {
 				sourceBranch,
-				prBranch: currentBranch,
-				isOnPrBranch: true,
+				emitBranch: currentBranch,
+				isOnEmitBranch: true,
 			}
 		}
 

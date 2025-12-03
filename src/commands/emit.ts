@@ -51,10 +51,10 @@ export const emit = (options: EmitOptions = {}) =>
 		// Get current branch
 		let currentBranch = yield* git.getCurrentBranch(gitRoot)
 
-		// Check if current branch looks like a PR branch already
+		// Check if current branch looks like an emit branch already
 		const possibleSourceBranch = extractSourceBranch(
 			currentBranch,
-			config.prBranch,
+			config.emitBranch,
 		)
 		if (possibleSourceBranch) {
 			// Check if the possible source branch exists
@@ -65,7 +65,7 @@ export const emit = (options: EmitOptions = {}) =>
 			if (sourceExists) {
 				// Switch to the source branch and continue
 				verboseLog(
-					`Currently on PR branch ${highlight.branch(currentBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
+					`Currently on emit branch ${highlight.branch(currentBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
 				)
 				yield* git.checkoutBranch(gitRoot, possibleSourceBranch)
 				currentBranch = possibleSourceBranch
@@ -89,19 +89,19 @@ export const emit = (options: EmitOptions = {}) =>
 
 		verboseLog(`Branch diverged at commit: ${highlight.commit(mergeBase)}`)
 
-		// Determine PR branch name using config pattern
-		const prBranchName =
-			options.branch || makePrBranchName(currentBranch, config.prBranch)
+		// Determine emit branch name using config pattern
+		const emitBranchName =
+			options.branch || makePrBranchName(currentBranch, config.emitBranch)
 
-		// Create or reset PR branch from current branch
-		yield* createOrResetBranchEffect(gitRoot, currentBranch, prBranchName)
+		// Create or reset emit branch from current branch
+		yield* createOrResetBranchEffect(gitRoot, currentBranch, emitBranchName)
 
-		// Unset any remote tracking branch for the PR branch
-		yield* git.unsetGitConfig(`branch.${prBranchName}.remote`, gitRoot)
-		yield* git.unsetGitConfig(`branch.${prBranchName}.merge`, gitRoot)
+		// Unset any remote tracking branch for the emit branch
+		yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
+		yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
 
 		verboseLog(
-			`Filtering backpack files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(prBranchName)}`,
+			`Filtering backpack files from commits in range: ${highlight.commit(mergeBase.substring(0, 8))}..${highlight.branch(emitBranchName)}`,
 		)
 		verboseLog(
 			`Files will revert to their state at merge-base (base branch: ${highlight.branch(baseBranch)})`,
@@ -127,7 +127,7 @@ export const emit = (options: EmitOptions = {}) =>
 			"--invert-paths",
 			"--force",
 			"--refs",
-			`${mergeBase}..${prBranchName}`,
+			`${mergeBase}..${emitBranchName}`,
 		]
 
 		const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
@@ -143,12 +143,12 @@ export const emit = (options: EmitOptions = {}) =>
 			)
 		}
 
-		// Switch back to source branch (git-filter-repo may have checked out the PR branch)
+		// Switch back to source branch (git-filter-repo may have checked out the emit branch)
 		yield* git.checkoutBranch(gitRoot, currentBranch)
 
 		log(
 			done(
-				`Created ${highlight.branch(prBranchName)} from ${highlight.branch(currentBranch)} (stayed on ${highlight.branch(currentBranch)})`,
+				`Created ${highlight.branch(emitBranchName)} from ${highlight.branch(currentBranch)} (stayed on ${highlight.branch(currentBranch)})`,
 			),
 		)
 	})
@@ -178,12 +178,15 @@ const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
 		// Determine the PR branch name that will be created
 		const config = yield* ConfigService
 		const configData = yield* config.loadConfig()
-		const prBranchName = makePrBranchName(currentBranch, configData.prBranch)
+		const emitBranchName = makePrBranchName(
+			currentBranch,
+			configData.emitBranch,
+		)
 
 		// Add emitBranch to metadata
 		const updatedMetadata = {
 			...metadata,
-			emitBranch: prBranchName,
+			emitBranch: emitBranchName,
 		}
 
 		// Write updated metadata
@@ -226,7 +229,7 @@ const createOrResetBranchEffect = (
 export const help = `
 Usage: agency emit [base-branch] [options]
 
-Create a PR branch from the current branch with backpack files (AGENTS.md, TASK.md, etc.)
+Create an emit branch from the current branch with backpack files (AGENTS.md, TASK.md, etc.)
 reverted to their state on the base branch.
 
 This command creates a new branch (or recreates it if it exists) based on your current
@@ -239,7 +242,7 @@ Behavior:
    - If this file did NOT exist on base branch: It is completely removed
   - Only commits since the branch diverged are rewritten
   - This allows you to layer feature-specific instructions on top of base instructions
-    during development, then remove those modifications when creating a PR
+    during development, then remove those modifications when submitting code
 
 Base Branch Selection:
   The command determines the base branch in this order:
@@ -260,13 +263,13 @@ Arguments:
                     If not provided, will use saved config or prompt interactively
 
 Options:
-  -b, --branch      Custom name for PR branch (defaults to pattern from config)
-  -f, --force       Force PR branch creation even if current branch looks like a PR branch
+  -b, --branch      Custom name for emit branch (defaults to pattern from config)
+  -f, --force       Force emit branch creation even if current branch looks like an emit branch
 
 Configuration:
   ~/.config/agency/agency.json can contain:
   {
-    "prBranch": "%branch%--PR"  // Pattern for PR branch names
+    "emitBranch": "%branch%--PR"  // Pattern for emit branch names
   }
   
   Use %branch% as placeholder for source branch name.
@@ -280,16 +283,16 @@ Configuration:
 Examples:
   agency emit                          # Prompt for base branch (first time) or use saved
   agency emit origin/main              # Explicitly use origin/main as base branch
-  agency emit --force                  # Force creation even from a PR branch
+  agency emit --force                  # Force creation even from an emit branch
 
 Notes:
-  - PR branch is created from your current branch (not the base)
+  - Emit branch is created from your current branch (not the base)
   - Base branch is set when you run 'agency task' to initialize the feature branch
   - Only commits since the branch diverged are rewritten (uses merge-base range)
   - Backpack files are reverted to their merge-base state (or removed if they didn't exist)
   - Only commits from the base branch remain unchanged (shared history is preserved)
   - All commits from the base branch remain unchanged (shared history is preserved)
   - Original branch is never modified
-  - If PR branch exists, it will be deleted and recreated
-   - Command will refuse to create PR branch from a PR branch unless --force is used
+  - If emit branch exists, it will be deleted and recreated
+   - Command will refuse to create emit branch from an emit branch unless --force is used
 `

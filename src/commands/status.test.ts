@@ -318,7 +318,7 @@ describe("status command", () => {
 			expect(data).toHaveProperty("branchType")
 			expect(data).toHaveProperty("currentBranch")
 			expect(data).toHaveProperty("sourceBranch")
-			expect(data).toHaveProperty("prBranch")
+			expect(data).toHaveProperty("emitBranch")
 			expect(data).toHaveProperty("correspondingBranchExists")
 			expect(data).toHaveProperty("template")
 			expect(data).toHaveProperty("managedFiles")

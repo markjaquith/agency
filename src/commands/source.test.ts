@@ -68,7 +68,7 @@ describe("source command", () => {
 		test("works with custom PR branch pattern", async () => {
 			// Create custom config
 			const configPath = join(tempDir, "custom-config.json")
-			await Bun.write(configPath, JSON.stringify({ prBranch: "PR/%branch%" }))
+			await Bun.write(configPath, JSON.stringify({ emitBranch: "PR/%branch%" }))
 			process.env.AGENCY_CONFIG_PATH = configPath
 
 			// Create feature branch and its PR branch
@@ -86,10 +86,10 @@ describe("source command", () => {
 	})
 
 	describe("error handling", () => {
-		test("throws error when not on a PR branch", async () => {
-			// We're on main, which is not a PR branch
+		test("throws error when not on an emit branch", async () => {
+			// We're on main, which is not an emit branch
 			await expect(runTestEffect(source({ silent: true }))).rejects.toThrow(
-				"Not on a PR branch",
+				"Not on an emit branch",
 			)
 		})
 
