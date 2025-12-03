@@ -55,7 +55,7 @@ export const push = (options: PushOptions = {}) =>
 		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
 
 		// Step 1: Create emit branch (agency emit)
-		verboseLog("Step 1: Creating emit branch...")
+		verboseLog("Step 1: Emitting...")
 		// Use emit command
 		const prEffectWithOptions = emit({
 			baseBranch: options.baseBranch,
@@ -78,7 +78,7 @@ export const push = (options: PushOptions = {}) =>
 		// Compute the emit branch name (emit() command now stays on source branch)
 		const emitBranchName =
 			options.branch || makePrBranchName(sourceBranch, config.emitBranch)
-		log(done(`Created emit branch: ${highlight.branch(emitBranchName)}`))
+		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
 		verboseLog(

@@ -77,7 +77,7 @@ const commands: Record<string, Command> = {
 	},
 	emit: {
 		name: "emit",
-		description: "Create an emit branch without AGENTS.md",
+		description: "Emit a branch without backpack files",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(emitHelp)
@@ -97,7 +97,7 @@ const commands: Record<string, Command> = {
 	},
 	push: {
 		name: "push",
-		description: "Create emit branch, push to remote, return to source",
+		description: "Emit, push to remote, return to source",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(pushHelp)
@@ -158,7 +158,7 @@ const commands: Record<string, Command> = {
 	},
 	switch: {
 		name: "switch",
-		description: "Toggle between source and emit branch",
+		description: "Toggle between source and emitted branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(switchHelp)
@@ -172,7 +172,7 @@ const commands: Record<string, Command> = {
 	},
 	source: {
 		name: "source",
-		description: "Switch to source branch from emit branch",
+		description: "Switch to source branch from emitted branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(sourceHelp)
@@ -186,7 +186,7 @@ const commands: Record<string, Command> = {
 	},
 	merge: {
 		name: "merge",
-		description: "Merge emit branch into base branch",
+		description: "Merge emitted branch into base branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(mergeHelp)
@@ -292,7 +292,7 @@ Example:
 	},
 	clean: {
 		name: "clean",
-		description: "Delete all emit branches",
+		description: "Delete all emitted branches",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(cleanHelp)
@@ -327,14 +327,14 @@ Commands:
     list                   List all files in configured template
     view <file>            View contents of a file in template
     delete <file> ...      Delete files from configured template
-  emit [base-branch]     Create an emit branch with backpack files reverted
-  push [base-branch]     Create emit branch, push to remote, return to source
+  emit [base-branch]     Emit a branch with backpack files reverted
+  push [base-branch]     Emit, push to remote, return to source
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
     get                    Get the configured base branch
-  switch                 Toggle between source and emit branch
-  source                 Switch to source branch from emit branch
-  merge                  Merge emit branch into base branch
+  switch                 Toggle between source and emitted branch
+  source                 Switch to source branch from emitted branch
+  merge                  Merge emitted branch into base branch
   status                 Show agency status for this repository
 
 Global Options:
@@ -348,8 +348,8 @@ Examples:
   agency init                         # Initialize with template (run first)
   agency task                         # Initialize on current feature branch
   agency task my-feature              # Create 'my-feature' branch and initialize
-  agency emit                         # Create emit branch (prompts for base branch)
-  agency switch                       # Toggle between source and emit branch
+  agency emit                         # Emit a branch (prompts for base branch)
+  agency switch                       # Toggle between source and emitted branch
 
 For more information about a command, run:
   agency <command> --help

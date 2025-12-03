@@ -56,7 +56,7 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 			)
 
 			yield* git.checkoutBranch(gitRoot, emitBranch)
-			log(done(`Switched to emit branch: ${highlight.branch(emitBranch)}`))
+			log(done(`Switched to ${highlight.branch(emitBranch)}`))
 		}
 	})
 

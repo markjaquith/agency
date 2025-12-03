@@ -148,7 +148,7 @@ export const emit = (options: EmitOptions = {}) =>
 
 		log(
 			done(
-				`Created ${highlight.branch(emitBranchName)} from ${highlight.branch(currentBranch)} (stayed on ${highlight.branch(currentBranch)})`,
+				`Emitted ${highlight.branch(emitBranchName)} (from ${highlight.branch(currentBranch)})`,
 			),
 		)
 	})
