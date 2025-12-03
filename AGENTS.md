@@ -118,7 +118,7 @@ The codebase maintains backward compatibility during the Effect migration:
 - `agency save`: Saves current `AGENTS.md` file back to the configured template directory.
 - `agency source [template]`: Returns the path to a template's source directory. Shows interactive selection if no template name provided.
 - `agency switch`: Toggles between source branch and PR branch. If on a PR branch (e.g., `main--PR`), switches to source branch (e.g., `main`). If on source branch, switches to PR branch. PR branch must exist first.
-- `agency pr [branch]`: Creates a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
+- `agency emit [branch]`: Creates a PR branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
 
 ## Error Handling
 
@@ -159,11 +159,11 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 - `perf`: Performance improvements
 - `ci`: CI/CD configuration changes
 
-**Scope (optional):** The area of the codebase affected (e.g., `cli`, `pr`, `init`, `use`)
+**Scope (optional):** The area of the codebase affected (e.g., `cli`, `emit`, `init`, `use`)
 
 **Examples:**
 
-- `feat(pr): add support for custom branch patterns`
+- `feat(emit): add support for custom branch patterns`
 - `fix(init): handle missing template directory`
 - `test: add tests for source command`
 - `chore: update dependencies`

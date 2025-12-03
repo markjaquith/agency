@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
 import { merge } from "./merge"
-import { pr } from "./pr"
+import { emit } from "./emit"
 import { task } from "./task"
 import {
 	createTempDir,
@@ -148,7 +148,7 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch first
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Go back to feature branch
 			await Bun.spawn(["git", "checkout", "feature"], {
@@ -177,9 +177,9 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
-			// pr() now stays on source branch, so we need to checkout to PR branch
+			// emit() now stays on source branch, so we need to checkout to PR branch
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -209,7 +209,7 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// pr() now stays on source branch, so checkout to PR branch
 			await Bun.spawn(["git", "checkout", "feature--PR"], {
@@ -251,7 +251,7 @@ describe("merge command", () => {
 			}
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Delete main branch (the base)
 			await Bun.spawn(["git", "checkout", "feature--PR"], {

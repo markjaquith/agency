@@ -3,7 +3,7 @@ import type { BaseCommandOptions } from "../utils/command"
 import { GitService, GitCommandError } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
-import { pr } from "./pr"
+import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import {
 	createLoggers,
@@ -121,9 +121,9 @@ export const merge = (options: MergeOptions = {}) =>
 				)
 			}
 
-			// Run 'agency pr' to create/update the PR branch
+			// Run 'agency emit' to create/update the PR branch
 			verboseLog(`Creating PR branch ${highlight.branch(prBranch)}...`)
-			yield* pr({ silent: true, verbose })
+			yield* emit({ silent: true, verbose })
 
 			// Switch back to source branch and get the base branch from agency.json
 			yield* git.checkoutBranch(gitRoot, currentBranch)
@@ -208,7 +208,7 @@ Merge the current PR branch into the configured base branch.
 
 This command handles two scenarios:
   1. If on a PR branch (e.g., feature--PR): Switches to the base branch and merges the PR branch
-  2. If on a source branch (e.g., feature): Runs 'agency pr' first to create/update the PR branch, then merges it
+  2. If on a source branch (e.g., feature): Runs 'agency emit' first to create/update the PR branch, then merges it
 
 Behavior:
   - Automatically detects whether you're on a source or PR branch
@@ -237,7 +237,7 @@ Examples:
 
 Notes:
   - The command determines the base branch from git config (agency.pr.<branch>.baseBranch)
-  - If you're on a source branch, 'agency pr' is run automatically
+  - If you're on a source branch, 'agency emit' is run automatically
   - The PR branch must have both a source branch and base branch configured
   - After merge, you remain on the base branch
   - Merge conflicts must be resolved manually if they occur

@@ -4,7 +4,7 @@ import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
-import { pr, help as prHelp } from "./src/commands/pr"
+import { emit, help as emitHelp } from "./src/commands/emit"
 import { push, help as pushHelp } from "./src/commands/push"
 import { base, help as baseHelp } from "./src/commands/base"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
@@ -74,16 +74,16 @@ const commands: Record<string, Command> = {
 		},
 		help: initHelp,
 	},
-	pr: {
-		name: "pr",
+	emit: {
+		name: "emit",
 		description: "Create a PR branch without AGENTS.md",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
-				console.log(prHelp)
+				console.log(emitHelp)
 				return
 			}
 			await runCommand(
-				pr({
+				emit({
 					baseBranch: args[0],
 					branch: options.branch,
 					silent: options.silent,
@@ -92,7 +92,7 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: prHelp,
+		help: emitHelp,
 	},
 	push: {
 		name: "push",
@@ -308,7 +308,7 @@ Commands:
     list                   List all files in configured template
     view <file>            View contents of a file in template
     delete <file> ...      Delete files from configured template
-  pr [base-branch]       Create a PR branch with backpack files reverted
+  emit [base-branch]     Create a PR branch with backpack files reverted
   push [base-branch]     Create PR branch, push to remote, return to source
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
@@ -329,7 +329,7 @@ Examples:
   agency init                         # Initialize with template (run first)
   agency task                         # Initialize on current feature branch
   agency task my-feature              # Create 'my-feature' branch and initialize
-  agency pr                           # Create PR branch (prompts for base branch)
+  agency emit                         # Create PR branch (prompts for base branch)
   agency switch                       # Toggle between source and PR branch
 
 For more information about a command, run:

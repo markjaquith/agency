@@ -3,7 +3,7 @@ import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
-import { pr } from "./pr"
+import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 
@@ -54,13 +54,13 @@ export const push = (options: PushOptions = {}) =>
 
 		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
 
-		// Step 1: Create PR branch (agency pr)
+		// Step 1: Create PR branch (agency emit)
 		verboseLog("Step 1: Creating PR branch...")
-		// Use pr command
-		const prEffectWithOptions = pr({
+		// Use emit command
+		const prEffectWithOptions = emit({
 			baseBranch: options.baseBranch,
 			branch: options.branch,
-			silent: true, // Suppress pr command output, we'll provide our own
+			silent: true, // Suppress emit command output, we'll provide our own
 			force: options.force,
 			verbose: options.verbose,
 		})
@@ -75,7 +75,7 @@ export const push = (options: PushOptions = {}) =>
 			)
 		}
 
-		// Compute the PR branch name (pr() command now stays on source branch)
+		// Compute the PR branch name (emit() command now stays on source branch)
 		const prBranchName =
 			options.branch || makePrBranchName(sourceBranch, config.prBranch)
 		log(done(`Created PR branch: ${highlight.branch(prBranchName)}`))
@@ -128,10 +128,10 @@ export const push = (options: PushOptions = {}) =>
 			}
 		}
 
-		// Verify we're still on the source branch (pr() now stays on source branch)
+		// Verify we're still on the source branch (emit() now stays on source branch)
 		const currentBranch = yield* git.getCurrentBranch(gitRoot)
 		if (currentBranch !== sourceBranch) {
-			// This shouldn't happen with the new pr() behavior, but check anyway
+			// This shouldn't happen with the new emit() behavior, but check anyway
 			verboseLog(
 				`Switching back to source branch ${highlight.branch(sourceBranch)}...`,
 			)
@@ -255,7 +255,7 @@ Usage: agency push [base-branch] [options]
 Create a PR branch, push it to remote, and return to the source branch.
 
 This command is a convenience wrapper that runs operations in sequence:
-  1. agency pr [base-branch]  - Create PR branch with backpack files reverted
+  1. agency emit [base-branch]  - Create PR branch with backpack files reverted
   2. git push -u origin <pr-branch>  - Push PR branch to remote
   3. gh pr create --web (optional with --gh)  - Open GitHub PR in browser
   4. git checkout <source-branch>  - Switch back to source branch
@@ -265,7 +265,7 @@ the PR branch, making it easy to continue working locally while having
 a clean PR branch ready on the remote.
 
 Base Branch Selection:
-  Same as 'agency pr' - see 'agency pr --help' for details
+  Same as 'agency emit' - see 'agency emit --help' for details
 
 Prerequisites:
   - git-filter-repo must be installed: brew install git-filter-repo

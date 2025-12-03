@@ -16,13 +16,13 @@ import {
 	resolveBaseBranch,
 } from "../utils/effect"
 
-interface PrOptions extends BaseCommandOptions {
+interface EmitOptions extends BaseCommandOptions {
 	branch?: string
 	baseBranch?: string
 	force?: boolean
 }
 
-export const pr = (options: PrOptions = {}) =>
+export const emit = (options: EmitOptions = {}) =>
 	Effect.gen(function* () {
 		const { force = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
@@ -224,7 +224,7 @@ const createOrResetBranchEffect = (
 	})
 
 export const help = `
-Usage: agency pr [base-branch] [options]
+Usage: agency emit [base-branch] [options]
 
 Create a PR branch from the current branch with backpack files (AGENTS.md, TASK.md, etc.)
 reverted to their state on the base branch.
@@ -278,9 +278,9 @@ Configuration:
     "--PR" -> feature-foo becomes feature-foo--PR
 
 Examples:
-  agency pr                          # Prompt for base branch (first time) or use saved
-  agency pr origin/main              # Explicitly use origin/main as base branch
-  agency pr --force                  # Force creation even from a PR branch
+  agency emit                          # Prompt for base branch (first time) or use saved
+  agency emit origin/main              # Explicitly use origin/main as base branch
+  agency emit --force                  # Force creation even from a PR branch
 
 Notes:
   - PR branch is created from your current branch (not the base)

@@ -195,5 +195,5 @@ Notes:
   - Branch-specific base branch is saved in agency.json (committed with the branch)
   - Repository-level default is saved in .git/config (not committed)
   - Branch-specific settings take precedence over repository-level defaults
-  - Base branch configuration is used by 'agency pr' when creating PR branches
+  - Base branch configuration is used by 'agency emit' when creating PR branches
 `

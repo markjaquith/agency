@@ -47,7 +47,7 @@ export const switchBranch = (options: SwitchOptions = {}) =>
 			yield* ensureBranchExists(
 				gitRoot,
 				prBranch,
-				`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency pr' to create it.`,
+				`PR branch ${highlight.branch(prBranch)} does not exist. Run 'agency emit' to create it.`,
 			)
 
 			yield* git.checkoutBranch(gitRoot, prBranch)
@@ -71,5 +71,5 @@ Example:
 Notes:
   - Target branch must exist
   - Uses PR branch pattern from ~/.config/agency/agency.json
-  - If PR branch doesn't exist, run 'agency pr' to create it
+  - If PR branch doesn't exist, run 'agency emit' to create it
 `

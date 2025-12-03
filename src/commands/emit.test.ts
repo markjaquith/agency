@@ -1,6 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
-import { pr } from "../commands/pr"
+import { emit } from "../commands/emit"
 import { task } from "../commands/task"
 import {
 	createTempDir,
@@ -32,7 +32,7 @@ async function checkGitFilterRepo(): Promise<boolean> {
 	return hasGitFilterRepoCache
 }
 
-describe("pr command", () => {
+describe("emit command", () => {
 	let tempDir: string
 	let originalCwd: string
 	let hasGitFilterRepo: boolean
@@ -112,7 +112,7 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			expect(runTestEffect(pr({ silent: true }))).rejects.toThrow(
+			expect(runTestEffect(emit({ silent: true }))).rejects.toThrow(
 				"git-filter-repo is not installed",
 			)
 		})
@@ -132,7 +132,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Check that PR branch exists
 			const branches = await getGitOutput(tempDir, [
@@ -160,7 +160,7 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			await runTestEffect(pr({ branch: "custom-pr", silent: true }))
+			await runTestEffect(emit({ branch: "custom-pr", silent: true }))
 
 			const branches = await getGitOutput(tempDir, [
 				"branch",
@@ -188,7 +188,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Should complete without throwing
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -208,7 +208,7 @@ describe("pr command", () => {
 			}).exited
 			await createCommit(tempDir, "Feature commit")
 
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -242,7 +242,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -300,7 +300,7 @@ describe("pr command", () => {
 			expect(featureAgentsContent).toContain("Modified by feature branch")
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -386,7 +386,7 @@ describe("pr command", () => {
 
 			// Create PR branch
 			process.chdir(freshDir)
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			let branchName = await getCurrentBranch(freshDir)
@@ -420,7 +420,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -458,8 +458,8 @@ describe("pr command", () => {
 				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
 			).exited
 
-			// Run pr command first time
-			await runTestEffect(pr({ silent: true }))
+			// Run emit command first time
+			await runTestEffect(emit({ silent: true }))
 
 			// Switch back to feature branch
 			await Bun.spawn(["git", "checkout", "feature"], {
@@ -471,9 +471,9 @@ describe("pr command", () => {
 			// Make another commit
 			await createCommit(tempDir, "Another feature commit")
 
-			// Run pr command second time - this would trigger the "already_ran" prompt
+			// Run emit command second time - this would trigger the "already_ran" prompt
 			// without the cleanup code
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			// Should complete successfully without interactive prompts and stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -494,7 +494,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			// Create PR branch with explicit base branch
-			await runTestEffect(pr({ baseBranch: "main", silent: true }))
+			await runTestEffect(emit({ baseBranch: "main", silent: true }))
 
 			// Should stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -515,7 +515,7 @@ describe("pr command", () => {
 			await createCommit(tempDir, "Feature commit")
 
 			expect(
-				runTestEffect(pr({ baseBranch: "nonexistent", silent: true })),
+				runTestEffect(emit({ baseBranch: "nonexistent", silent: true })),
 			).rejects.toThrow("does not exist")
 		})
 
@@ -546,7 +546,7 @@ describe("pr command", () => {
 			])
 
 			// Create initial PR branch
-			await runTestEffect(pr({ silent: true, baseBranch: "main" }))
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
 
 			// Should still be on test-feature branch
 			let currentBranch = await getCurrentBranch(tempDir)
@@ -613,7 +613,7 @@ describe("pr command", () => {
 			expect(newMergeBase.trim()).not.toBe(initialMergeBase.trim())
 
 			// Recreate PR branch after rebase (this is where the bug would manifest)
-			await runTestEffect(pr({ silent: true, baseBranch: "main" }))
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
 
 			// Should still be on test-feature branch
 			currentBranch = await getCurrentBranch(tempDir)
@@ -648,7 +648,7 @@ describe("pr command", () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			expect(runTestEffect(pr({ silent: true }))).rejects.toThrow(
+			expect(runTestEffect(emit({ silent: true }))).rejects.toThrow(
 				"Not in a git repository",
 			)
 
@@ -674,7 +674,7 @@ describe("pr command", () => {
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await runTestEffect(pr({ silent: true }))
+			await runTestEffect(emit({ silent: true }))
 
 			console.log = originalLog
 
