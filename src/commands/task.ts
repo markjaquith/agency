@@ -2,6 +2,7 @@ import { resolve, join } from "path"
 import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
+import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
 import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
@@ -9,6 +10,7 @@ import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
+import { makePrBranchName } from "../utils/pr-branch"
 
 interface TaskOptions extends BaseCommandOptions {
 	path?: string
@@ -24,6 +26,7 @@ export const task = (options: TaskOptions = {}) =>
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
+		const configService = yield* ConfigService
 		const fs = yield* FileSystemService
 		const promptService = yield* PromptService
 		const templateService = yield* TemplateService
@@ -266,11 +269,17 @@ export const task = (options: TaskOptions = {}) =>
 			verboseLog(`Auto-detected base branch: ${highlight.branch(baseBranch)}`)
 		}
 
+		// Calculate emitBranch name from current branch
+		const finalBranch = yield* git.getCurrentBranch(targetPath)
+		const config = yield* configService.loadConfig()
+		const emitBranchName = makePrBranchName(finalBranch, config.emitBranch)
+
 		// Create agency.json metadata file
 		const metadata = {
 			version: 1 as const,
 			injectedFiles,
 			baseBranch, // Save the base branch if detected
+			emitBranch: emitBranchName, // Save the emit branch name
 			template: templateName,
 			createdAt: new Date().toISOString(),
 		}
