@@ -122,6 +122,7 @@ export const status = (options: StatusOptions = {}) =>
 		const branches = yield* resolveBranchPairWithAgencyJson(
 			gitRoot,
 			currentBranch,
+			config.sourceBranchPattern,
 			config.emitBranch,
 		)
 		const { sourceBranch, emitBranch, isOnEmitBranch } = branches

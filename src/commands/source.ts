@@ -31,6 +31,7 @@ export const source = (options: SourceOptions = {}) =>
 			yield* resolveBranchPairWithAgencyJson(
 				gitRoot,
 				currentBranch,
+				config.sourceBranchPattern,
 				config.emitBranch,
 			)
 

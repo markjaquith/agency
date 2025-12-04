@@ -129,12 +129,13 @@ describe("status command", () => {
 		test("shows emit branch type when on emit branch", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create feature branch with agency.json
-			await createBranch(tempDir, "feature")
+			// Create source branch with agency.json
+			await createBranch(tempDir, "agency/feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
 				template: "test-template",
+				emitBranch: "feature",
 				createdAt: new Date().toISOString(),
 			} as any)
 			// Stage and commit agency.json
@@ -146,7 +147,7 @@ describe("status command", () => {
 			await createCommit(tempDir, "Feature work")
 
 			// Create and switch to emit branch
-			await createBranch(tempDir, "feature--PR")
+			await createBranch(tempDir, "feature")
 
 			let output = ""
 			const originalLog = console.log
@@ -163,17 +164,26 @@ describe("status command", () => {
 
 		test("shows corresponding branch when it exists", async () => {
 			await initAgency(tempDir, "test-template")
-			await createBranch(tempDir, "feature")
+			await createBranch(tempDir, "agency/feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
 				template: "test-template",
+				emitBranch: "feature",
 				createdAt: new Date().toISOString(),
 			} as any)
 
+			// Stage and commit agency.json
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Set up branch")
+
 			// Create emit branch
-			await createBranch(tempDir, "feature--PR")
-			await checkoutBranch(tempDir, "feature")
+			await createBranch(tempDir, "feature")
+			await checkoutBranch(tempDir, "agency/feature")
 
 			let output = ""
 			const originalLog = console.log
@@ -185,7 +195,7 @@ describe("status command", () => {
 
 			console.log = originalLog
 			expect(output).toContain("Emit branch: ")
-			expect(output).toContain("feature--PR")
+			expect(output).toContain("feature")
 		})
 
 		test("shows backpack files", async () => {
@@ -381,13 +391,14 @@ describe("status command", () => {
 		test("reads metadata from source branch when on emit branch without agency.json on disk", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create feature branch with agency.json committed
-			await createBranch(tempDir, "feature")
+			// Create source branch (agency/feature) with agency.json committed
+			await createBranch(tempDir, "agency/feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["AGENTS.md", "opencode.json"],
 				template: "test-template",
 				baseBranch: "main",
+				emitBranch: "feature",
 				createdAt: new Date().toISOString(),
 			} as any)
 			// Stage and commit agency.json
@@ -399,7 +410,7 @@ describe("status command", () => {
 			await createCommit(tempDir, "Feature work")
 
 			// Create emit branch and remove agency.json from working tree
-			await createBranch(tempDir, "feature--PR")
+			await createBranch(tempDir, "feature")
 			await Bun.spawn(["rm", "agency.json"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -424,18 +435,19 @@ describe("status command", () => {
 			expect(data.baseBranch).toBe("main")
 			expect(data.managedFiles).toContain("AGENTS.md")
 			expect(data.managedFiles).toContain("opencode.json")
-			expect(data.sourceBranch).toBe("feature")
+			expect(data.sourceBranch).toBe("agency/feature")
 		})
 
 		test("shows correct backpack when on emit branch", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create feature branch with agency.json committed
-			await createBranch(tempDir, "feature")
+			// Create source branch (agency/feature) with agency.json committed
+			await createBranch(tempDir, "agency/feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["AGENTS.md"],
 				template: "test-template",
+				emitBranch: "feature",
 				createdAt: new Date().toISOString(),
 			} as any)
 			// Stage and commit agency.json
@@ -447,7 +459,7 @@ describe("status command", () => {
 			await createCommit(tempDir, "Feature work")
 
 			// Create emit branch and remove agency.json from disk to simulate clean emit branch
-			await createBranch(tempDir, "feature--PR")
+			await createBranch(tempDir, "feature")
 			await Bun.spawn(["rm", "agency.json"], {
 				cwd: tempDir,
 				stdout: "pipe",

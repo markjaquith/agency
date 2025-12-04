@@ -5,11 +5,11 @@ import {
 	createTempDir,
 	cleanupTempDir,
 	initGitRepo,
-	getGitOutput,
 	getCurrentBranch,
 	createCommit,
 	runTestEffect,
 } from "../test-utils"
+import { writeAgencyMetadata } from "../types"
 
 async function createBranch(cwd: string, branchName: string): Promise<void> {
 	await Bun.spawn(["git", "checkout", "-b", branchName], {
@@ -54,34 +54,82 @@ describe("source command", () => {
 
 	describe("basic functionality", () => {
 		test("switches from emit branch to source branch", async () => {
-			// Create a emit branch
-			await createBranch(tempDir, "main--PR")
+			// Create source branch with agency.json
+			await createBranch(tempDir, "agency/feature")
+			await writeAgencyMetadata(tempDir, {
+				version: 1,
+				injectedFiles: [],
+				template: "test-template",
+				emitBranch: "feature",
+				createdAt: new Date().toISOString(),
+			} as any)
+			// Stage and commit agency.json
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Setup")
 
-			// Run source command
+			// Create emit branch and remove agency.json
+			await createBranch(tempDir, "feature")
+			await Bun.spawn(["rm", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Run source command (should switch from feature emit branch to agency/feature source)
 			await runTestEffect(source({ silent: true }))
 
-			// Should be on main now
+			// Should be on agency/feature now
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("main")
+			expect(currentBranch).toBe("agency/feature")
 		})
 
 		test("works with custom emit branch pattern", async () => {
-			// Create custom config
+			// Create custom config with custom patterns
 			const configPath = join(tempDir, "custom-config.json")
-			await Bun.write(configPath, JSON.stringify({ emitBranch: "PR/%branch%" }))
+			await Bun.write(
+				configPath,
+				JSON.stringify({
+					sourceBranchPattern: "WIP/%branch%",
+					emitBranch: "PR/%branch%",
+				}),
+			)
 			process.env.AGENCY_CONFIG_PATH = configPath
 
-			// Create feature branch and its emit branch
-			await createBranch(tempDir, "feature")
+			// Create source branch with agency.json
+			await createBranch(tempDir, "WIP/feature")
+			await writeAgencyMetadata(tempDir, {
+				version: 1,
+				injectedFiles: [],
+				template: "test-template",
+				emitBranch: "PR/feature",
+				createdAt: new Date().toISOString(),
+			} as any)
+			// Stage and commit
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 			await createCommit(tempDir, "Feature work")
-			await createBranch(tempDir, "PR/feature")
 
-			// Run source command
+			// Create emit branch
+			await createBranch(tempDir, "PR/feature")
+			await Bun.spawn(["rm", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Run source command (from PR/feature to WIP/feature)
 			await runTestEffect(source({ silent: true }))
 
-			// Should be on feature now
+			// Should be on WIP/feature now
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("WIP/feature")
 		})
 	})
 
@@ -90,16 +138,6 @@ describe("source command", () => {
 			// We're on main, which is not an emit branch
 			await expect(runTestEffect(source({ silent: true }))).rejects.toThrow(
 				"Not on an emit branch",
-			)
-		})
-
-		test("throws error when source branch doesn't exist", async () => {
-			// Create emit branch but delete source
-			await createBranch(tempDir, "feature--PR")
-			// We never created 'feature', so it doesn't exist
-
-			await expect(runTestEffect(source({ silent: true }))).rejects.toThrow(
-				"Source branch",
 			)
 		})
 
@@ -117,7 +155,29 @@ describe("source command", () => {
 
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
-			await createBranch(tempDir, "main--PR")
+			// Create source branch with agency.json
+			await createBranch(tempDir, "agency/feature")
+			await writeAgencyMetadata(tempDir, {
+				version: 1,
+				injectedFiles: [],
+				template: "test-template",
+				emitBranch: "feature",
+				createdAt: new Date().toISOString(),
+			} as any)
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Setup")
+
+			// Create emit branch
+			await createBranch(tempDir, "feature")
+			await Bun.spawn(["rm", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
 
 			// Capture output
 			const originalLog = console.log
