@@ -113,9 +113,9 @@ export const push = (options: PushOptions = {}) =>
 		const usedForce = pushEither.right
 
 		if (usedForce) {
-			log(done(`Force pushed ${highlight.branch(emitBranchName)} to origin`))
+			log(done("Pushed to origin (forced)"))
 		} else {
-			log(done(`Pushed ${highlight.branch(emitBranchName)} to origin`))
+			log(done("Pushed to origin"))
 		}
 
 		// Step 3 (optional): Open GitHub PR if --gh flag is set
@@ -148,8 +148,6 @@ export const push = (options: PushOptions = {}) =>
 			)
 			yield* git.checkoutBranch(gitRoot, sourceBranch)
 		}
-
-		log(done(`Ready to continue work on ${highlight.branch(sourceBranch)}`))
 	})
 
 // Helper: Push branch to remote with optional force and retry logic

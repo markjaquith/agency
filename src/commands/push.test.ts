@@ -291,7 +291,7 @@ describe("push command", () => {
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
 			// Should have reported force push
-			expect(logMessages.some((msg) => msg.includes("Force pushed"))).toBe(true)
+			expect(logMessages.some((msg) => msg.includes("(forced)"))).toBe(true)
 		})
 
 		test("suggests using --force when push is rejected without it", async () => {
