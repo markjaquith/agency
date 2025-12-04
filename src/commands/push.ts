@@ -6,6 +6,7 @@ import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
+import { withSpinner } from "../utils/spinner"
 
 interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
@@ -86,10 +87,18 @@ export const push = (options: PushOptions = {}) =>
 		)
 
 		const pushEither = yield* Effect.either(
-			pushBranchToRemoteEffect(gitRoot, emitBranchName, {
-				force: options.force,
-				verbose: options.verbose,
-			}),
+			withSpinner(
+				pushBranchToRemoteEffect(gitRoot, emitBranchName, {
+					force: options.force,
+					verbose: options.verbose,
+				}),
+				{
+					text: options.force
+						? "Pushing to origin (forced)"
+						: "Pushing to origin",
+					enabled: !options.silent && !options.verbose,
+				},
+			),
 		)
 		if (Either.isLeft(pushEither)) {
 			const error = pushEither.left
