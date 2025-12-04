@@ -15,6 +15,7 @@ import {
 	ensureGitRepo,
 	resolveBaseBranch,
 } from "../utils/effect"
+import { withSpinner } from "../utils/spinner"
 
 interface EmitOptions extends BaseCommandOptions {
 	branch?: string
@@ -96,11 +97,19 @@ export const emit = (options: EmitOptions = {}) =>
 			options.branch || makePrBranchName(currentBranch, config.emitBranch)
 
 		// Create or reset emit branch from current branch
-		yield* createOrResetBranchEffect(gitRoot, currentBranch, emitBranchName)
+		const createBranch = Effect.gen(function* () {
+			yield* createOrResetBranchEffect(gitRoot, currentBranch, emitBranchName)
 
-		// Unset any remote tracking branch for the emit branch
-		yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
-		yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
+			// Unset any remote tracking branch for the emit branch
+			yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
+			yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
+		})
+
+		yield* withSpinner(createBranch, {
+			text: `Creating emit branch ${highlight.branch(emitBranchName)}`,
+			successText: `Created emit branch ${highlight.branch(emitBranchName)}`,
+			enabled: !options.silent && !verbose,
+		})
 
 		verboseLog(
 			`Filtering backpack files from commits in range: ${highlight.commit(forkPoint.substring(0, 8))}..${highlight.branch(emitBranchName)}`,
@@ -109,44 +118,53 @@ export const emit = (options: EmitOptions = {}) =>
 			`Files will revert to their state at fork-point (base branch: ${highlight.branch(baseBranch)})`,
 		)
 
-		// Clean up .git/filter-repo directory
-		const filterRepoDir = `${gitRoot}/.git/filter-repo`
-		yield* fs.deleteDirectory(filterRepoDir)
-		verboseLog("Cleaned up previous git-filter-repo state")
+		// Filter backpack files
+		const filterOperation = Effect.gen(function* () {
+			// Clean up .git/filter-repo directory
+			const filterRepoDir = `${gitRoot}/.git/filter-repo`
+			yield* fs.deleteDirectory(filterRepoDir)
+			verboseLog("Cleaned up previous git-filter-repo state")
 
-		// Get files to filter from agency.json metadata
-		const filesToFilter = yield* Effect.tryPromise({
-			try: () => getFilesToFilter(gitRoot),
-			catch: (error) => new Error(`Failed to get files to filter: ${error}`),
+			// Get files to filter from agency.json metadata
+			const filesToFilter = yield* Effect.tryPromise({
+				try: () => getFilesToFilter(gitRoot),
+				catch: (error) => new Error(`Failed to get files to filter: ${error}`),
+			})
+			verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
+
+			// Run git-filter-repo
+			const filterRepoArgs = [
+				"git",
+				"filter-repo",
+				...filesToFilter.flatMap((f) => ["--path", f]),
+				"--invert-paths",
+				"--force",
+				"--refs",
+				`${forkPoint}..${emitBranchName}`,
+			]
+
+			const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
+				env: { GIT_CONFIG_GLOBAL: "" },
+				captureOutput: true,
+			})
+
+			verboseLog("git-filter-repo completed")
+
+			if (result.exitCode !== 0) {
+				return yield* Effect.fail(
+					new Error(`git-filter-repo failed: ${result.stderr}`),
+				)
+			}
+
+			// Switch back to source branch (git-filter-repo may have checked out the emit branch)
+			yield* git.checkoutBranch(gitRoot, currentBranch)
 		})
-		verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
 
-		// Run git-filter-repo
-		const filterRepoArgs = [
-			"git",
-			"filter-repo",
-			...filesToFilter.flatMap((f) => ["--path", f]),
-			"--invert-paths",
-			"--force",
-			"--refs",
-			`${forkPoint}..${emitBranchName}`,
-		]
-
-		const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
-			env: { GIT_CONFIG_GLOBAL: "" },
-			captureOutput: true,
+		yield* withSpinner(filterOperation, {
+			text: "Filtering backpack files from branch history",
+			successText: "Filtered backpack files from branch history",
+			enabled: !options.silent && !verbose,
 		})
-
-		verboseLog("git-filter-repo completed")
-
-		if (result.exitCode !== 0) {
-			return yield* Effect.fail(
-				new Error(`git-filter-repo failed: ${result.stderr}`),
-			)
-		}
-
-		// Switch back to source branch (git-filter-repo may have checked out the emit branch)
-		yield* git.checkoutBranch(gitRoot, currentBranch)
 
 		log(
 			done(

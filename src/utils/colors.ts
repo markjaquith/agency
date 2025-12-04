@@ -14,6 +14,7 @@
 // ANSI color codes
 const RESET = "\x1b[0m"
 const CYAN_BRIGHT = "\x1b[96m"
+const GREEN = "\x1b[32m"
 
 /**
  * Central color configuration
@@ -119,13 +120,15 @@ function pattern(text: string): string {
 }
 
 /**
- * Prepends a checkmark to a message for success output
+ * Prepends a green checkmark to a message for success output
+ * Uses the same checkmark symbol and color as ora for consistency
  * @param message - The message to prepend the checkmark to
  * @example log(done(`Merged ${highlight.branch("main")}`))
  * @example log(done("Operation completed"))
  */
 export function done(message: string): string {
-	return `✓ ${message}`
+	const checkmark = colorsEnabled ? `\x1b[32m✔\x1b[0m` : "✔"
+	return `${checkmark} ${message}`
 }
 
 /**
