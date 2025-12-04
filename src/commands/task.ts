@@ -10,7 +10,11 @@ import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
-import { makeEmitBranchName, extractCleanBranch } from "../utils/pr-branch"
+import {
+	makeEmitBranchName,
+	extractCleanBranch,
+	makeSourceBranchName,
+} from "../utils/pr-branch"
 
 interface TaskOptions extends BaseCommandOptions {
 	path?: string
@@ -112,18 +116,27 @@ export const task = (options: TaskOptions = {}) =>
 			verboseLog(`Branch name from prompt: ${branchName}`)
 		}
 
-		// If we have a branch name and we're not on a feature branch, check if branch already exists
+		// If we have a branch name and we're not on a feature branch, apply source pattern and check if branch exists
+		let sourceBranchName: string | undefined
 		if (!isFeature && branchName) {
-			const exists = yield* git.branchExists(targetPath, branchName)
+			const config = yield* configService.loadConfig()
+			sourceBranchName = makeSourceBranchName(
+				branchName,
+				config.sourceBranchPattern,
+			)
+
+			const exists = yield* git.branchExists(targetPath, sourceBranchName)
 			if (exists) {
 				return yield* Effect.fail(
 					new Error(
-						`Branch ${highlight.branch(branchName)} already exists.\n` +
+						`Branch ${highlight.branch(sourceBranchName)} already exists.\n` +
 							`Either switch to it first or choose a different branch name.`,
 					),
 				)
 			}
-			verboseLog(`Branch ${branchName} does not exist, will create it`)
+			verboseLog(
+				`Branch ${sourceBranchName} does not exist (from clean name: ${branchName}), will create it`,
+			)
 		}
 
 		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
@@ -148,8 +161,13 @@ export const task = (options: TaskOptions = {}) =>
 			}
 		}
 
-		if (!isFeature && branchName) {
-			yield* createFeatureBranchEffect(targetPath, branchName, silent, verbose)
+		if (!isFeature && sourceBranchName) {
+			yield* createFeatureBranchEffect(
+				targetPath,
+				sourceBranchName,
+				silent,
+				verbose,
+			)
 		}
 
 		// Get managed files for later use

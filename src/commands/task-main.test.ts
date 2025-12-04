@@ -394,7 +394,7 @@ describe("task command", () => {
 			})
 			await proc.exited
 			const currentBranch = await new Response(proc.stdout).text()
-			expect(currentBranch.trim()).toBe("my-feature")
+			expect(currentBranch.trim()).toBe("agency/my-feature")
 
 			// Verify files were created
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
@@ -404,8 +404,8 @@ describe("task command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			// Create a feature branch first
-			await Bun.spawn(["git", "checkout", "-b", "existing-branch"], {
+			// Create a feature branch first (using source pattern)
+			await Bun.spawn(["git", "checkout", "-b", "agency/existing-branch"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
