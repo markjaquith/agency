@@ -1,10 +1,10 @@
-import ora, { type Ora } from "ora"
+import ora from "ora"
 import { Effect } from "effect"
 
 /**
  * Configuration for a spinner operation
  */
-export interface SpinnerConfig {
+interface SpinnerConfig {
 	/** The message to show while the spinner is running */
 	text: string
 	/** The message to show when the operation succeeds */
@@ -71,48 +71,4 @@ export const withSpinner = <A, E, R>(
 			throw error
 		}
 	})
-}
-
-/**
- * Creates a manual spinner that can be controlled programmatically.
- * Useful when you need to update the spinner text during an operation.
- *
- * @param config Initial configuration for the spinner
- * @returns An object with the spinner instance and helper methods
- *
- * @example
- * ```ts
- * const { spinner, succeed, fail } = createSpinner({ text: "Starting..." })
- * spinner.start()
- * spinner.text = "Processing..."
- * succeed("Done!")
- * ```
- */
-export const createSpinner = (config: SpinnerConfig) => {
-	const { text, enabled = true } = config
-
-	const spinner: Ora = ora({
-		text,
-		spinner: "dots",
-		color: "cyan",
-		isEnabled: enabled,
-	})
-
-	return {
-		spinner,
-		succeed: (message?: string) => {
-			if (message) {
-				spinner.succeed(message)
-			} else {
-				spinner.succeed()
-			}
-		},
-		fail: (message?: string) => {
-			if (message) {
-				spinner.fail(message)
-			} else {
-				spinner.fail()
-			}
-		},
-	}
 }
