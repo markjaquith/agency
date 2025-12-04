@@ -2,7 +2,12 @@ import { Effect, Either } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
+import {
+	extractSourceBranch,
+	makePrBranchName,
+	resolveBranchPairWithAgencyJson,
+} from "../utils/pr-branch"
+import { FileSystemService } from "../services/FileSystemService"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getRemoteName } from "../utils/effect"
@@ -28,28 +33,29 @@ export const push = (options: PushOptions = {}) =>
 		// Load config to check emit branch pattern
 		const config = yield* configService.loadConfig()
 
-		// Get current branch (this is our source branch we'll return to)
+		// Get current branch
 		let sourceBranch = yield* git.getCurrentBranch(gitRoot)
 
-		// Check if we're already on a emit branch
-		const possibleSourceBranch = extractSourceBranch(
+		// Check if we're already on an emit branch using proper branch resolution
+		const fs = yield* FileSystemService
+		const branchInfo = yield* resolveBranchPairWithAgencyJson(
+			gitRoot,
 			sourceBranch,
+			config.sourceBranchPattern,
 			config.emitBranch,
 		)
 
-		// If we're on a emit branch, switch to the source branch first
-		if (possibleSourceBranch) {
-			// Check if the possible source branch exists
-			const sourceExists = yield* git.branchExists(
-				gitRoot,
-				possibleSourceBranch,
-			)
+		// If we're on an emit branch, switch to the source branch first
+		if (branchInfo.isOnEmitBranch) {
+			const actualSourceBranch = branchInfo.sourceBranch
+			// Check if the source branch exists
+			const sourceExists = yield* git.branchExists(gitRoot, actualSourceBranch)
 			if (sourceExists) {
 				verboseLog(
-					`Currently on emit branch ${highlight.branch(sourceBranch)}, switching to source branch ${highlight.branch(possibleSourceBranch)}`,
+					`Currently on emit branch ${highlight.branch(sourceBranch)}, switching to source branch ${highlight.branch(actualSourceBranch)}`,
 				)
-				yield* git.checkoutBranch(gitRoot, possibleSourceBranch)
-				sourceBranch = possibleSourceBranch
+				yield* git.checkoutBranch(gitRoot, actualSourceBranch)
+				sourceBranch = actualSourceBranch
 			}
 		}
 
@@ -77,8 +83,8 @@ export const push = (options: PushOptions = {}) =>
 		}
 
 		// Compute the emit branch name (emit() command now stays on source branch)
-		const emitBranchName =
-			options.branch || makePrBranchName(sourceBranch, config.emitBranch)
+		// Use the branchInfo we already computed earlier
+		const emitBranchName = options.branch || branchInfo.emitBranch
 		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
@@ -141,8 +147,8 @@ export const push = (options: PushOptions = {}) =>
 		}
 
 		// Verify we're still on the source branch (emit() now stays on source branch)
-		const currentBranch = yield* git.getCurrentBranch(gitRoot)
-		if (currentBranch !== sourceBranch) {
+		const finalBranch = yield* git.getCurrentBranch(gitRoot)
+		if (finalBranch !== sourceBranch) {
 			// This shouldn't happen with the new emit() behavior, but check anyway
 			verboseLog(
 				`Switching back to source branch ${highlight.branch(sourceBranch)}...`,

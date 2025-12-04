@@ -2,7 +2,12 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService, GitCommandError } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
+import {
+	extractSourceBranch,
+	makePrBranchName,
+	resolveBranchPairWithAgencyJson,
+} from "../utils/pr-branch"
+import { FileSystemService } from "../services/FileSystemService"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import {
@@ -60,12 +65,20 @@ export const merge = (options: MergeOptions = {}) =>
 
 		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
 
-		const sourceBranch = extractSourceBranch(currentBranch, config.emitBranch)
+		// Use proper branch resolution with agency.json support
+		const fs = yield* FileSystemService
+		const branchInfo = yield* resolveBranchPairWithAgencyJson(
+			gitRoot,
+			currentBranch,
+			config.sourceBranchPattern,
+			config.emitBranch,
+		)
 
 		let emitBranchToMerge: string
 		let baseBranchToMergeInto: string
 
-		if (sourceBranch) {
+		if (branchInfo.isOnEmitBranch) {
+			const sourceBranch = branchInfo.sourceBranch
 			verboseLog(
 				`Current branch appears to be an emit branch for source: ${highlight.branch(sourceBranch)}`,
 			)
@@ -112,8 +125,8 @@ export const merge = (options: MergeOptions = {}) =>
 				`Current branch appears to be a source branch, will create emit branch first`,
 			)
 
-			// Check if a corresponding emit branch already exists
-			const emitBranch = makePrBranchName(currentBranch, config.emitBranch)
+			// Use the emit branch from branchInfo we already computed
+			const emitBranch = branchInfo.emitBranch
 			const emitExists = yield* git.branchExists(gitRoot, emitBranch)
 
 			if (emitExists) {
