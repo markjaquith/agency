@@ -164,17 +164,9 @@ export const merge = (options: MergeOptions = {}) =>
 		yield* mergeBranchEffect(gitRoot, emitBranchToMerge, squash)
 
 		if (squash) {
-			log(
-				done(
-					`Squash merged ${highlight.branch(emitBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)} (staged, not committed)`,
-				),
-			)
+			log(done(`Squash merged (awaiting commit)`))
 		} else {
-			log(
-				done(
-					`Merged ${highlight.branch(emitBranchToMerge)} into ${highlight.branch(baseBranchToMergeInto)}`,
-				),
-			)
+			log(done("Merged"))
 		}
 
 		// Push the base branch if --push flag is set
@@ -197,7 +189,7 @@ export const merge = (options: MergeOptions = {}) =>
 				)
 			}
 
-			log(done(`Pushed ${highlight.branch(baseBranchToMergeInto)} to origin`))
+			log(done("Pushed to origin"))
 		}
 	})
 
