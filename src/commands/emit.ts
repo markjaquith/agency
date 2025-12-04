@@ -3,7 +3,12 @@ import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
-import { makePrBranchName, extractSourceBranch } from "../utils/pr-branch"
+import {
+	makeEmitBranchName,
+	makeSourceBranchName,
+	extractCleanBranch,
+	extractCleanFromEmit,
+} from "../utils/pr-branch"
 import {
 	getFilesToFilter,
 	readAgencyMetadata,
@@ -52,13 +57,18 @@ export const emit = (options: EmitOptions = {}) =>
 		// Get current branch
 		let currentBranch = yield* git.getCurrentBranch(gitRoot)
 
-		// Check if current branch looks like an emit branch already
-		const possibleSourceBranch = extractSourceBranch(
+		// Check if current branch is an emit branch (doesn't match source pattern)
+		// If so, try to find and switch to the corresponding source branch
+		const possibleCleanBranch = extractCleanFromEmit(
 			currentBranch,
 			config.emitBranch,
 		)
-		if (possibleSourceBranch) {
-			// Check if the possible source branch exists
+		if (possibleCleanBranch) {
+			// This looks like an emit branch, try to find the source branch
+			const possibleSourceBranch = makeSourceBranchName(
+				possibleCleanBranch,
+				config.sourceBranchPattern,
+			)
 			const sourceExists = yield* git.branchExists(
 				gitRoot,
 				possibleSourceBranch,
@@ -73,8 +83,36 @@ export const emit = (options: EmitOptions = {}) =>
 			}
 		}
 
+		// First, check if agency.json already has emitBranch set (source of truth)
+		const metadata = yield* Effect.tryPromise({
+			try: () => readAgencyMetadata(gitRoot),
+			catch: () => null,
+		})
+
+		let emitBranchName: string
+
+		if (options.branch) {
+			// Explicit branch name provided via CLI
+			emitBranchName = options.branch
+		} else if (metadata?.emitBranch) {
+			// Use emitBranch from agency.json (source of truth)
+			emitBranchName = metadata.emitBranch
+			verboseLog(
+				`Using emit branch from agency.json: ${highlight.branch(emitBranchName)}`,
+			)
+		} else {
+			// Compute emit branch name from patterns
+			// Extract clean branch from source branch pattern
+			// If the branch matches the source pattern, extract the clean name
+			// Otherwise, treat the current branch as a "legacy" branch (the clean name itself)
+			const cleanBranch =
+				extractCleanBranch(currentBranch, config.sourceBranchPattern) ||
+				currentBranch
+			emitBranchName = makeEmitBranchName(cleanBranch, config.emitBranch)
+		}
+
 		// Check and update agency.json with emitBranch if needed
-		yield* ensureEmitBranchInMetadata(gitRoot, currentBranch)
+		yield* ensureEmitBranchInMetadata(gitRoot, currentBranch, emitBranchName)
 
 		// Find the base branch this was created from
 		const baseBranch = yield* resolveBaseBranch(gitRoot, options.baseBranch)
@@ -91,10 +129,6 @@ export const emit = (options: EmitOptions = {}) =>
 		)
 
 		verboseLog(`Branch forked at commit: ${highlight.commit(forkPoint)}`)
-
-		// Determine emit branch name using config pattern
-		const emitBranchName =
-			options.branch || makePrBranchName(currentBranch, config.emitBranch)
 
 		// Create or reset emit branch from current branch
 		const createBranch = Effect.gen(function* () {
@@ -174,10 +208,13 @@ export const emit = (options: EmitOptions = {}) =>
 	})
 
 // Helper: Ensure emitBranch is set in agency.json metadata
-const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
+const ensureEmitBranchInMetadata = (
+	gitRoot: string,
+	currentBranch: string,
+	emitBranchName: string,
+) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const fs = yield* FileSystemService
 
 		// Read existing metadata
 		const metadata = yield* Effect.tryPromise({
@@ -194,14 +231,6 @@ const ensureEmitBranchInMetadata = (gitRoot: string, currentBranch: string) =>
 		if (metadata.emitBranch) {
 			return
 		}
-
-		// Determine the emit branch name that will be created
-		const config = yield* ConfigService
-		const configData = yield* config.loadConfig()
-		const emitBranchName = makePrBranchName(
-			currentBranch,
-			configData.emitBranch,
-		)
 
 		// Add emitBranch to metadata
 		const updatedMetadata = {
@@ -336,17 +365,19 @@ const createOrResetBranchEffect = (
 export const help = `
 Usage: agency emit [base-branch] [options]
 
-Create an emit branch from the current branch with backpack files (AGENTS.md, TASK.md, etc.)
+Create an emit branch from the current source branch with backpack files (AGENTS.md, TASK.md, etc.)
 reverted to their state on the base branch.
 
-This command creates a new branch (or recreates it if it exists) based on your current
-branch, then uses git-filter-repo to revert AGENTS.md to its state at
-the point where your branch diverged from the base branch. Your original branch remains
-completely untouched.
+Source and Emit Branches:
+  - Source branches: Your working branches with agency-specific files (e.g., agency/feature-foo)
+  - Emit branches: Clean branches suitable for PRs without agency files (e.g., feature-foo)
+  
+  This command creates a clean emit branch from your source branch by filtering out
+  backpack files. Your source branch remains completely untouched.
 
 Behavior:
-   - If this file existed on the base branch: It is reverted to that version
-   - If this file did NOT exist on base branch: It is completely removed
+  - If a file existed on the base branch: It is reverted to that version
+  - If a file did NOT exist on base branch: It is completely removed
   - Only commits since the branch diverged are rewritten
   - This allows you to layer feature-specific instructions on top of base instructions
     during development, then remove those modifications when submitting code
@@ -376,16 +407,20 @@ Options:
 Configuration:
   ~/.config/agency/agency.json can contain:
   {
-    "emitBranch": "%branch%--PR"  // Pattern for emit branch names
+    "sourceBranchPattern": "agency/%branch%",  // Pattern for source branch names
+    "emitBranch": "%branch%"                   // Pattern for emit branch names
   }
   
-  Use %branch% as placeholder for source branch name.
-  If %branch% is not present, pattern is treated as a suffix.
+  Use %branch% as placeholder for the clean branch name.
   
-  Examples:
-    "%branch%--PR" -> feature-foo becomes feature-foo--PR
-    "PR/%branch%" -> feature-foo becomes PR/feature-foo
-    "--PR" -> feature-foo becomes feature-foo--PR
+  Source Pattern Examples:
+    "agency/%branch%" -> main becomes agency/main (default)
+    "wip/%branch%" -> feature becomes wip/feature
+  
+  Emit Pattern Examples:
+    "%branch%" -> agency/main emits to main (default)
+    "%branch%--PR" -> agency/feature emits to feature--PR
+    "PR/%branch%" -> agency/feature emits to PR/feature
 
 Examples:
   agency emit                          # Prompt for base branch (first time) or use saved

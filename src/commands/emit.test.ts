@@ -11,6 +11,7 @@ import {
 	getGitOutput,
 	getCurrentBranch,
 	createCommit,
+	checkoutBranch,
 	runTestEffect,
 } from "../test-utils"
 
@@ -53,8 +54,8 @@ describe("emit command", () => {
 		// Initialize git repo with main branch (already includes initial commit)
 		await initGitRepo(tempDir)
 
-		// Create a feature branch
-		await Bun.spawn(["git", "checkout", "-b", "test-feature"], {
+		// Create a source branch (with agency/ prefix)
+		await Bun.spawn(["git", "checkout", "-b", "agency/test-feature"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -105,7 +106,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -123,8 +124,24 @@ describe("emit command", () => {
 				return
 			}
 
-			// Create a feature branch
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			// Go back to main and create a fresh source branch (no inherited agency.json)
+			await checkoutBranch(tempDir, "main")
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			// Create agency.json for this branch
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await Bun.spawn(["git", "add", "agency.json"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -134,17 +151,17 @@ describe("emit command", () => {
 			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
 
-			// Check that emit branch exists
+			// Check that emit branch exists (default pattern is %branch%, so emit is just "feature")
 			const branches = await getGitOutput(tempDir, [
 				"branch",
 				"--list",
-				"feature--PR",
+				"feature",
 			])
-			expect(branches.trim()).toContain("feature--PR")
+			expect(branches.trim()).toContain("feature")
 
 			// Check we're still on the source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 		})
 
 		test("creates emit branch with custom name", async () => {
@@ -153,7 +170,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -171,7 +188,7 @@ describe("emit command", () => {
 
 			// Check we're still on the source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 		})
 
 		test("runs git-filter-repo successfully", async () => {
@@ -180,7 +197,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -192,7 +209,7 @@ describe("emit command", () => {
 
 			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 		})
 
 		test("preserves other files in emit branch", async () => {
@@ -201,7 +218,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -210,12 +227,12 @@ describe("emit command", () => {
 
 			await runTestEffect(emit({ silent: true }))
 
-			// Should still be on feature branch
+			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature--PR"], {
+			await Bun.spawn(["git", "checkout", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -234,7 +251,25 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			// Go back to main and create a fresh source branch
+			await checkoutBranch(tempDir, "main")
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			// Create agency.json with AGENTS.md as managed file
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await Bun.write(join(tempDir, "AGENTS.md"), "# Test AGENTS\n")
+			await Bun.spawn(["git", "add", "agency.json", "AGENTS.md"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -246,10 +281,10 @@ describe("emit command", () => {
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature--PR"], {
+			await Bun.spawn(["git", "checkout", "feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -270,7 +305,25 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			// Go back to main and create a fresh source branch
+			await checkoutBranch(tempDir, "main")
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Create agency.json with AGENTS.md as managed file
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await Bun.spawn(["git", "add", "agency.json"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -304,10 +357,10 @@ describe("emit command", () => {
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature--PR"], {
+			await Bun.spawn(["git", "checkout", "feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -353,7 +406,7 @@ describe("emit command", () => {
 			}).exited
 
 			// Create feature branch and add AGENTS.md
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: freshDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -390,10 +443,10 @@ describe("emit command", () => {
 
 			// Should still be on feature branch
 			let branchName = await getCurrentBranch(freshDir)
-			expect(branchName).toBe("feature")
+			expect(branchName).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature--PR"], {
+			await Bun.spawn(["git", "checkout", "feature"], {
 				cwd: freshDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -412,7 +465,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -424,7 +477,7 @@ describe("emit command", () => {
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 
 			// Check that AGENTS.md still exist on original branch
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -437,7 +490,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -462,7 +515,7 @@ describe("emit command", () => {
 			await runTestEffect(emit({ silent: true }))
 
 			// Switch back to feature branch
-			await Bun.spawn(["git", "checkout", "feature"], {
+			await Bun.spawn(["git", "checkout", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -477,7 +530,7 @@ describe("emit command", () => {
 
 			// Should complete successfully without interactive prompts and stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 		})
 
 		test("accepts explicit base branch argument", async () => {
@@ -486,7 +539,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -498,7 +551,7 @@ describe("emit command", () => {
 
 			// Should stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("feature")
+			expect(currentBranch).toBe("agency/feature")
 		})
 
 		test("throws error if provided base branch does not exist", async () => {
@@ -507,7 +560,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -541,7 +594,7 @@ describe("emit command", () => {
 			// Store merge-base before advancing main
 			const initialMergeBase = await getGitOutput(tempDir, [
 				"merge-base",
-				"test-feature",
+				"agency/test-feature",
 				"main",
 			])
 
@@ -550,10 +603,10 @@ describe("emit command", () => {
 
 			// Should still be on test-feature branch
 			let currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("test-feature")
+			expect(currentBranch).toBe("agency/test-feature")
 
 			// Switch to emit branch to verify AGENTS.md is filtered
-			await Bun.spawn(["git", "checkout", "test-feature--PR"], {
+			await Bun.spawn(["git", "checkout", "test-feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -563,8 +616,8 @@ describe("emit command", () => {
 			expect(files).not.toContain("AGENTS.md")
 			expect(files).toContain("feature.txt")
 
-			// Switch back to test-feature branch
-			await Bun.spawn(["git", "checkout", "test-feature"], {
+			// Switch back to source branch
+			await Bun.spawn(["git", "checkout", "agency/test-feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -588,7 +641,7 @@ describe("emit command", () => {
 			).exited
 
 			// Rebase test-feature onto new main
-			await Bun.spawn(["git", "checkout", "test-feature"], {
+			await Bun.spawn(["git", "checkout", "agency/test-feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -607,7 +660,7 @@ describe("emit command", () => {
 			// Verify merge-base has changed after rebase
 			const newMergeBase = await getGitOutput(tempDir, [
 				"merge-base",
-				"test-feature",
+				"agency/test-feature",
 				"main",
 			])
 			expect(newMergeBase.trim()).not.toBe(initialMergeBase.trim())
@@ -617,10 +670,10 @@ describe("emit command", () => {
 
 			// Should still be on test-feature branch
 			currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("test-feature")
+			expect(currentBranch).toBe("agency/test-feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "test-feature--PR"], {
+			await Bun.spawn(["git", "checkout", "test-feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -636,7 +689,7 @@ describe("emit command", () => {
 			const logOutput = await getGitOutput(tempDir, [
 				"log",
 				"--oneline",
-				"main..test-feature--PR",
+				"main..test-feature",
 			])
 			expect(logOutput).toContain("Add feature file")
 			expect(logOutput).not.toContain("Add AGENTS.md")
@@ -663,7 +716,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "feature"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",

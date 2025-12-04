@@ -1,5 +1,5 @@
 /**
- * Utilities for working with emit branch names and patterns
+ * Utilities for working with source and emit branch names and patterns
  */
 
 import { Effect, pipe } from "effect"
@@ -10,41 +10,125 @@ import { AgencyMetadata } from "../schemas"
 import { Schema } from "@effect/schema"
 
 /**
- * Generate an emit branch name from a pattern and source branch name.
+ * Generate a source branch name by applying a pattern to a clean branch name.
  * If pattern contains %branch%, it replaces it with the branch name.
- * Otherwise, treats the pattern as a suffix.
+ * Otherwise, treats the pattern as a prefix.
  *
  * @example
- * makeEmitBranchName("feature-foo", "%branch%--PR") // "feature-foo--PR"
- * makeEmitBranchName("feature-foo", "PR/%branch%") // "PR/feature-foo"
- * makeEmitBranchName("feature-foo", "--PR") // "feature-foo--PR"
+ * makeSourceBranchName("main", "agency/%branch%") // "agency/main"
+ * makeSourceBranchName("feature-foo", "wip/%branch%") // "wip/feature-foo"
+ * makeSourceBranchName("main", "agency/") // "agency/main"
  */
-export function makePrBranchName(branchName: string, pattern: string): string {
+export function makeSourceBranchName(
+	cleanBranch: string,
+	pattern: string,
+): string {
 	if (pattern.includes("%branch%")) {
-		return pattern.replace("%branch%", branchName)
+		return pattern.replace("%branch%", cleanBranch)
 	}
 
-	// If no %branch% placeholder, treat pattern as suffix
-	return branchName + pattern
+	// If no %branch% placeholder, treat pattern as prefix
+	return pattern + cleanBranch
 }
 
 /**
- * Extract the source branch name from an emit branch name using a pattern.
- * Returns null if the emit branch name doesn't match the pattern.
+ * Extract the clean branch name from a source branch name using a pattern.
+ * Returns null if the source branch name doesn't match the pattern.
  *
  * @example
- * extractSourceBranch("feature-foo--PR", "%branch%--PR") // "feature-foo"
- * extractSourceBranch("PR/feature-foo", "PR/%branch%") // "feature-foo"
- * extractSourceBranch("feature-foo--PR", "--PR") // "feature-foo"
- * extractSourceBranch("main", "%branch%--PR") // null
+ * extractCleanBranch("agency/main", "agency/%branch%") // "main"
+ * extractCleanBranch("wip/feature-foo", "wip/%branch%") // "feature-foo"
+ * extractCleanBranch("agency/main", "agency/") // "main"
+ * extractCleanBranch("main", "agency/%branch%") // null
  */
-export function extractSourceBranch(
-	emitBranchName: string,
+export function extractCleanBranch(
+	sourceBranchName: string,
 	pattern: string,
 ): string | null {
 	if (pattern.includes("%branch%")) {
 		// Split pattern into prefix and suffix around %branch%
 		const parts = pattern.split("%branch%")
+		if (parts.length !== 2) return null
+
+		const prefix = parts[0]!
+		const suffix = parts[1]!
+
+		// Check if source branch name matches the pattern
+		if (
+			!sourceBranchName.startsWith(prefix) ||
+			!sourceBranchName.endsWith(suffix)
+		) {
+			return null
+		}
+
+		// Extract the clean branch name by removing prefix and suffix
+		const cleanBranch = sourceBranchName.slice(
+			prefix.length,
+			sourceBranchName.length - suffix.length,
+		)
+
+		// Ensure we extracted something (not empty string)
+		return cleanBranch.length > 0 ? cleanBranch : null
+	} else {
+		// Pattern is a prefix - check if branch starts with it
+		if (!sourceBranchName.startsWith(pattern)) {
+			return null
+		}
+
+		const cleanBranch = sourceBranchName.slice(pattern.length)
+		return cleanBranch.length > 0 ? cleanBranch : null
+	}
+}
+
+/**
+ * Generate an emit branch name from a clean branch name and emit pattern.
+ * If pattern is "%branch%", returns the clean branch name unchanged.
+ * Otherwise, applies the pattern the same way as makeSourceBranchName.
+ *
+ * @example
+ * makeEmitBranchName("main", "%branch%") // "main"
+ * makeEmitBranchName("feature-foo", "%branch%--PR") // "feature-foo--PR"
+ * makeEmitBranchName("feature-foo", "PR/%branch%") // "PR/feature-foo"
+ */
+export function makeEmitBranchName(
+	cleanBranch: string,
+	emitPattern: string,
+): string {
+	// Special case: "%branch%" means use clean branch name as-is
+	if (emitPattern === "%branch%") {
+		return cleanBranch
+	}
+
+	if (emitPattern.includes("%branch%")) {
+		return emitPattern.replace("%branch%", cleanBranch)
+	}
+
+	// If no %branch% placeholder, treat pattern as suffix
+	return cleanBranch + emitPattern
+}
+
+/**
+ * Extract the clean branch name from an emit branch name using an emit pattern.
+ * Returns null if the emit branch name doesn't match the pattern.
+ *
+ * @example
+ * extractCleanFromEmit("main", "%branch%") // "main"
+ * extractCleanFromEmit("feature-foo--PR", "%branch%--PR") // "feature-foo"
+ * extractCleanFromEmit("PR/feature-foo", "PR/%branch%") // "feature-foo"
+ * extractCleanFromEmit("main", "%branch%--PR") // null
+ */
+export function extractCleanFromEmit(
+	emitBranchName: string,
+	emitPattern: string,
+): string | null {
+	// Special case: "%branch%" means emit branch is the clean branch name
+	if (emitPattern === "%branch%") {
+		return emitBranchName
+	}
+
+	if (emitPattern.includes("%branch%")) {
+		// Split pattern into prefix and suffix around %branch%
+		const parts = emitPattern.split("%branch%")
 		if (parts.length !== 2) return null
 
 		const prefix = parts[0]!
@@ -58,22 +142,22 @@ export function extractSourceBranch(
 			return null
 		}
 
-		// Extract the branch name by removing prefix and suffix
-		const sourceBranch = emitBranchName.slice(
+		// Extract the clean branch name by removing prefix and suffix
+		const cleanBranch = emitBranchName.slice(
 			prefix.length,
 			emitBranchName.length - suffix.length,
 		)
 
 		// Ensure we extracted something (not empty string)
-		return sourceBranch.length > 0 ? sourceBranch : null
+		return cleanBranch.length > 0 ? cleanBranch : null
 	} else {
 		// Pattern is a suffix - check if branch ends with it
-		if (!emitBranchName.endsWith(pattern)) {
+		if (!emitBranchName.endsWith(emitPattern)) {
 			return null
 		}
 
-		const sourceBranch = emitBranchName.slice(0, -pattern.length)
-		return sourceBranch.length > 0 ? sourceBranch : null
+		const cleanBranch = emitBranchName.slice(0, -emitPattern.length)
+		return cleanBranch.length > 0 ? cleanBranch : null
 	}
 }
 
@@ -81,43 +165,65 @@ export function extractSourceBranch(
  * Result of resolving a branch pair (source and emit branches).
  */
 export interface BranchPair {
-	/** The source branch name (without emit suffix) */
+	/** The source branch name (with source pattern applied) */
 	sourceBranch: string
-	/** The emit branch name (with emit suffix) */
+	/** The emit branch name (clean or with emit pattern) */
 	emitBranch: string
 	/** Whether the current branch is the emit branch */
 	isOnEmitBranch: boolean
 }
 
 /**
- * Resolve the source and emit branch names from a current branch and pattern.
+ * Resolve the source and emit branch names from a current branch and patterns.
  * This determines whether we're on an emit branch or source branch and provides
  * both branch names.
  *
  * @example
- * resolveBranchPair("feature-foo", "%branch%--PR")
- * // { sourceBranch: "feature-foo", emitBranch: "feature-foo--PR", isOnEmitBranch: false }
+ * resolveBranchPair("agency/main", "agency/%branch%", "%branch%")
+ * // { sourceBranch: "agency/main", emitBranch: "main", isOnEmitBranch: false }
  *
- * resolveBranchPair("feature-foo--PR", "%branch%--PR")
- * // { sourceBranch: "feature-foo", emitBranch: "feature-foo--PR", isOnEmitBranch: true }
+ * resolveBranchPair("main", "agency/%branch%", "%branch%")
+ * // { sourceBranch: "agency/main", emitBranch: "main", isOnEmitBranch: true }
  */
-function resolveBranchPair(currentBranch: string, pattern: string): BranchPair {
-	const sourceBranch = extractSourceBranch(currentBranch, pattern)
+function resolveBranchPair(
+	currentBranch: string,
+	sourcePattern: string,
+	emitPattern: string,
+): BranchPair {
+	// First, try to extract clean branch from source pattern
+	const cleanFromSource = extractCleanBranch(currentBranch, sourcePattern)
 
-	if (sourceBranch) {
-		// Current branch is an emit branch
-		return {
-			sourceBranch,
-			emitBranch: currentBranch,
-			isOnEmitBranch: true,
-		}
-	} else {
-		// Current branch is a source branch
+	if (cleanFromSource) {
+		// Current branch is a source branch (matches source pattern)
 		return {
 			sourceBranch: currentBranch,
-			emitBranch: makePrBranchName(currentBranch, pattern),
+			emitBranch: makeEmitBranchName(cleanFromSource, emitPattern),
 			isOnEmitBranch: false,
 		}
+	}
+
+	// If emit pattern is not just "%branch%" (which would match anything),
+	// check if current branch matches the emit pattern
+	if (emitPattern !== "%branch%") {
+		const cleanFromEmit = extractCleanFromEmit(currentBranch, emitPattern)
+
+		if (cleanFromEmit) {
+			// Current branch is an emit branch (matches emit pattern)
+			return {
+				sourceBranch: makeSourceBranchName(cleanFromEmit, sourcePattern),
+				emitBranch: currentBranch,
+				isOnEmitBranch: true,
+			}
+		}
+	}
+
+	// If neither pattern matches (or emit pattern is "%branch%"), this is a
+	// "legacy" branch that doesn't follow the new naming convention.
+	// Treat it as a source branch where the branch name itself is the clean name.
+	return {
+		sourceBranch: currentBranch,
+		emitBranch: makeEmitBranchName(currentBranch, emitPattern),
+		isOnEmitBranch: false,
 	}
 }
 
@@ -139,7 +245,6 @@ const readAgencyJsonFromBranch = (
 > =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const fs = yield* FileSystemService
 
 		// Try to read agency.json from the branch using git show
 		const result = yield* pipe(
@@ -282,14 +387,18 @@ const findSourceBranchByEmitBranch = (
  * Priority order:
  * 1. If on source branch (has agency.json), use its emitBranch value
  * 2. If on emit branch, search other branches for matching emitBranch
- * 3. Fall back to pattern-based resolution
+ * 3. If emit pattern is "%branch%" and a source branch with pattern exists, we're on emit
+ * 4. Fall back to pattern-based resolution
  */
 export const resolveBranchPairWithAgencyJson = (
 	gitRoot: string,
 	currentBranch: string,
-	pattern: string,
+	sourcePattern: string,
+	emitPattern: string,
 ): Effect.Effect<BranchPair, never, GitService | FileSystemService> =>
 	Effect.gen(function* () {
+		const git = yield* GitService
+
 		// First, try to read agency.json from the current branch
 		const currentMetadata = yield* getCurrentBranchAgencyJson(gitRoot)
 
@@ -318,6 +427,49 @@ export const resolveBranchPairWithAgencyJson = (
 			}
 		}
 
+		// If emit pattern is "%branch%" (clean emit branches), check if a source branch
+		// with the pattern exists. If so, we're on an emit branch.
+		if (emitPattern === "%branch%") {
+			const possibleSourceBranch = makeSourceBranchName(
+				currentBranch,
+				sourcePattern,
+			)
+			const sourceExists = yield* pipe(
+				git.branchExists(gitRoot, possibleSourceBranch),
+				Effect.catchAll(() => Effect.succeed(false)),
+			)
+
+			if (sourceExists) {
+				// The patterned source branch exists, so we're on an emit branch
+				return {
+					sourceBranch: possibleSourceBranch,
+					emitBranch: currentBranch,
+					isOnEmitBranch: true,
+				}
+			}
+		}
+
 		// Fall back to pattern-based resolution
-		return resolveBranchPair(currentBranch, pattern)
+		return resolveBranchPair(currentBranch, sourcePattern, emitPattern)
 	})
+
+// Legacy function names for backward compatibility
+// These will be updated as we migrate the codebase
+
+/**
+ * @deprecated Use makeEmitBranchName instead. This function now creates emit branches,
+ * not PR branches with suffixes.
+ */
+export function makePrBranchName(branchName: string, pattern: string): string {
+	return makeEmitBranchName(branchName, pattern)
+}
+
+/**
+ * @deprecated Use extractCleanFromEmit instead. Extracts clean branch from emit branch.
+ */
+export function extractSourceBranch(
+	emitBranchName: string,
+	pattern: string,
+): string | null {
+	return extractCleanFromEmit(emitBranchName, pattern)
+}

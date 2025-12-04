@@ -55,65 +55,75 @@ describe("switch command", () => {
 
 	describe("basic functionality", () => {
 		test("switches from emit branch to source branch", async () => {
-			// Create a emit branch
-			await createBranch(tempDir, "main--PR")
-
-			// Run switch command
-			await runTestEffect(switchBranch({ silent: true }))
-
-			// Should be on main now
-			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("main")
-		})
-
-		test("switches from source branch to emit branch", async () => {
-			// Create a emit branch first
-			await createBranch(tempDir, "main--PR")
-
-			// Go back to main
+			// Create source and emit branches (source=agency/main, emit=main)
+			await createBranch(tempDir, "agency/main")
+			await createCommit(tempDir, "Work on source")
+			// Emit branch is just "main" (already exists from setup)
 			await checkoutBranch(tempDir, "main")
 
 			// Run switch command
 			await runTestEffect(switchBranch({ silent: true }))
 
-			// Should be on main--PR now
+			// Should be on source branch now
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("main--PR")
+			expect(currentBranch).toBe("agency/main")
+		})
+
+		test("switches from source branch to emit branch", async () => {
+			// Create source branch (main becomes the emit branch)
+			await createBranch(tempDir, "agency/main")
+			await createCommit(tempDir, "Work on source")
+
+			// We're on agency/main (source), switch to main (emit)
+			// Run switch command
+			await runTestEffect(switchBranch({ silent: true }))
+
+			// Should be on emit branch now
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("main")
 		})
 
 		test("toggles back and forth", async () => {
-			// Create a emit branch
-			await createBranch(tempDir, "main--PR")
+			// Create source and emit branches
+			await createBranch(tempDir, "agency/main")
+			await createCommit(tempDir, "Work on source")
+			await checkoutBranch(tempDir, "main") // Go to emit
 
-			// Switch to main
+			// Switch to source
+			await runTestEffect(switchBranch({ silent: true }))
+			expect(await getCurrentBranch(tempDir)).toBe("agency/main")
+
+			// Switch back to emit
 			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("main")
 
-			// Switch back to main--PR
+			// And back to source
 			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("main--PR")
-
-			// And back to main
-			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("main")
+			expect(await getCurrentBranch(tempDir)).toBe("agency/main")
 		})
 
 		test("works with custom emit branch pattern", async () => {
 			// Create custom config
 			const configPath = join(tempDir, "custom-config.json")
-			await Bun.write(configPath, JSON.stringify({ emitBranch: "PR/%branch%" }))
+			await Bun.write(
+				configPath,
+				JSON.stringify({
+					sourceBranchPattern: "agency/%branch%",
+					emitBranch: "PR/%branch%",
+				}),
+			)
 			process.env.AGENCY_CONFIG_PATH = configPath
 
-			// Create feature branch and its emit branch
-			await createBranch(tempDir, "feature")
+			// Create source branch and its emit branch
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature work")
 			await createBranch(tempDir, "PR/feature")
 
-			// Switch to feature
+			// Switch to source
 			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("feature")
+			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
 
-			// Switch back to PR/feature
+			// Switch back to emit
 			await runTestEffect(switchBranch({ silent: true }))
 			expect(await getCurrentBranch(tempDir)).toBe("PR/feature")
 		})
@@ -121,20 +131,34 @@ describe("switch command", () => {
 
 	describe("error handling", () => {
 		test("throws error when emit branch doesn't exist", async () => {
-			// We're on main, and main--PR doesn't exist
+			// Use custom emit pattern so emit branch differs from source
+			const configPath = join(tempDir, "custom-config.json")
+			await Bun.write(
+				configPath,
+				JSON.stringify({
+					sourceBranchPattern: "agency/%branch%",
+					emitBranch: "%branch%--PR",
+				}),
+			)
+			process.env.AGENCY_CONFIG_PATH = configPath
+
+			// Create source branch, but not the emit branch
+			await createBranch(tempDir, "agency/feature")
+			// feature--PR doesn't exist
+
 			await expect(
 				runTestEffect(switchBranch({ silent: true })),
 			).rejects.toThrow(/Emit branch .* does not exist/)
 		})
 
-		test("throws error when source branch doesn't exist", async () => {
-			// Create emit branch but delete source
-			await createBranch(tempDir, "feature--PR")
-			// We never created 'feature', so it doesn't exist
+		test("throws error when emit branch doesn't exist", async () => {
+			// Create source branch but no emit branch
+			await createBranch(tempDir, "agency/feature")
+			// We never created 'feature' (emit), so it doesn't exist
 
 			await expect(
 				runTestEffect(switchBranch({ silent: true })),
-			).rejects.toThrow(/Source branch .* does not exist/)
+			).rejects.toThrow(/Emit branch .* does not exist/)
 		})
 
 		test("throws error when not in a git repository", async () => {
@@ -151,7 +175,8 @@ describe("switch command", () => {
 
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
-			await createBranch(tempDir, "main--PR")
+			await createBranch(tempDir, "agency/main")
+			await checkoutBranch(tempDir, "main")
 
 			// Capture output
 			const originalLog = console.log
