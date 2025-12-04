@@ -5,7 +5,7 @@ import { ConfigService } from "../services/ConfigService"
 import { extractSourceBranch, makePrBranchName } from "../utils/pr-branch"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import { createLoggers, ensureGitRepo, getRemoteName } from "../utils/effect"
 import { withSpinner } from "../utils/spinner"
 
 interface PushOptions extends BaseCommandOptions {
@@ -82,20 +82,21 @@ export const push = (options: PushOptions = {}) =>
 		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
+		const remote = yield* getRemoteName(gitRoot)
 		verboseLog(
-			`Step 2: Pushing ${highlight.branch(emitBranchName)} to remote...`,
+			`Step 2: Pushing ${highlight.branch(emitBranchName)} to ${remote}...`,
 		)
 
 		const pushEither = yield* Effect.either(
 			withSpinner(
-				pushBranchToRemoteEffect(gitRoot, emitBranchName, {
+				pushBranchToRemoteEffect(gitRoot, emitBranchName, remote, {
 					force: options.force,
 					verbose: options.verbose,
 				}),
 				{
 					text: options.force
-						? "Pushing to origin (forced)"
-						: "Pushing to origin",
+						? `Pushing to ${remote} (forced)`
+						: `Pushing to ${remote}`,
 					enabled: !options.silent && !options.verbose,
 				},
 			),
@@ -113,9 +114,9 @@ export const push = (options: PushOptions = {}) =>
 		const usedForce = pushEither.right
 
 		if (usedForce) {
-			log(done("Pushed to origin (forced)"))
+			log(done(`Pushed to ${remote} (forced)`))
 		} else {
-			log(done("Pushed to origin"))
+			log(done(`Pushed to ${remote}`))
 		}
 
 		// Step 3 (optional): Open GitHub PR if --gh flag is set
@@ -154,6 +155,7 @@ export const push = (options: PushOptions = {}) =>
 const pushBranchToRemoteEffect = (
 	gitRoot: string,
 	branchName: string,
+	remote: string,
 	options: {
 		readonly force?: boolean
 		readonly verbose?: boolean
@@ -163,7 +165,7 @@ const pushBranchToRemoteEffect = (
 		const { force = false, verbose = false } = options
 
 		// Try pushing without force first
-		let pushProc = Bun.spawn(["git", "push", "-u", "origin", branchName], {
+		let pushProc = Bun.spawn(["git", "push", "-u", remote, branchName], {
 			cwd: gitRoot,
 			stdout: verbose ? "inherit" : "pipe",
 			stderr: "pipe",
@@ -189,7 +191,7 @@ const pushBranchToRemoteEffect = (
 			if (needsForce && force) {
 				// User provided --force flag, retry with force
 				pushProc = Bun.spawn(
-					["git", "push", "-u", "--force", "origin", branchName],
+					["git", "push", "-u", "--force", remote, branchName],
 					{
 						cwd: gitRoot,
 						stdout: verbose ? "inherit" : "pipe",

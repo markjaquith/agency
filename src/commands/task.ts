@@ -289,7 +289,7 @@ export const task = (options: TaskOptions = {}) =>
 		createdFiles.push("agency.json")
 		log(done(`Created ${highlight.file("agency.json")}`))
 		if (baseBranch) {
-			log(info(`Base branch: ${highlight.branch(baseBranch)}`))
+			verboseLog(`Base branch: ${highlight.branch(baseBranch)}`)
 		}
 		verboseLog(`Tracked backpack file${plural(injectedFiles.length)}`)
 
@@ -300,10 +300,8 @@ export const task = (options: TaskOptions = {}) =>
 				yield* git.gitCommit("chore: agency task", targetPath, {
 					noVerify: true,
 				})
-				log(
-					done(
-						`Committed ${highlight.value(createdFiles.length)} file${plural(createdFiles.length)}`,
-					),
+				verboseLog(
+					`Committed ${createdFiles.length} file${plural(createdFiles.length)}`,
 				)
 			} catch (err) {
 				// If commit fails, it might be because there are no changes (e.g., files already staged)

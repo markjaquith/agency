@@ -81,6 +81,12 @@ export const init = (options: InitOptions = {}) =>
 			return yield* Effect.fail(new Error("Template name is required."))
 		}
 
+		// Detect and save default remote
+		const defaultRemote = yield* git.findDefaultRemote(gitRoot)
+		const remote = defaultRemote || "origin" // Fallback to "origin" if no remote found
+		yield* git.setRemoteConfig(remote, gitRoot)
+		verboseLog(`Detected and saved remote: ${remote}`)
+
 		// Save template name to git config
 		yield* git.setGitConfig("agency.template", templateName, gitRoot)
 		log(

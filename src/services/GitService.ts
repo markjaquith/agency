@@ -94,6 +94,21 @@ const branchExistsEffect = (gitRoot: string, branch: string) =>
 		return result.exitCode === 0
 	})
 
+// Helper to find default remote
+const findDefaultRemoteEffect = (gitRoot: string) =>
+	Effect.gen(function* () {
+		// Get list of remotes
+		const result = yield* runGitCommand(["git", "remote"], gitRoot)
+
+		if (result.exitCode === 0 && result.stdout.trim()) {
+			// Return first remote (usually "origin")
+			const remotes = result.stdout.trim().split("\n")
+			return remotes[0] || null
+		}
+
+		return null
+	})
+
 // Helper to find main branch (shared logic)
 const findMainBranchEffect = (gitRoot: string) =>
 	Effect.gen(function* () {
@@ -347,6 +362,25 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 
 		setDefaultBaseBranchConfig: (baseBranch: string, gitRoot: string) =>
 			setGitConfigEffect("agency.baseBranch", baseBranch, gitRoot),
+
+		findDefaultRemote: (gitRoot: string) =>
+			pipe(
+				findDefaultRemoteEffect(gitRoot),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to find default remote" }),
+				),
+			),
+
+		getRemoteConfig: (gitRoot: string) =>
+			pipe(
+				getGitConfigEffect("agency.remote", gitRoot),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get remote config" }),
+				),
+			),
+
+		setRemoteConfig: (remote: string, gitRoot: string) =>
+			setGitConfigEffect("agency.remote", remote, gitRoot),
 
 		getMergeBase: (gitRoot: string, branch1: string, branch2: string) =>
 			runGitCommandOrFail(["git", "merge-base", branch1, branch2], gitRoot),

@@ -147,3 +147,27 @@ export function getBaseBranchFromMetadataEffect(gitRoot: string) {
 			new Error(`Failed to get base branch from metadata: ${error}`),
 	})
 }
+
+/**
+ * Get the configured remote name with fallback to auto-detection
+ */
+export function getRemoteName(gitRoot: string) {
+	return Effect.gen(function* () {
+		const git = yield* GitService
+
+		// Try to get from config first
+		const configRemote = yield* git.getRemoteConfig(gitRoot)
+		if (configRemote) {
+			return configRemote
+		}
+
+		// Auto-detect and save for next time
+		const detectedRemote = yield* git.findDefaultRemote(gitRoot)
+		const remote = detectedRemote || "origin" // Fallback to "origin"
+
+		// Save it for next time
+		yield* git.setRemoteConfig(remote, gitRoot)
+
+		return remote
+	})
+}

@@ -10,6 +10,7 @@ import {
 	ensureGitRepo,
 	ensureBranchExists,
 	getBaseBranchFromMetadataEffect,
+	getRemoteName,
 } from "../utils/effect"
 
 interface MergeOptions extends BaseCommandOptions {
@@ -171,10 +172,13 @@ export const merge = (options: MergeOptions = {}) =>
 
 		// Push the base branch if --push flag is set
 		if (push) {
-			verboseLog(`Pushing ${highlight.branch(baseBranchToMergeInto)}...`)
+			const remote = yield* getRemoteName(gitRoot)
+			verboseLog(
+				`Pushing ${highlight.branch(baseBranchToMergeInto)} to ${remote}...`,
+			)
 
 			const pushResult = yield* git.runGitCommand(
-				["git", "push", "origin", baseBranchToMergeInto],
+				["git", "push", remote, baseBranchToMergeInto],
 				gitRoot,
 				{ captureOutput: true },
 			)
@@ -182,14 +186,14 @@ export const merge = (options: MergeOptions = {}) =>
 			if (pushResult.exitCode !== 0) {
 				return yield* Effect.fail(
 					new GitCommandError({
-						command: `git push origin ${baseBranchToMergeInto}`,
+						command: `git push ${remote} ${baseBranchToMergeInto}`,
 						exitCode: pushResult.exitCode,
 						stderr: pushResult.stderr,
 					}),
 				)
 			}
 
-			log(done("Pushed to origin"))
+			log(done(`Pushed to ${remote}`))
 		}
 	})
 
