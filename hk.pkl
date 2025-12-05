@@ -1,0 +1,49 @@
+amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+    // Format check using prettier
+    ["prettier"] = Builtins.prettier
+
+    // Knip to find unused code
+    ["knip"] {
+        glob = "**/*.{ts,tsx,js,jsx,json}"
+        check = "bun run knip"
+    }
+
+    // TypeScript type checking
+    ["typescript"] {
+        glob = "**/*.{ts,tsx}"
+        check = "bunx tsc --noEmit"
+    }
+}
+
+hooks {
+    ["pre-commit"] {
+        stash = "patch-file" // stashes unstaged changes while running fix steps
+        steps = linters
+    }
+
+    ["commit-msg"] {
+        steps {
+            ["conventional-commits"] {
+                check = "./scripts/check-commit-msg {{commit_msg_file}}"
+            }
+            ["commit-check"] {
+                check = "./scripts/check-commits"
+            }
+        }
+    }
+
+    ["pre-push"] {
+        steps = linters
+    }
+
+    // "fix" and "check" are special steps for `hk fix` and `hk check` commands
+    ["fix"] {
+        steps = linters
+    }
+    ["check"] {
+        steps = linters
+    }
+}
