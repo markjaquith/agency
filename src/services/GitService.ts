@@ -382,6 +382,199 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		setRemoteConfig: (remote: string, gitRoot: string) =>
 			setGitConfigEffect("agency.remote", remote, gitRoot),
 
+		getAllRemotes: (gitRoot: string) =>
+			pipe(
+				runGitCommand(["git", "remote"], gitRoot),
+				Effect.map((result) => {
+					if (result.exitCode === 0 && result.stdout.trim()) {
+						return result.stdout.trim().split("\n") as readonly string[]
+					}
+					return [] as readonly string[]
+				}),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get list of remotes" }),
+				),
+			),
+
+		remoteExists: (gitRoot: string, remoteName: string) =>
+			Effect.gen(function* () {
+				const remotes = yield* pipe(
+					runGitCommand(["git", "remote"], gitRoot),
+					Effect.map((result) => {
+						if (result.exitCode === 0 && result.stdout.trim()) {
+							return result.stdout.trim().split("\n")
+						}
+						return []
+					}),
+				)
+				return remotes.includes(remoteName)
+			}).pipe(
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to check if remote ${remoteName} exists`,
+						}),
+				),
+			),
+
+		getRemoteUrl: (gitRoot: string, remoteName: string) =>
+			runGitCommandOrFail(
+				["git", "remote", "get-url", remoteName],
+				gitRoot,
+			).pipe(
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to get URL for remote ${remoteName}`,
+						}),
+				),
+			),
+
+		resolveRemote: (gitRoot: string, providedRemote?: string) =>
+			Effect.gen(function* () {
+				// 1. If explicitly provided, validate and use it
+				if (providedRemote) {
+					const exists = yield* Effect.gen(function* () {
+						const remotes = yield* pipe(
+							runGitCommand(["git", "remote"], gitRoot),
+							Effect.map((result) => {
+								if (result.exitCode === 0 && result.stdout.trim()) {
+									return result.stdout.trim().split("\n")
+								}
+								return []
+							}),
+						)
+						return remotes.includes(providedRemote)
+					})
+
+					if (!exists) {
+						return yield* Effect.fail(
+							new GitError({
+								message: `Remote '${providedRemote}' does not exist`,
+							}),
+						)
+					}
+					return providedRemote
+				}
+
+				// 2. Check for saved configuration
+				const configRemote = yield* getGitConfigEffect(
+					"agency.remote",
+					gitRoot,
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				if (configRemote) {
+					return configRemote
+				}
+
+				// 3. Auto-detect with smart precedence
+				const remotes = yield* pipe(
+					runGitCommand(["git", "remote"], gitRoot),
+					Effect.map((result) => {
+						if (result.exitCode === 0 && result.stdout.trim()) {
+							return result.stdout.trim().split("\n")
+						}
+						return []
+					}),
+				)
+
+				if (remotes.length === 0) {
+					return yield* Effect.fail(
+						new GitError({
+							message:
+								"No git remotes found. Add a remote with: git remote add <name> <url>",
+						}),
+					)
+				}
+
+				if (remotes.length === 1) {
+					return remotes[0]
+				}
+
+				// Multiple remotes: prefer origin > upstream > first alphabetically
+				if (remotes.includes("origin")) {
+					return "origin"
+				}
+				if (remotes.includes("upstream")) {
+					return "upstream"
+				}
+
+				return remotes[0]
+			}).pipe(
+				Effect.mapError((error) =>
+					error instanceof GitError
+						? error
+						: new GitError({
+								message: "Failed to resolve remote",
+								cause: error,
+							}),
+				),
+			),
+
+		stripRemotePrefix: (branchName: string) => {
+			const match = branchName.match(/^[^/]+\/(.+)$/)
+			return match?.[1] || branchName
+		},
+
+		hasRemotePrefix: (branchName: string, gitRoot: string) =>
+			Effect.gen(function* () {
+				const remotes = yield* pipe(
+					runGitCommand(["git", "remote"], gitRoot),
+					Effect.map((result) => {
+						if (result.exitCode === 0 && result.stdout.trim()) {
+							return result.stdout.trim().split("\n")
+						}
+						return []
+					}),
+				)
+				return remotes.some((remote) => branchName.startsWith(`${remote}/`))
+			}).pipe(
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to check if branch has remote prefix: ${branchName}`,
+						}),
+				),
+			),
+
+		getRemoteFromBranch: (branchName: string, gitRoot: string) =>
+			Effect.gen(function* () {
+				const remotes = yield* pipe(
+					runGitCommand(["git", "remote"], gitRoot),
+					Effect.map((result) => {
+						if (result.exitCode === 0 && result.stdout.trim()) {
+							return result.stdout.trim().split("\n")
+						}
+						return []
+					}),
+				)
+
+				for (const remote of remotes) {
+					if (branchName.startsWith(`${remote}/`)) {
+						return remote
+					}
+				}
+
+				return null
+			}).pipe(
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to get remote from branch: ${branchName}`,
+						}),
+				),
+			),
+
+		getDefaultBranchForRemote: (gitRoot: string, remoteName: string) =>
+			pipe(
+				runGitCommand(
+					["git", "rev-parse", "--abbrev-ref", `${remoteName}/HEAD`],
+					gitRoot,
+				),
+				Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
+				Effect.catchAll(() => Effect.succeed(null)),
+			),
+
 		getMergeBase: (gitRoot: string, branch1: string, branch2: string) =>
 			runGitCommandOrFail(["git", "merge-base", branch1, branch2], gitRoot),
 
