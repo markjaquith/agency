@@ -131,8 +131,14 @@ export const emit = (options: EmitOptions = {}) =>
 		verboseLog(`Branch forked at commit: ${highlight.commit(forkPoint)}`)
 
 		// Create or reset emit branch from current branch
+		let branchExisted = false
 		const createBranch = Effect.gen(function* () {
-			yield* createOrResetBranchEffect(gitRoot, currentBranch, emitBranchName)
+			const existed = yield* createOrResetBranchEffect(
+				gitRoot,
+				currentBranch,
+				emitBranchName,
+			)
+			branchExisted = existed
 
 			// Unset any remote tracking branch for the emit branch
 			yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
@@ -141,7 +147,7 @@ export const emit = (options: EmitOptions = {}) =>
 
 		yield* withSpinner(createBranch, {
 			text: `Creating emit branch ${highlight.branch(emitBranchName)}`,
-			successText: `Created emit branch ${highlight.branch(emitBranchName)}`,
+			successText: `${branchExisted ? "Recreated" : "Created"} emit branch ${highlight.branch(emitBranchName)}`,
 			enabled: !options.silent && !verbose,
 		})
 
@@ -200,11 +206,7 @@ export const emit = (options: EmitOptions = {}) =>
 			enabled: !options.silent && !verbose,
 		})
 
-		log(
-			done(
-				`Emitted ${highlight.branch(emitBranchName)} (from ${highlight.branch(currentBranch)})`,
-			),
-		)
+		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 	})
 
 // Helper: Ensure emitBranch is set in agency.json metadata
@@ -360,6 +362,8 @@ const createOrResetBranchEffect = (
 
 		// Create new branch from source
 		yield* git.createBranch(targetBranch, gitRoot, sourceBranch)
+
+		return exists
 	})
 
 export const help = `
