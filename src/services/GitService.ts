@@ -81,9 +81,19 @@ const setGitConfigEffect = (key: string, value: string, gitRoot: string) =>
 // Helper to check if branch exists
 const branchExistsEffect = (gitRoot: string, branch: string) =>
 	Effect.gen(function* () {
-		// Check if it's a remote branch
-		const remotePattern = /^(origin|upstream|fork)\//
-		const ref = remotePattern.test(branch)
+		// Get list of remotes to dynamically check if it's a remote branch
+		const remotesResult = yield* runGitCommand(["git", "remote"], gitRoot)
+		const remotes =
+			remotesResult.exitCode === 0 && remotesResult.stdout.trim()
+				? remotesResult.stdout.trim().split("\n")
+				: []
+
+		// Check if branch name starts with any remote prefix
+		const hasRemotePrefix = remotes.some((remote) =>
+			branch.startsWith(`${remote}/`),
+		)
+
+		const ref = hasRemotePrefix
 			? `refs/remotes/${branch}`
 			: `refs/heads/${branch}`
 
@@ -112,24 +122,45 @@ const findDefaultRemoteEffect = (gitRoot: string) =>
 // Helper to find main branch (shared logic)
 const findMainBranchEffect = (gitRoot: string) =>
 	Effect.gen(function* () {
-		// First check for origin/HEAD
-		const originHeadResult = yield* runGitCommand(
-			["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
-			gitRoot,
-		)
+		// Get list of remotes
+		const remotesResult = yield* runGitCommand(["git", "remote"], gitRoot)
+		const remotes =
+			remotesResult.exitCode === 0 && remotesResult.stdout.trim()
+				? remotesResult.stdout.trim().split("\n")
+				: []
 
-		if (originHeadResult.exitCode === 0) {
-			const defaultRemote = originHeadResult.stdout
+		// Try to resolve a remote (prefer origin > upstream > first)
+		let defaultRemote: string | null = null
+		if (remotes.length > 0) {
+			if (remotes.includes("origin")) {
+				defaultRemote = "origin"
+			} else if (remotes.includes("upstream")) {
+				defaultRemote = "upstream"
+			} else {
+				defaultRemote = remotes[0] || null
+			}
+		}
 
-			// Check if it exists
-			const exists = yield* branchExistsEffect(gitRoot, defaultRemote)
-			if (exists) {
-				// Strip the remote prefix if present
-				const match = defaultRemote.match(/^origin\/(.+)$/)
-				if (match?.[1]) {
-					return match[1]
+		// If we have a remote, check for remote/HEAD
+		if (defaultRemote) {
+			const remoteHeadResult = yield* runGitCommand(
+				["git", "rev-parse", "--abbrev-ref", `${defaultRemote}/HEAD`],
+				gitRoot,
+			)
+
+			if (remoteHeadResult.exitCode === 0) {
+				const remoteHead = remoteHeadResult.stdout
+
+				// Check if it exists
+				const exists = yield* branchExistsEffect(gitRoot, remoteHead)
+				if (exists) {
+					// Strip the remote prefix if present
+					const match = remoteHead.match(/^[^/]+\/(.+)$/)
+					if (match?.[1]) {
+						return match[1]
+					}
+					return remoteHead
 				}
-				return defaultRemote
 			}
 		}
 
@@ -254,14 +285,39 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		},
 
 		getDefaultRemoteBranch: (gitRoot: string) =>
-			pipe(
-				runGitCommand(
-					["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
+			Effect.gen(function* () {
+				// Get list of remotes
+				const remotesResult = yield* runGitCommand(["git", "remote"], gitRoot)
+				const remotes =
+					remotesResult.exitCode === 0 && remotesResult.stdout.trim()
+						? remotesResult.stdout.trim().split("\n")
+						: []
+
+				if (remotes.length === 0) {
+					return null
+				}
+
+				// Try remotes in order of preference: origin > upstream > first
+				let remote: string
+				if (remotes.includes("origin")) {
+					remote = "origin"
+				} else if (remotes.includes("upstream")) {
+					remote = "upstream"
+				} else {
+					remote = remotes[0] || ""
+				}
+
+				if (!remote) {
+					return null
+				}
+
+				const result = yield* runGitCommand(
+					["git", "rev-parse", "--abbrev-ref", `${remote}/HEAD`],
 					gitRoot,
-				),
-				Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
-				Effect.catchAll(() => Effect.succeed(null)),
-			),
+				)
+
+				return result.exitCode === 0 ? result.stdout : null
+			}).pipe(Effect.catchAll(() => Effect.succeed(null))),
 
 		findMainBranch: (gitRoot: string) =>
 			pipe(
