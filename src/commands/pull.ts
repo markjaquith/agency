@@ -96,10 +96,23 @@ export const pull = (options: PullOptions = {}) =>
 			enabled: !options.silent && !verbose,
 		})
 
-		// Get the list of commits on remote emit branch that aren't on source branch
-		// Use the range: sourceBranch..remote/emitBranch
+		// Check if local emit branch exists
+		const localEmitExists = yield* git.branchExists(gitRoot, emitBranch)
+		if (!localEmitExists) {
+			verboseLog(
+				`Local emit branch ${highlight.branch(emitBranch)} does not exist, comparing against source branch`,
+			)
+		}
+
+		// Get the list of commits on remote emit branch that aren't on local emit branch
+		// If local emit branch doesn't exist, compare against source branch
+		const compareBase = localEmitExists ? emitBranch : sourceBranch
+		verboseLog(
+			`Comparing ${highlight.branch(remoteEmitBranch)} against ${highlight.branch(compareBase)}`,
+		)
+
 		const commitsResult = yield* git
-			.getCommitsBetween(gitRoot, sourceBranch, remoteEmitBranch)
+			.getCommitsBetween(gitRoot, compareBase, remoteEmitBranch)
 			.pipe(Effect.catchAll(() => Effect.succeed("")))
 
 		if (!commitsResult || commitsResult.trim() === "") {

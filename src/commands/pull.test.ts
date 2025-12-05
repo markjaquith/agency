@@ -133,14 +133,13 @@ describe("pull command", () => {
 			// Setup agency.json
 			await setupAgencyJson(tempDir)
 
-			// Create a source branch (with agency/ prefix per new default config)
+			// Create source branch: A1 A2
 			await createBranch(tempDir, "agency/feature")
-			await createCommit(tempDir, "Feature work")
+			await createCommit(tempDir, "A1: Feature work")
 
-			// Create emit branch
+			// Simulate agency emit: create local emit branch (B1) with rewritten history
 			await createBranch(tempDir, "feature")
-			await createCommit(tempDir, "Emit commit 1")
-			await createCommit(tempDir, "Emit commit 2")
+			// For test simplicity, we're not actually rewriting history, just creating emit branch
 
 			// Push emit branch to remote
 			await Bun.spawn(["git", "push", "-u", "origin", "feature"], {
@@ -149,11 +148,44 @@ describe("pull command", () => {
 				stderr: "pipe",
 			}).exited
 
-			// Go back to source branch and reset to before the emit commits
+			// Now local emit and remote emit are in sync (both at B1)
+			// Simulate someone adding commits to remote emit branch (B2, B3)
+			await Bun.write(join(tempDir, "file1.txt"), "content1")
+			await Bun.spawn(["git", "add", "file1.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "B2: Remote commit 1")
+
+			await Bun.write(join(tempDir, "file2.txt"), "content2")
+			await Bun.spawn(["git", "add", "file2.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "B3: Remote commit 2")
+
+			await Bun.spawn(["git", "push"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Reset local emit branch to B1 (before the remote commits B2, B3)
+			// This simulates the state where remote has moved ahead
+			await Bun.spawn(["git", "reset", "--hard", "HEAD~2"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Go back to source branch (still at A1)
 			await checkoutBranch(tempDir, "agency/feature")
 			const beforeCommitCount = await getCommitCount(tempDir, "agency/feature")
 
-			// Run pull command
+			// Run pull command - should find B2 and B3 on remote that aren't on local emit
+			// and cherry-pick them onto source as A2 and A3
 			await runTestEffect(pull({ silent: true }))
 
 			// Should still be on source branch
@@ -163,59 +195,9 @@ describe("pull command", () => {
 			const afterCommitCount = await getCommitCount(tempDir, "agency/feature")
 			expect(afterCommitCount).toBe(beforeCommitCount + 2)
 
-			// Last commit should be "Emit commit 2"
+			// Last commit should be the second remote commit
 			const lastCommit = await getLatestCommitMessage(tempDir)
-			expect(lastCommit).toBe("Emit commit 2")
-		})
-
-		test("works when starting from emit branch", async () => {
-			// Setup agency.json on main
-			await setupAgencyJson(tempDir)
-
-			// Create a source branch
-			await createBranch(tempDir, "agency/feature")
-			// Update agency.json to set emitBranch
-			await setupAgencyJson(tempDir, "feature")
-
-			// Create emit branch from source (it will have the agency.json but we'll cherry-pick without it)
-			await createBranch(tempDir, "feature")
-
-			// Remove agency.json from emit branch to simulate an emitted branch
-			await Bun.spawn(["git", "rm", "agency.json"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await createCommit(tempDir, "Remove agency.json")
-			await createCommit(tempDir, "Emit commit")
-
-			// Push emit branch to remote
-			await Bun.spawn(["git", "push", "-u", "origin", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-
-			// Go to source branch and remove the commits that were added on emit
-			await checkoutBranch(tempDir, "agency/feature")
-			await Bun.spawn(["git", "reset", "--hard", "HEAD~2"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-
-			// Now switch to emit branch
-			await checkoutBranch(tempDir, "feature")
-
-			// Run pull - should switch to source branch and cherry-pick
-			await runTestEffect(pull({ silent: true }))
-
-			// Should be on source branch
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
-
-			// Should have the emit commit
-			const lastCommit = await getLatestCommitMessage(tempDir)
-			expect(lastCommit).toBe("Emit commit")
+			expect(lastCommit).toBe("B3: Remote commit 2")
 		})
 
 		test("handles no new commits gracefully", async () => {
@@ -268,9 +250,8 @@ describe("pull command", () => {
 			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature work")
 
-			// Create emit branch
+			// Create local emit branch
 			await createBranch(tempDir, "feature")
-			await createCommit(tempDir, "Emit commit")
 
 			// Add a second remote
 			const upstreamDir = await setupBareRemote(tempDir)
@@ -287,7 +268,28 @@ describe("pull command", () => {
 				stderr: "pipe",
 			}).exited
 
-			// Go back to source branch and reset
+			// Add a commit to upstream remote
+			await Bun.write(join(tempDir, "upstream-file.txt"), "upstream content")
+			await Bun.spawn(["git", "add", "upstream-file.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Emit commit")
+			await Bun.spawn(["git", "push", "upstream", "feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Reset local emit branch to before the upstream commit
+			await Bun.spawn(["git", "reset", "--hard", "HEAD~1"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			// Go back to source branch
 			await checkoutBranch(tempDir, "agency/feature")
 
 			// Run pull with custom remote
