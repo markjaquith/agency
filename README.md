@@ -79,6 +79,31 @@ To run:
 bun run index.ts
 ```
 
+### Git Hooks
+
+This project uses [hk](https://github.com/jdx/hk) for git hook management. The configuration is in `hk.pkl`.
+
+To install the git hooks:
+
+```bash
+hk install
+```
+
+**Pre-commit hook runs:**
+
+- Prettier formatting
+- Knip (unused code detection)
+- TypeScript type checking
+
+**Commit-msg hook validates:**
+
+- Conventional commits format
+- Commit message history
+
+**Pre-push hook runs the same checks as pre-commit.**
+
+Note: Tests are intentionally excluded from git hooks as they are slow. Run them manually with `bun test`.
+
 ## License
 
 MIT
