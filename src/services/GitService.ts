@@ -446,5 +446,46 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 						}),
 				),
 			),
+
+		fetch: (gitRoot: string, remote?: string, branch?: string) => {
+			const args = ["git", "fetch"]
+			if (remote) {
+				args.push(remote)
+				if (branch) {
+					args.push(branch)
+				}
+			}
+			return runGitCommandVoid(args, gitRoot)
+		},
+
+		getCommitsBetween: (gitRoot: string, base: string, head: string) =>
+			runGitCommandOrFail(
+				["git", "rev-list", "--reverse", `${base}..${head}`],
+				gitRoot,
+			),
+
+		cherryPick: (gitRoot: string, commit: string) =>
+			runGitCommandVoid(["git", "cherry-pick", commit], gitRoot),
+
+		getRemoteTrackingBranch: (gitRoot: string, branch: string) =>
+			Effect.gen(function* () {
+				const remote = yield* getGitConfigEffect(
+					`branch.${branch}.remote`,
+					gitRoot,
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				const merge = yield* getGitConfigEffect(
+					`branch.${branch}.merge`,
+					gitRoot,
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				if (!remote || !merge) {
+					return null
+				}
+
+				// Convert refs/heads/branch to remote/branch
+				const branchName = merge.replace(/^refs\/heads\//, "")
+				return `${remote}/${branchName}`
+			}),
 	}),
 }) {}

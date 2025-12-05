@@ -7,6 +7,7 @@ import { init, help as initHelp } from "./src/commands/init"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { emit, help as emitHelp } from "./src/commands/emit"
 import { push, help as pushHelp } from "./src/commands/push"
+import { pull, help as pullHelp } from "./src/commands/pull"
 import { base, help as baseHelp } from "./src/commands/base"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { source, help as sourceHelp } from "./src/commands/source"
@@ -115,6 +116,24 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: pushHelp,
+	},
+	pull: {
+		name: "pull",
+		description: "Pull commits from remote emit branch to source",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(pullHelp)
+				return
+			}
+			await runCommand(
+				pull({
+					remote: options.remote,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+		help: pullHelp,
 	},
 	template: {
 		name: "template",
@@ -329,6 +348,7 @@ Commands:
     delete <file> ...      Delete files from configured template
   emit [base-branch]     Emit a branch with backpack files reverted
   push [base-branch]     Emit, push to remote, return to source
+  pull                   Pull commits from remote emit branch to source
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
     get                    Get the configured base branch
@@ -457,6 +477,10 @@ try {
 			},
 			push: {
 				type: "boolean",
+			},
+			remote: {
+				type: "string",
+				short: "r",
 			},
 		},
 		strict: false,
