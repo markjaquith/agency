@@ -270,9 +270,18 @@ export const task = (options: TaskOptions = {}) =>
 				(yield* git.findMainBranch(targetPath)) ||
 				undefined
 
-			// Try common base branches
+			// Try common base branches with dynamic remote
 			if (!baseBranch) {
-				const commonBases = ["origin/main", "origin/master", "main", "master"]
+				const remote = yield* git
+					.resolveRemote(targetPath)
+					.pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				const commonBases: string[] = []
+				if (remote) {
+					commonBases.push(`${remote}/main`, `${remote}/master`)
+				}
+				commonBases.push("main", "master")
+
 				for (const base of commonBases) {
 					const exists = yield* git.branchExists(targetPath, base)
 					if (exists) {

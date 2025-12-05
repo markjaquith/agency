@@ -108,7 +108,7 @@ export const merge = (options: MergeOptions = {}) =>
 			verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
 
 			// For git operations (checkout/merge), use local branch name
-			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
+			baseBranchToMergeInto = git.stripRemotePrefix(configuredBase)
 
 			// Verify local base branch exists
 			yield* ensureBranchExists(
@@ -154,7 +154,7 @@ export const merge = (options: MergeOptions = {}) =>
 			verboseLog(`Configured base branch: ${highlight.branch(configuredBase)}`)
 
 			// For git operations (checkout/merge), use local branch name
-			baseBranchToMergeInto = configuredBase.replace(/^origin\//, "")
+			baseBranchToMergeInto = git.stripRemotePrefix(configuredBase)
 
 			// Verify local base branch exists
 			yield* ensureBranchExists(

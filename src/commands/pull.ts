@@ -13,13 +13,18 @@ interface PullOptions extends BaseCommandOptions {
 
 export const pull = (options: PullOptions = {}) =>
 	Effect.gen(function* () {
-		const { remote = "origin", verbose = false } = options
+		const { verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
 
 		const gitRoot = yield* ensureGitRepo()
+
+		// Resolve remote name (use provided option, config, or auto-detect)
+		const remote = options.remote
+			? yield* git.resolveRemote(gitRoot, options.remote)
+			: yield* git.resolveRemote(gitRoot)
 
 		// Load config
 		const config = yield* configService.loadConfig()
