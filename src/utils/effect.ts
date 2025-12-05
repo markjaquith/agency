@@ -119,8 +119,17 @@ export function resolveBaseBranch(
 			}
 		}
 
-		// Try common base branches in order
-		const commonBases = ["origin/main", "origin/master", "main", "master"]
+		// Try common base branches in order, using resolved remote
+		const remote = yield* git
+			.resolveRemote(gitRoot)
+			.pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+		const commonBases: string[] = []
+		if (remote) {
+			commonBases.push(`${remote}/main`, `${remote}/master`)
+		}
+		commonBases.push("main", "master")
+
 		for (const base of commonBases) {
 			const exists = yield* git.branchExists(gitRoot, base)
 			if (exists) {
@@ -155,18 +164,9 @@ export function getRemoteName(gitRoot: string) {
 	return Effect.gen(function* () {
 		const git = yield* GitService
 
-		// Try to get from config first
-		const configRemote = yield* git.getRemoteConfig(gitRoot)
-		if (configRemote) {
-			return configRemote
-		}
-
-		// Auto-detect and save for next time
-		const detectedRemote = yield* git.findDefaultRemote(gitRoot)
-		const remote = detectedRemote || "origin" // Fallback to "origin"
-
-		// Save it for next time
-		yield* git.setRemoteConfig(remote, gitRoot)
+		// Use the new centralized resolveRemote method
+		// This already handles config checking and auto-detection with smart precedence
+		const remote = yield* git.resolveRemote(gitRoot)
 
 		return remote
 	})

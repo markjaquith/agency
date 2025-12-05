@@ -544,7 +544,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				}
 
 				if (remotes.length === 1) {
-					return remotes[0]
+					return remotes[0]!
 				}
 
 				// Multiple remotes: prefer origin > upstream > first alphabetically
@@ -555,7 +555,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 					return "upstream"
 				}
 
-				return remotes[0]
+				return remotes[0]!
 			}).pipe(
 				Effect.mapError((error) =>
 					error instanceof GitError

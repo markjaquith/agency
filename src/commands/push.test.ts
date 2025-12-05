@@ -230,10 +230,10 @@ describe("push command", () => {
 				stderr: "pipe",
 			}).exited
 
-			// Push should fail
+			// Push should fail because no remote exists
 			await expect(
 				runTestEffect(push({ baseBranch: "main", silent: true })),
-			).rejects.toThrow(/Failed to push/)
+			).rejects.toThrow(/No git remotes found/)
 		})
 	})
 
