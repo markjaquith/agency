@@ -330,7 +330,7 @@ Example:
 	},
 	clean: {
 		name: "clean",
-		description: "Delete all emitted branches",
+		description: "Delete branches merged into a specified branch",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(cleanHelp)
@@ -341,6 +341,7 @@ Example:
 					silent: options.silent,
 					verbose: options.verbose,
 					dryRun: options["dry-run"],
+					mergedInto: options["merged-into"],
 				}),
 			)
 		},
@@ -501,6 +502,12 @@ try {
 			remote: {
 				type: "string",
 				short: "r",
+			},
+			"merged-into": {
+				type: "string",
+			},
+			"dry-run": {
+				type: "boolean",
 			},
 		},
 		strict: false,
