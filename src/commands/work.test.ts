@@ -109,6 +109,9 @@ describe("work command", () => {
 				capturedOptions = options
 				return {
 					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
 				}
 			}
 
@@ -127,7 +130,8 @@ describe("work command", () => {
 				capturedOptions.cwd === tempDir ||
 					capturedOptions.cwd === `/private${tempDir}`,
 			).toBe(true)
-			expect(capturedOptions.stdio).toEqual(["inherit", "inherit", "inherit"])
+			expect(capturedOptions.stdout).toEqual("inherit")
+			expect(capturedOptions.stderr).toEqual("inherit")
 		})
 
 		test("throws error when opencode exits with non-zero code", async () => {
@@ -146,6 +150,9 @@ describe("work command", () => {
 				}
 				return {
 					exited: Promise.resolve(1),
+					exitCode: 1,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
 				}
 			}
 
@@ -174,6 +181,9 @@ describe("work command", () => {
 				}
 				return {
 					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
 				}
 			}
 
@@ -213,6 +223,9 @@ describe("work command", () => {
 				}
 				return {
 					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
 				}
 			}
 

@@ -104,9 +104,8 @@ const baseGetEffect = (options: BaseGetOptions) =>
 			verboseLog("Reading branch-specific base branch from agency.json")
 			currentBase = yield* Effect.tryPromise({
 				try: () => getBaseBranchFromMetadata(gitRoot),
-				catch: (error) => {
-					throw new Error(`Failed to get base branch from metadata: ${error}`)
-				},
+				catch: (error) =>
+					new Error(`Failed to get base branch from metadata: ${error}`),
 			})
 
 			if (!currentBase) {

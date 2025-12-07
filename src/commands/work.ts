@@ -1,9 +1,9 @@
 import { join } from "node:path"
 import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
-import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
+import { spawnProcess } from "../utils/process"
 
 interface WorkOptions extends BaseCommandOptions {}
 
@@ -28,19 +28,22 @@ export const work = (options: WorkOptions = {}) =>
 		verboseLog("Running opencode with task prompt...")
 
 		// Run opencode with the task prompt
-		const proc = Bun.spawn(
+		const result = yield* spawnProcess(
 			["opencode", "-p", "Get started on the task described in TASK.md"],
 			{
 				cwd: gitRoot,
-				stdio: ["inherit", "inherit", "inherit"],
+				stdout: "inherit",
+				stderr: "inherit",
 			},
+		).pipe(
+			Effect.catchAll((error) =>
+				Effect.fail(new Error(`opencode exited with code ${error.exitCode}`)),
+			),
 		)
 
-		const exitCode = yield* Effect.promise(() => proc.exited)
-
-		if (exitCode !== 0) {
+		if (result.exitCode !== 0) {
 			return yield* Effect.fail(
-				new Error(`opencode exited with code ${exitCode}`),
+				new Error(`opencode exited with code ${result.exitCode}`),
 			)
 		}
 	})

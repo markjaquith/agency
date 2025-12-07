@@ -12,6 +12,7 @@ import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getRemoteName } from "../utils/effect"
 import { withSpinner } from "../utils/spinner"
+import { spawnProcess } from "../utils/process"
 
 interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
@@ -171,21 +172,29 @@ const pushBranchToRemoteEffect = (
 		const { force = false, verbose = false } = options
 
 		// Try pushing without force first
-		let pushProc = Bun.spawn(["git", "push", "-u", remote, branchName], {
-			cwd: gitRoot,
-			stdout: verbose ? "inherit" : "pipe",
-			stderr: "pipe",
-		})
-
-		yield* Effect.promise(() => pushProc.exited)
+		const pushResult = yield* spawnProcess(
+			["git", "push", "-u", remote, branchName],
+			{
+				cwd: gitRoot,
+				stdout: verbose ? "inherit" : "pipe",
+				stderr: "pipe",
+			},
+		).pipe(
+			// Don't fail immediately - we need to check the error type
+			Effect.catchAll((error) =>
+				Effect.succeed({
+					exitCode: error.exitCode,
+					stdout: "",
+					stderr: error.stderr,
+				}),
+			),
+		)
 
 		let usedForce = false
 
 		// If push failed, check if we should retry with --force
-		if (pushProc.exitCode !== 0) {
-			const stderr = yield* Effect.promise(() =>
-				new Response(pushProc.stderr).text(),
-			)
+		if (pushResult.exitCode !== 0) {
+			const stderr = pushResult.stderr
 
 			// Check if this is a force-push-needed error
 			const needsForce =
@@ -196,23 +205,28 @@ const pushBranchToRemoteEffect = (
 
 			if (needsForce && force) {
 				// User provided --force flag, retry with force
-				pushProc = Bun.spawn(
+				const forceResult = yield* spawnProcess(
 					["git", "push", "-u", "--force", remote, branchName],
 					{
 						cwd: gitRoot,
 						stdout: verbose ? "inherit" : "pipe",
 						stderr: "pipe",
 					},
+				).pipe(
+					Effect.catchAll((error) =>
+						Effect.succeed({
+							exitCode: error.exitCode,
+							stdout: "",
+							stderr: error.stderr,
+						}),
+					),
 				)
 
-				yield* Effect.promise(() => pushProc.exited)
-
-				if (pushProc.exitCode !== 0) {
-					const forcedStderr = yield* Effect.promise(() =>
-						new Response(pushProc.stderr).text(),
-					)
+				if (forceResult.exitCode !== 0) {
 					return yield* Effect.fail(
-						new Error(`Failed to force push branch to remote: ${forcedStderr}`),
+						new Error(
+							`Failed to force push branch to remote: ${forceResult.stderr}`,
+						),
 					)
 				}
 
@@ -248,20 +262,23 @@ const openGitHubPR = (
 		const { verbose = false } = options
 
 		// Run gh pr create --web to open PR in browser
-		const ghProc = Bun.spawn(["gh", "pr", "create", "--web"], {
+		const ghResult = yield* spawnProcess(["gh", "pr", "create", "--web"], {
 			cwd: gitRoot,
 			stdout: verbose ? "inherit" : "pipe",
 			stderr: "pipe",
-		})
+		}).pipe(
+			Effect.catchAll((error) =>
+				Effect.succeed({
+					exitCode: error.exitCode,
+					stdout: "",
+					stderr: error.stderr,
+				}),
+			),
+		)
 
-		yield* Effect.promise(() => ghProc.exited)
-
-		if (ghProc.exitCode !== 0) {
-			const stderr = yield* Effect.promise(() =>
-				new Response(ghProc.stderr).text(),
-			)
+		if (ghResult.exitCode !== 0) {
 			return yield* Effect.fail(
-				new Error(`gh CLI command failed: ${stderr.trim()}`),
+				new Error(`gh CLI command failed: ${ghResult.stderr.trim()}`),
 			)
 		}
 	})

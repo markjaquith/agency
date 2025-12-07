@@ -29,6 +29,26 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 						}),
 				}),
 
+			isDirectory: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						const file = Bun.file(path)
+						const exists = await file.exists()
+						if (!exists) {
+							return false
+						}
+						// Use stat to check if it's a directory
+						const stat = await import("node:fs/promises").then((fs) =>
+							fs.stat(path),
+						)
+						return stat.isDirectory()
+					},
+					catch: () =>
+						new FileSystemError({
+							message: `Failed to check if path is directory: ${path}`,
+						}),
+				}),
+
 			readFile: (path: string) =>
 				Effect.tryPromise({
 					try: async () => {
@@ -44,14 +64,11 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 
 			writeFile: (path: string, content: string) =>
 				Effect.tryPromise({
-					try: async () => {
-						try {
-							await Bun.write(path, content)
-						} catch {}
-					},
-					catch: () =>
+					try: () => Bun.write(path, content),
+					catch: (error) =>
 						new FileSystemError({
 							message: `Failed to write file: ${path}`,
+							cause: error,
 						}),
 				}),
 
@@ -80,14 +97,11 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 
 			createDirectory: (path: string) =>
 				Effect.tryPromise({
-					try: async () => {
-						try {
-							await mkdir(path, { recursive: true })
-						} catch {}
-					},
-					catch: () =>
+					try: () => mkdir(path, { recursive: true }),
+					catch: (error) =>
 						new FileSystemError({
 							message: `Failed to create directory: ${path}`,
+							cause: error,
 						}),
 				}),
 

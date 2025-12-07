@@ -1,6 +1,13 @@
 import { join } from "node:path"
+import { Effect } from "effect"
 import { Schema } from "@effect/schema"
 import { ManagedFile, AgencyMetadata } from "./schemas"
+import {
+	AgencyMetadataService,
+	AgencyMetadataServiceLive,
+} from "./services/AgencyMetadataService"
+import { FileSystemService } from "./services/FileSystemService"
+import { GitService } from "./services/GitService"
 
 export interface Command {
 	name: string
@@ -114,108 +121,96 @@ let MANAGED_FILES: ManagedFile[] = []
 
 /**
  * Read agency.json metadata from a repository.
+ * @deprecated Use AgencyMetadataService.readFromDisk instead
  */
 export async function readAgencyMetadata(
 	gitRoot: string,
 ): Promise<AgencyMetadata | null> {
-	const metadataPath = join(gitRoot, "agency.json")
-	const file = Bun.file(metadataPath)
+	const program = Effect.gen(function* () {
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.readFromDisk(gitRoot)
+	}).pipe(
+		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(FileSystemService.Default),
+		Effect.provide(GitService.Default),
+	)
 
-	if (!(await file.exists())) {
-		return null
-	}
-
-	try {
-		const data = await file.json()
-
-		// Validate version field exists
-		if (typeof data.version !== "number") {
-			throw new Error(
-				`Invalid agency.json: missing or invalid 'version' field. Expected a number.`,
-			)
-		}
-
-		// Check for supported version
-		if (data.version !== 1) {
-			throw new Error(
-				`Unsupported agency.json version: ${data.version}. This version of Agency only supports version 1.`,
-			)
-		}
-
-		// Parse and validate using Effect schema
-		try {
-			return Schema.decodeUnknownSync(AgencyMetadata)(data)
-		} catch (schemaError) {
-			throw new Error(
-				`Invalid agency.json format: ${schemaError instanceof Error ? schemaError.message : String(schemaError)}`,
-			)
-		}
-	} catch (error) {
-		if (error instanceof Error) {
-			throw error
-		}
-		throw new Error(`Failed to parse agency.json: ${error}`)
-	}
+	return Effect.runPromise(program)
 }
 
 /**
  * Write agency.json metadata to a repository.
+ * @deprecated Use AgencyMetadataService.write instead
  */
 export async function writeAgencyMetadata(
 	gitRoot: string,
 	metadata: AgencyMetadata,
 ): Promise<void> {
-	const metadataPath = join(gitRoot, "agency.json")
-	await Bun.write(metadataPath, JSON.stringify(metadata, null, 2) + "\n")
+	const program = Effect.gen(function* () {
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.write(gitRoot, metadata)
+	}).pipe(
+		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(FileSystemService.Default),
+		Effect.provide(GitService.Default),
+	)
+
+	return Effect.runPromise(program)
 }
 
 /**
  * Get list of files to filter during PR/merge operations.
  * Always includes TASK.md, AGENCY.md, and agency.json, plus any backpack files from metadata.
+ * @deprecated Use AgencyMetadataService.getFilesToFilter instead
  */
 export async function getFilesToFilter(gitRoot: string): Promise<string[]> {
-	const metadata = await readAgencyMetadata(gitRoot)
-	const baseFiles = ["TASK.md", "AGENCY.md", "agency.json"]
+	const program = Effect.gen(function* () {
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.getFilesToFilter(gitRoot)
+	}).pipe(
+		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(FileSystemService.Default),
+		Effect.provide(GitService.Default),
+	)
 
-	if (!metadata) {
-		// Fallback to just the base files if no metadata exists
-		return baseFiles
-	}
-
-	return [...baseFiles, ...metadata.injectedFiles]
+	return Effect.runPromise(program)
 }
 
 /**
  * Get the configured base branch from agency.json metadata.
+ * @deprecated Use AgencyMetadataService.getBaseBranch instead
  */
 export async function getBaseBranchFromMetadata(
 	gitRoot: string,
 ): Promise<string | null> {
-	const metadata = await readAgencyMetadata(gitRoot)
-	return metadata?.baseBranch || null
+	const program = Effect.gen(function* () {
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.getBaseBranch(gitRoot)
+	}).pipe(
+		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(FileSystemService.Default),
+		Effect.provide(GitService.Default),
+	)
+
+	return Effect.runPromise(program)
 }
 
 /**
  * Set the base branch in agency.json metadata.
+ * @deprecated Use AgencyMetadataService.setBaseBranch instead
  */
 export async function setBaseBranchInMetadata(
 	gitRoot: string,
 	baseBranch: string,
 ): Promise<void> {
-	const metadata = await readAgencyMetadata(gitRoot)
-	if (!metadata) {
-		throw new Error(
-			"agency.json not found. Please run 'agency task' first to initialize backpack files.",
-		)
-	}
+	const program = Effect.gen(function* () {
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.setBaseBranch(gitRoot, baseBranch)
+	}).pipe(
+		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(FileSystemService.Default),
+		Effect.provide(GitService.Default),
+	)
 
-	// Create a new metadata instance with the updated baseBranch
-	const updatedMetadata = new AgencyMetadata({
-		version: metadata.version,
-		injectedFiles: metadata.injectedFiles,
-		template: metadata.template,
-		createdAt: metadata.createdAt,
-		baseBranch,
-	})
-	await writeAgencyMetadata(gitRoot, updatedMetadata)
+	return Effect.runPromise(program)
 }

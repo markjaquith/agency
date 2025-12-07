@@ -251,7 +251,80 @@ const ensureEmitBranchInMetadata = (
 		yield* git.gitCommit("chore: agency emit", gitRoot, { noVerify: true })
 	})
 
-// Helper: Find the best fork point by checking both local and remote tracking branches
+/**
+ * Get the fork point for a branch against a reference.
+ * Falls back to merge-base if fork-point command fails.
+ */
+const getForkPointOrMergeBase = (
+	git: GitService,
+	gitRoot: string,
+	referenceBranch: string,
+	featureBranch: string,
+) =>
+	git.getMergeBaseForkPoint(gitRoot, referenceBranch, featureBranch).pipe(
+		Effect.catchAll(() =>
+			// Fork-point can fail if the reflog doesn't have enough history
+			git.getMergeBase(gitRoot, featureBranch, referenceBranch),
+		),
+	)
+
+/**
+ * Get the remote tracking branch name for a local branch.
+ * Returns null if the branch doesn't track a remote.
+ */
+const getRemoteTrackingBranch = (
+	git: GitService,
+	gitRoot: string,
+	localBranch: string,
+) =>
+	Effect.gen(function* () {
+		const remote = yield* git
+			.getGitConfig(`branch.${localBranch}.remote`, gitRoot)
+			.pipe(Effect.option)
+
+		const remoteBranch = yield* git
+			.getGitConfig(`branch.${localBranch}.merge`, gitRoot)
+			.pipe(Effect.option)
+
+		if (
+			remote._tag === "Some" &&
+			remoteBranch._tag === "Some" &&
+			remoteBranch.value
+		) {
+			return `${remote.value}/${remoteBranch.value.replace("refs/heads/", "")}`
+		}
+
+		return null
+	})
+
+/**
+ * Check if one commit is an ancestor of another.
+ */
+const isAncestor = (
+	git: GitService,
+	gitRoot: string,
+	potentialAncestor: string,
+	commit: string,
+) =>
+	git
+		.runGitCommand(
+			["git", "merge-base", "--is-ancestor", potentialAncestor, commit],
+			gitRoot,
+			{},
+		)
+		.pipe(
+			Effect.map((result) => result.exitCode === 0),
+			Effect.catchAll(() => Effect.succeed(false)),
+		)
+
+/**
+ * Find the best fork point by checking both local and remote tracking branches.
+ *
+ * Strategy:
+ * 1. Get fork-point against the local base branch
+ * 2. If base branch tracks a remote, also get fork-point against remote tracking branch
+ * 3. Choose the more recent fork point (prefer remote if local is its ancestor)
+ */
 const findBestForkPoint = (
 	gitRoot: string,
 	featureBranch: string,
@@ -262,79 +335,58 @@ const findBestForkPoint = (
 		const git = yield* GitService
 		const { verboseLog } = createLoggers({ verbose })
 
-		// Try fork-point with the configured base branch
-		const localForkPoint = yield* git
-			.getMergeBaseForkPoint(gitRoot, baseBranch, featureBranch)
-			.pipe(
-				Effect.catchAll(() =>
-					// Fall back to regular merge-base if fork-point fails
-					git.getMergeBase(gitRoot, featureBranch, baseBranch),
-				),
-			)
-
+		// Strategy 1: Get fork-point against local base branch
+		const localForkPoint = yield* getForkPointOrMergeBase(
+			git,
+			gitRoot,
+			baseBranch,
+			featureBranch,
+		)
 		verboseLog(
 			`Fork-point with ${highlight.branch(baseBranch)}: ${highlight.commit(localForkPoint.substring(0, 8))}`,
 		)
 
-		// If the base branch is a local branch, check if it has a remote tracking branch
-		const remote = yield* git
-			.getGitConfig(`branch.${baseBranch}.remote`, gitRoot)
-			.pipe(Effect.option)
-		const remoteBranch = yield* git
-			.getGitConfig(`branch.${baseBranch}.merge`, gitRoot)
-			.pipe(Effect.option)
+		// Strategy 2: Check if base branch tracks a remote
+		const remoteTrackingBranch = yield* getRemoteTrackingBranch(
+			git,
+			gitRoot,
+			baseBranch,
+		)
 
-		// If the base branch tracks a remote, also try fork-point with the remote tracking branch
-		if (
-			remote._tag === "Some" &&
-			remoteBranch._tag === "Some" &&
-			remoteBranch.value
-		) {
-			const remoteTrackingBranch = `${remote.value}/${remoteBranch.value.replace("refs/heads/", "")}`
-
-			const remoteForkPoint = yield* git
-				.getMergeBaseForkPoint(gitRoot, remoteTrackingBranch, featureBranch)
-				.pipe(
-					Effect.catchAll(() =>
-						// Fall back to regular merge-base if fork-point fails
-						git.getMergeBase(gitRoot, featureBranch, remoteTrackingBranch),
-					),
-				)
-
-			verboseLog(
-				`Fork-point with ${highlight.branch(remoteTrackingBranch)}: ${highlight.commit(remoteForkPoint.substring(0, 8))}`,
-			)
-
-			// Check if one is an ancestor of the other
-			const localIsAncestor = yield* git
-				.runGitCommand(
-					[
-						"git",
-						"merge-base",
-						"--is-ancestor",
-						localForkPoint,
-						remoteForkPoint,
-					],
-					gitRoot,
-					{},
-				)
-				.pipe(
-					Effect.map((result) => result.exitCode === 0),
-					Effect.catchAll(() => Effect.succeed(false)),
-				)
-
-			if (localIsAncestor) {
-				verboseLog(
-					`Using remote fork-point ${highlight.commit(remoteForkPoint.substring(0, 8))} (local is ancestor)`,
-				)
-				return remoteForkPoint
-			}
-
-			verboseLog(
-				`Using local fork-point ${highlight.commit(localForkPoint.substring(0, 8))}`,
-			)
+		if (!remoteTrackingBranch) {
+			return localForkPoint
 		}
 
+		// Get fork-point against remote tracking branch
+		const remoteForkPoint = yield* getForkPointOrMergeBase(
+			git,
+			gitRoot,
+			remoteTrackingBranch,
+			featureBranch,
+		)
+		verboseLog(
+			`Fork-point with ${highlight.branch(remoteTrackingBranch)}: ${highlight.commit(remoteForkPoint.substring(0, 8))}`,
+		)
+
+		// Strategy 3: Choose the more recent fork point
+		// If local fork point is an ancestor of remote, prefer remote (it's more recent)
+		const localIsAncestorOfRemote = yield* isAncestor(
+			git,
+			gitRoot,
+			localForkPoint,
+			remoteForkPoint,
+		)
+
+		if (localIsAncestorOfRemote) {
+			verboseLog(
+				`Using remote fork-point ${highlight.commit(remoteForkPoint.substring(0, 8))} (local is ancestor)`,
+			)
+			return remoteForkPoint
+		}
+
+		verboseLog(
+			`Using local fork-point ${highlight.commit(localForkPoint.substring(0, 8))}`,
+		)
 		return localForkPoint
 	})
 

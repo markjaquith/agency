@@ -171,7 +171,11 @@ export const task = (options: TaskOptions = {}) =>
 		}
 
 		// Get managed files for later use
-		const managedFiles = yield* Effect.promise(() => initializeManagedFiles())
+		const managedFiles = yield* Effect.tryPromise({
+			try: () => initializeManagedFiles(),
+			catch: (error) =>
+				new Error(`Failed to initialize managed files: ${error}`),
+		})
 
 		// Get template directory (it may or may not exist yet)
 		const templateDir = yield* templateService.getTemplateDir(templateName)
@@ -313,9 +317,10 @@ export const task = (options: TaskOptions = {}) =>
 			template: templateName,
 			createdAt: new Date().toISOString(),
 		}
-		yield* Effect.promise(() =>
-			writeAgencyMetadata(targetPath, metadata as any),
-		)
+		yield* Effect.tryPromise({
+			try: () => writeAgencyMetadata(targetPath, metadata as any),
+			catch: (error) => new Error(`Failed to write agency metadata: ${error}`),
+		})
 		createdFiles.push("agency.json")
 		log(done(`Created ${highlight.file("agency.json")}`))
 		if (baseBranch) {
@@ -325,7 +330,7 @@ export const task = (options: TaskOptions = {}) =>
 
 		// Git add and commit the created files
 		if (createdFiles.length > 0) {
-			try {
+			yield* Effect.gen(function* () {
 				yield* git.gitAdd(createdFiles, targetPath)
 				yield* git.gitCommit("chore: agency task", targetPath, {
 					noVerify: true,
@@ -333,11 +338,14 @@ export const task = (options: TaskOptions = {}) =>
 				verboseLog(
 					`Committed ${createdFiles.length} file${plural(createdFiles.length)}`,
 				)
-			} catch (err) {
-				// If commit fails, it might be because there are no changes (e.g., files already staged)
-				// We can ignore this error and let the user handle it manually
-				verboseLog(`Failed to commit: ${err}`)
-			}
+			}).pipe(
+				Effect.catchAll((err) => {
+					// If commit fails, it might be because there are no changes (e.g., files already staged)
+					// We can ignore this error and let the user handle it manually
+					verboseLog(`Failed to commit: ${err}`)
+					return Effect.void
+				}),
+			)
 		}
 	})
 
