@@ -3,9 +3,12 @@
  */
 
 import { Effect, pipe } from "effect"
-import { join } from "path"
 import { FileSystemService } from "../services/FileSystemService"
 import { GitService } from "../services/GitService"
+import {
+	AgencyMetadataService,
+	AgencyMetadataServiceLive,
+} from "../services/AgencyMetadataService"
 import { AgencyMetadata } from "../schemas"
 import { Schema } from "@effect/schema"
 
@@ -244,42 +247,9 @@ const readAgencyJsonFromBranch = (
 	GitService | FileSystemService
 > =>
 	Effect.gen(function* () {
-		const git = yield* GitService
-
-		// Try to read agency.json from the branch using git show
-		const result = yield* pipe(
-			git.runGitCommand(["git", "show", `${branch}:agency.json`], gitRoot, {
-				captureOutput: true,
-			}),
-			Effect.map((r) => (r.exitCode === 0 ? r.stdout : null)),
-			Effect.catchAll(() => Effect.succeed(null)),
-		)
-
-		if (!result) {
-			return null
-		}
-
-		// Parse and validate the JSON
-		const parsed = yield* pipe(
-			Effect.try({
-				try: () => JSON.parse(result),
-				catch: () => null,
-			}),
-			Effect.catchAll(() => Effect.succeed(null)),
-		)
-
-		if (!parsed) {
-			return null
-		}
-
-		// Validate against schema
-		const validated = yield* pipe(
-			Schema.decodeUnknown(AgencyMetadata)(parsed),
-			Effect.catchAll(() => Effect.succeed(null)),
-		)
-
-		return validated
-	})
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.readFromBranch(gitRoot, branch)
+	}).pipe(Effect.provide(AgencyMetadataServiceLive))
 
 /**
  * Get the agency.json metadata from the current branch (if it exists).
@@ -292,49 +262,9 @@ const getCurrentBranchAgencyJson = (
 	FileSystemService | GitService
 > =>
 	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const agencyJsonPath = join(gitRoot, "agency.json")
-
-		// Check if agency.json exists
-		const exists = yield* pipe(
-			fs.exists(agencyJsonPath),
-			Effect.catchAll(() => Effect.succeed(false)),
-		)
-
-		if (!exists) {
-			return null
-		}
-
-		// Read and parse the file
-		const content = yield* pipe(
-			fs.readFile(agencyJsonPath),
-			Effect.catchAll(() => Effect.succeed(null)),
-		)
-
-		if (!content) {
-			return null
-		}
-
-		const parsed = yield* pipe(
-			Effect.try({
-				try: () => JSON.parse(content),
-				catch: () => null,
-			}),
-			Effect.catchAll(() => Effect.succeed(null)),
-		)
-
-		if (!parsed) {
-			return null
-		}
-
-		// Validate against schema
-		const validated = yield* pipe(
-			Schema.decodeUnknown(AgencyMetadata)(parsed),
-			Effect.catchAll(() => Effect.succeed(null)),
-		)
-
-		return validated
-	})
+		const metadataService = yield* AgencyMetadataService
+		return yield* metadataService.readFromDisk(gitRoot)
+	}).pipe(Effect.provide(AgencyMetadataServiceLive))
 
 /**
  * Find the source branch by searching all branches for an agency.json
@@ -381,13 +311,98 @@ const findSourceBranchByEmitBranch = (
 	})
 
 /**
+ * Strategy 1: Try to resolve branch pair from current branch's agency.json.
+ * If current branch has agency.json with emitBranch, we're on a source branch.
+ */
+const tryResolveFromCurrentAgencyJson = (
+	gitRoot: string,
+	currentBranch: string,
+): Effect.Effect<BranchPair | null, never, GitService | FileSystemService> =>
+	Effect.gen(function* () {
+		const currentMetadata = yield* getCurrentBranchAgencyJson(gitRoot)
+
+		if (currentMetadata?.emitBranch) {
+			return {
+				sourceBranch: currentBranch,
+				emitBranch: currentMetadata.emitBranch,
+				isOnEmitBranch: false,
+			}
+		}
+
+		return null
+	})
+
+/**
+ * Strategy 2: Search other branches for agency.json with matching emitBranch.
+ * If found, we're on an emit branch.
+ */
+const tryResolveFromOtherBranchAgencyJson = (
+	gitRoot: string,
+	currentBranch: string,
+): Effect.Effect<BranchPair | null, never, GitService | FileSystemService> =>
+	Effect.gen(function* () {
+		const sourceBranch = yield* findSourceBranchByEmitBranch(
+			gitRoot,
+			currentBranch,
+		)
+
+		if (sourceBranch) {
+			return {
+				sourceBranch,
+				emitBranch: currentBranch,
+				isOnEmitBranch: true,
+			}
+		}
+
+		return null
+	})
+
+/**
+ * Strategy 3: For clean emit patterns ("%branch%"), check if a patterned source branch exists.
+ * If so, we're on an emit branch.
+ */
+const tryResolveFromPatternedSourceBranch = (
+	gitRoot: string,
+	currentBranch: string,
+	sourcePattern: string,
+	emitPattern: string,
+): Effect.Effect<BranchPair | null, never, GitService | FileSystemService> =>
+	Effect.gen(function* () {
+		// Only applies when emit pattern is "%branch%" (clean emit branches)
+		if (emitPattern !== "%branch%") {
+			return null
+		}
+
+		const git = yield* GitService
+		const possibleSourceBranch = makeSourceBranchName(
+			currentBranch,
+			sourcePattern,
+		)
+
+		const sourceExists = yield* pipe(
+			git.branchExists(gitRoot, possibleSourceBranch),
+			Effect.catchAll(() => Effect.succeed(false)),
+		)
+
+		if (sourceExists) {
+			return {
+				sourceBranch: possibleSourceBranch,
+				emitBranch: currentBranch,
+				isOnEmitBranch: true,
+			}
+		}
+
+		return null
+	})
+
+/**
  * Resolve branch pair using agency.json as the first source of truth,
  * falling back to pattern-based resolution.
  *
- * Priority order:
- * 1. If on source branch (has agency.json), use its emitBranch value
- * 2. If on emit branch, search other branches for matching emitBranch
- * 3. If emit pattern is "%branch%" and a source branch with pattern exists, we're on emit
+ * Resolution strategies (in priority order):
+ * 1. Current branch has agency.json with emitBranch -> we're on source branch
+ * 2. Another branch has agency.json pointing to current branch -> we're on emit branch
+ * 3. Clean emit pattern and patterned source branch exists -> we're on emit branch
  * 4. Fall back to pattern-based resolution
  */
 export const resolveBranchPairWithAgencyJson = (
@@ -397,59 +412,34 @@ export const resolveBranchPairWithAgencyJson = (
 	emitPattern: string,
 ): Effect.Effect<BranchPair, never, GitService | FileSystemService> =>
 	Effect.gen(function* () {
-		const git = yield* GitService
-
-		// First, try to read agency.json from the current branch
-		const currentMetadata = yield* getCurrentBranchAgencyJson(gitRoot)
-
-		if (currentMetadata?.emitBranch) {
-			// We're on a source branch and know the emit branch
-			return {
-				sourceBranch: currentBranch,
-				emitBranch: currentMetadata.emitBranch,
-				isOnEmitBranch: false,
-			}
-		}
-
-		// If we don't have agency.json on current branch, we might be on an emit branch
-		// Search other branches for an agency.json with matching emitBranch
-		const sourceBranch = yield* findSourceBranchByEmitBranch(
+		// Strategy 1: Check current branch's agency.json
+		const fromCurrentAgencyJson = yield* tryResolveFromCurrentAgencyJson(
 			gitRoot,
 			currentBranch,
 		)
-
-		if (sourceBranch) {
-			// Found the source branch via agency.json
-			return {
-				sourceBranch,
-				emitBranch: currentBranch,
-				isOnEmitBranch: true,
-			}
+		if (fromCurrentAgencyJson) {
+			return fromCurrentAgencyJson
 		}
 
-		// If emit pattern is "%branch%" (clean emit branches), check if a source branch
-		// with the pattern exists. If so, we're on an emit branch.
-		if (emitPattern === "%branch%") {
-			const possibleSourceBranch = makeSourceBranchName(
-				currentBranch,
-				sourcePattern,
-			)
-			const sourceExists = yield* pipe(
-				git.branchExists(gitRoot, possibleSourceBranch),
-				Effect.catchAll(() => Effect.succeed(false)),
-			)
-
-			if (sourceExists) {
-				// The patterned source branch exists, so we're on an emit branch
-				return {
-					sourceBranch: possibleSourceBranch,
-					emitBranch: currentBranch,
-					isOnEmitBranch: true,
-				}
-			}
+		// Strategy 2: Search other branches for matching agency.json
+		const fromOtherBranchAgencyJson =
+			yield* tryResolveFromOtherBranchAgencyJson(gitRoot, currentBranch)
+		if (fromOtherBranchAgencyJson) {
+			return fromOtherBranchAgencyJson
 		}
 
-		// Fall back to pattern-based resolution
+		// Strategy 3: Check for patterned source branch (clean emit patterns only)
+		const fromPatternedSource = yield* tryResolveFromPatternedSourceBranch(
+			gitRoot,
+			currentBranch,
+			sourcePattern,
+			emitPattern,
+		)
+		if (fromPatternedSource) {
+			return fromPatternedSource
+		}
+
+		// Strategy 4: Fall back to pattern-based resolution
 		return resolveBranchPair(currentBranch, sourcePattern, emitPattern)
 	})
 
