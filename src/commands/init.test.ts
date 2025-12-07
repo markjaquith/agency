@@ -178,13 +178,21 @@ describe("init command", () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			// Should complete successfully even with verbose logging
-			await runTestEffect(
-				init({ template: "verbose-test", verbose: true, silent: false }),
-			)
+			// Capture output to prevent test noise
+			const originalLog = console.log
+			console.log = () => {}
 
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("verbose-test")
+			try {
+				// Should complete successfully even with verbose logging
+				await runTestEffect(
+					init({ template: "verbose-test", verbose: true, silent: false }),
+				)
+
+				const configValue = await getGitConfig("agency.template", tempDir)
+				expect(configValue).toBe("verbose-test")
+			} finally {
+				console.log = originalLog
+			}
 		})
 	})
 

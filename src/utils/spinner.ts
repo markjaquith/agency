@@ -2,6 +2,13 @@ import ora from "ora"
 import { Effect } from "effect"
 
 /**
+ * Check if we're running in a test environment
+ */
+const isTestEnvironment = (): boolean => {
+	return process.env.NODE_ENV === "test" || process.env.BUN_ENV === "test"
+}
+
+/**
  * Configuration for a spinner operation
  */
 interface SpinnerConfig {
@@ -41,7 +48,8 @@ export const withSpinner = <A, E, R>(
 ): Effect.Effect<A, E, R> => {
 	const { text, successText, failText, enabled = true } = config
 
-	if (!enabled) {
+	// Disable spinner in test environment or when explicitly disabled
+	if (!enabled || isTestEnvironment()) {
 		return effect
 	}
 
