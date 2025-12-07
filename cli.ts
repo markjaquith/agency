@@ -5,6 +5,7 @@ import { Effect, Layer } from "effect"
 import { clean, help as cleanHelp } from "./src/commands/clean"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
+import { tasks, help as tasksHelp } from "./src/commands/tasks"
 import { emit, help as emitHelp } from "./src/commands/emit"
 import { push, help as pushHelp } from "./src/commands/push"
 import { pull, help as pullHelp } from "./src/commands/pull"
@@ -243,6 +244,24 @@ const commands: Record<string, Command> = {
 		},
 		help: taskHelp,
 	},
+	tasks: {
+		name: "tasks",
+		description: "List all task branches",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(tasksHelp)
+				return
+			}
+			await runCommand(
+				tasks({
+					silent: options.silent,
+					verbose: options.verbose,
+					json: options.json,
+				}),
+			)
+		},
+		help: tasksHelp,
+	},
 	edit: {
 		name: "edit",
 		description: "Open TASK.md in system editor",
@@ -338,6 +357,7 @@ Usage: agency <command> [options]
 Commands:
   init                   Initialize agency with template selection (run first)
   task [branch]          Initialize template files on a feature branch
+  tasks                  List all task branches
   edit                   Open TASK.md in system editor
   work                   Start working on TASK.md with OpenCode
   template               Template management commands
