@@ -28,6 +28,8 @@ test("hello world", () => {
 });
 ```
 
+**Important:** Tests should not produce extraneous output. When using `verboseLog` or similar logging in implementation code, ensure that the logger respects the `silent` and `verbose` options passed through the command options. Helper functions should accept and forward these options to `createLoggers()` to prevent unwanted output during test runs.
+
 # Agency
 
 This is a CLI tool called `agency` that helps you set up and manage `AGENTS.md` files in your projects. It provides commands to initialize, save, and templatize these files.
