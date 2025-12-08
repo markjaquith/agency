@@ -39,14 +39,11 @@ export const work = (options: WorkOptions = {}) =>
 
 		// For testing, we need to use spawn instead of exec since exec never returns
 		if (options._noExec) {
-			const result = yield* spawnProcess(
-				["opencode", "-p", "Get started on the task described in TASK.md"],
-				{
-					cwd: gitRoot,
-					stdout: "inherit",
-					stderr: "inherit",
-				},
-			).pipe(
+			const result = yield* spawnProcess(["opencode", "-p", "Start the task"], {
+				cwd: gitRoot,
+				stdout: "inherit",
+				stderr: "inherit",
+			}).pipe(
 				Effect.catchAll((error) =>
 					Effect.fail(new Error(`opencode exited with code ${error.exitCode}`)),
 				),
@@ -60,11 +57,7 @@ export const work = (options: WorkOptions = {}) =>
 		} else {
 			// Use execvp to replace the current process with opencode
 			// This will never return - the process is completely replaced
-			execvp("opencode", [
-				"opencode",
-				"-p",
-				"Get started on the task described in TASK.md",
-			])
+			execvp("opencode", ["opencode", "-p", "Start the task"])
 		}
 	})
 

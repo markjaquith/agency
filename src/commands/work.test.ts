@@ -82,11 +82,7 @@ describe("work command", () => {
 			Bun.spawn = originalSpawn
 
 			expect(spawnCalled).toBe(true)
-			expect(spawnArgs).toEqual([
-				"opencode",
-				"-p",
-				"Get started on the task described in TASK.md",
-			])
+			expect(spawnArgs).toEqual(["opencode", "-p", "Start the task"])
 		})
 	})
 
@@ -122,11 +118,7 @@ describe("work command", () => {
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
 
-			expect(capturedArgs).toEqual([
-				"opencode",
-				"-p",
-				"Get started on the task described in TASK.md",
-			])
+			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
 			// On macOS, temp directories can have /private prefix
 			expect(
 				capturedOptions.cwd === tempDir ||

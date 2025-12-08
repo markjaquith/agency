@@ -11,7 +11,7 @@ The `TASK.md` file describes the task being performed and should be kept updated
 
 All work on this repository should begin by reading and understanding `TASK.md`. Whenever any significant progress is made, `TASK.md` should be updated to reflect the current state of work.
 
-See `TASK.md` for the current task description and progress.
+**Note:** When you receive the prompt "Start the task", `TASK.md` is already in your context. DO NOT re-read it — instead, proceed directly with the work described in the task.
 
 ## Commit Messages
 
