@@ -349,7 +349,7 @@ describe("push command", () => {
 		})
 	})
 
-	describe("--gh flag", () => {
+	describe("--pr flag", () => {
 		test("handles gh CLI failure gracefully and continues", async () => {
 			// Capture error output
 			const originalError = console.error
@@ -360,7 +360,7 @@ describe("push command", () => {
 
 			// Should not throw - command should complete despite gh failure
 			// (gh will fail in test environment because there's no GitHub remote)
-			await runTestEffect(push({ baseBranch: "main", gh: true, silent: true }))
+			await runTestEffect(push({ baseBranch: "main", pr: true, silent: true }))
 
 			console.error = originalError
 
@@ -373,7 +373,7 @@ describe("push command", () => {
 			).toBe(true)
 		})
 
-		test("does not call gh when --gh flag is not set", async () => {
+		test("does not call gh when --pr flag is not set", async () => {
 			// Capture error output
 			const originalError = console.error
 			let errorMessages: string[] = []
@@ -381,7 +381,7 @@ describe("push command", () => {
 				errorMessages.push(msg)
 			}
 
-			// Push without --gh flag
+			// Push without --pr flag
 			await runTestEffect(push({ baseBranch: "main", silent: true }))
 
 			console.error = originalError

@@ -18,7 +18,7 @@ interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
 	branch?: string
 	force?: boolean
-	gh?: boolean
+	pr?: boolean
 }
 
 export const push = (options: PushOptions = {}) =>
@@ -126,8 +126,8 @@ export const push = (options: PushOptions = {}) =>
 			log(done(`Pushed to ${highlight.remote(remote)}`))
 		}
 
-		// Step 3 (optional): Open GitHub PR if --gh flag is set
-		if (options.gh) {
+		// Step 3 (optional): Open GitHub PR if --pr flag is set
+		if (options.pr) {
 			verboseLog("Step 3: Opening GitHub PR...")
 
 			const ghEither = yield* Effect.either(
@@ -261,12 +261,15 @@ const openGitHubPR = (
 	Effect.gen(function* () {
 		const { verbose = false } = options
 
-		// Run gh pr create --web to open PR in browser
-		const ghResult = yield* spawnProcess(["gh", "pr", "create", "--web"], {
-			cwd: gitRoot,
-			stdout: verbose ? "inherit" : "pipe",
-			stderr: "pipe",
-		}).pipe(
+		// Run gh pr create --web with --head to specify the emit branch
+		const ghResult = yield* spawnProcess(
+			["gh", "pr", "create", "--web", "--head", branchName],
+			{
+				cwd: gitRoot,
+				stdout: verbose ? "inherit" : "pipe",
+				stderr: "pipe",
+			},
+		).pipe(
 			Effect.catchAll((error) =>
 				Effect.succeed({
 					exitCode: error.exitCode,
@@ -291,7 +294,7 @@ Create a emit branch, push it to remote, and return to the source branch.
 This command is a convenience wrapper that runs operations in sequence:
   1. agency emit [base-branch]  - Create emit branch with backpack files reverted
   2. git push -u origin <pr-branch>  - Push emit branch to remote
-  3. gh pr create --web (optional with --gh)  - Open GitHub PR in browser
+  3. gh pr create --web (optional with --pr)  - Open GitHub PR in browser
   4. git checkout <source-branch>  - Switch back to source branch
 
 The command ensures you end up back on your source branch after pushing
@@ -312,13 +315,13 @@ Arguments:
 Options:
   -b, --branch      Custom name for emit branch (defaults to pattern from config)
   -f, --force       Force push to remote if branch has diverged
-  --gh              Open GitHub PR in browser after pushing (requires gh CLI)
+  --pr              Open GitHub PR in browser after pushing (requires gh CLI)
 
 Examples:
   agency push                          # Create PR, push, return to source
   agency push origin/main              # Explicitly use origin/main as base
   agency push --force                  # Force push if branch has diverged
-  agency push --gh                     # Push and open GitHub PR in browser
+  agency push --pr                     # Push and open GitHub PR in browser
 
 Notes:
   - Must be run from a source branch (not a emit branch)
