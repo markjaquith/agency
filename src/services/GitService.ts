@@ -736,5 +736,20 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				const branchName = merge.replace(/^refs\/heads\//, "")
 				return `${remote}/${branchName}`
 			}),
+
+		/**
+		 * Read file contents from a specific git ref without checking out.
+		 * Uses `git show <ref>:<path>` to read file contents directly.
+		 * @param gitRoot - The git repository root
+		 * @param ref - The git ref (branch name, commit, tag, etc.)
+		 * @param filePath - Path to the file relative to git root
+		 * @returns The file contents, or null if the file doesn't exist at that ref
+		 */
+		getFileAtRef: (gitRoot: string, ref: string, filePath: string) =>
+			pipe(
+				runGitCommand(["git", "show", `${ref}:${filePath}`], gitRoot),
+				Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
+				Effect.catchAll(() => Effect.succeed(null)),
+			),
 	}),
 }) {}

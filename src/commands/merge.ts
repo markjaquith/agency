@@ -2,11 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService, GitCommandError } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import {
-	extractSourceBranch,
-	makePrBranchName,
-	resolveBranchPairWithAgencyJson,
-} from "../utils/pr-branch"
+import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
 import { FileSystemService } from "../services/FileSystemService"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
@@ -15,6 +11,7 @@ import {
 	ensureGitRepo,
 	ensureBranchExists,
 	getBaseBranchFromMetadataEffect,
+	getBaseBranchFromBranch,
 	getRemoteName,
 } from "../utils/effect"
 
@@ -90,11 +87,12 @@ export const merge = (options: MergeOptions = {}) =>
 					`Cannot merge without a valid source branch.`,
 			)
 
-			// Get the base branch from the source branch's agency.json
-			// We need to temporarily switch to the source branch to read its agency.json
-			yield* git.checkoutBranch(gitRoot, sourceBranch)
-			const configuredBase = yield* getBaseBranchFromMetadataEffect(gitRoot)
-			yield* git.checkoutBranch(gitRoot, currentBranch)
+			// Get the base branch from the source branch's agency.json using git show
+			// No need to checkout the branch - we can read the file directly
+			const configuredBase = yield* getBaseBranchFromBranch(
+				gitRoot,
+				sourceBranch,
+			)
 
 			if (!configuredBase) {
 				return yield* Effect.fail(
@@ -139,8 +137,7 @@ export const merge = (options: MergeOptions = {}) =>
 			verboseLog(`Creating emit branch ${highlight.branch(emitBranch)}...`)
 			yield* emit({ silent: true, verbose })
 
-			// Switch back to source branch and get the base branch from agency.json
-			yield* git.checkoutBranch(gitRoot, currentBranch)
+			// emit() leaves us on the source branch, so we can read agency.json directly
 			const configuredBase = yield* getBaseBranchFromMetadataEffect(gitRoot)
 			if (!configuredBase) {
 				return yield* Effect.fail(

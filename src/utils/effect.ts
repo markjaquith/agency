@@ -158,6 +158,35 @@ export function getBaseBranchFromMetadataEffect(gitRoot: string) {
 }
 
 /**
+ * Get base branch from agency.json on a specific branch without checking it out.
+ * Uses git show to read the file contents directly.
+ */
+export function getBaseBranchFromBranch(gitRoot: string, branch: string) {
+	return Effect.gen(function* () {
+		const git = yield* GitService
+
+		// Use git show to read agency.json from the branch
+		const content = yield* git.getFileAtRef(gitRoot, branch, "agency.json")
+
+		if (!content) {
+			return null
+		}
+
+		// Parse the content
+		const data = yield* Effect.try({
+			try: () => JSON.parse(content),
+			catch: () => null,
+		}).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+		if (!data || typeof data !== "object") {
+			return null
+		}
+
+		return (data as { baseBranch?: string }).baseBranch || null
+	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
+}
+
+/**
  * Get the configured remote name with fallback to auto-detection
  */
 export function getRemoteName(gitRoot: string) {

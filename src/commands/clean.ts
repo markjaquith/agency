@@ -1,9 +1,7 @@
 import { Effect } from "effect"
-import { join } from "node:path"
 import { Schema } from "@effect/schema"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
-import { FileSystemService } from "../services/FileSystemService"
 import { ConfigService } from "../services/ConfigService"
 import { AgencyMetadata } from "../schemas"
 import highlight, { done } from "../utils/colors"
@@ -16,46 +14,35 @@ interface CleanOptions extends BaseCommandOptions {
 }
 
 /**
- * Read agency.json metadata from a repository.
+ * Read agency.json metadata from a specific branch without checking it out.
+ * Uses `git show` to read the file contents directly.
  */
 const readAgencyMetadata = (gitRoot: string, branch: string) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const fs = yield* FileSystemService
-		const metadataPath = join(gitRoot, "agency.json")
 
-		// Checkout the branch temporarily to read its agency.json
-		const currentBranch = yield* git.getCurrentBranch(gitRoot)
-		const needsCheckout = currentBranch !== branch
+		// Use git show to read agency.json from the branch without checking out
+		const content = yield* git.getFileAtRef(gitRoot, branch, "agency.json")
 
-		if (needsCheckout) {
-			yield* git.checkoutBranch(gitRoot, branch)
+		if (!content) {
+			return null
 		}
 
-		const exists = yield* fs.exists(metadataPath)
-		let metadata: AgencyMetadata | null = null
+		const data = yield* Effect.try({
+			try: () => JSON.parse(content),
+			catch: () => new Error("Failed to parse agency.json"),
+		})
 
-		if (exists) {
-			const content = yield* fs.readFile(metadataPath)
-			const data = yield* Effect.try({
-				try: () => JSON.parse(content),
-				catch: () => new Error("Failed to parse agency.json"),
-			})
-
-			// Validate version
-			if (typeof data.version === "number" && data.version === 1) {
-				// Parse and validate using Effect schema
-				metadata = yield* Effect.try({
-					try: () => Schema.decodeUnknownSync(AgencyMetadata)(data),
-					catch: () => new Error("Invalid agency.json format"),
-				}).pipe(Effect.catchAll(() => Effect.succeed(null)))
-			}
+		// Validate version
+		if (typeof data.version !== "number" || data.version !== 1) {
+			return null
 		}
 
-		// Switch back to original branch if we changed
-		if (needsCheckout) {
-			yield* git.checkoutBranch(gitRoot, currentBranch)
-		}
+		// Parse and validate using Effect schema
+		const metadata: AgencyMetadata | null = yield* Effect.try({
+			try: () => Schema.decodeUnknownSync(AgencyMetadata)(data),
+			catch: () => new Error("Invalid agency.json format"),
+		}).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
 		return metadata
 	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
