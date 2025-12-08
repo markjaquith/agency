@@ -4,7 +4,11 @@ import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	withBranchProtection,
+} from "../utils/effect"
 import { withSpinner } from "../utils/spinner"
 
 interface PullOptions extends BaseCommandOptions {
@@ -13,13 +17,20 @@ interface PullOptions extends BaseCommandOptions {
 
 export const pull = (options: PullOptions = {}) =>
 	Effect.gen(function* () {
+		const gitRoot = yield* ensureGitRepo()
+
+		// Wrap the entire pull operation with branch protection
+		// This ensures we return to the original branch on Ctrl-C interrupt
+		yield* withBranchProtection(gitRoot, pullCore(gitRoot, options))
+	})
+
+const pullCore = (gitRoot: string, options: PullOptions) =>
+	Effect.gen(function* () {
 		const { verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
-
-		const gitRoot = yield* ensureGitRepo()
 
 		// Resolve remote name (use provided option, config, or auto-detect)
 		const remote = options.remote

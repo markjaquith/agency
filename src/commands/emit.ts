@@ -19,6 +19,7 @@ import {
 	createLoggers,
 	ensureGitRepo,
 	resolveBaseBranch,
+	withBranchProtection,
 } from "../utils/effect"
 import { withSpinner } from "../utils/spinner"
 
@@ -30,14 +31,21 @@ interface EmitOptions extends BaseCommandOptions {
 
 export const emit = (options: EmitOptions = {}) =>
 	Effect.gen(function* () {
+		const gitRoot = yield* ensureGitRepo()
+
+		// Wrap the entire emit operation with branch protection
+		// This ensures we return to the original branch on Ctrl-C interrupt
+		yield* withBranchProtection(gitRoot, emitCore(gitRoot, options))
+	})
+
+const emitCore = (gitRoot: string, options: EmitOptions) =>
+	Effect.gen(function* () {
 		const { force = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
 		const fs = yield* FileSystemService
-
-		const gitRoot = yield* ensureGitRepo()
 
 		// Check if git-filter-repo is installed
 		const hasFilterRepo = yield* git.checkCommandExists("git-filter-repo")

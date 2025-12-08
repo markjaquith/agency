@@ -1,4 +1,4 @@
-import { Effect, Data } from "effect"
+import { Effect } from "effect"
 import { GitService } from "../services/GitService"
 import { getBaseBranchFromMetadata } from "../types"
 import highlight from "./colors"
@@ -198,5 +198,83 @@ export function getRemoteName(gitRoot: string) {
 		const remote = yield* git.resolveRemote(gitRoot)
 
 		return remote
+	})
+}
+
+/**
+ * Execute an operation that may change branches, with automatic cleanup on interrupt.
+ * This ensures that if Ctrl-C is pressed during an operation that changes branches,
+ * the user is returned to their original branch.
+ *
+ * @param gitRoot - The git repository root
+ * @param operation - The Effect operation to run
+ * @returns The result of the operation
+ */
+export function withBranchProtection<A, E, R>(
+	gitRoot: string,
+	operation: Effect.Effect<A, E, R>,
+) {
+	return Effect.gen(function* () {
+		const git = yield* GitService
+
+		// Store the original branch before any operations
+		const originalBranch = yield* git.getCurrentBranch(gitRoot)
+
+		// Set up SIGINT handler to restore branch on interrupt
+		let interrupted = false
+		const originalSigintHandler = process.listeners("SIGINT")
+
+		const cleanup = async () => {
+			if (interrupted) return
+			interrupted = true
+
+			// Restore original SIGINT handlers
+			process.removeAllListeners("SIGINT")
+			for (const handler of originalSigintHandler) {
+				process.on("SIGINT", handler as NodeJS.SignalsListener)
+			}
+
+			// Try to restore the original branch
+			try {
+				const currentBranch = await Effect.runPromise(
+					git
+						.getCurrentBranch(gitRoot)
+						.pipe(Effect.provide(GitService.Default)),
+				)
+
+				if (currentBranch !== originalBranch) {
+					await Effect.runPromise(
+						git
+							.checkoutBranch(gitRoot, originalBranch)
+							.pipe(Effect.provide(GitService.Default)),
+					)
+					console.error(`\nInterrupted. Restored to branch: ${originalBranch}`)
+				}
+			} catch {
+				console.error(
+					`\nInterrupted. Could not restore branch. You may need to run: git checkout ${originalBranch}`,
+				)
+			}
+
+			// Exit the process
+			process.exit(130) // Standard exit code for SIGINT
+		}
+
+		// Install our SIGINT handler
+		process.removeAllListeners("SIGINT")
+		process.on("SIGINT", cleanup)
+
+		// Run the operation
+		const result = yield* Effect.onExit(operation, () =>
+			Effect.sync(() => {
+				// Restore original SIGINT handlers when operation completes
+				process.removeAllListeners("SIGINT")
+				for (const handler of originalSigintHandler) {
+					process.on("SIGINT", handler as NodeJS.SignalsListener)
+				}
+			}),
+		)
+
+		return result
 	})
 }

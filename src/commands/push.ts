@@ -10,7 +10,12 @@ import {
 import { FileSystemService } from "../services/FileSystemService"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
-import { createLoggers, ensureGitRepo, getRemoteName } from "../utils/effect"
+import {
+	createLoggers,
+	ensureGitRepo,
+	getRemoteName,
+	withBranchProtection,
+} from "../utils/effect"
 import { withSpinner } from "../utils/spinner"
 import { spawnProcess } from "../utils/process"
 
@@ -23,13 +28,20 @@ interface PushOptions extends BaseCommandOptions {
 
 export const push = (options: PushOptions = {}) =>
 	Effect.gen(function* () {
+		const gitRoot = yield* ensureGitRepo()
+
+		// Wrap the entire push operation with branch protection
+		// This ensures we return to the original branch on Ctrl-C interrupt
+		yield* withBranchProtection(gitRoot, pushCore(gitRoot, options))
+	})
+
+const pushCore = (gitRoot: string, options: PushOptions) =>
+	Effect.gen(function* () {
 		const { verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
-
-		const gitRoot = yield* ensureGitRepo()
 
 		// Load config to check emit branch pattern
 		const config = yield* configService.loadConfig()
