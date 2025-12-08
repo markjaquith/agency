@@ -32,7 +32,9 @@ describe("work command", () => {
 
 	describe("error handling", () => {
 		test("throws error when TASK.md doesn't exist", async () => {
-			expect(runTestEffect(work({ silent: true }))).rejects.toThrow(
+			expect(
+				runTestEffect(work({ silent: true, _noExec: true })),
+			).rejects.toThrow(
 				"TASK.md not found. Run 'agency task' first to create it.",
 			)
 		})
@@ -41,9 +43,9 @@ describe("work command", () => {
 			const nonGitDir = await createTempDir()
 			process.chdir(nonGitDir)
 
-			expect(runTestEffect(work({ silent: true }))).rejects.toThrow(
-				"Not in a git repository",
-			)
+			expect(
+				runTestEffect(work({ silent: true, _noExec: true })),
+			).rejects.toThrow("Not in a git repository")
 
 			await cleanupTempDir(nonGitDir)
 		})
@@ -74,7 +76,7 @@ describe("work command", () => {
 				}
 			}
 
-			await runTestEffect(work({ silent: true }))
+			await runTestEffect(work({ silent: true, _noExec: true }))
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
@@ -115,7 +117,7 @@ describe("work command", () => {
 				}
 			}
 
-			await runTestEffect(work({ silent: true }))
+			await runTestEffect(work({ silent: true, _noExec: true }))
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
@@ -156,9 +158,9 @@ describe("work command", () => {
 				}
 			}
 
-			expect(runTestEffect(work({ silent: true }))).rejects.toThrow(
-				"opencode exited with code 1",
-			)
+			expect(
+				runTestEffect(work({ silent: true, _noExec: true })),
+			).rejects.toThrow("opencode exited with code 1")
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
@@ -194,7 +196,7 @@ describe("work command", () => {
 				logMessages.push(msg)
 			}
 
-			await runTestEffect(work({ silent: false, verbose: true }))
+			await runTestEffect(work({ silent: false, verbose: true, _noExec: true }))
 
 			console.log = originalLog
 			// @ts-ignore - restore
@@ -236,7 +238,7 @@ describe("work command", () => {
 				logCalled = true
 			}
 
-			await work({ silent: true, verbose: true })
+			await work({ silent: true, verbose: true, _noExec: true })
 
 			console.log = originalLog
 			// @ts-ignore - restore

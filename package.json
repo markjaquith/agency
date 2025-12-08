@@ -52,5 +52,8 @@
     "@effect/schema": "^0.75.5",
     "effect": "^3.19.6",
     "ora": "^8.1.1"
-  }
+  },
+  "trustedDependencies": [
+    "@triggi/native-exec"
+  ]
 }
