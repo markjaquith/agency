@@ -187,7 +187,7 @@ export const merge = (options: MergeOptions = {}) =>
 		if (push) {
 			const remote = yield* getRemoteName(gitRoot)
 			verboseLog(
-				`Pushing ${highlight.branch(baseBranchToMergeInto)} to ${remote}...`,
+				`Pushing ${highlight.branch(baseBranchToMergeInto)} to ${highlight.remote(remote)}...`,
 			)
 
 			const pushResult = yield* git.runGitCommand(
@@ -206,7 +206,7 @@ export const merge = (options: MergeOptions = {}) =>
 				)
 			}
 
-			log(done(`Pushed to ${remote}`))
+			log(done(`Pushed to ${highlight.remote(remote)}`))
 		}
 	})
 

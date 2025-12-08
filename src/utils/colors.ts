@@ -15,6 +15,7 @@
 const RESET = "\x1b[0m"
 const CYAN_BRIGHT = "\x1b[96m"
 const GREEN = "\x1b[32m"
+const YELLOW = "\x1b[33m"
 
 /**
  * Central color configuration
@@ -29,6 +30,7 @@ const COLORS = {
 	value: CYAN_BRIGHT,
 	commit: CYAN_BRIGHT,
 	pattern: CYAN_BRIGHT,
+	remote: YELLOW,
 } as const
 
 /**
@@ -120,6 +122,14 @@ function pattern(text: string): string {
 }
 
 /**
+ * Highlight a git remote name
+ * @example highlight.remote("origin") -> "\x1b[33morigin\x1b[0m"
+ */
+function remote(name: string): string {
+	return colorize(name, COLORS.remote)
+}
+
+/**
  * Prepends a green checkmark to a message for success output
  * Uses the same checkmark symbol and color as ora for consistency
  * @param message - The message to prepend the checkmark to
@@ -164,4 +174,5 @@ export default {
 	value,
 	commit,
 	pattern,
+	remote,
 }

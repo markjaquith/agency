@@ -91,7 +91,7 @@ export const push = (options: PushOptions = {}) =>
 		// Step 2: Push to remote (git push)
 		const remote = yield* getRemoteName(gitRoot)
 		verboseLog(
-			`Step 2: Pushing ${highlight.branch(emitBranchName)} to ${remote}...`,
+			`Step 2: Pushing ${highlight.branch(emitBranchName)} to ${highlight.remote(remote)}...`,
 		)
 
 		const pushEither = yield* Effect.either(
@@ -102,8 +102,8 @@ export const push = (options: PushOptions = {}) =>
 				}),
 				{
 					text: options.force
-						? `Pushing to ${remote} (forced)`
-						: `Pushing to ${remote}`,
+						? `Pushing to ${highlight.remote(remote)} (forced)`
+						: `Pushing to ${highlight.remote(remote)}`,
 					enabled: !options.silent && !options.verbose,
 				},
 			),
@@ -121,9 +121,9 @@ export const push = (options: PushOptions = {}) =>
 		const usedForce = pushEither.right
 
 		if (usedForce) {
-			log(done(`Pushed to ${remote} (forced)`))
+			log(done(`Pushed to ${highlight.remote(remote)} (forced)`))
 		} else {
-			log(done(`Pushed to ${remote}`))
+			log(done(`Pushed to ${highlight.remote(remote)}`))
 		}
 
 		// Step 3 (optional): Open GitHub PR if --gh flag is set
