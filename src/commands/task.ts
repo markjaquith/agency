@@ -20,6 +20,8 @@ interface TaskOptions extends BaseCommandOptions {
 	path?: string
 	task?: string
 	branch?: string
+	from?: string
+	fromCurrent?: boolean
 }
 
 interface TaskEditOptions extends BaseCommandOptions {}
@@ -94,6 +96,115 @@ export const task = (options: TaskOptions = {}) =>
 		const isFeature = yield* git.isFeatureBranch(currentBranch, targetPath)
 		verboseLog(`Is feature branch: ${isFeature}`)
 
+		// Determine base branch to branch from
+		let baseBranchToBranchFrom: string | undefined
+
+		// Handle --from and --from-current flags
+		if (options.from && options.fromCurrent) {
+			return yield* Effect.fail(
+				new Error("Cannot use both --from and --from-current flags together."),
+			)
+		}
+
+		if (options.fromCurrent) {
+			// Branch from current branch
+			baseBranchToBranchFrom = currentBranch
+			verboseLog(
+				`Using current branch as base: ${highlight.branch(currentBranch)}`,
+			)
+		} else if (options.from) {
+			// Branch from specified branch
+			baseBranchToBranchFrom = options.from
+			verboseLog(
+				`Using specified branch as base: ${highlight.branch(options.from)}`,
+			)
+
+			// Verify the specified branch exists
+			const exists = yield* git.branchExists(targetPath, baseBranchToBranchFrom)
+			if (!exists) {
+				return yield* Effect.fail(
+					new Error(
+						`Branch ${highlight.branch(baseBranchToBranchFrom)} does not exist.`,
+					),
+				)
+			}
+		} else {
+			// Default: determine main upstream branch
+			baseBranchToBranchFrom =
+				(yield* git.getMainBranchConfig(targetPath)) ||
+				(yield* git.findMainBranch(targetPath)) ||
+				undefined
+
+			// If still no base branch, try to auto-detect from remote
+			if (!baseBranchToBranchFrom) {
+				const remote = yield* git
+					.resolveRemote(targetPath)
+					.pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				const commonBases: string[] = []
+				if (remote) {
+					commonBases.push(`${remote}/main`, `${remote}/master`)
+				}
+				commonBases.push("main", "master")
+
+				for (const base of commonBases) {
+					const exists = yield* git.branchExists(targetPath, base)
+					if (exists) {
+						baseBranchToBranchFrom = base
+						break
+					}
+				}
+			}
+
+			if (baseBranchToBranchFrom) {
+				verboseLog(
+					`Auto-detected base branch: ${highlight.branch(baseBranchToBranchFrom)}`,
+				)
+			}
+		}
+
+		// Check if the base branch is an agency source branch
+		// If so, we need to emit it first and use the emit branch instead
+		if (baseBranchToBranchFrom) {
+			const config = yield* configService.loadConfig()
+			const cleanFromBase = extractCleanBranch(
+				baseBranchToBranchFrom,
+				config.sourceBranchPattern,
+			)
+
+			if (cleanFromBase) {
+				// This is an agency source branch - we need to use its emit branch
+				verboseLog(
+					`Base branch ${highlight.branch(baseBranchToBranchFrom)} is an agency source branch`,
+				)
+
+				const emitBranchName = makeEmitBranchName(
+					cleanFromBase,
+					config.emitBranch,
+				)
+
+				// Check if emit branch exists
+				const emitExists = yield* git.branchExists(targetPath, emitBranchName)
+
+				if (!emitExists) {
+					return yield* Effect.fail(
+						new Error(
+							`Base branch ${highlight.branch(baseBranchToBranchFrom)} is an agency source branch, ` +
+								`but its emit branch ${highlight.branch(emitBranchName)} does not exist.\n` +
+								`Please run 'agency emit' on ${highlight.branch(baseBranchToBranchFrom)} first, ` +
+								`or choose a different base branch.`,
+						),
+					)
+				}
+
+				// Use the emit branch as the base
+				baseBranchToBranchFrom = emitBranchName
+				verboseLog(
+					`Using emit branch as base: ${highlight.branch(baseBranchToBranchFrom)}`,
+				)
+			}
+		}
+
 		// If on main branch without a branch name, prompt for it (unless in silent mode)
 		let branchName = options.branch
 		if (!isFeature && !branchName) {
@@ -165,6 +276,7 @@ export const task = (options: TaskOptions = {}) =>
 			yield* createFeatureBranchEffect(
 				targetPath,
 				sourceBranchName,
+				baseBranchToBranchFrom,
 				silent,
 				verbose,
 			)
@@ -353,6 +465,7 @@ export const task = (options: TaskOptions = {}) =>
 const createFeatureBranchEffect = (
 	targetPath: string,
 	branchName: string,
+	providedBaseBranch: string | undefined,
 	silent: boolean,
 	verbose: boolean,
 ) =>
@@ -361,11 +474,15 @@ const createFeatureBranchEffect = (
 		const git = yield* GitService
 		const promptService = yield* PromptService
 
-		// Get or prompt for base branch
-		let baseBranch: string | undefined =
-			(yield* git.getMainBranchConfig(targetPath)) ||
-			(yield* git.findMainBranch(targetPath)) ||
-			undefined
+		// Use provided base branch if available, otherwise get or prompt for one
+		let baseBranch: string | undefined = providedBaseBranch
+
+		if (!baseBranch) {
+			baseBranch =
+				(yield* git.getMainBranchConfig(targetPath)) ||
+				(yield* git.findMainBranch(targetPath)) ||
+				undefined
+		}
 
 		// If no base branch is configured and not in silent mode, prompt for it
 		if (!baseBranch && !silent) {
@@ -495,10 +612,6 @@ If you're on the main branch, you must either:
   1. Switch to an existing feature branch first, then run 'agency task'
   2. Provide a branch name: 'agency task <branch-name>'
 
-When creating a new branch, you'll be prompted to select a base branch (e.g.,
-main, develop) to branch from. This selection is saved to .git/config for
-future use.
-
 Initializes files at the root of the current git repository.
 
 Arguments:
@@ -506,11 +619,25 @@ Arguments:
 
 Options:
   -b, --branch      Branch name to create (alternative to positional arg)
+  --from <branch>   Branch to branch from instead of main upstream branch
+  --from-current    Branch from the current branch
+
+Base Branch Selection:
+  By default, 'agency task' branches from the main upstream branch (e.g., origin/main).
+  You can override this behavior with:
+  
+  - --from <branch>: Branch from a specific branch
+  - --from-current: Branch from your current branch
+  
+  If the base branch is an agency source branch (e.g., agency/branch-A), the command
+  will automatically use its emit branch instead. This allows you to layer work on top
+  of other feature branches while maintaining clean branch history.
 
 Examples:
-  agency init                        # First, initialize with template
-  agency task                        # Then initialize on current feature branch
-  agency task my-feature             # Create 'my-feature' branch and initialize
+  agency task                          # Branch from main upstream branch
+  agency task --from agency/branch-B   # Branch from agency/branch-B's emit branch
+  agency task --from-current           # Branch from current branch's emit branch
+  agency task my-feature --from develop # Create 'my-feature' from 'develop'
 
 Template Workflow:
   1. Run 'agency init' to select template (saved to .git/config)
@@ -519,11 +646,15 @@ Template Workflow:
   4. Template directory only created when you save files to it
 
 Branch Creation:
-  1. When creating a new branch, you're prompted to select a base branch
-  2. Suggested options include: main, master, develop, staging (if they exist)
-  3. You can select from suggestions or enter a custom branch name
-  4. Selection is saved to .git/config (agency.mainBranch) for future use
-  5. In --silent mode, a base branch must already be configured
+  When creating a new branch without --from or --from-current:
+  1. Auto-detects main upstream branch (origin/main, origin/master, etc.)
+  2. Falls back to configured main branch in .git/config (agency.mainBranch)
+  3. In --silent mode, a base branch must already be configured
+  
+  When using --from with an agency source branch:
+  1. Verifies the emit branch exists for the source branch
+  2. Uses the emit branch as the actual base to avoid agency files
+  3. Fails if emit branch doesn't exist (run 'agency emit' first)
 
 Notes:
   - Files are created at the git repository root, not the current directory

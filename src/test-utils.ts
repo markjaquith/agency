@@ -224,6 +224,36 @@ export async function getGitConfig(
 }
 
 /**
+ * Run a git command
+ */
+export async function runGitCommand(
+	cwd: string,
+	args: string[],
+): Promise<void> {
+	const proc = Bun.spawn(args, {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+	if (proc.exitCode !== 0) {
+		const stderr = await new Response(proc.stderr).text()
+		throw new Error(`Git command failed: ${args.join(" ")}\n${stderr}`)
+	}
+}
+
+/**
+ * Create a file with content
+ */
+export async function createFile(
+	cwd: string,
+	filename: string,
+	content: string,
+): Promise<void> {
+	await Bun.write(join(cwd, filename), content)
+}
+
+/**
  * Run an Effect in tests with all services provided
  */
 import { Effect, Layer } from "effect"

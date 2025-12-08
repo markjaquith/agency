@@ -239,6 +239,8 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					task: options.task,
+					from: options.from,
+					fromCurrent: options["from-current"],
 				}),
 			)
 		},
@@ -483,6 +485,12 @@ try {
 			},
 			task: {
 				type: "string",
+			},
+			from: {
+				type: "string",
+			},
+			"from-current": {
+				type: "boolean",
 			},
 			json: {
 				type: "boolean",
