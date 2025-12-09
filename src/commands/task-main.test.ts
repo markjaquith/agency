@@ -572,21 +572,24 @@ describe("task command", () => {
 			expect(content).not.toContain("{task}")
 		})
 
-		test("aborts if TASK.md already exists", async () => {
+		test("skips TASK.md if it already exists", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
 			const existingContent = "# Existing TASK"
 			await Bun.write(join(tempDir, "TASK.md"), existingContent)
 
-			await expect(
-				(async () => {
-					await initAgency(tempDir, "test")
-					return await runTestEffect(
-						task({ silent: true, branch: "test-feature" }),
-					)
-				})(),
-			).rejects.toThrow("TASK.md already exists in the repository")
+			await initAgency(tempDir, "test")
+
+			// Should succeed but skip TASK.md
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// TASK.md should not be overwritten
+			const content = await readFile(join(tempDir, "TASK.md"))
+			expect(content).toBe(existingContent)
+
+			// Other files should still be created
+			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
 
 		test("uses TASK.md from template directory if it exists", async () => {

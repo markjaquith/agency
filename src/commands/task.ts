@@ -80,17 +80,8 @@ export const task = (options: TaskOptions = {}) =>
 
 		verboseLog(`Using template: ${templateName}`)
 
-		// Check if TASK.md already exists - if so, abort
+		// Define path to TASK.md for later checks
 		const taskMdPath = resolve(targetPath, "TASK.md")
-		const taskMdExists = yield* fs.exists(taskMdPath)
-		if (taskMdExists) {
-			return yield* Effect.fail(
-				new Error(
-					"TASK.md already exists in the repository. This indicates something has gone wrong.\n" +
-						"Please remove TASK.md manually before running 'agency task'.",
-				),
-			)
-		}
 
 		// Check if we're on a feature branch
 		const currentBranch = yield* git.getCurrentBranch(targetPath)
@@ -229,9 +220,9 @@ export const task = (options: TaskOptions = {}) =>
 			verboseLog(`Branch name from prompt: ${branchName}`)
 		}
 
-		// If we have a branch name and we're not on a feature branch, apply source pattern and check if branch exists
+		// If we have a branch name, apply source pattern and check if branch exists
 		let sourceBranchName: string | undefined
-		if (!isFeature && branchName) {
+		if (branchName) {
 			const config = yield* configService.loadConfig()
 			sourceBranchName = makeSourceBranchName(
 				branchName,
@@ -254,7 +245,7 @@ export const task = (options: TaskOptions = {}) =>
 
 		// If we're going to create a branch, check if TASK.md will be created and prompt for description first
 		let taskDescription: string | undefined
-		if (!isFeature && branchName) {
+		if (branchName) {
 			const taskMdExists = yield* fs.exists(taskMdPath)
 			if (!taskMdExists) {
 				if (options.task) {
@@ -274,7 +265,7 @@ export const task = (options: TaskOptions = {}) =>
 			}
 		}
 
-		if (!isFeature && sourceBranchName) {
+		if (sourceBranchName) {
 			yield* createFeatureBranchEffect(
 				targetPath,
 				sourceBranchName,
