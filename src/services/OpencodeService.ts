@@ -1,4 +1,5 @@
 import { Effect, Data } from "effect"
+import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 import { FileSystemService } from "./FileSystemService"
 
 // Error types for Opencode operations
@@ -75,18 +76,26 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 				}),
 
 			/**
-			 * Parse JSON or JSONC content, stripping comments for JSONC.
+			 * Parse JSON or JSONC content using jsonc-parser for robust comment handling.
 			 */
 			parseConfig: (content: string, extension: "json" | "jsonc") =>
 				Effect.try({
 					try: () => {
 						if (extension === "jsonc") {
-							// Strip comments from JSONC (simple implementation)
-							// Removes single-line (//) and multi-line (/* */) comments
-							const withoutComments = content
-								.replace(/\/\*[\s\S]*?\*\//g, "")
-								.replace(/\/\/.*/g, "")
-							return JSON.parse(withoutComments) as OpencodeConfig
+							// Use jsonc-parser for robust JSONC parsing with comments and trailing commas
+							const errors: ParseError[] = []
+							const result = parseJsonc(content, errors, {
+								allowTrailingComma: true,
+							}) as OpencodeConfig
+
+							// Check if there were any parse errors
+							if (errors.length > 0) {
+								throw new Error(
+									`JSON Parse error: ${errors.map((e) => `Error code ${e.error} at offset ${e.offset}`).join(", ")}`,
+								)
+							}
+
+							return result
 						}
 						return JSON.parse(content) as OpencodeConfig
 					},
@@ -204,10 +213,19 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 					// Parse it
 					const existingConfig = yield* Effect.gen(function* () {
 						if (fileInfo.extension === "jsonc") {
-							const withoutComments = content
-								.replace(/\/\*[\s\S]*?\*\//g, "")
-								.replace(/\/\/.*/g, "")
-							return JSON.parse(withoutComments) as OpencodeConfig
+							const errors: ParseError[] = []
+							const result = parseJsonc(content, errors, {
+								allowTrailingComma: true,
+							}) as OpencodeConfig
+
+							// Check if there were any parse errors
+							if (errors.length > 0) {
+								throw new Error(
+									`JSON Parse error: ${errors.map((e) => `Error code ${e.error} at offset ${e.offset}`).join(", ")}`,
+								)
+							}
+
+							return result
 						}
 						return JSON.parse(content) as OpencodeConfig
 					}).pipe(
