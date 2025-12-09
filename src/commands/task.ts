@@ -334,7 +334,7 @@ export const task = (options: TaskOptions = {}) =>
 		)
 
 		// Check if opencode.json or opencode.jsonc already exists before processing files
-		const existingOpencodeExt = yield* opencodeService
+		const existingOpencodeInfo = yield* opencodeService
 			.detectOpencodeFile(targetPath)
 			.pipe(Effect.catchAll(() => Effect.succeed(null)))
 
@@ -343,11 +343,10 @@ export const task = (options: TaskOptions = {}) =>
 			const targetFilePath = resolve(targetPath, fileName)
 
 			// Special handling for opencode.json if opencode.json/jsonc already exists
-			if (fileName === "opencode.json" && existingOpencodeExt) {
+			if (fileName === "opencode.json" && existingOpencodeInfo) {
 				// Merge with existing file instead of creating new one
-				const existingFilename = `opencode.${existingOpencodeExt}`
 				verboseLog(
-					`Found existing ${existingFilename}, will merge instructions`,
+					`Found existing ${existingOpencodeInfo.relativePath}, will merge instructions`,
 				)
 
 				// Get the instructions we want to add from our default content
@@ -359,22 +358,22 @@ export const task = (options: TaskOptions = {}) =>
 				const instructionsToAdd = defaultConfig.instructions || []
 
 				// Merge the instructions
-				const mergedFilename = yield* opencodeService
+				const mergedFilePath = yield* opencodeService
 					.mergeOpencodeFile(targetPath, instructionsToAdd)
 					.pipe(
 						Effect.catchAll((error) => {
 							verboseLog(
-								`Failed to merge ${existingFilename}: ${error.message}`,
+								`Failed to merge ${existingOpencodeInfo.relativePath}: ${error.message}`,
 							)
-							return Effect.succeed(existingFilename)
+							return Effect.succeed(existingOpencodeInfo.relativePath)
 						}),
 					)
 
-				// Track the file that was modified (use the actual extension)
-				createdFiles.push(mergedFilename)
-				injectedFiles.push(mergedFilename)
+				// Track the file that was modified (use the actual relative path)
+				createdFiles.push(mergedFilePath)
+				injectedFiles.push(mergedFilePath)
 
-				log(done(`Merged ${highlight.file(mergedFilename)}`))
+				log(done(`Merged ${highlight.file(mergedFilePath)}`))
 				continue
 			}
 

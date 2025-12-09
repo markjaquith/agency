@@ -333,6 +333,201 @@ describe("task command", () => {
 			expect(parsed.instructions).toContain("AGENCY.md")
 			expect(parsed.instructions).toContain("TASK.md")
 		})
+
+		test("merges with .opencode/opencode.json", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create .opencode directory with opencode.json
+			const dotOpencodeDir = join(tempDir, ".opencode")
+			await Bun.spawn(["mkdir", "-p", dotOpencodeDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const existingConfig = {
+				custom: "config-in-dotdir",
+			}
+			await Bun.write(
+				join(dotOpencodeDir, "opencode.json"),
+				JSON.stringify(existingConfig, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Should update .opencode/opencode.json, not create root opencode.json
+			expect(await fileExists(join(dotOpencodeDir, "opencode.json"))).toBe(true)
+			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(false)
+
+			const content = await readFile(join(dotOpencodeDir, "opencode.json"))
+			const parsed = JSON.parse(content)
+
+			// Should preserve existing properties
+			expect(parsed.custom).toBe("config-in-dotdir")
+
+			// Should add our instructions
+			expect(parsed.instructions).toContain("AGENCY.md")
+			expect(parsed.instructions).toContain("TASK.md")
+		})
+
+		test("merges with .opencode/opencode.jsonc", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create .opencode directory with opencode.jsonc
+			const dotOpencodeDir = join(tempDir, ".opencode")
+			await Bun.spawn(["mkdir", "-p", dotOpencodeDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const existingConfig = {
+				custom: "jsonc-in-dotdir",
+			}
+			await Bun.write(
+				join(dotOpencodeDir, "opencode.jsonc"),
+				JSON.stringify(existingConfig, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Should update .opencode/opencode.jsonc, not create root opencode.json
+			expect(await fileExists(join(dotOpencodeDir, "opencode.jsonc"))).toBe(
+				true,
+			)
+			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(false)
+
+			const content = await readFile(join(dotOpencodeDir, "opencode.jsonc"))
+			const parsed = JSON.parse(content)
+
+			// Should preserve existing properties
+			expect(parsed.custom).toBe("jsonc-in-dotdir")
+
+			// Should add our instructions
+			expect(parsed.instructions).toContain("AGENCY.md")
+			expect(parsed.instructions).toContain("TASK.md")
+		})
+
+		test("prefers .opencode/opencode.jsonc over root opencode.json", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create .opencode directory with opencode.jsonc
+			const dotOpencodeDir = join(tempDir, ".opencode")
+			await Bun.spawn(["mkdir", "-p", dotOpencodeDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const dotOpencodeConfig = {
+				custom: "dotdir-jsonc",
+			}
+			const rootJsonConfig = {
+				custom: "root-json",
+			}
+
+			await Bun.write(
+				join(dotOpencodeDir, "opencode.jsonc"),
+				JSON.stringify(dotOpencodeConfig, null, 2),
+			)
+			await Bun.write(
+				join(tempDir, "opencode.json"),
+				JSON.stringify(rootJsonConfig, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Should merge with .opencode/opencode.jsonc (not root opencode.json)
+			const dotDirContent = await readFile(
+				join(dotOpencodeDir, "opencode.jsonc"),
+			)
+			const dotDirParsed = JSON.parse(dotDirContent)
+
+			expect(dotDirParsed.custom).toBe("dotdir-jsonc")
+			expect(dotDirParsed.instructions).toContain("AGENCY.md")
+
+			// root opencode.json should remain unchanged
+			const rootContent = await readFile(join(tempDir, "opencode.json"))
+			expect(rootContent).toBe(JSON.stringify(rootJsonConfig, null, 2))
+		})
+
+		test("prefers .opencode/opencode.json over root opencode.jsonc", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create .opencode directory with opencode.json
+			const dotOpencodeDir = join(tempDir, ".opencode")
+			await Bun.spawn(["mkdir", "-p", dotOpencodeDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const dotOpencodeConfig = {
+				custom: "dotdir-json",
+			}
+			const rootJsoncConfig = {
+				custom: "root-jsonc",
+			}
+
+			await Bun.write(
+				join(dotOpencodeDir, "opencode.json"),
+				JSON.stringify(dotOpencodeConfig, null, 2),
+			)
+			await Bun.write(
+				join(tempDir, "opencode.jsonc"),
+				JSON.stringify(rootJsoncConfig, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Should merge with .opencode/opencode.json (not root opencode.jsonc)
+			const dotDirContent = await readFile(
+				join(dotOpencodeDir, "opencode.json"),
+			)
+			const dotDirParsed = JSON.parse(dotDirContent)
+
+			expect(dotDirParsed.custom).toBe("dotdir-json")
+			expect(dotDirParsed.instructions).toContain("AGENCY.md")
+
+			// root opencode.jsonc should remain unchanged
+			const rootContent = await readFile(join(tempDir, "opencode.jsonc"))
+			expect(rootContent).toBe(JSON.stringify(rootJsoncConfig, null, 2))
+		})
+
+		test("adds .opencode/opencode.json to injectedFiles", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create .opencode directory with opencode.json
+			const dotOpencodeDir = join(tempDir, ".opencode")
+			await Bun.spawn(["mkdir", "-p", dotOpencodeDir], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			await Bun.write(
+				join(dotOpencodeDir, "opencode.json"),
+				JSON.stringify({ custom: "config" }, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Check agency.json to verify .opencode/opencode.json is in injectedFiles
+			const agencyJsonContent = await readFile(join(tempDir, "agency.json"))
+			const metadata = JSON.parse(agencyJsonContent)
+
+			expect(metadata.injectedFiles).toContain(".opencode/opencode.json")
+		})
 	})
 
 	describe("TASK.md support", () => {

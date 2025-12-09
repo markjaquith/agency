@@ -12,6 +12,11 @@ interface OpencodeConfig {
 	[key: string]: unknown
 }
 
+interface OpencodeFileInfo {
+	extension: "json" | "jsonc"
+	relativePath: string
+}
+
 /**
  * Service for handling opencode.json/opencode.jsonc files
  * with merging capabilities to preserve existing configuration.
@@ -22,24 +27,48 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 		sync: () => ({
 			/**
 			 * Detect which opencode config file exists (json or jsonc).
-			 * Returns the file extension if found, null otherwise.
+			 * Checks in order: .opencode/opencode.jsonc, .opencode/opencode.json,
+			 * opencode.jsonc, opencode.json
+			 * Returns the file info if found, null otherwise.
 			 */
 			detectOpencodeFile: (gitRoot: string) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 
-					// Check for opencode.jsonc first (takes precedence)
+					// Check .opencode directory first
+					const dotOpencodeJsoncPath = `${gitRoot}/.opencode/opencode.jsonc`
+					const dotOpencodeJsoncExists = yield* fs.exists(dotOpencodeJsoncPath)
+					if (dotOpencodeJsoncExists) {
+						return {
+							extension: "jsonc" as const,
+							relativePath: ".opencode/opencode.jsonc",
+						}
+					}
+
+					const dotOpencodeJsonPath = `${gitRoot}/.opencode/opencode.json`
+					const dotOpencodeJsonExists = yield* fs.exists(dotOpencodeJsonPath)
+					if (dotOpencodeJsonExists) {
+						return {
+							extension: "json" as const,
+							relativePath: ".opencode/opencode.json",
+						}
+					}
+
+					// Check for opencode.jsonc in root (takes precedence over opencode.json)
 					const jsoncPath = `${gitRoot}/opencode.jsonc`
 					const jsoncExists = yield* fs.exists(jsoncPath)
 					if (jsoncExists) {
-						return "jsonc" as const
+						return {
+							extension: "jsonc" as const,
+							relativePath: "opencode.jsonc",
+						}
 					}
 
-					// Check for opencode.json
+					// Check for opencode.json in root
 					const jsonPath = `${gitRoot}/opencode.json`
 					const jsonExists = yield* fs.exists(jsonPath)
 					if (jsonExists) {
-						return "json" as const
+						return { extension: "json" as const, relativePath: "opencode.json" }
 					}
 
 					return null
@@ -104,25 +133,53 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 
 			/**
 			 * Read, merge, and write the opencode config file.
-			 * Returns the filename that was written.
+			 * Returns the relative path of the file that was written.
 			 */
 			mergeOpencodeFile: (gitRoot: string, instructionsToAdd: string[]) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 
 					// Detect which file exists
-					const extension = yield* Effect.gen(function* () {
+					const fileInfo = yield* Effect.gen(function* () {
 						const detected = yield* Effect.gen(function* () {
+							// Check .opencode directory first
+							const dotOpencodeJsoncPath = `${gitRoot}/.opencode/opencode.jsonc`
+							const dotOpencodeJsoncExists =
+								yield* fs.exists(dotOpencodeJsoncPath)
+							if (dotOpencodeJsoncExists) {
+								return {
+									extension: "jsonc" as const,
+									relativePath: ".opencode/opencode.jsonc",
+								}
+							}
+
+							const dotOpencodeJsonPath = `${gitRoot}/.opencode/opencode.json`
+							const dotOpencodeJsonExists =
+								yield* fs.exists(dotOpencodeJsonPath)
+							if (dotOpencodeJsonExists) {
+								return {
+									extension: "json" as const,
+									relativePath: ".opencode/opencode.json",
+								}
+							}
+
+							// Check root directory
 							const jsoncPath = `${gitRoot}/opencode.jsonc`
 							const jsoncExists = yield* fs.exists(jsoncPath)
 							if (jsoncExists) {
-								return "jsonc" as const
+								return {
+									extension: "jsonc" as const,
+									relativePath: "opencode.jsonc",
+								}
 							}
 
 							const jsonPath = `${gitRoot}/opencode.json`
 							const jsonExists = yield* fs.exists(jsonPath)
 							if (jsonExists) {
-								return "json" as const
+								return {
+									extension: "json" as const,
+									relativePath: "opencode.json",
+								}
 							}
 
 							return null
@@ -139,15 +196,14 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 						return detected
 					})
 
-					const filename = `opencode.${extension}`
-					const filepath = `${gitRoot}/${filename}`
+					const filepath = `${gitRoot}/${fileInfo.relativePath}`
 
 					// Read existing config
 					const content = yield* fs.readFile(filepath)
 
 					// Parse it
 					const existingConfig = yield* Effect.gen(function* () {
-						if (extension === "jsonc") {
+						if (fileInfo.extension === "jsonc") {
 							const withoutComments = content
 								.replace(/\/\*[\s\S]*?\*\//g, "")
 								.replace(/\/\/.*/g, "")
@@ -158,7 +214,7 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 						Effect.catchAll((error) =>
 							Effect.fail(
 								new OpencodeError({
-									message: `Failed to parse ${filename}`,
+									message: `Failed to parse ${fileInfo.relativePath}`,
 									cause: error,
 								}),
 							),
@@ -182,7 +238,7 @@ export class OpencodeService extends Effect.Service<OpencodeService>()(
 					const formattedContent = JSON.stringify(merged, null, "\t") + "\n"
 					yield* fs.writeFile(filepath, formattedContent)
 
-					return filename
+					return fileInfo.relativePath
 				}),
 		}),
 	},
