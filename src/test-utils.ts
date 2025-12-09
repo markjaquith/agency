@@ -262,6 +262,7 @@ import { ConfigService } from "./services/ConfigService"
 import { FileSystemService } from "./services/FileSystemService"
 import { PromptService } from "./services/PromptService"
 import { TemplateService } from "./services/TemplateService"
+import { OpencodeService } from "./services/OpencodeService"
 
 // Create test layer with all services
 const TestLayer = Layer.mergeAll(
@@ -270,6 +271,7 @@ const TestLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	PromptService.Default,
 	TemplateService.Default,
+	OpencodeService.Default,
 )
 
 export async function runTestEffect<A, E>(

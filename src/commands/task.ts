@@ -6,6 +6,7 @@ import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
 import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
+import { OpencodeService } from "../services/OpencodeService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
@@ -36,6 +37,7 @@ export const task = (options: TaskOptions = {}) =>
 		const fs = yield* FileSystemService
 		const promptService = yield* PromptService
 		const templateService = yield* TemplateService
+		const opencodeService = yield* OpencodeService
 
 		// Determine target path
 		let targetPath: string
@@ -331,9 +333,50 @@ export const task = (options: TaskOptions = {}) =>
 			`Discovered ${templateFiles.length} files in template: ${templateFiles.join(", ")}`,
 		)
 
+		// Check if opencode.json or opencode.jsonc already exists before processing files
+		const existingOpencodeExt = yield* opencodeService
+			.detectOpencodeFile(targetPath)
+			.pipe(Effect.catchAll(() => Effect.succeed(null)))
+
 		// Process each file to create
 		for (const [fileName, source] of filesToCreate) {
 			const targetFilePath = resolve(targetPath, fileName)
+
+			// Special handling for opencode.json if opencode.json/jsonc already exists
+			if (fileName === "opencode.json" && existingOpencodeExt) {
+				// Merge with existing file instead of creating new one
+				const existingFilename = `opencode.${existingOpencodeExt}`
+				verboseLog(
+					`Found existing ${existingFilename}, will merge instructions`,
+				)
+
+				// Get the instructions we want to add from our default content
+				const managedFile = managedFiles.find((f) => f.name === "opencode.json")
+				const defaultContent = managedFile?.defaultContent ?? "{}"
+				const defaultConfig = JSON.parse(defaultContent) as {
+					instructions?: string[]
+				}
+				const instructionsToAdd = defaultConfig.instructions || []
+
+				// Merge the instructions
+				const mergedFilename = yield* opencodeService
+					.mergeOpencodeFile(targetPath, instructionsToAdd)
+					.pipe(
+						Effect.catchAll((error) => {
+							verboseLog(
+								`Failed to merge ${existingFilename}: ${error.message}`,
+							)
+							return Effect.succeed(existingFilename)
+						}),
+					)
+
+				// Track the file that was modified (use the actual extension)
+				createdFiles.push(mergedFilename)
+				injectedFiles.push(mergedFilename)
+
+				log(done(`Merged ${highlight.file(mergedFilename)}`))
+				continue
+			}
 
 			// Check if file exists in repo - if so, skip injection
 			const exists = yield* fs.exists(targetFilePath)

@@ -179,21 +179,31 @@ describe("task command", () => {
 			expect(parsed.instructions).toEqual(["AGENCY.md", "TASK.md"])
 		})
 
-		test("does not overwrite existing opencode.json", async () => {
+		test("merges with existing opencode.json", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
-			const existingContent = JSON.stringify({
+			const existingConfig = {
 				custom: "config",
-			})
-			await Bun.write(join(tempDir, "opencode.json"), existingContent)
+			}
+			await Bun.write(
+				join(tempDir, "opencode.json"),
+				JSON.stringify(existingConfig),
+			)
 
 			await initAgency(tempDir, "test")
 
 			await runTestEffect(task({ silent: true, branch: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "opencode.json"))
-			expect(content).toBe(existingContent)
+			const parsed = JSON.parse(content)
+
+			// Should preserve existing properties
+			expect(parsed.custom).toBe("config")
+
+			// Should add our instructions
+			expect(parsed.instructions).toContain("AGENCY.md")
+			expect(parsed.instructions).toContain("TASK.md")
 		})
 
 		test("uses opencode.json from template directory if it exists", async () => {
@@ -224,6 +234,104 @@ describe("task command", () => {
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			expect(content).toBe(customConfig)
+		})
+
+		test("merges with existing opencode.jsonc", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			const existingConfig = {
+				custom: "config",
+				existing: "property",
+			}
+			await Bun.write(
+				join(tempDir, "opencode.jsonc"),
+				JSON.stringify(existingConfig, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Should update opencode.jsonc, not create opencode.json
+			expect(await fileExists(join(tempDir, "opencode.jsonc"))).toBe(true)
+			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(false)
+
+			const content = await readFile(join(tempDir, "opencode.jsonc"))
+			const parsed = JSON.parse(content)
+
+			// Should preserve existing properties
+			expect(parsed.custom).toBe("config")
+			expect(parsed.existing).toBe("property")
+
+			// Should add our instructions
+			expect(parsed.instructions).toContain("AGENCY.md")
+			expect(parsed.instructions).toContain("TASK.md")
+		})
+
+		test("prefers opencode.jsonc over opencode.json when both exist", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create both files
+			const jsoncConfig = {
+				custom: "jsonc-config",
+			}
+			const jsonConfig = {
+				custom: "json-config",
+			}
+			await Bun.write(
+				join(tempDir, "opencode.jsonc"),
+				JSON.stringify(jsoncConfig, null, 2),
+			)
+			await Bun.write(
+				join(tempDir, "opencode.json"),
+				JSON.stringify(jsonConfig, null, 2),
+			)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			// Should merge with opencode.jsonc (not opencode.json)
+			const jsoncContent = await readFile(join(tempDir, "opencode.jsonc"))
+			const jsoncParsed = JSON.parse(jsoncContent)
+
+			expect(jsoncParsed.custom).toBe("jsonc-config")
+			expect(jsoncParsed.instructions).toContain("AGENCY.md")
+
+			// opencode.json should remain unchanged
+			const jsonContent = await readFile(join(tempDir, "opencode.json"))
+			expect(jsonContent).toBe(JSON.stringify(jsonConfig, null, 2))
+		})
+
+		test("handles opencode.jsonc with comments", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			const jsoncWithComments = `{
+	// This is a comment
+	"custom": "config",
+	/* Multi-line
+	   comment */
+	"existing": "property"
+}`
+			await Bun.write(join(tempDir, "opencode.jsonc"), jsoncWithComments)
+
+			await initAgency(tempDir, "test")
+
+			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+
+			const content = await readFile(join(tempDir, "opencode.jsonc"))
+			const parsed = JSON.parse(content)
+
+			// Should preserve existing properties
+			expect(parsed.custom).toBe("config")
+			expect(parsed.existing).toBe("property")
+
+			// Should add our instructions
+			expect(parsed.instructions).toContain("AGENCY.md")
+			expect(parsed.instructions).toContain("TASK.md")
 		})
 	})
 
