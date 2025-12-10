@@ -7,6 +7,7 @@ import { init, help as initHelp } from "./src/commands/init"
 import { task, taskEdit, help as taskHelp } from "./src/commands/task"
 import { tasks, help as tasksHelp } from "./src/commands/tasks"
 import { emit, help as emitHelp } from "./src/commands/emit"
+import { emitted, help as emittedHelp } from "./src/commands/emitted"
 import { push, help as pushHelp } from "./src/commands/push"
 import { pull, help as pullHelp } from "./src/commands/pull"
 import { base, help as baseHelp } from "./src/commands/base"
@@ -98,6 +99,20 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: emitHelp,
+	},
+	emitted: {
+		name: "emitted",
+		description: "Get the name of the emitted branch",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(emittedHelp)
+				return
+			}
+			await runCommand(
+				emitted({ silent: options.silent, verbose: options.verbose }),
+			)
+		},
+		help: emittedHelp,
 	},
 	push: {
 		name: "push",
@@ -372,6 +387,7 @@ Commands:
     view <file>            View contents of a file in template
     delete <file> ...      Delete files from configured template
   emit [base-branch]     Emit a branch with backpack files reverted
+  emitted                Get the name of the emitted branch
   push [base-branch]     Emit, push to remote, return to source
   pull                   Pull commits from remote emit branch to source
   base                   Get or set the base branch
