@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { Schema } from "@effect/schema"
 import type { BaseCommandOptions } from "../utils/command"
-import { GitService } from "../services/GitService"
+import { IsomorphicGitService as GitService } from "../services/IsomorphicGitService"
 import { ConfigService } from "../services/ConfigService"
 import { AgencyMetadata } from "../schemas"
 import highlight, { done } from "../utils/colors"

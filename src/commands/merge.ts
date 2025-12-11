@@ -1,6 +1,9 @@
 import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
-import { GitService, GitCommandError } from "../services/GitService"
+import {
+	IsomorphicGitService as GitService,
+	GitCommandError,
+} from "../services/IsomorphicGitService"
 import { ConfigService } from "../services/ConfigService"
 import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
 import { FileSystemService } from "../services/FileSystemService"

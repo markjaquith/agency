@@ -330,5 +330,78 @@ describe("task command - branching functionality", () => {
 			expect(mainExists).toBe(true)
 			expect(otherExists).toBe(false)
 		})
+
+		test("branches from origin/main when remote exists (not local main)", async () => {
+			// Create an "upstream" repository to serve as the remote
+			const upstreamDir = await createTempDir()
+			await runGitCommand(upstreamDir, ["git", "init", "--bare"])
+
+			// Initialize our local repo and add it as remote
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			// Add the upstream as 'origin' remote
+			await runGitCommand(tempDir, [
+				"git",
+				"remote",
+				"add",
+				"origin",
+				upstreamDir,
+			])
+
+			// Create initial commit on main
+			await createFile(tempDir, "initial.txt", "initial")
+			await runGitCommand(tempDir, ["git", "add", "."])
+			await runGitCommand(tempDir, ["git", "commit", "-m", "Initial commit"])
+
+			// Push to origin
+			await runGitCommand(tempDir, ["git", "push", "-u", "origin", "main"])
+
+			// Add a commit only on origin/main (simulating someone else's push)
+			// We do this by making another clone, committing, and pushing
+			const otherCloneDir = await createTempDir()
+			await runGitCommand(otherCloneDir, ["git", "clone", upstreamDir, "."])
+			await createFile(otherCloneDir, "remote-only.txt", "from remote")
+			await runGitCommand(otherCloneDir, ["git", "add", "."])
+			await runGitCommand(otherCloneDir, [
+				"git",
+				"commit",
+				"-m",
+				"Remote commit",
+			])
+			await runGitCommand(otherCloneDir, ["git", "push"])
+
+			// Fetch to get the new commit (but don't merge - local main is behind)
+			await runGitCommand(tempDir, ["git", "fetch", "origin"])
+
+			// Verify local main doesn't have the remote commit
+			const localMainHasFile = await Bun.file(
+				join(tempDir, "remote-only.txt"),
+			).exists()
+			expect(localMainHasFile).toBe(false)
+
+			// Create task - should branch from origin/main, not local main
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "my-task",
+				}),
+			)
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/my-task")
+
+			// The new branch should have the remote-only.txt file
+			// because it was created from origin/main, not local main
+			const newBranchHasFile = await Bun.file(
+				join(tempDir, "remote-only.txt"),
+			).exists()
+			expect(newBranchHasFile).toBe(true)
+
+			// Cleanup
+			await cleanupTempDir(upstreamDir)
+			await cleanupTempDir(otherCloneDir)
+		})
 	})
 })

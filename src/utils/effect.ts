@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { GitService } from "../services/GitService"
+import { IsomorphicGitService as GitService } from "../services/IsomorphicGitService"
 import { getBaseBranchFromMetadata } from "../types"
 import highlight from "./colors"
 

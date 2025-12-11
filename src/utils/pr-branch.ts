@@ -4,7 +4,7 @@
 
 import { Effect, pipe } from "effect"
 import { FileSystemService } from "../services/FileSystemService"
-import { GitService } from "../services/GitService"
+import { IsomorphicGitService as GitService } from "../services/IsomorphicGitService"
 import {
 	AgencyMetadataService,
 	AgencyMetadataServiceLive,

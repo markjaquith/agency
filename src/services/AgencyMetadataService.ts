@@ -3,7 +3,7 @@ import { Context, Data, Effect, Layer } from "effect"
 import { Schema } from "@effect/schema"
 import { AgencyMetadata } from "../schemas"
 import { FileSystemService } from "./FileSystemService"
-import { GitService } from "./GitService"
+import { IsomorphicGitService as GitService } from "./IsomorphicGitService"
 
 /**
  * Error type for AgencyMetadata operations

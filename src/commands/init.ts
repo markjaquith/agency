@@ -1,7 +1,7 @@
 import { basename } from "path"
 import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
-import { GitService } from "../services/GitService"
+import { IsomorphicGitService as GitService } from "../services/IsomorphicGitService"
 import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
 import highlight, { done } from "../utils/colors"

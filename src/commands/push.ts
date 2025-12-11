@@ -1,6 +1,6 @@
 import { Effect, Either } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
-import { GitService } from "../services/GitService"
+import { IsomorphicGitService as GitService } from "../services/IsomorphicGitService"
 import { ConfigService } from "../services/ConfigService"
 import {
 	extractSourceBranch,

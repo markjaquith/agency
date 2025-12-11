@@ -19,7 +19,7 @@ import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
-import { GitService } from "./src/services/GitService"
+import { IsomorphicGitService } from "./src/services/IsomorphicGitService"
 import { ConfigService } from "./src/services/ConfigService"
 import { FileSystemService } from "./src/services/FileSystemService"
 import { PromptService } from "./src/services/PromptService"
@@ -28,7 +28,7 @@ import { OpencodeService } from "./src/services/OpencodeService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
-	GitService.Default,
+	IsomorphicGitService.Default,
 	ConfigService.Default,
 	FileSystemService.Default,
 	PromptService.Default,
