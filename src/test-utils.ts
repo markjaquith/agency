@@ -136,6 +136,18 @@ export async function getCurrentBranch(cwd: string): Promise<string> {
 }
 
 /**
+ * Run a git command directly - fire and forget version (fastest)
+ */
+async function gitRun(cwd: string, args: string[]): Promise<void> {
+	const proc = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+}
+
+/**
  * Create a test commit in a git repository
  */
 export async function createCommit(
@@ -144,16 +156,8 @@ export async function createCommit(
 ): Promise<void> {
 	// Create a test file and commit it
 	await Bun.write(join(cwd, "test.txt"), message)
-	await Bun.spawn(["git", "add", "test.txt"], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-	await Bun.spawn(["git", "commit", "--no-verify", "-m", message], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
+	await gitRun(cwd, ["add", "test.txt"])
+	await gitRun(cwd, ["commit", "--no-verify", "-m", message])
 }
 
 /**
@@ -163,11 +167,64 @@ export async function checkoutBranch(
 	cwd: string,
 	branchName: string,
 ): Promise<void> {
-	await Bun.spawn(["git", "checkout", branchName], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
+	await gitRun(cwd, ["checkout", branchName])
+}
+
+/**
+ * Create a new branch and switch to it
+ */
+export async function createBranch(
+	cwd: string,
+	branchName: string,
+): Promise<void> {
+	await gitRun(cwd, ["checkout", "-b", branchName])
+}
+
+/**
+ * Stage files and commit in a single operation
+ */
+export async function addAndCommit(
+	cwd: string,
+	files: string | string[],
+	message: string,
+): Promise<void> {
+	const fileList = Array.isArray(files) ? files : files.split(" ")
+	await gitRun(cwd, ["add", ...fileList])
+	await gitRun(cwd, ["commit", "--no-verify", "-m", message])
+}
+
+/**
+ * Setup a remote and fetch in a single operation
+ */
+export async function setupRemote(
+	cwd: string,
+	remoteName: string,
+	remoteUrl: string,
+): Promise<void> {
+	await gitRun(cwd, ["remote", "add", remoteName, remoteUrl])
+	await gitRun(cwd, ["fetch", remoteName])
+}
+
+/**
+ * Delete a branch
+ */
+export async function deleteBranch(
+	cwd: string,
+	branchName: string,
+	force: boolean = false,
+): Promise<void> {
+	const flag = force ? "-D" : "-d"
+	await gitRun(cwd, ["branch", flag, branchName])
+}
+
+/**
+ * Rename current branch
+ */
+export async function renameBranch(
+	cwd: string,
+	newName: string,
+): Promise<void> {
+	await gitRun(cwd, ["branch", "-m", newName])
 }
 
 /**

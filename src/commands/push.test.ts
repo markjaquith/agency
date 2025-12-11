@@ -6,18 +6,14 @@ import {
 	cleanupTempDir,
 	initGitRepo,
 	getCurrentBranch,
+	getGitOutput,
 	createCommit,
 	checkoutBranch,
+	createBranch,
+	addAndCommit,
+	renameBranch,
 	runTestEffect,
 } from "../test-utils"
-
-async function createBranch(cwd: string, branchName: string): Promise<void> {
-	await Bun.spawn(["git", "checkout", "-b", branchName], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-}
 
 async function setupAgencyJson(gitRoot: string): Promise<void> {
 	const agencyJson = {
@@ -30,12 +26,7 @@ async function setupAgencyJson(gitRoot: string): Promise<void> {
 		join(gitRoot, "agency.json"),
 		JSON.stringify(agencyJson, null, 2) + "\n",
 	)
-	await Bun.spawn(["git", "add", "agency.json"], {
-		cwd: gitRoot,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-	await createCommit(gitRoot, "Add agency.json")
+	await addAndCommit(gitRoot, "agency.json", "Add agency.json")
 }
 
 async function setupBareRemote(tempDir: string): Promise<string> {
@@ -45,16 +36,7 @@ async function setupBareRemote(tempDir: string): Promise<string> {
 		stdout: "pipe",
 		stderr: "pipe",
 	}).exited
-
 	return remoteDir
-}
-
-async function addRemote(cwd: string, remoteUrl: string): Promise<void> {
-	await Bun.spawn(["git", "remote", "add", "origin", remoteUrl], {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
 }
 
 describe("push command", () => {
@@ -77,18 +59,16 @@ describe("push command", () => {
 		// Rename to main if needed
 		const currentBranch = await getCurrentBranch(tempDir)
 		if (currentBranch === "master") {
-			await Bun.spawn(["git", "branch", "-m", "main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await renameBranch(tempDir, "main")
 		}
 
-		// Setup bare remote
+		// Setup bare remote and push main
 		remoteDir = await setupBareRemote(tempDir)
-		await addRemote(tempDir, remoteDir)
-
-		// Push main to remote
+		await Bun.spawn(["git", "remote", "add", "origin", remoteDir], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
 		await Bun.spawn(["git", "push", "-u", "origin", "main"], {
 			cwd: tempDir,
 			stdout: "pipe",
@@ -120,29 +100,16 @@ describe("push command", () => {
 			// Should be back on agency/feature branch (source)
 			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
 
-			// emit branch (feature) should exist locally
-			const branchesProc = Bun.spawn(["git", "branch"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await branchesProc.exited
-			const branches = await new Response(branchesProc.stdout).text()
+			// emit branch (feature) should exist locally and on remote
+			const branches = await getGitOutput(tempDir, ["branch"])
 			expect(branches).toContain("feature")
 
-			// emit branch (feature) should exist on remote
-			const remoteBranchesProc = Bun.spawn(
-				["git", "ls-remote", "--heads", "origin", "feature"],
-				{
-					cwd: tempDir,
-					stdout: "pipe",
-					stderr: "pipe",
-				},
-			)
-			await remoteBranchesProc.exited
-			const remoteBranches = await new Response(
-				remoteBranchesProc.stdout,
-			).text()
+			const remoteBranches = await getGitOutput(tempDir, [
+				"ls-remote",
+				"--heads",
+				"origin",
+				"feature",
+			])
 			expect(remoteBranches).toContain("feature")
 		})
 
@@ -159,13 +126,7 @@ describe("push command", () => {
 			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
 
 			// Custom branch should exist
-			const branchesProc = Bun.spawn(["git", "branch"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await branchesProc.exited
-			const branches = await new Response(branchesProc.stdout).text()
+			const branches = await getGitOutput(tempDir, ["branch"])
 			expect(branches).toContain("custom-pr-branch")
 		})
 

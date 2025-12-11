@@ -12,23 +12,23 @@ import {
 	getCurrentBranch,
 	createCommit,
 	checkoutBranch,
+	createBranch,
+	addAndCommit,
+	setupRemote,
+	renameBranch,
 	runTestEffect,
 } from "../test-utils"
-
-async function isGitFilterRepoAvailable(): Promise<boolean> {
-	const proc = Bun.spawn(["which", "git-filter-repo"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-	return proc.exitCode === 0
-}
 
 // Cache the git-filter-repo availability check (it doesn't change during test run)
 let hasGitFilterRepoCache: boolean | null = null
 async function checkGitFilterRepo(): Promise<boolean> {
 	if (hasGitFilterRepoCache === null) {
-		hasGitFilterRepoCache = await isGitFilterRepoAvailable()
+		const proc = Bun.spawn(["which", "git-filter-repo"], {
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await proc.exited
+		hasGitFilterRepoCache = proc.exitCode === 0
 	}
 	return hasGitFilterRepoCache
 }
@@ -55,38 +55,16 @@ describe("emit command", () => {
 		await initGitRepo(tempDir)
 
 		// Create a source branch (with agency/ prefix)
-		await Bun.spawn(["git", "checkout", "-b", "agency/test-feature"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
+		await createBranch(tempDir, "agency/test-feature")
 
 		// Initialize AGENTS.md and commit in one go
 		await initAgency(tempDir, "test")
 
 		await runTestEffect(task({ silent: true }))
-		await Bun.spawn(["git", "add", "AGENTS.md"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
-		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
+		await addAndCommit(tempDir, "AGENTS.md", "Add AGENTS.md")
 
 		// Set up origin/main for git-filter-repo
-		await Bun.spawn(["git", "remote", "add", "origin", tempDir], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
-		await Bun.spawn(["git", "fetch", "origin"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
+		await setupRemote(tempDir, "origin", tempDir)
 	})
 
 	afterEach(async () => {
@@ -106,11 +84,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			expect(runTestEffect(emit({ silent: true }))).rejects.toThrow(
@@ -126,11 +100,7 @@ describe("emit command", () => {
 
 			// Go back to main and create a fresh source branch (no inherited agency.json)
 			await checkoutBranch(tempDir, "main")
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			// Create agency.json for this branch
 			await Bun.write(
 				join(tempDir, "agency.json"),
@@ -141,12 +111,7 @@ describe("emit command", () => {
 					createdAt: new Date().toISOString(),
 				}),
 			)
-			await Bun.spawn(["git", "add", "agency.json"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await createCommit(tempDir, "Feature commit")
+			await addAndCommit(tempDir, "agency.json", "Feature commit")
 
 			// Create emit branch
 			await runTestEffect(emit({ silent: true }))
@@ -170,11 +135,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			await runTestEffect(emit({ branch: "custom-pr", silent: true }))
@@ -197,11 +158,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Should complete without throwing
@@ -218,11 +175,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			await runTestEffect(emit({ silent: true }))
@@ -232,11 +185,7 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "agency/feature")
 
 			// Check that test file still exists
 			expect(await fileExists(join(tempDir, "test.txt"))).toBe(true)
@@ -253,11 +202,7 @@ describe("emit command", () => {
 
 			// Go back to main and create a fresh source branch
 			await checkoutBranch(tempDir, "main")
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			// Create agency.json with AGENTS.md as managed file
 			await Bun.write(
 				join(tempDir, "agency.json"),
@@ -269,11 +214,8 @@ describe("emit command", () => {
 				}),
 			)
 			await Bun.write(join(tempDir, "AGENTS.md"), "# Test AGENTS\n")
-			await Bun.spawn(["git", "add", "agency.json", "AGENTS.md"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await addAndCommit(tempDir, "agency.json AGENTS.md", "Add agency files")
+			// Also create a test.txt file via createCommit
 			await createCommit(tempDir, "Feature commit")
 
 			// Create emit branch
@@ -284,11 +226,7 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "feature")
 
 			// AGENCY.md is always filtered on emit branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -307,11 +245,7 @@ describe("emit command", () => {
 
 			// Go back to main and create a fresh source branch
 			await checkoutBranch(tempDir, "main")
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 
 			// Create agency.json with AGENTS.md as managed file
 			await Bun.write(
@@ -323,26 +257,13 @@ describe("emit command", () => {
 					createdAt: new Date().toISOString(),
 				}),
 			)
-			await Bun.spawn(["git", "add", "agency.json"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
 
 			// Modify AGENTS.md on feature branch
 			await Bun.write(
 				join(tempDir, "AGENTS.md"),
 				"# Modified by feature branch\n",
 			)
-			await Bun.spawn(["git", "add", "AGENTS.md"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(
-				["git", "commit", "--no-verify", "-m", "Modify AGENTS.md"],
-				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
-			).exited
+			await addAndCommit(tempDir, "agency.json AGENTS.md", "Modify AGENTS.md")
 
 			await createCommit(tempDir, "Feature commit")
 
@@ -360,11 +281,7 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "feature")
 
 			// AGENCY.md is always filtered on emit branches (it belongs to the tool, not user code)
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -383,34 +300,17 @@ describe("emit command", () => {
 			await initGitRepo(freshDir)
 			await createCommit(freshDir, "Initial commit")
 
-			// Rename to main
+			// Rename to main if needed
 			const currentBranch = await getCurrentBranch(freshDir)
 			if (currentBranch === "master") {
-				await Bun.spawn(["git", "branch", "-m", "main"], {
-					cwd: freshDir,
-					stdout: "pipe",
-					stderr: "pipe",
-				}).exited
+				await renameBranch(freshDir, "main")
 			}
 
 			// Set up origin for filter-repo
-			await Bun.spawn(["git", "remote", "add", "origin", freshDir], {
-				cwd: freshDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(["git", "fetch", "origin"], {
-				cwd: freshDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await setupRemote(freshDir, "origin", freshDir)
 
 			// Create feature branch and add AGENTS.md
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: freshDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(freshDir, "agency/feature")
 			await Bun.write(join(freshDir, "AGENTS.md"), "# Feature only\n")
 			// Create agency.json to track that AGENTS.md was injected
 			await Bun.write(
@@ -426,16 +326,7 @@ describe("emit command", () => {
 					2,
 				) + "\n",
 			)
-			await Bun.spawn(["git", "add", "AGENTS.md", "agency.json"], {
-				cwd: freshDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md"], {
-				cwd: freshDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await addAndCommit(freshDir, "AGENTS.md agency.json", "Add AGENTS.md")
 
 			// Create emit branch
 			process.chdir(freshDir)
@@ -446,11 +337,7 @@ describe("emit command", () => {
 			expect(branchName).toBe("agency/feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: freshDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(freshDir, "feature")
 
 			// AGENTS.md should NOT exist (it was removed)
 			const files = await getGitOutput(freshDir, ["ls-files"])
@@ -465,11 +352,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Create emit branch
@@ -490,36 +373,20 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 
 			// Modify AGENTS.md on feature branch
 			await Bun.write(
 				join(tempDir, "AGENTS.md"),
 				"# Modified by feature branch\n",
 			)
-			await Bun.spawn(["git", "add", "AGENTS.md"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(
-				["git", "commit", "--no-verify", "-m", "Modify AGENTS.md"],
-				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
-			).exited
+			await addAndCommit(tempDir, "AGENTS.md", "Modify AGENTS.md")
 
 			// Run emit command first time
 			await runTestEffect(emit({ silent: true }))
 
 			// Switch back to feature branch
-			await Bun.spawn(["git", "checkout", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "agency/feature")
 
 			// Make another commit
 			await createCommit(tempDir, "Another feature commit")
@@ -539,11 +406,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Create emit branch with explicit base branch
@@ -560,11 +423,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			expect(
@@ -581,15 +440,7 @@ describe("emit command", () => {
 			// We're on test-feature which has AGENTS.md
 			// Add a feature-specific file to avoid conflicts
 			await Bun.write(join(tempDir, "feature.txt"), "feature content\n")
-			await Bun.spawn(["git", "add", "feature.txt"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(
-				["git", "commit", "--no-verify", "-m", "Add feature file"],
-				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
-			).exited
+			await addAndCommit(tempDir, "feature.txt", "Add feature file")
 
 			// Store merge-base before advancing main
 			const initialMergeBase = await getGitOutput(tempDir, [
@@ -606,46 +457,22 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency/test-feature")
 
 			// Switch to emit branch to verify AGENTS.md is filtered
-			await Bun.spawn(["git", "checkout", "test-feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "test-feature")
 
 			let files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).not.toContain("AGENTS.md")
 			expect(files).toContain("feature.txt")
 
 			// Switch back to source branch
-			await Bun.spawn(["git", "checkout", "agency/test-feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "agency/test-feature")
 
 			// Simulate advancing main branch with a different file
-			await Bun.spawn(["git", "checkout", "main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "main")
 			await Bun.write(join(tempDir, "main-file.txt"), "main content\n")
-			await Bun.spawn(["git", "add", "main-file.txt"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(
-				["git", "commit", "--no-verify", "-m", "Main branch advancement"],
-				{ cwd: tempDir, stdout: "pipe", stderr: "pipe" },
-			).exited
+			await addAndCommit(tempDir, "main-file.txt", "Main branch advancement")
 
 			// Rebase test-feature onto new main
-			await Bun.spawn(["git", "checkout", "agency/test-feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "agency/test-feature")
 			const rebaseProc = Bun.spawn(["git", "rebase", "main"], {
 				cwd: tempDir,
 				stdout: "pipe",
@@ -673,11 +500,7 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency/test-feature")
 
 			// Switch to emit branch to verify files
-			await Bun.spawn(["git", "checkout", "test-feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "test-feature")
 
 			// Verify AGENTS.md is still filtered and no extraneous changes
 			files = await getGitOutput(tempDir, ["ls-files"])
@@ -716,11 +539,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
 			const logs: string[] = []

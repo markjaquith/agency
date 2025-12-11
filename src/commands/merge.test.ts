@@ -12,23 +12,24 @@ import {
 	getCurrentBranch,
 	createCommit,
 	branchExists,
+	checkoutBranch,
+	createBranch,
+	addAndCommit,
+	setupRemote,
+	deleteBranch,
 	runTestEffect,
 } from "../test-utils"
-
-async function isGitFilterRepoAvailable(): Promise<boolean> {
-	const proc = Bun.spawn(["which", "git-filter-repo"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-	return proc.exitCode === 0
-}
 
 // Cache the git-filter-repo availability check (it doesn't change during test run)
 let hasGitFilterRepoCache: boolean | null = null
 async function checkGitFilterRepo(): Promise<boolean> {
 	if (hasGitFilterRepoCache === null) {
-		hasGitFilterRepoCache = await isGitFilterRepoAvailable()
+		const proc = Bun.spawn(["which", "git-filter-repo"], {
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await proc.exited
+		hasGitFilterRepoCache = proc.exitCode === 0
 	}
 	return hasGitFilterRepoCache
 }
@@ -55,23 +56,10 @@ describe("merge command", () => {
 		await initGitRepo(tempDir)
 
 		// Set up origin for git-filter-repo
-		await Bun.spawn(["git", "remote", "add", "origin", tempDir], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
-		await Bun.spawn(["git", "fetch", "origin"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
+		await setupRemote(tempDir, "origin", tempDir)
 
 		// Create a source branch (with agency/ prefix per new default config)
-		await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
+		await createBranch(tempDir, "agency/feature")
 
 		// Initialize AGENTS.md on feature branch
 		await initAgency(tempDir, "test")
@@ -89,16 +77,7 @@ describe("merge command", () => {
 			)
 		}
 
-		await Bun.spawn(["git", "add", "AGENTS.md", "agency.json"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
-		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add AGENTS.md"], {
-			cwd: tempDir,
-			stdout: "pipe",
-			stderr: "pipe",
-		}).exited
+		await addAndCommit(tempDir, "AGENTS.md agency.json", "Add AGENTS.md")
 
 		// Create another commit on feature branch
 		await createCommit(tempDir, "Feature work")
@@ -151,11 +130,7 @@ describe("merge command", () => {
 			await runTestEffect(emit({ silent: true }))
 
 			// Go back to feature branch
-			await Bun.spawn(["git", "checkout", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "agency/feature")
 
 			// Make additional changes
 			await createCommit(tempDir, "More feature work")
@@ -180,11 +155,7 @@ describe("merge command", () => {
 			await runTestEffect(emit({ silent: true }))
 
 			// emit() now stays on source branch, so we need to checkout to emit branch
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "feature")
 
 			// We're on feature--PR now
 			const currentBranch = await getCurrentBranch(tempDir)
@@ -212,18 +183,10 @@ describe("merge command", () => {
 			await runTestEffect(emit({ silent: true }))
 
 			// pr() now stays on source branch, so checkout to emit branch
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "feature")
 
 			// Delete the source branch
-			await Bun.spawn(["git", "branch", "-D", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await deleteBranch(tempDir, "agency/feature", true)
 
 			// Try to merge - should fail (error message may vary since source branch is deleted)
 			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow()
@@ -252,16 +215,8 @@ describe("merge command", () => {
 			await runTestEffect(emit({ silent: true }))
 
 			// Delete main branch (the base)
-			await Bun.spawn(["git", "checkout", "feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			await Bun.spawn(["git", "branch", "-D", "main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "feature")
+			await deleteBranch(tempDir, "main", true)
 
 			// Try to merge - should fail
 			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow(
@@ -308,26 +263,13 @@ describe("merge command", () => {
 			expect(afterMergeBranch).toBe("main")
 
 			// Check that changes are staged but not committed
-			// Get the git status to see if there are staged changes
-			const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await statusProc.exited
-			const status = await new Response(statusProc.stdout).text()
+			const status = await getGitOutput(tempDir, ["status", "--porcelain"])
 
 			// Staged changes should be present (indicated by status codes in first column)
 			expect(status.trim().length).toBeGreaterThan(0)
 
 			// Get the log to verify no merge commit was created
-			const logProc = Bun.spawn(["git", "log", "--oneline", "-5"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await logProc.exited
-			const log = await new Response(logProc.stdout).text()
+			const log = await getGitOutput(tempDir, ["log", "--oneline", "-5"])
 
 			// Should not contain a merge commit message
 			expect(log).not.toContain("Merge branch")
@@ -351,25 +293,13 @@ describe("merge command", () => {
 			expect(afterMergeBranch).toBe("main")
 
 			// With regular merge (not squash), there should be no staged changes
-			const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await statusProc.exited
-			const status = await new Response(statusProc.stdout).text()
+			const status = await getGitOutput(tempDir, ["status", "--porcelain"])
 
 			// No staged changes - everything should be committed
 			expect(status.trim().length).toBe(0)
 
 			// Get the log to verify commits were included
-			const logProc = Bun.spawn(["git", "log", "--oneline", "-5"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await logProc.exited
-			const log = await new Response(logProc.stdout).text()
+			const log = await getGitOutput(tempDir, ["log", "--oneline", "-5"])
 
 			// Should contain the feature work commit (regular merge includes all commits)
 			expect(log).toContain("Feature work")
@@ -388,27 +318,13 @@ describe("merge command", () => {
 			expect(currentBranch).toBe("agency/feature")
 
 			// Get the current commit on main before merge
-			await Bun.spawn(["git", "checkout", "main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
-			const beforeCommitProc = Bun.spawn(["git", "rev-parse", "HEAD"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await beforeCommitProc.exited
+			await checkoutBranch(tempDir, "main")
 			const beforeCommit = (
-				await new Response(beforeCommitProc.stdout).text()
+				await getGitOutput(tempDir, ["rev-parse", "HEAD"])
 			).trim()
 
 			// Go back to feature branch
-			await Bun.spawn(["git", "checkout", "agency/feature"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			}).exited
+			await checkoutBranch(tempDir, "agency/feature")
 
 			// Run merge with push flag
 			await runTestEffect(merge({ silent: true, push: true }))
@@ -418,28 +334,16 @@ describe("merge command", () => {
 			expect(afterMergeBranch).toBe("main")
 
 			// Get the current commit on main after merge
-			const afterCommitProc = Bun.spawn(["git", "rev-parse", "HEAD"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await afterCommitProc.exited
 			const afterCommit = (
-				await new Response(afterCommitProc.stdout).text()
+				await getGitOutput(tempDir, ["rev-parse", "HEAD"])
 			).trim()
 
 			// The commit should have changed (merge happened)
 			expect(afterCommit).not.toBe(beforeCommit)
 
 			// Verify that origin/main points to the same commit as local main
-			const originMainProc = Bun.spawn(["git", "rev-parse", "origin/main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await originMainProc.exited
 			const originMainCommit = (
-				await new Response(originMainProc.stdout).text()
+				await getGitOutput(tempDir, ["rev-parse", "origin/main"])
 			).trim()
 
 			// origin/main should be at the same commit as local main (push succeeded)
@@ -457,14 +361,8 @@ describe("merge command", () => {
 			expect(currentBranch).toBe("agency/feature")
 
 			// Get the current commit on origin/main before merge
-			const beforeOriginProc = Bun.spawn(["git", "rev-parse", "origin/main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await beforeOriginProc.exited
 			const beforeOriginCommit = (
-				await new Response(beforeOriginProc.stdout).text()
+				await getGitOutput(tempDir, ["rev-parse", "origin/main"])
 			).trim()
 
 			// Run merge without push flag
@@ -475,28 +373,16 @@ describe("merge command", () => {
 			expect(afterMergeBranch).toBe("main")
 
 			// Get the current commit on origin/main after merge
-			const afterOriginProc = Bun.spawn(["git", "rev-parse", "origin/main"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await afterOriginProc.exited
 			const afterOriginCommit = (
-				await new Response(afterOriginProc.stdout).text()
+				await getGitOutput(tempDir, ["rev-parse", "origin/main"])
 			).trim()
 
 			// origin/main should still be at the same commit (no push happened)
 			expect(afterOriginCommit).toBe(beforeOriginCommit)
 
 			// But local main should have moved forward
-			const localMainProc = Bun.spawn(["git", "rev-parse", "HEAD"], {
-				cwd: tempDir,
-				stdout: "pipe",
-				stderr: "pipe",
-			})
-			await localMainProc.exited
 			const localMainCommit = (
-				await new Response(localMainProc.stdout).text()
+				await getGitOutput(tempDir, ["rev-parse", "HEAD"])
 			).trim()
 
 			expect(localMainCommit).not.toBe(beforeOriginCommit)
