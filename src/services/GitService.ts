@@ -141,30 +141,19 @@ const findMainBranchEffect = (gitRoot: string) =>
 			}
 		}
 
-		// If we have a remote, check for remote/HEAD
+		// If we have a remote, try remote branches first (prioritize remote over local)
 		if (defaultRemote) {
-			const remoteHeadResult = yield* runGitCommand(
-				["git", "rev-parse", "--abbrev-ref", `${defaultRemote}/HEAD`],
-				gitRoot,
-			)
-
-			if (remoteHeadResult.exitCode === 0) {
-				const remoteHead = remoteHeadResult.stdout
-
-				// Check if it exists
-				const exists = yield* branchExistsEffect(gitRoot, remoteHead)
+			// Check for common remote branch names
+			for (const branch of ["main", "master"]) {
+				const remoteBranch = `${defaultRemote}/${branch}`
+				const exists = yield* branchExistsEffect(gitRoot, remoteBranch)
 				if (exists) {
-					// Strip the remote prefix if present
-					const match = remoteHead.match(/^[^/]+\/(.+)$/)
-					if (match?.[1]) {
-						return match[1]
-					}
-					return remoteHead
+					return remoteBranch
 				}
 			}
 		}
 
-		// Try common base branches in order
+		// Fall back to local branches
 		const commonBases = ["main", "master"]
 		for (const base of commonBases) {
 			const exists = yield* branchExistsEffect(gitRoot, base)
@@ -389,8 +378,15 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 					yield* setGitConfigEffect("agency.mainBranch", mainBranch, gitRoot)
 				}
 
-				// Current branch is not a feature branch if it's the main branch
-				return currentBranch !== mainBranch
+				// Handle both local (main) and remote (origin/main) references
+				// If mainBranch is "origin/main", we should also consider "main" as the main branch
+				const strippedMainBranch =
+					mainBranch.match(/^[^/]+\/(.+)$/)?.[1] || mainBranch
+
+				// Current branch is not a feature branch if it matches either the full or stripped name
+				return (
+					currentBranch !== mainBranch && currentBranch !== strippedMainBranch
+				)
 			}).pipe(
 				Effect.mapError(
 					() => new GitError({ message: "Failed to check if feature branch" }),
