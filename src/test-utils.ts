@@ -285,6 +285,7 @@ export async function getGitConfig(
 			stdout: "pipe",
 			stderr: "pipe",
 		})
+		await proc.exited // Must await before reading stdout to prevent hangs in concurrent tests
 		const output = await new Response(proc.stdout).text()
 		return output.trim() || null
 	} catch {
