@@ -24,6 +24,7 @@ interface PushOptions extends BaseCommandOptions {
 	branch?: string
 	force?: boolean
 	pr?: boolean
+	skipFilter?: boolean
 }
 
 export const push = (options: PushOptions = {}) =>
@@ -83,6 +84,7 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 			silent: true, // Suppress emit command output, we'll provide our own
 			force: options.force,
 			verbose: options.verbose,
+			skipFilter: options.skipFilter,
 		})
 
 		const prResult = yield* Effect.either(prEffectWithOptions)

@@ -18,6 +18,7 @@ import {
 interface MergeOptions extends BaseCommandOptions {
 	squash?: boolean
 	push?: boolean
+	skipFilter?: boolean
 }
 
 // Helper to merge a branch using git
@@ -135,7 +136,7 @@ export const merge = (options: MergeOptions = {}) =>
 
 			// Run 'agency emit' to create/update the emit branch
 			verboseLog(`Creating emit branch ${highlight.branch(emitBranch)}...`)
-			yield* emit({ silent: true, verbose })
+			yield* emit({ silent: true, verbose, skipFilter: options.skipFilter })
 
 			// emit() leaves us on the source branch, so we can read agency.json directly
 			const configuredBase = yield* getBaseBranchFromMetadataEffect(gitRoot)

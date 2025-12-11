@@ -312,7 +312,8 @@ const findSourceBranchByEmitBranch = (
 
 /**
  * Strategy 1: Try to resolve branch pair from current branch's agency.json.
- * If current branch has agency.json with emitBranch, we're on a source branch.
+ * If current branch has agency.json with emitBranch that differs from current branch,
+ * we're on a source branch. If emitBranch equals current branch, we're on the emit branch.
  */
 const tryResolveFromCurrentAgencyJson = (
 	gitRoot: string,
@@ -322,6 +323,13 @@ const tryResolveFromCurrentAgencyJson = (
 		const currentMetadata = yield* getCurrentBranchAgencyJson(gitRoot)
 
 		if (currentMetadata?.emitBranch) {
+			// If emitBranch equals current branch, we're actually ON the emit branch,
+			// not the source branch. This can happen when skipFilter is used in tests
+			// and the agency.json is copied to the emit branch with emitBranch intact.
+			if (currentMetadata.emitBranch === currentBranch) {
+				// Return null to let Strategy 2 find the actual source branch
+				return null
+			}
 			return {
 				sourceBranch: currentBranch,
 				emitBranch: currentMetadata.emitBranch,

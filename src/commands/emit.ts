@@ -27,6 +27,8 @@ interface EmitOptions extends BaseCommandOptions {
 	branch?: string
 	baseBranch?: string
 	force?: boolean
+	/** Skip the git-filter-repo step (for testing) */
+	skipFilter?: boolean
 }
 
 export const emit = (options: EmitOptions = {}) =>
@@ -40,7 +42,7 @@ export const emit = (options: EmitOptions = {}) =>
 
 const emitCore = (gitRoot: string, options: EmitOptions) =>
 	Effect.gen(function* () {
-		const { force = false, verbose = false } = options
+		const { force = false, verbose = false, skipFilter = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
@@ -158,6 +160,15 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 			successText: `${branchExisted ? "Recreated" : "Created"} emit branch ${highlight.branch(emitBranchName)}`,
 			enabled: !options.silent && !verbose,
 		})
+
+		// Skip filtering if requested (for testing)
+		if (skipFilter) {
+			verboseLog("Skipping git-filter-repo (skipFilter=true)")
+			// Just switch back to source branch
+			yield* git.checkoutBranch(gitRoot, currentBranch)
+			log(done(`Emitted ${highlight.branch(emitBranchName)} (filter skipped)`))
+			return
+		}
 
 		verboseLog(
 			`Filtering backpack files from commits in range: ${highlight.commit(forkPoint.substring(0, 8))}..${highlight.branch(emitBranchName)}`,

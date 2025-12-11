@@ -95,7 +95,9 @@ describe("push command", () => {
 			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
 
 			// Run push command
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Should be back on agency/feature branch (source)
 			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
@@ -119,6 +121,7 @@ describe("push command", () => {
 					baseBranch: "main",
 					branch: "custom-pr-branch",
 					silent: true,
+					skipFilter: true,
 				}),
 			)
 
@@ -132,14 +135,18 @@ describe("push command", () => {
 
 		test("recreates emit branch if it already exists", async () => {
 			// First push
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Make more changes on source branch
 			await checkoutBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "More feature work")
 
 			// Second push should recreate the emit branch
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Should still be back on agency/feature branch (source)
 			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
@@ -149,7 +156,9 @@ describe("push command", () => {
 	describe("error handling", () => {
 		test("switches to source branch when run from emit branch", async () => {
 			// First create the emit branch from source branch
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Now we're on agency/feature, switch to the emit branch (feature)
 			await checkoutBranch(tempDir, "feature")
@@ -166,7 +175,9 @@ describe("push command", () => {
 
 			// Run push from emit branch - should detect we're on emit branch,
 			// switch to source (agency/feature), and continue
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Should be back on agency/feature branch (the source branch)
 			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
@@ -177,7 +188,9 @@ describe("push command", () => {
 			process.chdir(nonGitDir)
 
 			await expect(
-				runTestEffect(push({ baseBranch: "main", silent: true })),
+				runTestEffect(
+					push({ baseBranch: "main", silent: true, skipFilter: true }),
+				),
 			).rejects.toThrow("Not in a git repository")
 
 			await cleanupTempDir(nonGitDir)
@@ -193,7 +206,9 @@ describe("push command", () => {
 
 			// Push should fail because no remote exists
 			await expect(
-				runTestEffect(push({ baseBranch: "main", silent: true })),
+				runTestEffect(
+					push({ baseBranch: "main", silent: true, skipFilter: true }),
+				),
 			).rejects.toThrow(/No git remotes found/)
 		})
 	})
@@ -207,7 +222,9 @@ describe("push command", () => {
 				logCalled = true
 			}
 
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			console.log = originalLog
 			expect(logCalled).toBe(false)
@@ -217,7 +234,9 @@ describe("push command", () => {
 	describe("force push", () => {
 		test("force pushes when branch has diverged and --force is provided", async () => {
 			// First push
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Make changes on source branch
 			await checkoutBranch(tempDir, "agency/feature")
@@ -243,7 +262,12 @@ describe("push command", () => {
 			}
 
 			await runTestEffect(
-				push({ baseBranch: "main", force: true, silent: false }),
+				push({
+					baseBranch: "main",
+					force: true,
+					silent: false,
+					skipFilter: true,
+				}),
 			)
 
 			console.log = originalLog
@@ -257,7 +281,9 @@ describe("push command", () => {
 
 		test("suggests using --force when push is rejected without it", async () => {
 			// First push
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			// Make changes on source branch
 			await checkoutBranch(tempDir, "agency/feature")
@@ -277,7 +303,9 @@ describe("push command", () => {
 
 			// Should throw error suggesting --force
 			await expect(
-				runTestEffect(push({ baseBranch: "main", silent: true })),
+				runTestEffect(
+					push({ baseBranch: "main", silent: true, skipFilter: true }),
+				),
 			).rejects.toThrow(/agency push --force/)
 
 			// Should still be on agency/feature branch (not left in intermediate state)
@@ -294,7 +322,12 @@ describe("push command", () => {
 
 			// First push with --force (but it won't actually need force)
 			await runTestEffect(
-				push({ baseBranch: "main", force: true, silent: false }),
+				push({
+					baseBranch: "main",
+					force: true,
+					silent: false,
+					skipFilter: true,
+				}),
 			)
 
 			console.log = originalLog
@@ -321,7 +354,9 @@ describe("push command", () => {
 
 			// Should not throw - command should complete despite gh failure
 			// (gh will fail in test environment because there's no GitHub remote)
-			await runTestEffect(push({ baseBranch: "main", pr: true, silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", pr: true, silent: true, skipFilter: true }),
+			)
 
 			console.error = originalError
 
@@ -343,7 +378,9 @@ describe("push command", () => {
 			}
 
 			// Push without --pr flag
-			await runTestEffect(push({ baseBranch: "main", silent: true }))
+			await runTestEffect(
+				push({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
 
 			console.error = originalError
 

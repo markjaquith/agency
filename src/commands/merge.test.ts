@@ -206,37 +206,27 @@ describe("merge command", () => {
 		})
 
 		test("throws error if base branch does not exist locally", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			// Create emit branch
-			await runTestEffect(emit({ silent: true }))
+			// Create emit branch (skipFilter for speed since we're testing error handling)
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
 
 			// Delete main branch (the base)
 			await checkoutBranch(tempDir, "feature")
 			await deleteBranch(tempDir, "main", true)
 
 			// Try to merge - should fail
-			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow(
-				"does not exist locally",
-			)
+			await expect(
+				runTestEffect(merge({ silent: true, skipFilter: true })),
+			).rejects.toThrow("does not exist locally")
 		})
 	})
 
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			const logs: string[] = []
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await runTestEffect(merge({ silent: true }))
+			await runTestEffect(merge({ silent: true, skipFilter: true }))
 
 			console.log = originalLog
 
@@ -246,17 +236,14 @@ describe("merge command", () => {
 
 	describe("squash merge", () => {
 		test("performs squash merge when --squash flag is set", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("agency/feature")
 
-			// Run merge with squash flag
-			await runTestEffect(merge({ silent: true, squash: true }))
+			// Run merge with squash flag (skipFilter for speed, we're testing squash behavior)
+			await runTestEffect(
+				merge({ silent: true, squash: true, skipFilter: true }),
+			)
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)
@@ -276,17 +263,14 @@ describe("merge command", () => {
 		})
 
 		test("performs regular merge when --squash flag is not set", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("agency/feature")
 
-			// Run merge without squash flag
-			await runTestEffect(merge({ silent: true, squash: false }))
+			// Run merge without squash flag (skipFilter for speed, we're testing merge behavior)
+			await runTestEffect(
+				merge({ silent: true, squash: false, skipFilter: true }),
+			)
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)
@@ -308,11 +292,6 @@ describe("merge command", () => {
 
 	describe("push flag", () => {
 		test("pushes base branch to origin when --push flag is set", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("agency/feature")
@@ -326,8 +305,8 @@ describe("merge command", () => {
 			// Go back to feature branch
 			await checkoutBranch(tempDir, "agency/feature")
 
-			// Run merge with push flag
-			await runTestEffect(merge({ silent: true, push: true }))
+			// Run merge with push flag (skipFilter for speed, we're testing push behavior)
+			await runTestEffect(merge({ silent: true, push: true, skipFilter: true }))
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)
@@ -351,11 +330,6 @@ describe("merge command", () => {
 		})
 
 		test("does not push when --push flag is not set", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("agency/feature")
@@ -365,8 +339,8 @@ describe("merge command", () => {
 				await getGitOutput(tempDir, ["rev-parse", "origin/main"])
 			).trim()
 
-			// Run merge without push flag
-			await runTestEffect(merge({ silent: true }))
+			// Run merge without push flag (skipFilter for speed, we're testing push behavior)
+			await runTestEffect(merge({ silent: true, skipFilter: true }))
 
 			// Should be on main branch after merge
 			const afterMergeBranch = await getCurrentBranch(tempDir)

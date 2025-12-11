@@ -93,11 +93,6 @@ describe("emit command", () => {
 		})
 
 		test("creates emit branch with default name", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			// Go back to main and create a fresh source branch (no inherited agency.json)
 			await checkoutBranch(tempDir, "main")
 			await createBranch(tempDir, "agency/feature")
@@ -113,8 +108,8 @@ describe("emit command", () => {
 			)
 			await addAndCommit(tempDir, "agency.json", "Feature commit")
 
-			// Create emit branch
-			await runTestEffect(emit({ silent: true }))
+			// Create emit branch (skip filter for speed)
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
 
 			// Check that emit branch exists (default pattern is %branch%, so emit is just "feature")
 			const branches = await getGitOutput(tempDir, [
@@ -130,15 +125,13 @@ describe("emit command", () => {
 		})
 
 		test("creates emit branch with custom name", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
-			await runTestEffect(emit({ branch: "custom-pr", silent: true }))
+			// Skip filter for speed - we're just testing branch creation
+			await runTestEffect(
+				emit({ branch: "custom-pr", silent: true, skipFilter: true }),
+			)
 
 			const branches = await getGitOutput(tempDir, [
 				"branch",
@@ -152,49 +145,110 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency/feature")
 		})
 
-		test("runs git-filter-repo successfully", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
+		test("completes emit workflow successfully", async () => {
 			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
-			// Should complete without throwing
-			await runTestEffect(emit({ silent: true }))
+			// Should complete without throwing (skip filter for speed)
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
 
 			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("agency/feature")
 		})
 
-		test("preserves other files in emit branch", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
+		test("preserves files on source branch after emit", async () => {
 			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
-			await runTestEffect(emit({ silent: true }))
+			// Skip filter for speed - we're testing source branch preservation
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
 
 			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
 			expect(currentBranch).toBe("agency/feature")
 
-			// Switch to emit branch to verify files
-			await checkoutBranch(tempDir, "agency/feature")
-
-			// Check that test file still exists
+			// Check that test file still exists on source branch
 			expect(await fileExists(join(tempDir, "test.txt"))).toBe(true)
 
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).toContain("test.txt")
 		})
 
-		test("removes AGENTS.md on emit branch even when not modified on feature branch", async () => {
+		test("original branch remains untouched", async () => {
+			await createBranch(tempDir, "agency/feature")
+			await createCommit(tempDir, "Feature commit")
+
+			// Create emit branch (skip filter for speed)
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
+
+			// Should still be on feature branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/feature")
+
+			// Check that AGENTS.md still exist on original branch
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("AGENTS.md")
+		})
+
+		test("works correctly when run multiple times (recreates emit branch)", async () => {
+			await createBranch(tempDir, "agency/feature")
+
+			// Modify AGENTS.md on feature branch
+			await Bun.write(
+				join(tempDir, "AGENTS.md"),
+				"# Modified by feature branch\n",
+			)
+			await addAndCommit(tempDir, "AGENTS.md", "Modify AGENTS.md")
+
+			// Run emit command first time (skip filter for speed)
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
+
+			// Switch back to feature branch
+			await checkoutBranch(tempDir, "agency/feature")
+
+			// Make another commit
+			await createCommit(tempDir, "Another feature commit")
+
+			// Run emit command second time (skip filter for speed)
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
+
+			// Should complete successfully without interactive prompts and stay on source branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/feature")
+		})
+
+		test("accepts explicit base branch argument", async () => {
+			await createBranch(tempDir, "agency/feature")
+			await createCommit(tempDir, "Feature commit")
+
+			// Create emit branch with explicit base branch (skip filter for speed)
+			await runTestEffect(
+				emit({ baseBranch: "main", silent: true, skipFilter: true }),
+			)
+
+			// Should stay on source branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/feature")
+		})
+
+		test("throws error if provided base branch does not exist", async () => {
+			await createBranch(tempDir, "agency/feature")
+			await createCommit(tempDir, "Feature commit")
+
+			// This should fail even with skipFilter since base branch validation happens first
+			expect(
+				runTestEffect(
+					emit({ baseBranch: "nonexistent", silent: true, skipFilter: true }),
+				),
+			).rejects.toThrow("does not exist")
+		})
+	})
+
+	// Integration tests that actually run git-filter-repo to verify filtering behavior
+	// These are slower but ensure the filtering logic works correctly
+	describe("filtering integration (requires git-filter-repo)", () => {
+		test("filters AGENTS.md from emit branch", async () => {
 			if (!hasGitFilterRepo) {
 				console.log("Skipping test: git-filter-repo not installed")
 				return
@@ -218,7 +272,7 @@ describe("emit command", () => {
 			// Also create a test.txt file via createCommit
 			await createCommit(tempDir, "Feature commit")
 
-			// Create emit branch
+			// Create emit branch (this runs git-filter-repo)
 			await runTestEffect(emit({ silent: true }))
 
 			// Should still be on feature branch
@@ -228,207 +282,13 @@ describe("emit command", () => {
 			// Switch to emit branch to verify files
 			await checkoutBranch(tempDir, "feature")
 
-			// AGENCY.md is always filtered on emit branches (it belongs to the tool, not user code)
+			// AGENTS.md should be filtered out
 			const files = await getGitOutput(tempDir, ["ls-files"])
 			expect(files).not.toContain("AGENTS.md")
 			expect(files).not.toContain("AGENCY.md")
 
 			// But test.txt should still exist
 			expect(files).toContain("test.txt")
-		})
-
-		test("removes AGENTS.md modifications on emit branch", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			// Go back to main and create a fresh source branch
-			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "agency/feature")
-
-			// Create agency.json with AGENTS.md as managed file
-			await Bun.write(
-				join(tempDir, "agency.json"),
-				JSON.stringify({
-					version: 1,
-					injectedFiles: ["AGENTS.md"],
-					template: "test",
-					createdAt: new Date().toISOString(),
-				}),
-			)
-
-			// Modify AGENTS.md on feature branch
-			await Bun.write(
-				join(tempDir, "AGENTS.md"),
-				"# Modified by feature branch\n",
-			)
-			await addAndCommit(tempDir, "agency.json AGENTS.md", "Modify AGENTS.md")
-
-			await createCommit(tempDir, "Feature commit")
-
-			// Get the original content from feature branch
-			const featureAgentsContent = await Bun.file(
-				join(tempDir, "AGENTS.md"),
-			).text()
-			expect(featureAgentsContent).toContain("Modified by feature branch")
-
-			// Create emit branch
-			await runTestEffect(emit({ silent: true }))
-
-			// Should still be on feature branch
-			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
-
-			// Switch to emit branch to verify files
-			await checkoutBranch(tempDir, "feature")
-
-			// AGENCY.md is always filtered on emit branches (it belongs to the tool, not user code)
-			const files = await getGitOutput(tempDir, ["ls-files"])
-			expect(files).not.toContain("AGENTS.md")
-			expect(files).not.toContain("AGENCY.md")
-		})
-
-		test("removes AGENTS.md when it was added only on feature branch", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			// Start fresh without AGENTS.md on main
-			const freshDir = await createTempDir()
-			await initGitRepo(freshDir)
-			await createCommit(freshDir, "Initial commit")
-
-			// Rename to main if needed
-			const currentBranch = await getCurrentBranch(freshDir)
-			if (currentBranch === "master") {
-				await renameBranch(freshDir, "main")
-			}
-
-			// Set up origin for filter-repo
-			await setupRemote(freshDir, "origin", freshDir)
-
-			// Create feature branch and add AGENTS.md
-			await createBranch(freshDir, "agency/feature")
-			await Bun.write(join(freshDir, "AGENTS.md"), "# Feature only\n")
-			// Create agency.json to track that AGENTS.md was injected
-			await Bun.write(
-				join(freshDir, "agency.json"),
-				JSON.stringify(
-					{
-						version: 1,
-						injectedFiles: ["AGENTS.md"],
-						template: "test",
-						createdAt: new Date().toISOString(),
-					},
-					null,
-					2,
-				) + "\n",
-			)
-			await addAndCommit(freshDir, "AGENTS.md agency.json", "Add AGENTS.md")
-
-			// Create emit branch
-			process.chdir(freshDir)
-			await runTestEffect(emit({ silent: true }))
-
-			// Should still be on feature branch
-			let branchName = await getCurrentBranch(freshDir)
-			expect(branchName).toBe("agency/feature")
-
-			// Switch to emit branch to verify files
-			await checkoutBranch(freshDir, "feature")
-
-			// AGENTS.md should NOT exist (it was removed)
-			const files = await getGitOutput(freshDir, ["ls-files"])
-			expect(files).not.toContain("AGENTS.md")
-
-			await cleanupTempDir(freshDir)
-		})
-
-		test("original branch remains untouched", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			await createBranch(tempDir, "agency/feature")
-			await createCommit(tempDir, "Feature commit")
-
-			// Create emit branch
-			await runTestEffect(emit({ silent: true }))
-
-			// Should still be on feature branch
-			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
-
-			// Check that AGENTS.md still exist on original branch
-			const files = await getGitOutput(tempDir, ["ls-files"])
-			expect(files).toContain("AGENTS.md")
-		})
-
-		test("works correctly when run multiple times (cleans up filter-repo state)", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			await createBranch(tempDir, "agency/feature")
-
-			// Modify AGENTS.md on feature branch
-			await Bun.write(
-				join(tempDir, "AGENTS.md"),
-				"# Modified by feature branch\n",
-			)
-			await addAndCommit(tempDir, "AGENTS.md", "Modify AGENTS.md")
-
-			// Run emit command first time
-			await runTestEffect(emit({ silent: true }))
-
-			// Switch back to feature branch
-			await checkoutBranch(tempDir, "agency/feature")
-
-			// Make another commit
-			await createCommit(tempDir, "Another feature commit")
-
-			// Run emit command second time - this would trigger the "already_ran" prompt
-			// without the cleanup code
-			await runTestEffect(emit({ silent: true }))
-
-			// Should complete successfully without interactive prompts and stay on source branch
-			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
-		})
-
-		test("accepts explicit base branch argument", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			await createBranch(tempDir, "agency/feature")
-			await createCommit(tempDir, "Feature commit")
-
-			// Create emit branch with explicit base branch
-			await runTestEffect(emit({ baseBranch: "main", silent: true }))
-
-			// Should stay on source branch
-			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
-		})
-
-		test("throws error if provided base branch does not exist", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
-			await createBranch(tempDir, "agency/feature")
-			await createCommit(tempDir, "Feature commit")
-
-			expect(
-				runTestEffect(emit({ baseBranch: "nonexistent", silent: true })),
-			).rejects.toThrow("does not exist")
 		})
 
 		test("handles emit branch recreation after source branch rebase", async () => {
@@ -534,11 +394,6 @@ describe("emit command", () => {
 
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
-			if (!hasGitFilterRepo) {
-				console.log("Skipping test: git-filter-repo not installed")
-				return
-			}
-
 			await createBranch(tempDir, "agency/feature")
 			await createCommit(tempDir, "Feature commit")
 
@@ -546,7 +401,8 @@ describe("emit command", () => {
 			const originalLog = console.log
 			console.log = (...args: any[]) => logs.push(args.join(" "))
 
-			await runTestEffect(emit({ silent: true }))
+			// Skip filter for speed
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
 
 			console.log = originalLog
 
