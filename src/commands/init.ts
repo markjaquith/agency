@@ -13,14 +13,14 @@ interface InitOptions extends BaseCommandOptions {
 
 export const init = (options: InitOptions = {}) =>
 	Effect.gen(function* () {
-		const { silent = false } = options
+		const { silent = false, cwd } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
 		const promptService = yield* PromptService
 		const templateService = yield* TemplateService
 
-		const gitRoot = yield* ensureGitRepo()
+		const gitRoot = yield* ensureGitRepo(cwd)
 
 		// Check if already initialized
 		const existingTemplate = yield* getTemplateName(gitRoot)

@@ -1,260 +1,284 @@
-import { test, expect, describe, beforeEach, afterEach } from "bun:test"
+import { test, expect, describe } from "bun:test"
+import { mkdtemp, rm } from "fs/promises"
+import { tmpdir } from "os"
+import { join } from "path"
 import { init } from "./init"
-import {
-	createTempDir,
-	cleanupTempDir,
-	initGitRepo,
-	getGitConfig,
-	runTestEffect,
-} from "../test-utils"
+import { initGitRepo, getGitConfig, runTestEffect } from "../test-utils"
 
 describe("init command", () => {
-	let tempDir: string
-	let originalCwd: string
-	let originalConfigDir: string | undefined
-
-	beforeEach(async () => {
-		tempDir = await createTempDir()
-		originalCwd = process.cwd()
-		originalConfigDir = process.env.AGENCY_CONFIG_DIR
-		// Use a temp config dir to avoid interference from user's actual config
-		process.env.AGENCY_CONFIG_DIR = await createTempDir()
-	})
-
-	afterEach(async () => {
-		process.chdir(originalCwd)
-		if (originalConfigDir !== undefined) {
-			process.env.AGENCY_CONFIG_DIR = originalConfigDir
-		} else {
-			delete process.env.AGENCY_CONFIG_DIR
+	test("initializes with template flag", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "test-template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(
+				"test-template",
+			)
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
 		}
-		if (
-			process.env.AGENCY_CONFIG_DIR &&
-			process.env.AGENCY_CONFIG_DIR !== originalConfigDir
-		) {
-			await cleanupTempDir(process.env.AGENCY_CONFIG_DIR)
+	})
+
+	test("saves template name to git config", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "my-template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe("my-template")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
 		}
-		await cleanupTempDir(tempDir)
 	})
 
-	describe("basic initialization", () => {
-		test("initializes with template flag", async () => {
+	test("accepts template names with hyphens", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await runTestEffect(init({ template: "test-template", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("test-template")
-		})
-
-		test("saves template name to git config", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await runTestEffect(init({ template: "my-template", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("my-template")
-		})
-
-		test("accepts template names with hyphens", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await runTestEffect(init({ template: "my-work-template", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("my-work-template")
-		})
-
-		test("accepts template names with underscores", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await runTestEffect(init({ template: "my_work_template", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("my_work_template")
-		})
+			await runTestEffect(
+				init({ template: "my-work-template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(
+				"my-work-template",
+			)
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
 	})
 
-	describe("error handling", () => {
-		test("throws error when not in git repository", async () => {
-			process.chdir(tempDir)
+	test("accepts template names with underscores", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "my_work_template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(
+				"my_work_template",
+			)
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 
+	test("throws error when not in git repository", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await expect(
-				runTestEffect(init({ template: "test", silent: true })),
+				runTestEffect(init({ template: "test", silent: true, cwd: tempDir })),
 			).rejects.toThrow("Not in a git repository")
-		})
-
-		test("throws error when already initialized without template flag", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			// Initialize first time
-			await runTestEffect(init({ template: "first-template", silent: true }))
-
-			// Try to initialize again without template flag
-			await expect(runTestEffect(init({ silent: true }))).rejects.toThrow(
-				"Already initialized",
-			)
-		})
-
-		test("allows re-initialization with different template", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			// Initialize first time
-			await runTestEffect(init({ template: "first-template", silent: true }))
-
-			// Re-initialize with different template
-			await runTestEffect(init({ template: "second-template", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("second-template")
-		})
-
-		test("requires template name in silent mode", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await expect(runTestEffect(init({ silent: true }))).rejects.toThrow(
-				"Template name required",
-			)
-		})
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
 	})
 
-	describe("template directory", () => {
-		test("does not create template directory during init", async () => {
+	test("throws error when already initialized without template flag", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await runTestEffect(init({ template: "test-template", silent: true }))
-
-			const configDir = process.env.AGENCY_CONFIG_DIR!
-			const templateDir = Bun.file(
-				`${configDir}/templates/test-template/AGENTS.md`,
+			await runTestEffect(
+				init({ template: "first-template", silent: true, cwd: tempDir }),
 			)
-			const exists = await templateDir.exists()
-			expect(exists).toBe(false)
-		})
-
-		test("sets config even if template directory doesn't exist", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await runTestEffect(init({ template: "nonexistent", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("nonexistent")
-		})
+			await expect(
+				runTestEffect(init({ silent: true, cwd: tempDir })),
+			).rejects.toThrow("Already initialized")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
 	})
 
-	describe("silent mode", () => {
-		test("works without output in silent mode", async () => {
+	test("allows re-initialization with different template", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			// Should not throw and should complete successfully
-			await runTestEffect(init({ template: "silent-test", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("silent-test")
-		})
-
-		test("fails in silent mode without template", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			await expect(runTestEffect(init({ silent: true }))).rejects.toThrow(
-				"Template name required",
+			await runTestEffect(
+				init({ template: "first-template", silent: true, cwd: tempDir }),
 			)
-		})
+			await runTestEffect(
+				init({ template: "second-template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(
+				"second-template",
+			)
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
 	})
 
-	describe("verbose mode", () => {
-		test("works in verbose mode", async () => {
+	test("requires template name in silent mode", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
+			await expect(
+				runTestEffect(init({ silent: true, cwd: tempDir })),
+			).rejects.toThrow("Template name required")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 
-			// Capture output to prevent test noise
+	test("sets config even if template directory does not exist", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "nonexistent", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe("nonexistent")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
+
+	test("works without output in silent mode", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "silent-test", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe("silent-test")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
+
+	test("fails in silent mode without template", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await expect(
+				runTestEffect(init({ silent: true, cwd: tempDir })),
+			).rejects.toThrow("Template name required")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
+
+	test("works in verbose mode", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
 			const originalLog = console.log
 			console.log = () => {}
-
 			try {
-				// Should complete successfully even with verbose logging
 				await runTestEffect(
-					init({ template: "verbose-test", verbose: true, silent: false }),
+					init({
+						template: "verbose-test",
+						verbose: true,
+						silent: false,
+						cwd: tempDir,
+					}),
 				)
-
-				const configValue = await getGitConfig("agency.template", tempDir)
-				expect(configValue).toBe("verbose-test")
+				expect(await getGitConfig("agency.template", tempDir)).toBe(
+					"verbose-test",
+				)
 			} finally {
 				console.log = originalLog
 			}
-		})
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
 	})
 
-	describe("edge cases", () => {
-		test("handles empty template name", async () => {
+	test("handles empty template name", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
 			await expect(
-				runTestEffect(init({ template: "", silent: true })),
+				runTestEffect(init({ template: "", silent: true, cwd: tempDir })),
 			).rejects.toThrow("Template name required")
-		})
-
-		test("handles template name with special characters", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			// Template names with dots or slashes might cause issues
-			await runTestEffect(init({ template: "test.template", silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("test.template")
-		})
-
-		test("handles very long template names", async () => {
-			await initGitRepo(tempDir)
-			process.chdir(tempDir)
-
-			const longName = "a".repeat(100)
-			await runTestEffect(init({ template: longName, silent: true }))
-
-			const configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe(longName)
-		})
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
 	})
 
-	describe("multiple initializations", () => {
-		test("changing template updates git config", async () => {
+	test("handles template name with special characters", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
+			await runTestEffect(
+				init({ template: "test.template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(
+				"test.template",
+			)
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 
-			await runTestEffect(init({ template: "template-a", silent: true }))
-			let configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("template-a")
-
-			await runTestEffect(init({ template: "template-b", silent: true }))
-			configValue = await getGitConfig("agency.template", tempDir)
-			expect(configValue).toBe("template-b")
-		})
-
-		test("preserves template name across command runs", async () => {
+	test("handles very long template names", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
 			await initGitRepo(tempDir)
-			process.chdir(tempDir)
+			const longName = "a".repeat(100)
+			await runTestEffect(
+				init({ template: longName, silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(longName)
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 
-			await runTestEffect(init({ template: "persistent", silent: true }))
+	test("changing template updates git config", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "template-a", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe("template-a")
+			await runTestEffect(
+				init({ template: "template-b", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe("template-b")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 
-			// Check multiple times to ensure it persists
-			const value1 = await getGitConfig("agency.template", tempDir)
-			const value2 = await getGitConfig("agency.template", tempDir)
+	test("preserves template name across command runs", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		try {
+			await initGitRepo(tempDir)
+			await runTestEffect(
+				init({ template: "persistent", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe("persistent")
+			expect(await getGitConfig("agency.template", tempDir)).toBe("persistent")
+		} finally {
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 
-			expect(value1).toBe("persistent")
-			expect(value2).toBe("persistent")
-		})
+	test("does not create template directory during init", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		const configDir = await mkdtemp(join(tmpdir(), "agency-config-"))
+		const originalConfigDir = process.env.AGENCY_CONFIG_DIR
+		try {
+			await initGitRepo(tempDir)
+			process.env.AGENCY_CONFIG_DIR = configDir
+			await runTestEffect(
+				init({ template: "test-template", silent: true, cwd: tempDir }),
+			)
+			expect(
+				await Bun.file(
+					`${configDir}/templates/test-template/AGENTS.md`,
+				).exists(),
+			).toBe(false)
+		} finally {
+			if (originalConfigDir !== undefined) {
+				process.env.AGENCY_CONFIG_DIR = originalConfigDir
+			} else {
+				delete process.env.AGENCY_CONFIG_DIR
+			}
+			await rm(tempDir, { recursive: true, force: true })
+			await rm(configDir, { recursive: true, force: true })
+		}
 	})
 })

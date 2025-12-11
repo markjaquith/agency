@@ -4,49 +4,61 @@ import { join } from "path"
 
 // Cache a template git repository to speed up test setup
 let templateGitRepo: string | null = null
+let templateGitRepoPromise: Promise<string> | null = null
 
 async function getTemplateGitRepo(): Promise<string> {
+	// Return cached result if available
 	if (templateGitRepo) {
 		return templateGitRepo
 	}
 
-	// Create a template git repo once and reuse it
-	const tempDir = await mkdtemp(join(tmpdir(), "agency-template-"))
-
-	const proc = Bun.spawn(["git", "init", "-b", "main"], {
-		cwd: tempDir,
-		stdout: "pipe",
-		stderr: "pipe",
-	})
-	await proc.exited
-
-	if (proc.exitCode !== 0) {
-		throw new Error("Failed to initialize template git repository")
+	// Use a promise to prevent concurrent initialization (race condition fix)
+	if (templateGitRepoPromise) {
+		return templateGitRepoPromise
 	}
 
-	// Write config directly
-	const configFile = Bun.file(join(tempDir, ".git", "config"))
-	const existingConfig = await configFile.text()
-	const newConfig =
-		existingConfig +
-		"\n[user]\n\temail = test@example.com\n\tname = Test User\n[core]\n\thooksPath = /dev/null\n"
-	await Bun.write(join(tempDir, ".git", "config"), newConfig)
+	// Create and cache the initialization promise
+	templateGitRepoPromise = (async () => {
+		// Create a template git repo once and reuse it
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-template-"))
 
-	// Create initial commit
-	await Bun.write(join(tempDir, ".gitkeep"), "")
-	await Bun.spawn(["git", "add", ".gitkeep"], {
-		cwd: tempDir,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
-	await Bun.spawn(["git", "commit", "-m", "Initial commit"], {
-		cwd: tempDir,
-		stdout: "pipe",
-		stderr: "pipe",
-	}).exited
+		const proc = Bun.spawn(["git", "init", "-b", "main"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await proc.exited
 
-	templateGitRepo = tempDir
-	return tempDir
+		if (proc.exitCode !== 0) {
+			throw new Error("Failed to initialize template git repository")
+		}
+
+		// Write config directly
+		const configFile = Bun.file(join(tempDir, ".git", "config"))
+		const existingConfig = await configFile.text()
+		const newConfig =
+			existingConfig +
+			"\n[user]\n\temail = test@example.com\n\tname = Test User\n[core]\n\thooksPath = /dev/null\n"
+		await Bun.write(join(tempDir, ".git", "config"), newConfig)
+
+		// Create initial commit
+		await Bun.write(join(tempDir, ".gitkeep"), "")
+		await Bun.spawn(["git", "add", ".gitkeep"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		templateGitRepo = tempDir
+		return tempDir
+	})()
+
+	return templateGitRepoPromise
 }
 
 /**

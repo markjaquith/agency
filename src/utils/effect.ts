@@ -40,11 +40,12 @@ export function createLoggers(options: {
 
 /**
  * Ensure we're in a git repository and return the git root
+ * @param providedCwd - Optional working directory to use instead of process.cwd()
  */
-export function ensureGitRepo() {
+export function ensureGitRepo(providedCwd?: string) {
 	return Effect.gen(function* () {
 		const git = yield* GitService
-		const cwd = process.cwd()
+		const cwd = providedCwd ?? process.cwd()
 
 		const isGitRepo = yield* git.isInsideGitRepo(cwd)
 		if (!isGitRepo) {
