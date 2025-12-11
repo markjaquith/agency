@@ -1,14 +1,6 @@
 import { mkdtemp, rm, cp } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
-import * as git from "isomorphic-git"
-import * as fs from "node:fs"
-
-// Default author for commits
-const DEFAULT_AUTHOR = {
-	name: "Test User",
-	email: "test@example.com",
-}
 
 // Cache a template git repository to speed up test setup
 let templateGitRepo: string | null = null
@@ -30,32 +22,37 @@ async function getTemplateGitRepo(): Promise<string> {
 		// Create a template git repo once and reuse it
 		const tempDir = await mkdtemp(join(tmpdir(), "agency-template-"))
 
-		// Initialize with isomorphic-git
-		await git.init({ fs, dir: tempDir, defaultBranch: "main" })
+		const proc = Bun.spawn(["git", "init", "-b", "main"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await proc.exited
 
-		// Set user config
-		await git.setConfig({
-			fs,
-			dir: tempDir,
-			path: "user.email",
-			value: "test@example.com",
-		})
-		await git.setConfig({
-			fs,
-			dir: tempDir,
-			path: "user.name",
-			value: "Test User",
-		})
+		if (proc.exitCode !== 0) {
+			throw new Error("Failed to initialize template git repository")
+		}
+
+		// Write config directly
+		const configFile = Bun.file(join(tempDir, ".git", "config"))
+		const existingConfig = await configFile.text()
+		const newConfig =
+			existingConfig +
+			"\n[user]\n\temail = test@example.com\n\tname = Test User\n[core]\n\thooksPath = /dev/null\n"
+		await Bun.write(join(tempDir, ".git", "config"), newConfig)
 
 		// Create initial commit
 		await Bun.write(join(tempDir, ".gitkeep"), "")
-		await git.add({ fs, dir: tempDir, filepath: ".gitkeep" })
-		await git.commit({
-			fs,
-			dir: tempDir,
-			message: "Initial commit",
-			author: DEFAULT_AUTHOR,
-		})
+		await Bun.spawn(["git", "add", ".gitkeep"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "-m", "Initial commit"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
 
 		templateGitRepo = tempDir
 		return tempDir
@@ -77,7 +74,7 @@ export async function createTempDir(): Promise<string> {
 export async function cleanupTempDir(path: string): Promise<void> {
 	try {
 		await rm(path, { recursive: true, force: true })
-	} catch (_error) {
+	} catch (error) {
 		// Ignore errors during cleanup
 	}
 }
@@ -128,7 +125,6 @@ export async function readFile(path: string): Promise<string> {
 
 /**
  * Execute a git command and return its output
- * Note: Some operations still need to spawn git (e.g., for complex queries)
  */
 export async function getGitOutput(
 	cwd: string,
@@ -147,8 +143,20 @@ export async function getGitOutput(
  * Get the current branch name in a git repository
  */
 export async function getCurrentBranch(cwd: string): Promise<string> {
-	const branch = await git.currentBranch({ fs, dir: cwd, fullname: false })
-	return branch || ""
+	const output = await getGitOutput(cwd, ["branch", "--show-current"])
+	return output.trim()
+}
+
+/**
+ * Run a git command directly - fire and forget version (fastest)
+ */
+async function gitRun(cwd: string, args: string[]): Promise<void> {
+	const proc = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
 }
 
 /**
@@ -159,15 +167,9 @@ export async function createCommit(
 	message: string,
 ): Promise<void> {
 	// Create a test file and commit it
-	// Use "test.txt" for compatibility with existing tests
 	await Bun.write(join(cwd, "test.txt"), message)
-	await git.add({ fs, dir: cwd, filepath: "test.txt" })
-	await git.commit({
-		fs,
-		dir: cwd,
-		message,
-		author: DEFAULT_AUTHOR,
-	})
+	await gitRun(cwd, ["add", "test.txt"])
+	await gitRun(cwd, ["commit", "--no-verify", "-m", message])
 }
 
 /**
@@ -177,7 +179,7 @@ export async function checkoutBranch(
 	cwd: string,
 	branchName: string,
 ): Promise<void> {
-	await git.checkout({ fs, dir: cwd, ref: branchName })
+	await gitRun(cwd, ["checkout", branchName])
 }
 
 /**
@@ -187,7 +189,7 @@ export async function createBranch(
 	cwd: string,
 	branchName: string,
 ): Promise<void> {
-	await git.branch({ fs, dir: cwd, ref: branchName, checkout: true })
+	await gitRun(cwd, ["checkout", "-b", branchName])
 }
 
 /**
@@ -199,15 +201,8 @@ export async function addAndCommit(
 	message: string,
 ): Promise<void> {
 	const fileList = Array.isArray(files) ? files : files.split(" ")
-	for (const file of fileList) {
-		await git.add({ fs, dir: cwd, filepath: file })
-	}
-	await git.commit({
-		fs,
-		dir: cwd,
-		message,
-		author: DEFAULT_AUTHOR,
-	})
+	await gitRun(cwd, ["add", ...fileList])
+	await gitRun(cwd, ["commit", "--no-verify", "-m", message])
 }
 
 /**
@@ -218,8 +213,8 @@ export async function setupRemote(
 	remoteName: string,
 	remoteUrl: string,
 ): Promise<void> {
-	await git.addRemote({ fs, dir: cwd, remote: remoteName, url: remoteUrl })
-	// Note: fetch requires http transport, skip in tests
+	await gitRun(cwd, ["remote", "add", remoteName, remoteUrl])
+	await gitRun(cwd, ["fetch", remoteName])
 }
 
 /**
@@ -228,9 +223,10 @@ export async function setupRemote(
 export async function deleteBranch(
 	cwd: string,
 	branchName: string,
-	_force: boolean = false,
+	force: boolean = false,
 ): Promise<void> {
-	await git.deleteBranch({ fs, dir: cwd, ref: branchName })
+	const flag = force ? "-D" : "-d"
+	await gitRun(cwd, ["branch", flag, branchName])
 }
 
 /**
@@ -240,20 +236,7 @@ export async function renameBranch(
 	cwd: string,
 	newName: string,
 ): Promise<void> {
-	const currentBranch = await git.currentBranch({ fs, dir: cwd })
-	if (!currentBranch) throw new Error("Not on a branch")
-
-	// Get current commit
-	const oid = await git.resolveRef({ fs, dir: cwd, ref: "HEAD" })
-
-	// Create new branch at current commit
-	await git.branch({ fs, dir: cwd, ref: newName, object: oid })
-
-	// Checkout new branch
-	await git.checkout({ fs, dir: cwd, ref: newName })
-
-	// Delete old branch
-	await git.deleteBranch({ fs, dir: cwd, ref: currentBranch })
+	await gitRun(cwd, ["branch", "-m", newName])
 }
 
 /**
@@ -263,8 +246,13 @@ export async function branchExists(
 	cwd: string,
 	branch: string,
 ): Promise<boolean> {
-	const branches = await git.listBranches({ fs, dir: cwd })
-	return branches.includes(branch)
+	const proc = Bun.spawn(["git", "rev-parse", "--verify", branch], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await proc.exited
+	return proc.exitCode === 0
 }
 
 /**
@@ -274,12 +262,14 @@ export async function initAgency(
 	cwd: string,
 	templateName: string,
 ): Promise<void> {
-	await git.setConfig({
-		fs,
-		dir: cwd,
-		path: "agency.template",
-		value: templateName,
-	})
+	await Bun.spawn(
+		["git", "config", "--local", "agency.template", templateName],
+		{
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	).exited
 }
 
 /**
@@ -290,15 +280,21 @@ export async function getGitConfig(
 	gitRoot: string,
 ): Promise<string | null> {
 	try {
-		const value = await git.getConfig({ fs, dir: gitRoot, path: key })
-		return value !== undefined ? String(value) : null
+		const proc = Bun.spawn(["git", "config", "--local", "--get", key], {
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await proc.exited // Must await before reading stdout to prevent hangs in concurrent tests
+		const output = await new Response(proc.stdout).text()
+		return output.trim() || null
 	} catch {
 		return null
 	}
 }
 
 /**
- * Run a git command (fallback for complex operations)
+ * Run a git command
  */
 export async function runGitCommand(
 	cwd: string,
@@ -331,7 +327,7 @@ export async function createFile(
  * Run an Effect in tests with all services provided
  */
 import { Effect, Layer } from "effect"
-import { IsomorphicGitService } from "./services/IsomorphicGitService"
+import { GitService } from "./services/GitService"
 import { ConfigService } from "./services/ConfigService"
 import { FileSystemService } from "./services/FileSystemService"
 import { PromptService } from "./services/PromptService"
@@ -339,9 +335,8 @@ import { TemplateService } from "./services/TemplateService"
 import { OpencodeService } from "./services/OpencodeService"
 
 // Create test layer with all services
-// Use IsomorphicGitService instead of GitService for faster tests (no process spawning)
 const TestLayer = Layer.mergeAll(
-	IsomorphicGitService.Default,
+	GitService.Default,
 	ConfigService.Default,
 	FileSystemService.Default,
 	PromptService.Default,

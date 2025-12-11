@@ -341,7 +341,7 @@ describe("pull command", () => {
 
 			// Run pull - should fail because remote emit branch doesn't exist
 			await expect(runTestEffect(pull({ silent: true }))).rejects.toThrow(
-				"does not exist",
+				"Failed to fetch",
 			)
 		})
 	})

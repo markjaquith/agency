@@ -51,7 +51,6 @@
   "dependencies": {
     "@effect/schema": "^0.75.5",
     "effect": "^3.19.6",
-    "isomorphic-git": "^1.36.0",
     "jsonc-parser": "^3.3.1",
     "ora": "^8.1.1"
   },
