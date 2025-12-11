@@ -7,7 +7,7 @@ import {
 	AgencyMetadataServiceLive,
 } from "./services/AgencyMetadataService"
 import { FileSystemService } from "./services/FileSystemService"
-import { IsomorphicGitService as GitService } from "./services/IsomorphicGitService"
+import { GitService } from "./services/GitService"
 
 export interface Command {
 	name: string

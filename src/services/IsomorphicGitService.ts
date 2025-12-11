@@ -287,42 +287,7 @@ export class IsomorphicGitService extends Effect.Service<IsomorphicGitService>()
 
 			findMainBranch: (gitRoot: string) =>
 				Effect.gen(function* () {
-					// Get list of remotes
-					const remotes = yield* Effect.tryPromise({
-						try: () => git.listRemotes({ fs, dir: gitRoot }),
-						catch: () => [] as Array<{ remote: string }>,
-					})
-
-					// Try to resolve a remote (prefer origin > upstream > first)
-					let defaultRemote: string | null = null
-					if (remotes.length > 0) {
-						const remoteNames = remotes.map((r) => r.remote)
-						if (remoteNames.includes("origin")) {
-							defaultRemote = "origin"
-						} else if (remoteNames.includes("upstream")) {
-							defaultRemote = "upstream"
-						} else {
-							defaultRemote = remoteNames[0] || null
-						}
-					}
-
-					// If we have a remote, try remote branches first
-					if (defaultRemote) {
-						const remoteBranches = yield* Effect.tryPromise({
-							try: () =>
-								git.listBranches({ fs, dir: gitRoot, remote: defaultRemote }),
-							catch: () => [] as string[],
-						})
-
-						// Check for common remote branch names
-						for (const branch of ["main", "master"]) {
-							if (remoteBranches.includes(branch)) {
-								return `${defaultRemote}/${branch}`
-							}
-						}
-					}
-
-					// Fall back to local branches
+					// Check local branches for common main branch names
 					const branches = yield* Effect.tryPromise({
 						try: () => git.listBranches({ fs, dir: gitRoot }),
 						catch: () => [] as string[],
@@ -392,79 +357,24 @@ export class IsomorphicGitService extends Effect.Service<IsomorphicGitService>()
 						catch: () => undefined,
 					})
 
-					const mainBranch = configBranch ? String(configBranch) : null
-
-					if (!mainBranch) {
-						// Try to find main branch using findMainBranch
-						const remotes = yield* Effect.tryPromise({
-							try: () => git.listRemotes({ fs, dir: gitRoot }),
-							catch: () => [] as Array<{ remote: string }>,
-						})
-
-						let defaultRemote: string | null = null
-						if (remotes.length > 0) {
-							const remoteNames = remotes.map((r) => r.remote)
-							if (remoteNames.includes("origin")) {
-								defaultRemote = "origin"
-							} else if (remoteNames.includes("upstream")) {
-								defaultRemote = "upstream"
-							} else {
-								defaultRemote = remoteNames[0] || null
-							}
-						}
-
-						// If we have a remote, try remote branches first
-						if (defaultRemote) {
-							const remoteBranches = yield* Effect.tryPromise({
-								try: () =>
-									git.listBranches({ fs, dir: gitRoot, remote: defaultRemote }),
-								catch: () => [] as string[],
-							})
-
-							for (const branch of ["main", "master"]) {
-								if (remoteBranches.includes(branch)) {
-									const remoteBranch = `${defaultRemote}/${branch}`
-									// Save for future use
-									yield* Effect.tryPromise({
-										try: () =>
-											git.setConfig({
-												fs,
-												dir: gitRoot,
-												path: "agency.mainBranch",
-												value: remoteBranch,
-											}),
-										catch: () => {},
-									})
-									// Compare against both remote branch and stripped name
-									return (
-										currentBranch !== remoteBranch && currentBranch !== branch
-									)
-								}
-							}
-						}
-
-						// Fall back to local branches
-						const branches = yield* Effect.tryPromise({
-							try: () => git.listBranches({ fs, dir: gitRoot }),
-							catch: () => [] as string[],
-						})
-
-						for (const branch of ["main", "master"]) {
-							if (branches.includes(branch)) {
-								return currentBranch !== branch
-							}
-						}
-
-						// If we can't determine a main branch, assume current is a feature branch
-						return true
+					if (configBranch) {
+						return currentBranch !== String(configBranch)
 					}
 
-					// Handle both local (main) and remote (origin/main) references
-					const strippedMainBranch =
-						mainBranch.match(/^[^/]+\/(.+)$/)?.[1] || mainBranch
-					return (
-						currentBranch !== mainBranch && currentBranch !== strippedMainBranch
-					)
+					// Try to find main branch
+					const branches = yield* Effect.tryPromise({
+						try: () => git.listBranches({ fs, dir: gitRoot }),
+						catch: () => [] as string[],
+					})
+
+					for (const branch of ["main", "master"]) {
+						if (branches.includes(branch)) {
+							return currentBranch !== branch
+						}
+					}
+
+					// If we can't determine a main branch, assume current is a feature branch
+					return true
 				}).pipe(
 					Effect.mapError(
 						() =>
