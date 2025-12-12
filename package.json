@@ -7,7 +7,7 @@
   "module": "index.ts",
   "type": "module",
   "bin": {
-    "agency": "./cli.ts"
+    "agency": "cli.ts"
   },
   "scripts": {
     "test": "bun test",
