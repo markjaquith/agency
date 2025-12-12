@@ -16,6 +16,10 @@ interface WorkOptions extends BaseCommandOptions {
 	 */
 	claude?: boolean
 	/**
+	 * Additional arguments to pass to the CLI tool
+	 */
+	extraArgs?: string[]
+	/**
 	 * Internal option to disable exec for testing.
 	 * When true, uses spawn instead of exec so tests can complete.
 	 */
@@ -112,11 +116,23 @@ export const work = (options: WorkOptions = {}) =>
 		}
 
 		const cliName = useOpencode ? "opencode" : "claude"
-		const cliArgs = useOpencode
+		const baseArgs = useOpencode
 			? [cliName, "-p", "Start the task"]
 			: [cliName, "Start the task"]
 
-		verboseLog(`Running ${cliName} with task prompt...`)
+		// Append extra args if provided
+		const cliArgs =
+			options.extraArgs && options.extraArgs.length > 0
+				? [...baseArgs, ...options.extraArgs]
+				: baseArgs
+
+		if (options.extraArgs && options.extraArgs.length > 0) {
+			verboseLog(
+				`Running ${cliName} with extra args: ${options.extraArgs.join(" ")}`,
+			)
+		} else {
+			verboseLog(`Running ${cliName} with task prompt...`)
+		}
 
 		// For testing, we need to use spawn instead of exec since exec never returns
 		if (options._noExec) {
@@ -145,7 +161,7 @@ export const work = (options: WorkOptions = {}) =>
 	})
 
 export const help = `
-Usage: agency work [options]
+Usage: agency work [options] [-- extra-args...]
 
 Start working on the task described in TASK.md using OpenCode or Claude Code.
 
@@ -157,15 +173,21 @@ Options:
   --opencode            Force use of OpenCode CLI
   --claude              Force use of Claude Code CLI
 
+Pass-through Arguments:
+  Use -- to pass additional arguments to the underlying CLI tool.
+  Everything after -- will be forwarded to opencode or claude.
+
 Examples:
-  agency work                    # Auto-detect (prefers opencode)
-  agency work --opencode         # Explicitly use OpenCode
-  agency work --claude           # Explicitly use Claude Code
+  agency work                                  # Auto-detect (prefers opencode)
+  agency work --opencode                       # Explicitly use OpenCode
+  agency work --claude                         # Explicitly use Claude Code
+  agency work -- --model claude-sonnet-4-20250514  # Pass custom args to CLI
 
 Notes:
   - Requires TASK.md to exist (run 'agency task' first)
   - Requires either opencode or claude to be installed and available in PATH
   - By default, prefers opencode if both are available
   - Use --opencode or --claude to override auto-detection
+  - Arguments after -- are passed directly to the underlying tool
   - Replaces the current process (agency exits and the tool takes over)
 `

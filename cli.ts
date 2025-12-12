@@ -317,17 +317,24 @@ Example:
 	work: {
 		name: "work",
 		description: "Start working on TASK.md with OpenCode",
-		run: async (_args: string[], options: Record<string, any>) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(workHelp)
 				return
 			}
+
+			// Extract extra args (anything after --)
+			// Note: parseArgs with strict:false and allowPositionals:true will put
+			// args after -- in the positionals array
+			const extraArgs = args.length > 0 ? args : undefined
+
 			await runCommand(
 				work({
 					silent: options.silent,
 					verbose: options.verbose,
 					opencode: options.opencode,
 					claude: options.claude,
+					extraArgs,
 				}),
 			)
 		},

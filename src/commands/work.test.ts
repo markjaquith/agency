@@ -405,4 +405,162 @@ describe("work command", () => {
 			Bun.spawnSync = originalSpawnSync
 		})
 	})
+
+	describe("extra arguments", () => {
+		test("passes extra args to opencode", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawn and Bun.spawnSync
+			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+			let capturedArgs: string[] = []
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			// @ts-ignore - mocking for test
+			Bun.spawn = (args: any, options: any) => {
+				// Allow git commands to pass through
+				if (Array.isArray(args) && args[0] === "git") {
+					return originalSpawn(args, options)
+				}
+				capturedArgs = args
+				return {
+					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
+				}
+			}
+
+			await runTestEffect(
+				work({
+					silent: true,
+					_noExec: true,
+					extraArgs: ["--model", "claude-sonnet-4-20250514"],
+				}),
+			)
+
+			// @ts-ignore - restore
+			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+
+			expect(capturedArgs).toEqual([
+				"opencode",
+				"-p",
+				"Start the task",
+				"--model",
+				"claude-sonnet-4-20250514",
+			])
+		})
+
+		test("passes extra args to claude", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawn and Bun.spawnSync
+			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+			let capturedArgs: string[] = []
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for claude
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			// @ts-ignore - mocking for test
+			Bun.spawn = (args: any, options: any) => {
+				// Allow git commands to pass through
+				if (Array.isArray(args) && args[0] === "git") {
+					return originalSpawn(args, options)
+				}
+				capturedArgs = args
+				return {
+					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
+				}
+			}
+
+			await runTestEffect(
+				work({
+					silent: true,
+					_noExec: true,
+					claude: true,
+					extraArgs: ["--arbitrary", "switches"],
+				}),
+			)
+
+			// @ts-ignore - restore
+			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+
+			expect(capturedArgs).toEqual([
+				"claude",
+				"Start the task",
+				"--arbitrary",
+				"switches",
+			])
+		})
+
+		test("works without extra args", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawn and Bun.spawnSync
+			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+			let capturedArgs: string[] = []
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			// @ts-ignore - mocking for test
+			Bun.spawn = (args: any, options: any) => {
+				// Allow git commands to pass through
+				if (Array.isArray(args) && args[0] === "git") {
+					return originalSpawn(args, options)
+				}
+				capturedArgs = args
+				return {
+					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
+				}
+			}
+
+			await runTestEffect(work({ silent: true, _noExec: true }))
+
+			// @ts-ignore - restore
+			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+
+			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
+		})
+	})
 })
