@@ -11,6 +11,72 @@ import {
 } from "../test-utils"
 import { writeFileSync } from "node:fs"
 
+/**
+ * Helper to mock CLI tool detection and execution for work command tests.
+ * Returns restore function to clean up mocks.
+ *
+ * @param options Configuration for the mock
+ * @param options.hasOpencode Whether 'which opencode' should succeed (default: true)
+ * @param options.hasClaude Whether 'which claude' should succeed (default: false)
+ * @param options.onSpawn Callback when Bun.spawn is called (non-git commands)
+ * @returns Restore function to clean up mocks
+ */
+function mockCliTools(
+	options: {
+		hasOpencode?: boolean
+		hasClaude?: boolean
+		onSpawn?: (args: string[], options: any) => any
+	} = {},
+) {
+	const { hasOpencode = true, hasClaude = false, onSpawn } = options
+
+	const originalSpawn = Bun.spawn
+	const originalSpawnSync = Bun.spawnSync
+
+	// @ts-ignore - mocking for test
+	Bun.spawnSync = (args: any, options: any) => {
+		// Mock which command to return success/failure based on config
+		if (Array.isArray(args) && args[0] === "which") {
+			if (args[1] === "opencode") {
+				return { exitCode: hasOpencode ? 0 : 1 }
+			}
+			if (args[1] === "claude") {
+				return { exitCode: hasClaude ? 0 : 1 }
+			}
+		}
+		return originalSpawnSync(args, options)
+	}
+
+	// @ts-ignore - mocking for test
+	Bun.spawn = (args: any, options: any) => {
+		// Allow git commands to pass through
+		if (Array.isArray(args) && args[0] === "git") {
+			return originalSpawn(args, options)
+		}
+
+		// Call custom handler if provided
+		if (onSpawn) {
+			return onSpawn(args, options)
+		}
+
+		// Default mock response
+		return {
+			exited: Promise.resolve(0),
+			exitCode: 0,
+			stdout: new ReadableStream(),
+			stderr: new ReadableStream(),
+		}
+	}
+
+	// Return restore function
+	return () => {
+		// @ts-ignore - restore
+		Bun.spawn = originalSpawn
+		// @ts-ignore - restore
+		Bun.spawnSync = originalSpawnSync
+	}
+}
+
 describe("work command", () => {
 	let tempDir: string
 	let originalCwd: string
@@ -57,41 +123,22 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn to avoid actually running opencode
-			// But allow git commands to pass through
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let spawnCalled = false
 			let spawnArgs: any[] = []
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				spawnCalled = true
-				spawnArgs = args
-				return {
-					exited: Promise.resolve(0),
-				}
-			}
+			const restore = mockCliTools({
+				onSpawn: (args) => {
+					spawnCalled = true
+					spawnArgs = args
+					return {
+						exited: Promise.resolve(0),
+					}
+				},
+			})
 
 			await runTestEffect(work({ silent: true, _noExec: true }))
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(spawnCalled).toBe(true)
 			expect(spawnArgs).toEqual(["opencode", "-p", "Start the task"])
@@ -104,43 +151,25 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 			let capturedOptions: any = null
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				capturedArgs = args
-				capturedOptions = options
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools({
+				onSpawn: (args, options) => {
+					capturedArgs = args
+					capturedOptions = options
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: new ReadableStream(),
+						stderr: new ReadableStream(),
+					}
+				},
+			})
 
 			await runTestEffect(work({ silent: true, _noExec: true }))
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
 			// On macOS, temp directories can have /private prefix
@@ -157,41 +186,20 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn to simulate failure
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
-
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				return {
+			const restore = mockCliTools({
+				onSpawn: () => ({
 					exited: Promise.resolve(1),
 					exitCode: 1,
 					stdout: new ReadableStream(),
 					stderr: new ReadableStream(),
-				}
-			}
+				}),
+			})
 
 			expect(
 				runTestEffect(work({ silent: true, _noExec: true })),
 			).rejects.toThrow("opencode exited with code 1")
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 		})
 	})
 
@@ -201,32 +209,7 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
-
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools()
 
 			// Capture console.log
 			const originalLog = console.log
@@ -238,10 +221,7 @@ describe("work command", () => {
 			await runTestEffect(work({ silent: false, verbose: true, _noExec: true }))
 
 			console.log = originalLog
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(logMessages.some((msg) => msg.includes("Found TASK.md"))).toBe(
 				true,
@@ -256,32 +236,7 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
-
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools()
 
 			// Capture console.log
 			const originalLog = console.log
@@ -293,10 +248,7 @@ describe("work command", () => {
 			await work({ silent: true, verbose: true, _noExec: true })
 
 			console.log = originalLog
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(logCalled).toBe(false)
 		})
@@ -308,41 +260,23 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn and Bun.spawnSync
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				capturedArgs = args
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools({
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: new ReadableStream(),
+						stderr: new ReadableStream(),
+					}
+				},
+			})
 
 			await runTestEffect(work({ silent: true, _noExec: true, opencode: true }))
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
 		})
@@ -352,41 +286,24 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn and Bun.spawnSync
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for claude
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				capturedArgs = args
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools({
+				hasClaude: true,
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: new ReadableStream(),
+						stderr: new ReadableStream(),
+					}
+				},
+			})
 
 			await runTestEffect(work({ silent: true, _noExec: true, claude: true }))
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(capturedArgs).toEqual(["claude", "Start the task"])
 		})
@@ -410,21 +327,7 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawnSync to simulate opencode not being available
-			const originalSpawnSync = Bun.spawnSync
-
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return failure for opencode
-				if (
-					Array.isArray(args) &&
-					args[0] === "which" &&
-					args[1] === "opencode"
-				) {
-					return { exitCode: 1 }
-				}
-				return originalSpawnSync(args, options)
-			}
+			const restore = mockCliTools({ hasOpencode: false })
 
 			expect(
 				runTestEffect(work({ silent: true, _noExec: true, opencode: true })),
@@ -432,8 +335,7 @@ describe("work command", () => {
 				"opencode CLI tool not found. Please install OpenCode or remove the --opencode flag.",
 			)
 
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 		})
 
 		test("throws error when --claude is used but claude is not installed", async () => {
@@ -441,21 +343,7 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawnSync to simulate claude not being available
-			const originalSpawnSync = Bun.spawnSync
-
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return failure for claude
-				if (
-					Array.isArray(args) &&
-					args[0] === "which" &&
-					args[1] === "claude"
-				) {
-					return { exitCode: 1 }
-				}
-				return originalSpawnSync(args, options)
-			}
+			const restore = mockCliTools({ hasClaude: false })
 
 			expect(
 				runTestEffect(work({ silent: true, _noExec: true, claude: true })),
@@ -463,8 +351,7 @@ describe("work command", () => {
 				"claude CLI tool not found. Please install Claude Code or remove the --claude flag.",
 			)
 
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 		})
 	})
 
@@ -474,34 +361,19 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn and Bun.spawnSync
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				capturedArgs = args
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools({
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: new ReadableStream(),
+						stderr: new ReadableStream(),
+					}
+				},
+			})
 
 			await runTestEffect(
 				work({
@@ -511,10 +383,7 @@ describe("work command", () => {
 				}),
 			)
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(capturedArgs).toEqual([
 				"opencode",
@@ -530,34 +399,20 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn and Bun.spawnSync
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for claude
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				capturedArgs = args
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools({
+				hasClaude: true,
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: new ReadableStream(),
+						stderr: new ReadableStream(),
+					}
+				},
+			})
 
 			await runTestEffect(
 				work({
@@ -568,10 +423,7 @@ describe("work command", () => {
 				}),
 			)
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(capturedArgs).toEqual([
 				"claude",
@@ -586,41 +438,23 @@ describe("work command", () => {
 			const taskPath = join(tempDir, "TASK.md")
 			writeFileSync(taskPath, "# Test Task\n\nSome task content")
 
-			// Mock Bun.spawn and Bun.spawnSync
-			const originalSpawn = Bun.spawn
-			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 
-			// @ts-ignore - mocking for test
-			Bun.spawnSync = (args: any, options: any) => {
-				// Mock which command to return success for opencode
-				if (Array.isArray(args) && args[0] === "which") {
-					return { exitCode: 0 }
-				}
-				return originalSpawnSync(args, options)
-			}
-
-			// @ts-ignore - mocking for test
-			Bun.spawn = (args: any, options: any) => {
-				// Allow git commands to pass through
-				if (Array.isArray(args) && args[0] === "git") {
-					return originalSpawn(args, options)
-				}
-				capturedArgs = args
-				return {
-					exited: Promise.resolve(0),
-					exitCode: 0,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}
-			}
+			const restore = mockCliTools({
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: new ReadableStream(),
+						stderr: new ReadableStream(),
+					}
+				},
+			})
 
 			await runTestEffect(work({ silent: true, _noExec: true }))
 
-			// @ts-ignore - restore
-			Bun.spawn = originalSpawn
-			// @ts-ignore - restore
-			Bun.spawnSync = originalSpawnSync
+			restore()
 
 			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
 		})
