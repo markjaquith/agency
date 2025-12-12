@@ -15,7 +15,11 @@
     "format:check": "prettier --check .",
     "knip": "knip --production",
     "pushable": "./scripts/pushable",
-    "check-commit-msg": "./scripts/check-commit-msg"
+    "check-commit-msg": "./scripts/check-commit-msg",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "bun run build && changeset publish --provenance",
+    "build": "bun build cli.ts --outdir dist --target node --minify"
   },
   "exports": {
     ".": {
@@ -38,6 +42,7 @@
     "personal-agents"
   ],
   "devDependencies": {
+    "@changesets/cli": "^2.29.8",
     "@types/bun": "latest",
     "knip": "^5.70.1",
     "prettier": "^3.6.2"
