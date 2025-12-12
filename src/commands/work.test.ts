@@ -60,8 +60,18 @@ describe("work command", () => {
 			// Mock Bun.spawn to avoid actually running opencode
 			// But allow git commands to pass through
 			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
 			let spawnCalled = false
 			let spawnArgs: any[] = []
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
 
 			// @ts-ignore - mocking for test
 			Bun.spawn = (args: any, options: any) => {
@@ -80,6 +90,8 @@ describe("work command", () => {
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
 
 			expect(spawnCalled).toBe(true)
 			expect(spawnArgs).toEqual(["opencode", "-p", "Start the task"])
@@ -94,8 +106,18 @@ describe("work command", () => {
 
 			// Mock Bun.spawn
 			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
 			let capturedArgs: string[] = []
 			let capturedOptions: any = null
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
 
 			// @ts-ignore - mocking for test
 			Bun.spawn = (args: any, options: any) => {
@@ -117,6 +139,8 @@ describe("work command", () => {
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
 
 			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
 			// On macOS, temp directories can have /private prefix
@@ -135,6 +159,16 @@ describe("work command", () => {
 
 			// Mock Bun.spawn to simulate failure
 			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
 
 			// @ts-ignore - mocking for test
 			Bun.spawn = (args: any, options: any) => {
@@ -156,6 +190,8 @@ describe("work command", () => {
 
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
 		})
 	})
 
@@ -167,6 +203,17 @@ describe("work command", () => {
 
 			// Mock Bun.spawn
 			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
 			// @ts-ignore - mocking for test
 			Bun.spawn = (args: any, options: any) => {
 				// Allow git commands to pass through
@@ -193,6 +240,8 @@ describe("work command", () => {
 			console.log = originalLog
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
 
 			expect(logMessages.some((msg) => msg.includes("Found TASK.md"))).toBe(
 				true,
@@ -209,6 +258,17 @@ describe("work command", () => {
 
 			// Mock Bun.spawn
 			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
 			// @ts-ignore - mocking for test
 			Bun.spawn = (args: any, options: any) => {
 				// Allow git commands to pass through
@@ -235,6 +295,8 @@ describe("work command", () => {
 			console.log = originalLog
 			// @ts-ignore - restore
 			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
 
 			expect(logCalled).toBe(false)
 		})
