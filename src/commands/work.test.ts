@@ -239,4 +239,170 @@ describe("work command", () => {
 			expect(logCalled).toBe(false)
 		})
 	})
+
+	describe("CLI selection flags", () => {
+		test("--opencode flag forces use of OpenCode", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawn and Bun.spawnSync
+			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+			let capturedArgs: string[] = []
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for opencode
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			// @ts-ignore - mocking for test
+			Bun.spawn = (args: any, options: any) => {
+				// Allow git commands to pass through
+				if (Array.isArray(args) && args[0] === "git") {
+					return originalSpawn(args, options)
+				}
+				capturedArgs = args
+				return {
+					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
+				}
+			}
+
+			await runTestEffect(work({ silent: true, _noExec: true, opencode: true }))
+
+			// @ts-ignore - restore
+			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+
+			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
+		})
+
+		test("--claude flag forces use of Claude Code", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawn and Bun.spawnSync
+			const originalSpawn = Bun.spawn
+			const originalSpawnSync = Bun.spawnSync
+			let capturedArgs: string[] = []
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return success for claude
+				if (Array.isArray(args) && args[0] === "which") {
+					return { exitCode: 0 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			// @ts-ignore - mocking for test
+			Bun.spawn = (args: any, options: any) => {
+				// Allow git commands to pass through
+				if (Array.isArray(args) && args[0] === "git") {
+					return originalSpawn(args, options)
+				}
+				capturedArgs = args
+				return {
+					exited: Promise.resolve(0),
+					exitCode: 0,
+					stdout: new ReadableStream(),
+					stderr: new ReadableStream(),
+				}
+			}
+
+			await runTestEffect(work({ silent: true, _noExec: true, claude: true }))
+
+			// @ts-ignore - restore
+			Bun.spawn = originalSpawn
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+
+			expect(capturedArgs).toEqual(["claude", "--prompt", "Start the task"])
+		})
+
+		test("throws error when both --opencode and --claude flags are used", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			expect(
+				runTestEffect(
+					work({ silent: true, _noExec: true, opencode: true, claude: true }),
+				),
+			).rejects.toThrow(
+				"Cannot use both --opencode and --claude flags together. Choose one.",
+			)
+		})
+
+		test("throws error when --opencode is used but opencode is not installed", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawnSync to simulate opencode not being available
+			const originalSpawnSync = Bun.spawnSync
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return failure for opencode
+				if (
+					Array.isArray(args) &&
+					args[0] === "which" &&
+					args[1] === "opencode"
+				) {
+					return { exitCode: 1 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			expect(
+				runTestEffect(work({ silent: true, _noExec: true, opencode: true })),
+			).rejects.toThrow(
+				"opencode CLI tool not found. Please install OpenCode or remove the --opencode flag.",
+			)
+
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+		})
+
+		test("throws error when --claude is used but claude is not installed", async () => {
+			// Create TASK.md
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+
+			// Mock Bun.spawnSync to simulate claude not being available
+			const originalSpawnSync = Bun.spawnSync
+
+			// @ts-ignore - mocking for test
+			Bun.spawnSync = (args: any, options: any) => {
+				// Mock which command to return failure for claude
+				if (
+					Array.isArray(args) &&
+					args[0] === "which" &&
+					args[1] === "claude"
+				) {
+					return { exitCode: 1 }
+				}
+				return originalSpawnSync(args, options)
+			}
+
+			expect(
+				runTestEffect(work({ silent: true, _noExec: true, claude: true })),
+			).rejects.toThrow(
+				"claude CLI tool not found. Please install Claude Code or remove the --claude flag.",
+			)
+
+			// @ts-ignore - restore
+			Bun.spawnSync = originalSpawnSync
+		})
+	})
 })

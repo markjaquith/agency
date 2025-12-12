@@ -25,6 +25,7 @@ import { FileSystemService } from "./src/services/FileSystemService"
 import { PromptService } from "./src/services/PromptService"
 import { TemplateService } from "./src/services/TemplateService"
 import { OpencodeService } from "./src/services/OpencodeService"
+import { ClaudeService } from "./src/services/ClaudeService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -34,6 +35,7 @@ const CliLayer = Layer.mergeAll(
 	PromptService.Default,
 	TemplateService.Default,
 	OpencodeService.Default,
+	ClaudeService.Default,
 )
 
 /**
@@ -324,6 +326,8 @@ Example:
 				work({
 					silent: options.silent,
 					verbose: options.verbose,
+					opencode: options.opencode,
+					claude: options.claude,
 				}),
 			)
 		},
@@ -533,6 +537,12 @@ try {
 				type: "string",
 			},
 			"dry-run": {
+				type: "boolean",
+			},
+			opencode: {
+				type: "boolean",
+			},
+			claude: {
 				type: "boolean",
 			},
 		},

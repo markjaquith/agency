@@ -8,6 +8,14 @@ import { execvp } from "../utils/exec"
 
 interface WorkOptions extends BaseCommandOptions {
 	/**
+	 * Force use of OpenCode CLI
+	 */
+	opencode?: boolean
+	/**
+	 * Force use of Claude Code CLI
+	 */
+	claude?: boolean
+	/**
 	 * Internal option to disable exec for testing.
 	 * When true, uses spawn instead of exec so tests can complete.
 	 */
@@ -32,48 +40,132 @@ export const work = (options: WorkOptions = {}) =>
 		}
 
 		verboseLog(`Found TASK.md at: ${taskPath}`)
-		verboseLog("Running opencode with task prompt...")
 
 		// Change to git root before executing
 		process.chdir(gitRoot)
 
+		// Check for conflicting flags
+		if (options.opencode && options.claude) {
+			return yield* Effect.fail(
+				new Error(
+					"Cannot use both --opencode and --claude flags together. Choose one.",
+				),
+			)
+		}
+
+		// Check which CLI tool is available
+		const hasOpencode = yield* Effect.tryPromise({
+			try: async () => {
+				const result = Bun.spawnSync(["which", "opencode"], {
+					stdout: "ignore",
+					stderr: "ignore",
+				})
+				return result.exitCode === 0
+			},
+			catch: () => false,
+		})
+
+		const hasClaude = yield* Effect.tryPromise({
+			try: async () => {
+				const result = Bun.spawnSync(["which", "claude"], {
+					stdout: "ignore",
+					stderr: "ignore",
+				})
+				return result.exitCode === 0
+			},
+			catch: () => false,
+		})
+
+		// Determine which CLI to use based on flags or auto-detection
+		let useOpencode: boolean
+		if (options.opencode) {
+			if (!hasOpencode) {
+				return yield* Effect.fail(
+					new Error(
+						"opencode CLI tool not found. Please install OpenCode or remove the --opencode flag.",
+					),
+				)
+			}
+			useOpencode = true
+			verboseLog("Using opencode (explicitly requested)")
+		} else if (options.claude) {
+			if (!hasClaude) {
+				return yield* Effect.fail(
+					new Error(
+						"claude CLI tool not found. Please install Claude Code or remove the --claude flag.",
+					),
+				)
+			}
+			useOpencode = false
+			verboseLog("Using claude (explicitly requested)")
+		} else {
+			// Auto-detect
+			if (!hasOpencode && !hasClaude) {
+				return yield* Effect.fail(
+					new Error(
+						"Neither opencode nor claude CLI tool found. Please install OpenCode or Claude Code.",
+					),
+				)
+			}
+			useOpencode = hasOpencode
+			verboseLog(`Using ${useOpencode ? "opencode" : "claude"} (auto-detected)`)
+		}
+
+		const cliName = useOpencode ? "opencode" : "claude"
+		const cliArgs = useOpencode
+			? [cliName, "-p", "Start the task"]
+			: [cliName, "--prompt", "Start the task"]
+
+		verboseLog(`Running ${cliName} with task prompt...`)
+
 		// For testing, we need to use spawn instead of exec since exec never returns
 		if (options._noExec) {
-			const result = yield* spawnProcess(["opencode", "-p", "Start the task"], {
+			const result = yield* spawnProcess(cliArgs, {
 				cwd: gitRoot,
 				stdout: "inherit",
 				stderr: "inherit",
 			}).pipe(
 				Effect.catchAll((error) =>
-					Effect.fail(new Error(`opencode exited with code ${error.exitCode}`)),
+					Effect.fail(
+						new Error(`${cliName} exited with code ${error.exitCode}`),
+					),
 				),
 			)
 
 			if (result.exitCode !== 0) {
 				return yield* Effect.fail(
-					new Error(`opencode exited with code ${result.exitCode}`),
+					new Error(`${cliName} exited with code ${result.exitCode}`),
 				)
 			}
 		} else {
-			// Use execvp to replace the current process with opencode
+			// Use execvp to replace the current process with the CLI tool
 			// This will never return - the process is completely replaced
-			execvp("opencode", ["opencode", "-p", "Start the task"])
+			execvp(cliName, cliArgs)
 		}
 	})
 
 export const help = `
 Usage: agency work [options]
 
-Start working on the task described in TASK.md using OpenCode.
+Start working on the task described in TASK.md using OpenCode or Claude Code.
 
-This command replaces the current process with OpenCode, launching it with
-a prompt to get started on the task described in your TASK.md file.
+This command replaces the current process with OpenCode (if available) or
+Claude Code (if OpenCode is not available), launching it with a prompt to
+get started on the task described in your TASK.md file.
 
-Example:
-  agency work                    # Start working on TASK.md
+Options:
+  --opencode            Force use of OpenCode CLI
+  --claude              Force use of Claude Code CLI
+
+Examples:
+  agency work                    # Auto-detect (prefers opencode)
+  agency work --opencode         # Explicitly use OpenCode
+  agency work --claude           # Explicitly use Claude Code
 
 Notes:
   - Requires TASK.md to exist (run 'agency task' first)
-  - Requires opencode to be installed and available in PATH
-  - Replaces the current process (agency exits and opencode takes over)
+  - Requires either opencode or claude to be installed and available in PATH
+  - By default, prefers opencode if both are available
+  - Use --opencode or --claude to override auto-detection
+  - Replaces the current process (agency exits and the tool takes over)
 `

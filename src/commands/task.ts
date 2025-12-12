@@ -7,6 +7,7 @@ import { FileSystemService } from "../services/FileSystemService"
 import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
 import { OpencodeService } from "../services/OpencodeService"
+import { ClaudeService } from "../services/ClaudeService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
@@ -38,6 +39,7 @@ export const task = (options: TaskOptions = {}) =>
 		const promptService = yield* PromptService
 		const templateService = yield* TemplateService
 		const opencodeService = yield* OpencodeService
+		const claudeService = yield* ClaudeService
 
 		// Determine target path
 		let targetPath: string
@@ -402,6 +404,16 @@ export const task = (options: TaskOptions = {}) =>
 			}
 
 			log(done(`Created ${highlight.file(fileName)}`))
+		}
+
+		// Handle CLAUDE.md injection
+		const claudeResult = yield* claudeService.injectAgencySection(targetPath)
+		if (claudeResult.created) {
+			createdFiles.push("CLAUDE.md")
+			log(done(`Created ${highlight.file("CLAUDE.md")}`))
+		} else if (claudeResult.modified) {
+			createdFiles.push("CLAUDE.md")
+			log(done(`Updated ${highlight.file("CLAUDE.md")}`))
 		}
 
 		// Auto-detect base branch for this feature branch
