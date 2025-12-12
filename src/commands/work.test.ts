@@ -326,7 +326,7 @@ describe("work command", () => {
 			// @ts-ignore - restore
 			Bun.spawnSync = originalSpawnSync
 
-			expect(capturedArgs).toEqual(["claude", "--prompt", "Start the task"])
+			expect(capturedArgs).toEqual(["claude", "Start the task"])
 		})
 
 		test("throws error when both --opencode and --claude flags are used", async () => {

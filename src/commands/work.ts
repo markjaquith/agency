@@ -114,7 +114,7 @@ export const work = (options: WorkOptions = {}) =>
 		const cliName = useOpencode ? "opencode" : "claude"
 		const cliArgs = useOpencode
 			? [cliName, "-p", "Start the task"]
-			: [cliName, "--prompt", "Start the task"]
+			: [cliName, "Start the task"]
 
 		verboseLog(`Running ${cliName} with task prompt...`)
 
