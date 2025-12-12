@@ -45,6 +45,15 @@ export class TemplateService extends Effect.Service<TemplateService>()(
 					try: async () => {
 						const templatesDir = getTemplatesDir()
 
+						// Check if templates directory exists first
+						const templatesFile = Bun.file(templatesDir)
+						const exists = await templatesFile.exists()
+
+						if (!exists) {
+							// Return empty array if templates directory doesn't exist
+							return [] as readonly string[]
+						}
+
 						const entries = await Array.fromAsync(
 							new Bun.Glob("*/AGENTS.md").scan({ cwd: templatesDir }),
 						)

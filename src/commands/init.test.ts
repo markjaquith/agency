@@ -281,4 +281,31 @@ describe("init command", () => {
 			await rm(configDir, { recursive: true, force: true })
 		}
 	})
+
+	test("works when templates directory does not exist", async () => {
+		const tempDir = await mkdtemp(join(tmpdir(), "agency-test-"))
+		const originalConfigDir = process.env.AGENCY_CONFIG_DIR
+		try {
+			await initGitRepo(tempDir)
+			// Point to a non-existent config directory
+			const configDir = join(tmpdir(), `agency-config-${Date.now()}`)
+			process.env.AGENCY_CONFIG_DIR = configDir
+			// Verify templates directory doesn't exist
+			expect(await Bun.file(join(configDir, "templates")).exists()).toBe(false)
+			// Init should work even without templates directory
+			await runTestEffect(
+				init({ template: "new-template", silent: true, cwd: tempDir }),
+			)
+			expect(await getGitConfig("agency.template", tempDir)).toBe(
+				"new-template",
+			)
+		} finally {
+			if (originalConfigDir !== undefined) {
+				process.env.AGENCY_CONFIG_DIR = originalConfigDir
+			} else {
+				delete process.env.AGENCY_CONFIG_DIR
+			}
+			await rm(tempDir, { recursive: true, force: true })
+		}
+	})
 })
