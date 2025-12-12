@@ -4,6 +4,10 @@
   "description": "Manages personal agents files",
   "license": "MIT",
   "author": "Mark Jaquith",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/markjaquith/agency"
+  },
   "module": "index.ts",
   "type": "module",
   "bin": {
