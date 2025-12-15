@@ -1,4 +1,4 @@
-import { resolve, join } from "path"
+import { resolve, join, dirname } from "path"
 import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
@@ -17,6 +17,7 @@ import {
 	extractCleanBranch,
 	makeSourceBranchName,
 } from "../utils/pr-branch"
+import { getTopLevelDir, dirToGlobPattern } from "../utils/glob"
 
 interface TaskOptions extends BaseCommandOptions {
 	path?: string
@@ -72,6 +73,9 @@ export const task = (options: TaskOptions = {}) =>
 
 		const createdFiles: string[] = []
 		const injectedFiles: string[] = []
+		// Track directories that we create during this task
+		// These will be converted to glob patterns for filtering
+		const createdDirs = new Set<string>()
 
 		// Check if initialized (has template in git config)
 		const templateName = yield* getTemplateName(targetPath)
@@ -377,6 +381,18 @@ export const task = (options: TaskOptions = {}) =>
 				continue
 			}
 
+			// Check if this file is in a subdirectory that doesn't exist yet
+			// If so, we'll track it for glob pattern creation
+			const topLevelDir = getTopLevelDir(fileName)
+			if (topLevelDir && source === "template") {
+				const dirPath = resolve(targetPath, topLevelDir)
+				const dirExists = yield* fs.exists(dirPath)
+				if (!dirExists) {
+					createdDirs.add(topLevelDir)
+					verboseLog(`Will create new directory: ${topLevelDir}`)
+				}
+			}
+
 			let content: string
 
 			// Try to read from template first, fall back to default content
@@ -395,12 +411,24 @@ export const task = (options: TaskOptions = {}) =>
 				verboseLog(`Replaced {task} placeholder with: ${taskDescription}`)
 			}
 
+			// Ensure parent directory exists before writing file
+			const parentDir = dirname(targetFilePath)
+			const parentExists = yield* fs.exists(parentDir)
+			if (!parentExists) {
+				yield* fs.createDirectory(parentDir)
+			}
+
 			yield* fs.writeFile(targetFilePath, content)
 			createdFiles.push(fileName)
 
 			// Track backpack files (excluding TASK.md and AGENCY.md which are always filtered)
+			// For files in new directories, the glob pattern will be added below
 			if (fileName !== "TASK.md" && fileName !== "AGENCY.md") {
-				injectedFiles.push(fileName)
+				// Only track individual files if they're NOT in a newly created directory
+				// (directories will be tracked as glob patterns)
+				if (!topLevelDir || !createdDirs.has(topLevelDir)) {
+					injectedFiles.push(fileName)
+				}
 			}
 
 			log(done(`Created ${highlight.file(fileName)}`))
@@ -464,6 +492,14 @@ export const task = (options: TaskOptions = {}) =>
 		const cleanBranch =
 			extractCleanBranch(finalBranch, config.sourceBranchPattern) || finalBranch
 		const emitBranchName = makeEmitBranchName(cleanBranch, config.emitBranch)
+
+		// Convert created directories to glob patterns and add to injectedFiles
+		// This allows filtering all files in new directories during emit
+		for (const dir of createdDirs) {
+			const globPattern = dirToGlobPattern(dir)
+			injectedFiles.push(globPattern)
+			verboseLog(`Tracking directory as glob pattern: ${globPattern}`)
+		}
 
 		// Create agency.json metadata file
 		const metadata = {
