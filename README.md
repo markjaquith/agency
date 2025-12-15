@@ -22,17 +22,17 @@ Open `TASK.md` in the system editor for editing. Nice if you have to paste in la
 
 Launch Opencode to work on the current task defined in `TASK.md`. All your context will be loaded.
 
-### `agency pr [base-branch]`
+### `agency emit [base-branch]`
 
 Create an emit branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
 
 ### `agency push`
 
-Runs `agency pr`, pushes the branch, and then switches back to the source branch.
+Runs `agency emit`, pushes the branch, and then switches back to the source branch.
 
 ### `agency merge`
 
-Runs `agency pr`, and then merges the PR back into the base branch locally.
+Runs `agency emit`, and then merges the PR back into the base branch locally.
 
 ## Other Commands
 
