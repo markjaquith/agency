@@ -971,6 +971,22 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 		log(done("TASK.md edited"))
 	})
 
+export const editHelp = `
+Usage: agency edit [options]
+
+Open TASK.md in the system editor for editing.
+
+Notes:
+  - Requires TASK.md to exist (run 'agency task' first)
+  - Respects VISUAL and EDITOR environment variables
+  - On macOS, defaults to 'open' which uses the default app for .md files
+  - On other platforms, defaults to 'vim'
+  - The command waits for the editor to close before returning
+
+Example:
+  agency edit                   # Open TASK.md in default editor
+`
+
 export const help = `
 Usage: agency task [branch-name] [options]
 
