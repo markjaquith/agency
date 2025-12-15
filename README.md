@@ -26,13 +26,24 @@ Launch Opencode to work on the current task defined in `TASK.md`. All your conte
 
 Create an emit branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
 
-### `agency push`
+### `agency push [base-branch]`
 
 Runs `agency emit`, pushes the branch, and then switches back to the source branch.
+
+**Options:**
+
+- `--pr` - Open GitHub PR in browser after pushing (requires `gh` CLI)
+- `--force` - Force push to remote if branch has diverged
+- `--branch <name>` - Custom name for emit branch
 
 ### `agency merge`
 
 Runs `agency emit`, and then merges the PR back into the base branch locally.
+
+**Options:**
+
+- `--squash` - Use squash merge instead of regular merge (stages changes, requires manual commit)
+- `--push` - Push the base branch to origin after merging
 
 ## Other Commands
 
