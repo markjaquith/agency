@@ -8,6 +8,10 @@ import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
 import { OpencodeService } from "../services/OpencodeService"
 import { ClaudeService } from "../services/ClaudeService"
+import {
+	AgencyMetadataService,
+	AgencyMetadataServiceLive,
+} from "../services/AgencyMetadataService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
@@ -25,14 +29,302 @@ interface TaskOptions extends BaseCommandOptions {
 	branch?: string
 	from?: string
 	fromCurrent?: boolean
+	continue?: boolean
 }
 
 interface TaskEditOptions extends BaseCommandOptions {}
+
+/**
+ * Continue a task by creating a new branch with the same agency files.
+ * This is useful after a PR is merged and you want to continue working on the task.
+ */
+const taskContinue = (options: TaskOptions) =>
+	Effect.gen(function* () {
+		const { silent = false } = options
+		const { log, verboseLog } = createLoggers(options)
+
+		const git = yield* GitService
+		const configService = yield* ConfigService
+		const fs = yield* FileSystemService
+		const promptService = yield* PromptService
+
+		// Determine target path
+		let targetPath: string
+
+		if (options.path) {
+			targetPath = resolve(options.path)
+			const isRoot = yield* git.isGitRoot(targetPath)
+			if (!isRoot) {
+				return yield* Effect.fail(
+					new Error(
+						"The specified path is not the root of a git repository. Please provide a path to the top-level directory of a git checkout.",
+					),
+				)
+			}
+		} else {
+			const isRepo = yield* git.isInsideGitRepo(process.cwd())
+			if (!isRepo) {
+				return yield* Effect.fail(
+					new Error(
+						"Not in a git repository. Please run this command inside a git repo.",
+					),
+				)
+			}
+			targetPath = yield* git.getGitRoot(process.cwd())
+		}
+
+		// Check if initialized (has template in git config)
+		const templateName = yield* getTemplateName(targetPath)
+		if (!templateName) {
+			return yield* Effect.fail(new RepositoryNotInitializedError())
+		}
+
+		const currentBranch = yield* git.getCurrentBranch(targetPath)
+		verboseLog(`Current branch: ${highlight.branch(currentBranch)}`)
+
+		// Load agency config for branch patterns
+		const config = yield* configService.loadConfig()
+
+		// Verify we're on an agency source branch by checking if agency.json exists
+		const agencyJsonPath = resolve(targetPath, "agency.json")
+		const hasAgencyJson = yield* fs.exists(agencyJsonPath)
+
+		if (!hasAgencyJson) {
+			return yield* Effect.fail(
+				new Error(
+					`No agency.json found on current branch ${highlight.branch(currentBranch)}.\n` +
+						`The --continue flag requires you to be on an agency source branch with existing agency files.`,
+				),
+			)
+		}
+
+		// Read the existing agency.json to get metadata
+		const existingMetadata = yield* Effect.gen(function* () {
+			const service = yield* AgencyMetadataService
+			return yield* service.readFromDisk(targetPath)
+		}).pipe(Effect.provide(AgencyMetadataServiceLive))
+
+		if (!existingMetadata) {
+			return yield* Effect.fail(
+				new Error(
+					`Failed to read agency.json on branch ${highlight.branch(currentBranch)}.`,
+				),
+			)
+		}
+
+		verboseLog(
+			`Existing metadata: ${JSON.stringify(existingMetadata, null, 2)}`,
+		)
+
+		// Get the list of agency files to copy
+		const filesToCopy = [
+			"agency.json",
+			"TASK.md",
+			"AGENCY.md",
+			...existingMetadata.injectedFiles,
+		]
+		verboseLog(`Files to copy: ${filesToCopy.join(", ")}`)
+
+		// Read all the existing files content before switching branches
+		const fileContents = new Map<string, string>()
+		for (const file of filesToCopy) {
+			const filePath = resolve(targetPath, file)
+			const exists = yield* fs.exists(filePath)
+			if (exists) {
+				const content = yield* fs.readFile(filePath)
+				fileContents.set(file, content)
+				verboseLog(`Read ${file} (${content.length} bytes)`)
+			} else {
+				verboseLog(`File ${file} not found, skipping`)
+			}
+		}
+
+		// Prompt for new branch name if not provided
+		let branchName = options.branch
+		if (!branchName) {
+			if (silent) {
+				return yield* Effect.fail(
+					new Error(
+						"Branch name is required with --continue in silent mode. Use --branch to specify one.",
+					),
+				)
+			}
+			branchName = yield* promptService.prompt("New branch name: ")
+			if (!branchName) {
+				return yield* Effect.fail(
+					new Error("Branch name is required to continue the task."),
+				)
+			}
+		}
+
+		// Apply source pattern to get the full source branch name
+		const sourceBranchName = makeSourceBranchName(
+			branchName,
+			config.sourceBranchPattern,
+		)
+
+		// Check if the new branch already exists
+		const branchExists = yield* git.branchExists(targetPath, sourceBranchName)
+		if (branchExists) {
+			return yield* Effect.fail(
+				new Error(
+					`Branch ${highlight.branch(sourceBranchName)} already exists.\n` +
+						`Choose a different branch name.`,
+				),
+			)
+		}
+
+		// Determine base branch to branch from
+		let baseBranchToBranchFrom: string | undefined
+
+		if (options.from) {
+			baseBranchToBranchFrom = options.from
+			const exists = yield* git.branchExists(targetPath, baseBranchToBranchFrom)
+			if (!exists) {
+				return yield* Effect.fail(
+					new Error(
+						`Branch ${highlight.branch(baseBranchToBranchFrom)} does not exist.`,
+					),
+				)
+			}
+		} else {
+			// Default: branch from main upstream branch
+			baseBranchToBranchFrom =
+				(yield* git.getMainBranchConfig(targetPath)) ||
+				(yield* git.findMainBranch(targetPath)) ||
+				undefined
+
+			// Try to auto-detect from remote
+			if (!baseBranchToBranchFrom) {
+				const remote = yield* git
+					.resolveRemote(targetPath)
+					.pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				const commonBases: string[] = []
+				if (remote) {
+					commonBases.push(`${remote}/main`, `${remote}/master`)
+				}
+				commonBases.push("main", "master")
+
+				for (const base of commonBases) {
+					const exists = yield* git.branchExists(targetPath, base)
+					if (exists) {
+						baseBranchToBranchFrom = base
+						break
+					}
+				}
+			}
+		}
+
+		if (!baseBranchToBranchFrom) {
+			return yield* Effect.fail(
+				new Error(
+					"Could not determine base branch. Use --from to specify one.",
+				),
+			)
+		}
+
+		verboseLog(
+			`Creating new branch ${highlight.branch(sourceBranchName)} from ${highlight.branch(baseBranchToBranchFrom)}`,
+		)
+
+		// Create the new branch from the base branch
+		yield* git.createBranch(
+			sourceBranchName,
+			targetPath,
+			baseBranchToBranchFrom,
+		)
+		log(
+			done(
+				`Created and switched to branch ${highlight.branch(sourceBranchName)} based on ${highlight.branch(baseBranchToBranchFrom)}`,
+			),
+		)
+
+		// Calculate the new emit branch name
+		const newEmitBranchName = makeEmitBranchName(branchName, config.emitBranch)
+		verboseLog(`New emit branch name: ${newEmitBranchName}`)
+
+		// Write all the files to the new branch
+		const createdFiles: string[] = []
+
+		for (const [file, content] of fileContents) {
+			const filePath = resolve(targetPath, file)
+
+			// Ensure parent directory exists
+			const parentDir = resolve(filePath, "..")
+			const parentExists = yield* fs.exists(parentDir)
+			if (!parentExists) {
+				yield* fs.runCommand(["mkdir", "-p", parentDir])
+			}
+
+			let fileContent = content
+
+			// Update emitBranch in agency.json
+			if (file === "agency.json") {
+				const metadata = JSON.parse(content)
+				metadata.emitBranch = newEmitBranchName
+				metadata.createdAt = new Date().toISOString()
+				fileContent = JSON.stringify(metadata, null, 2) + "\n"
+				verboseLog(
+					`Updated agency.json with new emitBranch: ${newEmitBranchName}`,
+				)
+			}
+
+			// Update emitBranch in opencode.json (if it has one)
+			if (file === "opencode.json" || file.endsWith("/opencode.json")) {
+				try {
+					const opencodeConfig = JSON.parse(content)
+					if (opencodeConfig.emitBranch) {
+						opencodeConfig.emitBranch = newEmitBranchName
+						fileContent = JSON.stringify(opencodeConfig, null, "\t") + "\n"
+						verboseLog(
+							`Updated ${file} with new emitBranch: ${newEmitBranchName}`,
+						)
+					}
+				} catch {
+					// If we can't parse it, just copy as-is
+				}
+			}
+
+			yield* fs.writeFile(filePath, fileContent)
+			createdFiles.push(file)
+			log(done(`Created ${highlight.file(file)}`))
+		}
+
+		// Git add and commit the created files
+		if (createdFiles.length > 0) {
+			yield* Effect.gen(function* () {
+				yield* git.gitAdd(createdFiles, targetPath)
+				yield* git.gitCommit("chore: agency task --continue", targetPath, {
+					noVerify: true,
+				})
+				verboseLog(
+					`Committed ${createdFiles.length} file${plural(createdFiles.length)}`,
+				)
+			}).pipe(
+				Effect.catchAll((err) => {
+					verboseLog(`Failed to commit: ${err}`)
+					return Effect.void
+				}),
+			)
+		}
+
+		log(
+			info(
+				`Continued task with ${createdFiles.length} file${plural(createdFiles.length)} from ${highlight.branch(currentBranch)}`,
+			),
+		)
+	})
 
 export const task = (options: TaskOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
+
+		// Handle --continue flag
+		if (options.continue) {
+			return yield* taskContinue(options)
+		}
 
 		const git = yield* GitService
 		const configService = yield* ConfigService
@@ -643,7 +935,6 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 	Effect.gen(function* () {
 		const { log, verboseLog } = createLoggers(options)
 
-		const git = yield* GitService
 		const fs = yield* FileSystemService
 
 		const gitRoot = yield* ensureGitRepo()
@@ -702,6 +993,19 @@ Options:
   -b, --branch      Branch name to create (alternative to positional arg)
   --from <branch>   Branch to branch from instead of main upstream branch
   --from-current    Branch from the current branch
+  -c, --continue    Continue a task by copying agency files to a new branch
+
+Continue Mode (--continue):
+  After a PR is merged, use '--continue' to create a new branch that preserves
+  your agency files (TASK.md, AGENCY.md, opencode.json, agency.json, and all
+  backpacked files). This allows you to continue working on a task after its
+  PR has been merged to main.
+  
+  The continue workflow:
+  1. Be on an agency source branch with agency files
+  2. Run 'agency task --continue <new-branch-name>'
+  3. A new branch is created from main with all your agency files
+  4. The emitBranch in agency.json is updated for the new branch
 
 Base Branch Selection:
   By default, 'agency task' branches from the main upstream branch (e.g., origin/main).
@@ -719,6 +1023,7 @@ Examples:
   agency task --from agency/branch-B   # Branch from agency/branch-B's emit branch
   agency task --from-current           # Branch from current branch's emit branch
   agency task my-feature --from develop # Create 'my-feature' from 'develop'
+  agency task --continue my-feature-v2 # Continue task on new branch after PR merge
 
 Template Workflow:
   1. Run 'agency init' to select template (saved to .git/config)
