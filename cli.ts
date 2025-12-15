@@ -260,6 +260,7 @@ const commands: Record<string, Command> = {
 					task: options.task,
 					from: options.from,
 					fromCurrent: options["from-current"],
+					continue: options.continue,
 				}),
 			)
 		},
@@ -520,6 +521,10 @@ try {
 			},
 			"from-current": {
 				type: "boolean",
+			},
+			continue: {
+				type: "boolean",
+				short: "c",
 			},
 			json: {
 				type: "boolean",
