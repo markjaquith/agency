@@ -4,6 +4,7 @@ import { Schema } from "@effect/schema"
 import { AgencyMetadata } from "../schemas"
 import { FileSystemService } from "./FileSystemService"
 import { GitService } from "./GitService"
+import { expandGlobs } from "../utils/glob"
 
 /**
  * Error type for AgencyMetadata operations
@@ -184,7 +185,14 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 					return baseFiles
 				}
 
-				return [...baseFiles, ...metadata.injectedFiles]
+				// Expand any glob patterns in injectedFiles to actual file paths
+				const expandedFiles = yield* Effect.tryPromise({
+					try: () =>
+						expandGlobs([...baseFiles, ...metadata.injectedFiles], gitRoot),
+					catch: () => new Error("Failed to expand glob patterns"),
+				})
+
+				return expandedFiles
 			}).pipe(
 				Effect.catchAll(() =>
 					Effect.succeed(["TASK.md", "AGENCY.md", "agency.json"]),
