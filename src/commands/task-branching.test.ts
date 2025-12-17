@@ -42,6 +42,71 @@ describe("task command - branching functionality", () => {
 	})
 
 	describe("--from flag", () => {
+		test("creates new agency/some-branch when using --from some-branch", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			// Create a feature branch called 'some-branch'
+			await runGitCommand(tempDir, ["git", "checkout", "-b", "some-branch"])
+			await createFile(tempDir, "feature.txt", "content")
+			await runGitCommand(tempDir, ["git", "add", "."])
+			await runGitCommand(tempDir, ["git", "commit", "-m", "Add feature"])
+
+			// Run agency task --from some-branch (while ON some-branch)
+			// This should create a NEW branch called agency/some-branch
+			await runTestEffect(
+				task({
+					silent: true,
+					from: "some-branch",
+				}),
+			)
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/some-branch")
+
+			// Verify feature.txt exists (came from some-branch)
+			const featureFile = await Bun.file(join(tempDir, "feature.txt")).text()
+			expect(featureFile).toBe("content")
+
+			// Verify TASK.md was created (agency files added)
+			const taskMdExists = await Bun.file(join(tempDir, "TASK.md")).exists()
+			expect(taskMdExists).toBe(true)
+		})
+
+		test("throws error when agency/some-branch already exists", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			// Create a feature branch called 'some-branch'
+			await runGitCommand(tempDir, ["git", "checkout", "-b", "some-branch"])
+			await createFile(tempDir, "feature.txt", "content")
+			await runGitCommand(tempDir, ["git", "add", "."])
+			await runGitCommand(tempDir, ["git", "commit", "-m", "Add feature"])
+
+			// Create agency/some-branch first
+			await runTestEffect(
+				task({
+					silent: true,
+					from: "some-branch",
+				}),
+			)
+
+			// Go back to some-branch
+			await runGitCommand(tempDir, ["git", "checkout", "some-branch"])
+
+			// Try to create it again - should fail
+			await expect(
+				runTestEffect(
+					task({
+						silent: true,
+						from: "some-branch",
+					}),
+				),
+			).rejects.toThrow("already exists")
+		})
+
 		test("branches from specified non-agency branch", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
