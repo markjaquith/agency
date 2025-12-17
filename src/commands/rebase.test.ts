@@ -361,4 +361,122 @@ describe("rebase command", () => {
 		// Verify custom.txt exists
 		expect(await fileExists(tempDir, "custom.txt")).toBe(true)
 	})
+
+	test("updates emit branch with --branch flag", async () => {
+		// Create feature branch with agency.json
+		await createBranch(tempDir, "agency/feature")
+		await setupAgencyJson(tempDir, "main", "feature")
+
+		// Add commit to main
+		await checkoutBranch(tempDir, "main")
+		await Bun.write(join(tempDir, "main1.txt"), "main 1\n")
+		await Bun.spawn(["git", "add", "main1.txt"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Main commit"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		// Rebase feature branch with new emit branch name
+		await checkoutBranch(tempDir, "agency/feature")
+
+		await runTestEffect(
+			rebase({
+				silent: true,
+				verbose: false,
+				baseBranch: "main",
+				branch: "new-emit-branch",
+			}),
+		)
+
+		// Verify agency.json has updated emit branch
+		const agencyJsonFile = Bun.file(join(tempDir, "agency.json"))
+		const agencyJson = await agencyJsonFile.json()
+		expect(agencyJson.emitBranch).toBe("new-emit-branch")
+
+		// Verify we're still on the feature branch
+		const currentBranch = await getCurrentBranch(tempDir)
+		expect(currentBranch).toBe("agency/feature")
+
+		// Verify there's a commit for the emit branch update
+		const proc = Bun.spawn(["git", "log", "--oneline", "-1"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		})
+		await proc.exited
+		const output = await new Response(proc.stdout).text()
+		expect(output).toContain("chore: agency rebase main => new-emit-branch")
+	})
+
+	test("preserves other metadata when updating emit branch", async () => {
+		// Create feature branch with agency.json containing standard fields
+		await createBranch(tempDir, "agency/feature")
+		const agencyJson = {
+			version: 1,
+			injectedFiles: ["AGENTS.md", "TASK.md", "opencode.json"],
+			template: "test",
+			createdAt: "2024-01-01T00:00:00.000Z",
+			baseBranch: "main",
+			emitBranch: "feature",
+		}
+		await Bun.write(
+			join(tempDir, "agency.json"),
+			JSON.stringify(agencyJson, null, 2) + "\n",
+		)
+		await Bun.spawn(["git", "add", "agency.json"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Add agency.json"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		// Add commit to main
+		await checkoutBranch(tempDir, "main")
+		await Bun.write(join(tempDir, "main1.txt"), "main 1\n")
+		await Bun.spawn(["git", "add", "main1.txt"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Main commit"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		// Rebase with new emit branch
+		await checkoutBranch(tempDir, "agency/feature")
+
+		await runTestEffect(
+			rebase({
+				silent: true,
+				verbose: false,
+				baseBranch: "main",
+				branch: "updated-emit",
+			}),
+		)
+
+		// Verify all standard metadata fields are preserved
+		const updatedJsonFile = Bun.file(join(tempDir, "agency.json"))
+		const updatedJson = await updatedJsonFile.json()
+		expect(updatedJson.version).toBe(1)
+		expect(updatedJson.injectedFiles).toEqual([
+			"AGENTS.md",
+			"TASK.md",
+			"opencode.json",
+		])
+		expect(updatedJson.template).toBe("test")
+		expect(updatedJson.createdAt).toBe("2024-01-01T00:00:00.000Z")
+		expect(updatedJson.baseBranch).toBe("main")
+		expect(updatedJson.emitBranch).toBe("updated-emit")
+	})
 })

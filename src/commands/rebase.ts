@@ -17,6 +17,7 @@ import { withSpinner } from "../utils/spinner"
 
 interface RebaseOptions extends BaseCommandOptions {
 	baseBranch?: string // Internal option, populated from positional arg
+	branch?: string // Custom emit branch name to set after rebase
 }
 
 export const rebase = (options: RebaseOptions = {}) =>
@@ -148,6 +149,35 @@ const rebaseCore = (gitRoot: string, options: RebaseOptions) =>
 			),
 		)
 
+		// Update emit branch in agency.json if --branch flag was provided
+		if (options.branch && metadata) {
+			verboseLog(`Updating emit branch to: ${highlight.branch(options.branch)}`)
+
+			// Update metadata with new emit branch
+			const updatedMetadata = {
+				...metadata,
+				emitBranch: options.branch,
+			}
+
+			yield* Effect.tryPromise({
+				try: async () => {
+					const { writeAgencyMetadata } = await import("../types")
+					await writeAgencyMetadata(gitRoot, updatedMetadata)
+				},
+				catch: (error) => new Error(`Failed to update agency.json: ${error}`),
+			})
+
+			// Stage and commit the change
+			yield* git.gitAdd(["agency.json"], gitRoot)
+			yield* git.gitCommit(
+				`chore: agency rebase ${baseBranch} => ${options.branch}`,
+				gitRoot,
+				{ noVerify: true },
+			)
+
+			log(info(`Updated emit branch to ${highlight.branch(options.branch)}`))
+		}
+
 		// Inform user about next steps
 		log(
 			info(
@@ -187,9 +217,13 @@ Arguments:
   [base-branch]             Optional base branch to rebase onto
                             (defaults to saved base branch or origin/main)
 
+Options:
+  -b, --branch <name>       Set a new emit branch name in agency.json after rebasing
+
 Examples:
   agency rebase                      # Rebase onto saved base branch
   agency rebase origin/main          # Rebase onto origin/main explicitly
+  agency rebase --branch new-branch  # Rebase and set new emit branch name
 
 Workflow:
   1. User works on agency/feature-A branch
