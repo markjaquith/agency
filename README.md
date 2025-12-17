@@ -45,6 +45,10 @@ Runs `agency emit`, and then merges the PR back into the base branch locally.
 - `--squash` - Use squash merge instead of regular merge (stages changes, requires manual commit)
 - `--push` - Push the base branch to origin after merging
 
+### `agency next [base-branch]`
+
+After a PR is merged, continue working on the same task by filtering the source branch to keep only agency files and rebasing onto the updated base branch. Useful for multi-phase work that spans multiple PRs.
+
 ## Other Commands
 
 ### `agency template use [template]`
