@@ -11,6 +11,7 @@ import { emitted, help as emittedHelp } from "./src/commands/emitted"
 import { push, help as pushHelp } from "./src/commands/push"
 import { pull, help as pullHelp } from "./src/commands/pull"
 import { rebase, help as rebaseHelp } from "./src/commands/rebase"
+import { next, help as nextHelp } from "./src/commands/next"
 import { base, help as baseHelp } from "./src/commands/base"
 import { switchBranch, help as switchHelp } from "./src/commands/switch"
 import { source, help as sourceHelp } from "./src/commands/source"
@@ -173,6 +174,24 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: rebaseHelp,
+	},
+	next: {
+		name: "next",
+		description: "Filter to agency files, rebase onto base branch",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(nextHelp)
+				return
+			}
+			await runCommand(
+				next({
+					baseBranch: args[0],
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+		help: nextHelp,
 	},
 	template: {
 		name: "template",
@@ -422,6 +441,7 @@ Commands:
   push [base-branch]     Emit, push to remote, return to source
   pull                   Pull commits from remote emit branch to source
   rebase [base-branch]   Rebase source branch onto base branch
+  next [base-branch]     Filter to agency files, rebase (for multi-PR workflows)
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
     get                    Get the configured base branch

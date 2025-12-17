@@ -34,6 +34,10 @@ Runs `agency pr`, pushes the branch, and then switches back to the source branch
 
 Runs `agency pr`, and then merges the PR back into the base branch locally.
 
+### `agency next [base-branch]`
+
+After a PR is merged, continue working on the same task by filtering the source branch to keep only agency files and rebasing onto the updated base branch. Useful for multi-phase work that spans multiple PRs.
+
 ## Other Commands
 
 ### `agency template use [template]`
