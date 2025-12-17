@@ -295,7 +295,9 @@ const taskContinue = (options: TaskOptions) =>
 		if (createdFiles.length > 0) {
 			yield* Effect.gen(function* () {
 				yield* git.gitAdd(createdFiles, targetPath)
-				yield* git.gitCommit("chore: agency task --continue", targetPath, {
+				// Format: chore: agency task --continue (baseBranch) originalSource => newSource => newEmit
+				const commitMessage = `chore: agency task --continue (${baseBranchToBranchFrom}) ${currentBranch} → ${sourceBranchName} → ${newEmitBranchName}`
+				yield* git.gitCommit(commitMessage, targetPath, {
 					noVerify: true,
 				})
 				verboseLog(
@@ -817,7 +819,11 @@ export const task = (options: TaskOptions = {}) =>
 		if (createdFiles.length > 0) {
 			yield* Effect.gen(function* () {
 				yield* git.gitAdd(createdFiles, targetPath)
-				yield* git.gitCommit("chore: agency task", targetPath, {
+				// Format: chore: agency task (baseBranch) sourceBranch → emitBranch
+				const commitMessage = baseBranch
+					? `chore: agency task (${baseBranch}) ${finalBranch} → ${emitBranchName}`
+					: `chore: agency task ${finalBranch} → ${emitBranchName}`
+				yield* git.gitCommit(commitMessage, targetPath, {
 					noVerify: true,
 				})
 				verboseLog(

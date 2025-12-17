@@ -410,7 +410,9 @@ describe("rebase command", () => {
 		})
 		await proc.exited
 		const output = await new Response(proc.stdout).text()
-		expect(output).toContain("chore: agency rebase main => new-emit-branch")
+		expect(output).toContain(
+			"chore: agency rebase (main) agency/feature → new-emit-branch",
+		)
 	})
 
 	test("preserves other metadata when updating emit branch", async () => {

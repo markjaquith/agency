@@ -267,7 +267,13 @@ const ensureEmitBranchInMetadata = (
 
 		// Stage and commit the change
 		yield* git.gitAdd(["agency.json"], gitRoot)
-		yield* git.gitCommit("chore: agency emit", gitRoot, { noVerify: true })
+		// Note: baseBranch not available in this helper function context
+		// This commit only happens when backfilling emitBranch in legacy repos
+		yield* git.gitCommit(
+			`chore: agency emit ${currentBranch} → ${emitBranchName}`,
+			gitRoot,
+			{ noVerify: true },
+		)
 	})
 
 /**

@@ -169,11 +169,9 @@ const rebaseCore = (gitRoot: string, options: RebaseOptions) =>
 
 			// Stage and commit the change
 			yield* git.gitAdd(["agency.json"], gitRoot)
-			yield* git.gitCommit(
-				`chore: agency rebase ${baseBranch} => ${options.branch}`,
-				gitRoot,
-				{ noVerify: true },
-			)
+			// Format: chore: agency rebase (baseBranch) sourceBranch → emitBranch
+			const commitMessage = `chore: agency rebase (${baseBranch}) ${currentBranch} → ${options.branch}`
+			yield* git.gitCommit(commitMessage, gitRoot, { noVerify: true })
 
 			log(info(`Updated emit branch to ${highlight.branch(options.branch)}`))
 		}
