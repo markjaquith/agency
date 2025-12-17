@@ -42,7 +42,7 @@ describe("task command - branching functionality", () => {
 	})
 
 	describe("--from flag", () => {
-		test("creates new agency/some-branch when using --from some-branch", async () => {
+		test("creates new agency/some-branch when using --from some-branch with explicit name", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 			await initAgency(tempDir, "test")
@@ -53,17 +53,18 @@ describe("task command - branching functionality", () => {
 			await runGitCommand(tempDir, ["git", "add", "."])
 			await runGitCommand(tempDir, ["git", "commit", "-m", "Add feature"])
 
-			// Run agency task --from some-branch (while ON some-branch)
-			// This should create a NEW branch called agency/some-branch
+			// Run agency task my-feature --from some-branch
+			// This should create a NEW branch called agency/my-feature
 			await runTestEffect(
 				task({
 					silent: true,
+					branch: "my-feature",
 					from: "some-branch",
 				}),
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/some-branch")
+			expect(currentBranch).toBe("agency/my-feature")
 
 			// Verify feature.txt exists (came from some-branch)
 			const featureFile = await Bun.file(join(tempDir, "feature.txt")).text()
@@ -85,10 +86,11 @@ describe("task command - branching functionality", () => {
 			await runGitCommand(tempDir, ["git", "add", "."])
 			await runGitCommand(tempDir, ["git", "commit", "-m", "Add feature"])
 
-			// Create agency/some-branch first
+			// Create agency/my-feature first
 			await runTestEffect(
 				task({
 					silent: true,
+					branch: "my-feature",
 					from: "some-branch",
 				}),
 			)
@@ -101,6 +103,7 @@ describe("task command - branching functionality", () => {
 				runTestEffect(
 					task({
 						silent: true,
+						branch: "my-feature",
 						from: "some-branch",
 					}),
 				),
@@ -355,6 +358,51 @@ describe("task command - branching functionality", () => {
 					}),
 				),
 			).rejects.toThrow("Cannot use both --from and --from-current")
+		})
+	})
+
+	describe("--from flag branch naming", () => {
+		test("agency task --from foo requires explicit branch name in silent mode", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			await runGitCommand(tempDir, ["git", "checkout", "-b", "foo"])
+			await runGitCommand(tempDir, ["git", "checkout", "main"])
+
+			await expect(
+				runTestEffect(
+					task({
+						silent: true,
+						from: "foo",
+					}),
+				),
+			).rejects.toThrow("Branch name")
+		})
+
+		test("agency task out --from foo creates agency/out emitting to out", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			await runGitCommand(tempDir, ["git", "checkout", "-b", "foo"])
+			await runGitCommand(tempDir, ["git", "checkout", "main"])
+
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "out",
+					from: "foo",
+				}),
+			)
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/out")
+
+			const agencyJson = JSON.parse(
+				await Bun.file(join(tempDir, "agency.json")).text(),
+			)
+			expect(agencyJson.emitBranch).toBe("out")
 		})
 	})
 

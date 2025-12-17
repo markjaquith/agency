@@ -503,20 +503,17 @@ export const task = (options: TaskOptions = {}) =>
 		// Determine branch name logic
 		let branchName = options.branch
 
-		// When --from is used, we MUST create a new source branch
-		// The branch name should be derived from the --from branch
-		if (options.from && !branchName) {
-			// Extract the clean branch name from the --from argument
-			const cleanFromBranch =
-				extractCleanBranch(options.from, config.sourceBranchPattern) ||
-				options.from
-			branchName = cleanFromBranch
-			verboseLog(`Derived branch name from --from: ${branchName}`)
-		}
-
-		// If on main branch without a branch name, prompt for it (unless in silent mode)
-		if (!isFeature && !branchName) {
+		// If on main branch or using --from without a branch name, prompt for it (unless in silent mode)
+		if ((!isFeature || options.from) && !branchName) {
 			if (silent) {
+				if (options.from) {
+					return yield* Effect.fail(
+						new Error(
+							`Branch name is required when using --from flag.\n` +
+								`Use: 'agency task <branch-name> --from ${options.from}'`,
+						),
+					)
+				}
 				return yield* Effect.fail(
 					new Error(
 						`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
@@ -528,9 +525,7 @@ export const task = (options: TaskOptions = {}) =>
 			}
 			branchName = yield* promptService.prompt("Branch name: ")
 			if (!branchName) {
-				return yield* Effect.fail(
-					new Error("Branch name is required when on main branch."),
-				)
+				return yield* Effect.fail(new Error("Branch name is required."))
 			}
 			verboseLog(`Branch name from prompt: ${branchName}`)
 		}
