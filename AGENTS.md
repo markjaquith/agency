@@ -11,7 +11,6 @@ Default to using Bun instead of Node.js.
 
 ## APIs
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
 - `WebSocket` is built-in. Don't use `ws`.
 - Prefer `Bun.file` over `node:fs`'s readFile/writeFile
 - Bun.$`ls` instead of execa.
@@ -32,9 +31,7 @@ test("hello world", () => {
 
 # Agency
 
-This is a CLI tool called `agency` that helps you set up and manage `AGENTS.md` files in your projects. It provides commands to initialize, save, and templatize these files.
-
-It is meant to be used in projects where you don't own the `AGENTS.md` file, but you want to apply certain configurations or templates to it. For instance, when working on a specific feature branch, you would have your `AGENTS.md` template that describes your specific requirements for working this this project as well as layering on your instructions for the feature you're building. That way, LLM agents that read `AGENTS.md` will immediately understand the context of your work and how to assist you.
+This is a CLI tool called `agency` that helps you do agentic coding in projects where you you cannot assert full ownership. For example, you don't own `AGENTS.md` or `CLAUDE.md`, and can't just create them. And you want a way to store notes about a task (branch) you are working on, but want to clean those files out before pushing a public branch.
 
 ## Architecture
 
@@ -49,6 +46,7 @@ Core functionality is organized into Effect services that provide clean interfac
 - **PromptService**: User input operations with readline integration
 - **TemplateService**: Template discovery and management
 - **FileSystemService**: Comprehensive file I/O operations
+- Etc
 
 ### Error Handling
 
@@ -104,23 +102,15 @@ export async function command(options) {
 }
 ```
 
-### Migration Strategy
-
-The codebase maintains backward compatibility during the Effect migration:
-
-1. **Facade Pattern**: Async utility functions wrap Effect services
-2. **Promise Wrappers**: Effect.tryPromise bridges async code
-3. **Gradual Migration**: Commands are migrated incrementally
-4. **Type Safety**: Schema validation ensures runtime correctness
-
 ## Commands
 
 - `agency init [path]`: Initializes `AGENTS.md` file using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
 - `agency template use [template]`: Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
 - `agency save`: Saves current `AGENTS.md` file back to the configured template directory.
 - `agency source [template]`: Returns the path to a template's source directory. Shows interactive selection if no template name provided.
-- `agency switch`: Toggles between source branch and emit branch. If on an emit branch (e.g., `main--PR`), switches to source branch (e.g., `main`). If on source branch, switches to emit branch. Emit branch must exist first.
+- `agency switch`: Toggles between source branch and emit branch. If on an emit branch (e.g., `feature-x`), switches to source branch (e.g., `agency/feature-x`). If on source branch, switches to emit branch.
 - `agency emit [branch]`: Creates an emit branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
+- `agency push`: Creates an emit branch and then pushes it to remote.
 
 ## Error Handling
 
@@ -174,6 +164,10 @@ The repository has validation scripts:
 
 - `scripts/check-commit-msg` - Validates commit messages locally
 - GitHub Actions workflow validates PR titles
+
+## Changesets
+
+This project uses Changesets for versioning and changelog generation. Ensure that you create a changeset for every branch, even for small changes.
 
 ## Installing Development Version
 

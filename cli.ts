@@ -4,7 +4,7 @@ import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
 import { clean, help as cleanHelp } from "./src/commands/clean"
 import { init, help as initHelp } from "./src/commands/init"
-import { task, taskEdit, help as taskHelp } from "./src/commands/task"
+import { task, taskEdit, help as taskHelp, editHelp } from "./src/commands/task"
 import { tasks, help as tasksHelp } from "./src/commands/tasks"
 import { emit, help as emitHelp } from "./src/commands/emit"
 import { emitted, help as emittedHelp } from "./src/commands/emitted"
@@ -308,21 +308,7 @@ const commands: Record<string, Command> = {
 		description: "Open TASK.md in system editor",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
-				console.log(`
-Usage: agency edit [options]
-
-Open TASK.md in the system editor for editing.
-
-Notes:
-  - Requires TASK.md to exist (run 'agency task' first)
-  - Respects VISUAL and EDITOR environment variables
-  - On macOS, defaults to 'open' which uses the default app for .md files
-  - On other platforms, defaults to 'vim'
-  - The command waits for the editor to close before returning
-
-Example:
-  agency edit                   # Open TASK.md in default editor
-				`)
+				console.log(editHelp)
 				return
 			}
 			await runCommand(
@@ -332,7 +318,7 @@ Example:
 				}),
 			)
 		},
-		help: `Open TASK.md in system editor`,
+		help: editHelp,
 	},
 	work: {
 		name: "work",
