@@ -167,6 +167,7 @@ const commands: Record<string, Command> = {
 			await runCommand(
 				rebase({
 					baseBranch: args[0],
+					branch: options.branch,
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
