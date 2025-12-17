@@ -186,7 +186,7 @@ const commands: Record<string, Command> = {
 			}
 			await runCommand(
 				next({
-					baseBranch: args[0],
+					newBranch: args[0],
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -428,7 +428,7 @@ Commands:
   push [base-branch]     Emit, push to remote, return to source
   pull                   Pull commits from remote emit branch to source
   rebase [base-branch]   Rebase source branch onto base branch
-  next [base-branch]     Filter to agency files, rebase (for multi-PR workflows)
+  next [new-branch]      Filter to agency files, rebase (for multi-PR workflows)
   base                   Get or set the base branch
     set <branch>           Set the base branch for the current feature branch
     get                    Get the configured base branch

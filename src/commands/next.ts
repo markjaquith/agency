@@ -3,7 +3,7 @@ import { rebase } from "./rebase"
 
 interface NextOptions extends BaseCommandOptions {
 	baseBranch?: string
-	branch?: string
+	newBranch?: string
 }
 
 /**
@@ -13,29 +13,24 @@ interface NextOptions extends BaseCommandOptions {
 export const next = (options: NextOptions = {}) =>
 	rebase({
 		...options,
-		branch: options.branch,
+		branch: options.newBranch,
 	})
 
 export const help = `
-Usage: agency next [base-branch] [options]
+Usage: agency next [new-branch]
 
-Rebase the source branch onto the base branch and optionally set a new emit branch.
+Rebase the source branch onto the base branch and set a new emit branch name.
 
-This is a convenience wrapper around 'agency rebase --branch'.
+This is a convenience wrapper around 'agency rebase --branch <new-branch>'.
 
 Arguments:
-  [base-branch]             Optional base branch to rebase onto
-                            (defaults to saved base branch or origin/main)
-
-Options:
-  -b, --branch <name>       Set a new emit branch name in agency.json after rebasing
+  [new-branch]              New emit branch name to set in agency.json
 
 Examples:
-  agency next                        # Rebase onto saved base branch
-  agency next --branch new-feature   # Rebase and set new emit branch name
-  agency next origin/main            # Rebase onto origin/main explicitly
+  agency next new-feature   # Rebase and set emit branch to 'new-feature'
 
 Notes:
   - This command only works on agency source branches (with agency.json)
+  - The base branch is determined from agency.json or defaults to origin/main
   - If conflicts occur during rebase, you must resolve them manually
 `
