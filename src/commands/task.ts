@@ -456,10 +456,12 @@ export const task = (options: TaskOptions = {}) =>
 			}
 		}
 
+		// Load config early for branch pattern operations
+		const config = yield* configService.loadConfig()
+
 		// Check if the base branch is an agency source branch
 		// If so, we need to emit it first and use the emit branch instead
 		if (baseBranchToBranchFrom) {
-			const config = yield* configService.loadConfig()
 			const cleanFromBase = extractCleanBranch(
 				baseBranchToBranchFrom,
 				config.sourceBranchPattern,
@@ -498,10 +500,20 @@ export const task = (options: TaskOptions = {}) =>
 			}
 		}
 
-		// If on main branch without a branch name, prompt for it (unless in silent mode)
+		// Determine branch name logic
 		let branchName = options.branch
-		if (!isFeature && !branchName) {
+
+		// If on main branch or using --from without a branch name, prompt for it (unless in silent mode)
+		if ((!isFeature || options.from) && !branchName) {
 			if (silent) {
+				if (options.from) {
+					return yield* Effect.fail(
+						new Error(
+							`Branch name is required when using --from flag.\n` +
+								`Use: 'agency task <branch-name> --from ${options.from}'`,
+						),
+					)
+				}
 				return yield* Effect.fail(
 					new Error(
 						`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
@@ -513,9 +525,7 @@ export const task = (options: TaskOptions = {}) =>
 			}
 			branchName = yield* promptService.prompt("Branch name: ")
 			if (!branchName) {
-				return yield* Effect.fail(
-					new Error("Branch name is required when on main branch."),
-				)
+				return yield* Effect.fail(new Error("Branch name is required."))
 			}
 			verboseLog(`Branch name from prompt: ${branchName}`)
 		}
@@ -523,7 +533,6 @@ export const task = (options: TaskOptions = {}) =>
 		// If we have a branch name, apply source pattern and check if branch exists
 		let sourceBranchName: string | undefined
 		if (branchName) {
-			const config = yield* configService.loadConfig()
 			sourceBranchName = makeSourceBranchName(
 				branchName,
 				config.sourceBranchPattern,
@@ -781,7 +790,6 @@ export const task = (options: TaskOptions = {}) =>
 
 		// Calculate emitBranch name from current branch
 		const finalBranch = yield* git.getCurrentBranch(targetPath)
-		const config = yield* configService.loadConfig()
 		// Extract clean branch name from source pattern, or use branch as-is for legacy branches
 		const cleanBranch =
 			extractCleanBranch(finalBranch, config.sourceBranchPattern) || finalBranch
