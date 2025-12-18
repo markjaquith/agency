@@ -271,10 +271,10 @@ const commands: Record<string, Command> = {
 				return
 			}
 			// Initialize with optional branch name
-			const branch = args[0] || options.branch
+			const branch = args[0] || options.emit || options.branch
 			await runCommand(
 				task({
-					branch,
+					emit: branch,
 					silent: options.silent,
 					verbose: options.verbose,
 					task: options.task,

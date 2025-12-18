@@ -58,7 +58,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-feature",
+					emit: "my-feature",
 					from: "some-branch",
 				}),
 			)
@@ -90,7 +90,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-feature",
+					emit: "my-feature",
 					from: "some-branch",
 				}),
 			)
@@ -103,7 +103,7 @@ describe("task command - branching functionality", () => {
 				runTestEffect(
 					task({
 						silent: true,
-						branch: "my-feature",
+						emit: "my-feature",
 						from: "some-branch",
 					}),
 				),
@@ -128,7 +128,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-task",
+					emit: "my-task",
 					from: "feature-base",
 				}),
 			)
@@ -150,7 +150,7 @@ describe("task command - branching functionality", () => {
 				runTestEffect(
 					task({
 						silent: true,
-						branch: "my-task",
+						emit: "my-task",
 						from: "nonexistent-branch",
 					}),
 				),
@@ -166,7 +166,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "first-task",
+					emit: "first-task",
 				}),
 			)
 
@@ -190,7 +190,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "second-task",
+					emit: "second-task",
 					from: "agency/first-task",
 				}),
 			)
@@ -221,7 +221,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "unemitted-task",
+					emit: "unemitted-task",
 				}),
 			)
 
@@ -233,7 +233,7 @@ describe("task command - branching functionality", () => {
 				runTestEffect(
 					task({
 						silent: true,
-						branch: "second-task",
+						emit: "second-task",
 						from: "agency/unemitted-task",
 					}),
 				),
@@ -260,7 +260,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-task",
+					emit: "my-task",
 					from: "feature-current",
 				}),
 			)
@@ -282,7 +282,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "first-task",
+					emit: "first-task",
 				}),
 			)
 
@@ -300,7 +300,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "second-task",
+					emit: "second-task",
 					from: "agency/first-task",
 				}),
 			)
@@ -322,7 +322,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "unemitted-task",
+					emit: "unemitted-task",
 				}),
 			)
 
@@ -334,7 +334,7 @@ describe("task command - branching functionality", () => {
 				runTestEffect(
 					task({
 						silent: true,
-						branch: "second-task",
+						emit: "second-task",
 						from: "agency/unemitted-task",
 					}),
 				),
@@ -352,7 +352,7 @@ describe("task command - branching functionality", () => {
 				runTestEffect(
 					task({
 						silent: true,
-						branch: "my-task",
+						emit: "my-task",
 						from: "main",
 						fromCurrent: true,
 					}),
@@ -391,7 +391,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "out",
+					emit: "out",
 					from: "foo",
 				}),
 			)
@@ -430,7 +430,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-task",
+					emit: "my-task",
 				}),
 			)
 
@@ -527,7 +527,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-task",
+					emit: "my-task",
 				}),
 			)
 
@@ -580,7 +580,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-task",
+					emit: "my-task",
 				}),
 			)
 
@@ -622,7 +622,7 @@ describe("task command - branching functionality", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "my-task",
+					emit: "my-task",
 				}),
 			)
 
