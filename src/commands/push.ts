@@ -278,22 +278,40 @@ const openGitHubPR = (
 		const { verbose = false } = options
 
 		// Run gh pr create --web with --head to specify the emit branch
-		const ghResult = yield* spawnProcess(
+		// Set environment variables to ensure non-interactive mode in CI
+		// Add a 3 second timeout to prevent hanging in CI environments
+		const ghEffect = spawnProcess(
 			["gh", "pr", "create", "--web", "--head", branchName],
 			{
 				cwd: gitRoot,
 				stdout: verbose ? "inherit" : "pipe",
 				stderr: "pipe",
+				env: {
+					GH_PROMPT_DISABLED: "1",
+					NO_COLOR: "1",
+				},
 			},
 		).pipe(
-			Effect.catchAll((error) =>
-				Effect.succeed({
-					exitCode: error.exitCode,
+			Effect.timeout("3 seconds"),
+			Effect.catchAll((error) => {
+				// Handle timeout or process errors
+				if (error._tag === "TimeoutException") {
+					return Effect.succeed({
+						exitCode: -1,
+						stdout: "",
+						stderr: "gh command timed out after 3 seconds",
+					})
+				}
+				// Handle ProcessError
+				return Effect.succeed({
+					exitCode: (error as any).exitCode ?? -1,
 					stdout: "",
-					stderr: error.stderr,
-				}),
-			),
+					stderr: (error as any).stderr ?? String(error),
+				})
+			}),
 		)
+
+		const ghResult = yield* ghEffect
 
 		if (ghResult.exitCode !== 0) {
 			return yield* Effect.fail(
