@@ -8,7 +8,6 @@ jobs:
   validate:
     name: Validate Changeset
     runs-on: ubuntu-latest
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4

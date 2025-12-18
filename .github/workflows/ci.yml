@@ -8,8 +8,6 @@ on:
 
 jobs:
   test:
-    # Skip CI for changeset release PRs entirely
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
     runs-on: ubuntu-latest
 
     steps:
