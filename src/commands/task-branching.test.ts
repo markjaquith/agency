@@ -451,7 +451,7 @@ describe("task command - branching functionality", () => {
 		beforeEach(async () => {
 			// Create a bare repository to act as the "remote"
 			remoteDir = await createTempDir()
-			await runGitCommand(remoteDir, ["git", "init", "--bare"])
+			await runGitCommand(remoteDir, ["git", "init", "--bare", "-b", "main"])
 		})
 
 		afterEach(async () => {
