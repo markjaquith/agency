@@ -160,7 +160,7 @@ export async function writeAgencyMetadata(
 
 /**
  * Get list of files to filter during PR/merge operations.
- * Always includes TASK.md, AGENCY.md, and agency.json, plus any backpack files from metadata.
+ * Always includes TASK.md, AGENCY.md, CLAUDE.md, and agency.json, plus any backpack files from metadata.
  * @deprecated Use AgencyMetadataService.getFilesToFilter instead
  */
 export async function getFilesToFilter(gitRoot: string): Promise<string[]> {
