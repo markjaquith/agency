@@ -377,6 +377,76 @@ describe("emit command", () => {
 			expect(logOutput).toContain("Add feature file")
 			expect(logOutput).not.toContain("Add AGENTS.md")
 		})
+
+		test("filters pre-existing CLAUDE.md that gets edited by agency", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			// Start fresh on main branch
+			await checkoutBranch(tempDir, "main")
+
+			// Create CLAUDE.md on main branch (simulating pre-existing file)
+			await Bun.write(
+				join(tempDir, "CLAUDE.md"),
+				"# Original Claude Instructions\n\nSome content here.\n",
+			)
+			await addAndCommit(tempDir, "CLAUDE.md", "Add CLAUDE.md")
+
+			// Create a new feature branch
+			await createBranch(tempDir, "agency/claude-test")
+
+			// Initialize agency on this branch (this will modify CLAUDE.md)
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await Bun.write(join(tempDir, "AGENTS.md"), "# Test AGENTS\n")
+
+			// Simulate what agency task does - inject into CLAUDE.md
+			const originalClaude = await Bun.file(join(tempDir, "CLAUDE.md")).text()
+			const modifiedClaude = `${originalClaude}\n# Agency References\n@AGENTS.md\n@TASK.md\n`
+			await Bun.write(join(tempDir, "CLAUDE.md"), modifiedClaude)
+
+			await addAndCommit(
+				tempDir,
+				"agency.json AGENTS.md CLAUDE.md",
+				"Initialize agency files",
+			)
+
+			// Add a feature file
+			await createCommit(tempDir, "Feature commit")
+
+			// Create emit branch (this should filter CLAUDE.md)
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
+
+			// Should still be on source branch
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/claude-test")
+
+			// Switch to emit branch to verify CLAUDE.md is reverted to main's version
+			await checkoutBranch(tempDir, "claude-test")
+
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("CLAUDE.md") // File should exist (from main)
+			expect(files).not.toContain("AGENTS.md") // Should be filtered
+			expect(files).not.toContain("TASK.md") // Should be filtered
+			expect(files).toContain("test.txt") // Feature file should exist
+
+			// Verify CLAUDE.md was reverted to original (no agency references)
+			const claudeContent = await Bun.file(join(tempDir, "CLAUDE.md")).text()
+			expect(claudeContent).toBe(
+				"# Original Claude Instructions\n\nSome content here.\n",
+			)
+			expect(claudeContent).not.toContain("@AGENTS.md")
+			expect(claudeContent).not.toContain("@TASK.md")
+		})
 	})
 
 	describe("error handling", () => {
