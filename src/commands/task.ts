@@ -212,11 +212,21 @@ const taskContinue = (options: TaskOptions) =>
 			targetPath,
 			baseBranchToBranchFrom,
 		)
+		// Calculate the emit branch name for display
+		const cleanBranchForDisplay =
+			extractCleanBranch(sourceBranchName, config.sourceBranchPattern) ||
+			sourceBranchName
+		const emitBranchForDisplay = makeEmitBranchName(
+			cleanBranchForDisplay,
+			config.emitBranch,
+		)
+
 		log(
-			done(
-				`Created and switched to branch ${highlight.branch(sourceBranchName)} based on ${highlight.branch(baseBranchToBranchFrom)}`,
+			info(
+				`(${highlight.branch(baseBranchToBranchFrom)}) ${highlight.branch(sourceBranchName)} → ${highlight.branch(emitBranchForDisplay)}`,
 			),
 		)
+		log(done(`Created and switched to ${highlight.branch(sourceBranchName)}`))
 
 		// Calculate the new emit branch name
 		const newEmitBranchName = makeEmitBranchName(branchName, config.emitBranch)
@@ -823,11 +833,27 @@ const createFeatureBranchEffect = (
 		}
 
 		yield* git.createBranch(branchName, targetPath, baseBranch)
+
+		// Load config for emit pattern calculation
+		const configService = yield* ConfigService
+		const config = yield* configService.loadConfig()
+
+		// Calculate the emit branch name for display
+		const cleanBranchForDisplay =
+			extractCleanBranch(branchName, config.sourceBranchPattern) || branchName
+		const emitBranchForDisplay = makeEmitBranchName(
+			cleanBranchForDisplay,
+			config.emitBranch,
+		)
+
 		log(
-			done(
-				`Created and switched to branch ${highlight.branch(branchName)}${baseBranch ? ` based on ${highlight.branch(baseBranch)}` : ""}`,
+			info(
+				baseBranch
+					? `(${highlight.branch(baseBranch)}) ${highlight.branch(branchName)} → ${highlight.branch(emitBranchForDisplay)}`
+					: `${highlight.branch(branchName)} → ${highlight.branch(emitBranchForDisplay)}`,
 			),
 		)
+		log(done(`Created and switched to ${highlight.branch(branchName)}`))
 	})
 
 // Helper: Discover template files
