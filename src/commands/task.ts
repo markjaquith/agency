@@ -940,11 +940,11 @@ Arguments:
   branch-name       Create and switch to this branch before initializing
 
 Options:
-  -e, --emit        Branch name to create (alternative to positional arg)
-  -b, --branch      (Deprecated: use --emit) Branch name to create
+  --emit            Branch name to create (alternative to positional arg)
+  --branch          (Deprecated: use --emit) Branch name to create
   --from <branch>   Branch to branch from instead of main upstream branch
   --from-current    Branch from the current branch
-  -c, --continue    Continue a task by copying agency files to a new branch
+  --continue        Continue a task by copying agency files to a new branch
 
 Continue Mode (--continue):
   After a PR is merged, use '--continue' to create a new branch that preserves

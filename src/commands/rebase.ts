@@ -218,8 +218,8 @@ Arguments:
                             (defaults to saved base branch or origin/main)
 
 Options:
-  -e, --emit <name>         Set a new emit branch name in agency.json after rebasing
-  -b, --branch <name>       (Deprecated: use --emit) Set a new emit branch name
+  --emit <name>             Set a new emit branch name in agency.json after rebasing
+  --branch <name>           (Deprecated: use --emit) Set a new emit branch name
 
 Examples:
   agency rebase                    # Rebase onto saved base branch

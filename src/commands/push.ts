@@ -329,8 +329,8 @@ Arguments:
                     If not provided, will use saved config or auto-detect
 
 Options:
-  -e, --emit        Custom name for emit branch (defaults to pattern from config)
-  -b, --branch      (Deprecated: use --emit) Custom name for emit branch
+  --emit            Custom name for emit branch (defaults to pattern from config)
+  --branch          (Deprecated: use --emit) Custom name for emit branch
   -f, --force       Force push to remote if branch has diverged
   --pr              Open GitHub PR in browser after pushing (requires gh CLI)
 

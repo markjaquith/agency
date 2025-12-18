@@ -518,11 +518,9 @@ try {
 			},
 			emit: {
 				type: "string",
-				short: "e",
 			},
 			branch: {
 				type: "string",
-				short: "b",
 			},
 			task: {
 				type: "string",
@@ -535,7 +533,6 @@ try {
 			},
 			continue: {
 				type: "boolean",
-				short: "c",
 			},
 			json: {
 				type: "boolean",
