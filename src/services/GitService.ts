@@ -246,7 +246,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			gitRoot: string,
 			baseBranch?: string,
 		) => {
-			const args = ["git", "checkout", "-b", branchName]
+			const args = ["git", "checkout", "--no-track", "-b", branchName]
 			if (baseBranch) {
 				args.push(baseBranch)
 			}
@@ -443,9 +443,13 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 					gitRoot,
 				).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
-				if (configuredRemote) {
+				// If no configured remote, try to find the default remote
+				const remote =
+					configuredRemote || (yield* findDefaultRemoteEffect(gitRoot))
+
+				if (remote) {
 					// Check if the remote version of the branch exists
-					const remoteBranch = `${configuredRemote}/${configuredBranch}`
+					const remoteBranch = `${remote}/${configuredBranch}`
 					const remoteExists = yield* branchExistsEffect(gitRoot, remoteBranch)
 					if (remoteExists) {
 						return remoteBranch
