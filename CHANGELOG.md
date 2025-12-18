@@ -1,5 +1,18 @@
 # @markjaquith/agency
 
+## 0.7.0
+
+### Minor Changes
+
+- 4256865: Improve branch creation message formatting to display base branch, source branch, and emit branch relationships using a consistent format with arrow notation.
+
+### Patch Changes
+
+- 9560990: Fix gh CLI timeout in push command to prevent CI hangs when creating pull requests with non-GitHub remotes
+- 0f3cc0d: Fix CI workflow to run all steps on changeset release PRs but conditionally skip test steps, allowing required checks to pass on release automation branches.
+- 716484f: Remove conditional skips from GitHub workflows to allow CI and validation to run for all pull requests, including those created by bots
+- 1bb2cb2: Simplify CI workflow conditional logic by moving changeset-release check to job level instead of repeating on each step, and add branch filtering to semantic PR linting.
+
 ## 0.6.1
 
 ### Patch Changes
