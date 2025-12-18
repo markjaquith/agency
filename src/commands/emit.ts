@@ -486,8 +486,8 @@ Arguments:
                     If not provided, will use saved config or prompt interactively
 
 Options:
-  -e, --emit        Custom name for emit branch (defaults to pattern from config)
-  -b, --branch      (Deprecated: use --emit) Custom name for emit branch
+  --emit            Custom name for emit branch (defaults to pattern from config)
+  --branch          (Deprecated: use --emit) Custom name for emit branch
   -f, --force       Force emit branch creation even if current branch looks like an emit branch
 
 Configuration:
