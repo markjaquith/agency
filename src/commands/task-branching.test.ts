@@ -444,4 +444,190 @@ describe("task command - branching functionality", () => {
 			expect(otherExists).toBe(false)
 		})
 	})
+
+	describe("remote branch preference", () => {
+		let remoteDir: string
+
+		beforeEach(async () => {
+			// Create a bare repository to act as the "remote"
+			remoteDir = await createTempDir()
+			await runGitCommand(remoteDir, ["git", "init", "--bare", "-b", "main"])
+		})
+
+		afterEach(async () => {
+			await cleanupTempDir(remoteDir)
+		})
+
+		test("prefers origin/main over local main when remote is ahead", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			// Add the remote
+			await runGitCommand(tempDir, [
+				"git",
+				"remote",
+				"add",
+				"origin",
+				remoteDir,
+			])
+
+			// Push current state to remote
+			await runGitCommand(tempDir, ["git", "push", "-u", "origin", "main"])
+
+			// Make a commit on local main
+			await createFile(tempDir, "local-only.txt", "local content")
+			await runGitCommand(tempDir, ["git", "add", "."])
+			await runGitCommand(tempDir, ["git", "commit", "-m", "Local-only commit"])
+
+			// Reset local main back to origin/main (simulate local being behind)
+			await runGitCommand(tempDir, ["git", "reset", "--hard", "origin/main"])
+
+			// Make a NEW commit on origin/main by pushing from a separate clone
+			const cloneDir = await createTempDir()
+			await runGitCommand(cloneDir, ["git", "clone", remoteDir, "."])
+			await runGitCommand(cloneDir, [
+				"git",
+				"config",
+				"user.email",
+				"test@example.com",
+			])
+			await runGitCommand(cloneDir, ["git", "config", "user.name", "Test User"])
+			await createFile(cloneDir, "remote-only.txt", "remote content")
+			await runGitCommand(cloneDir, ["git", "add", "."])
+			await runGitCommand(cloneDir, [
+				"git",
+				"commit",
+				"-m",
+				"Remote-only commit",
+			])
+			await runGitCommand(cloneDir, ["git", "push", "origin", "main"])
+			await cleanupTempDir(cloneDir)
+
+			// Fetch so origin/main is updated but local main stays behind
+			await runGitCommand(tempDir, ["git", "fetch", "origin"])
+
+			// Configure agency.mainBranch to "main" (local) and agency.remote to "origin"
+			await runGitCommand(tempDir, [
+				"git",
+				"config",
+				"--local",
+				"agency.mainBranch",
+				"main",
+			])
+			await runGitCommand(tempDir, [
+				"git",
+				"config",
+				"--local",
+				"agency.remote",
+				"origin",
+			])
+
+			// Create task - should branch from origin/main (which has remote-only.txt)
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "my-task",
+				}),
+			)
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/my-task")
+
+			// The new branch should have remote-only.txt (from origin/main)
+			const remoteFileExists = await Bun.file(
+				join(tempDir, "remote-only.txt"),
+			).exists()
+			expect(remoteFileExists).toBe(true)
+		})
+
+		test("falls back to local main when remote branch does not exist", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			// Create a commit on local main
+			await createFile(tempDir, "local.txt", "local content")
+			await runGitCommand(tempDir, ["git", "add", "."])
+			await runGitCommand(tempDir, ["git", "commit", "-m", "Local commit"])
+
+			// Add a remote but don't push (so origin/main doesn't exist)
+			await runGitCommand(tempDir, [
+				"git",
+				"remote",
+				"add",
+				"origin",
+				remoteDir,
+			])
+
+			// Configure agency.mainBranch to "main" and agency.remote to "origin"
+			await runGitCommand(tempDir, [
+				"git",
+				"config",
+				"--local",
+				"agency.mainBranch",
+				"main",
+			])
+			await runGitCommand(tempDir, [
+				"git",
+				"config",
+				"--local",
+				"agency.remote",
+				"origin",
+			])
+
+			// Create task - should fall back to local main since origin/main doesn't exist
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "my-task",
+				}),
+			)
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/my-task")
+
+			// The new branch should have local.txt
+			const localFileExists = await Bun.file(
+				join(tempDir, "local.txt"),
+			).exists()
+			expect(localFileExists).toBe(true)
+		})
+
+		test("uses configured remote branch as-is when it already has remote prefix", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+			await initAgency(tempDir, "test")
+
+			// Add the remote and push
+			await runGitCommand(tempDir, [
+				"git",
+				"remote",
+				"add",
+				"origin",
+				remoteDir,
+			])
+			await runGitCommand(tempDir, ["git", "push", "-u", "origin", "main"])
+
+			// Configure agency.mainBranch to "origin/main" (already has remote prefix)
+			await runGitCommand(tempDir, [
+				"git",
+				"config",
+				"--local",
+				"agency.mainBranch",
+				"origin/main",
+			])
+
+			// Create task
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "my-task",
+				}),
+			)
+
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/my-task")
+		})
+	})
 })

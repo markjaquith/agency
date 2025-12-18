@@ -404,6 +404,62 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		setMainBranchConfig: (mainBranch: string, gitRoot: string) =>
 			setGitConfigEffect("agency.mainBranch", mainBranch, gitRoot),
 
+		/**
+		 * Resolves the main branch, preferring remote branches over local ones.
+		 *
+		 * Logic:
+		 * 1. Get the configured main branch (e.g., "main")
+		 * 2. If not configured, use findMainBranch() which already prefers remote
+		 * 3. If configured branch doesn't have a remote prefix, try to find a remote version
+		 * 4. Check if ${remote}/${branch} exists (e.g., "origin/main")
+		 * 5. Use remote version if it exists, fall back to local if not
+		 *
+		 * This ensures we always use the most up-to-date code from the remote
+		 * when creating new branches.
+		 */
+		resolveMainBranch: (gitRoot: string) =>
+			Effect.gen(function* () {
+				// Get the configured main branch
+				const configuredBranch = yield* getGitConfigEffect(
+					"agency.mainBranch",
+					gitRoot,
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				// If no config, use findMainBranch which already prefers remote
+				if (!configuredBranch) {
+					return yield* findMainBranchEffect(gitRoot)
+				}
+
+				// Check if the configured branch already has a remote prefix (e.g., "origin/main")
+				const hasRemotePrefix = configuredBranch.includes("/")
+				if (hasRemotePrefix) {
+					// Already a remote branch, use as-is
+					return configuredBranch
+				}
+
+				// Try to resolve the configured remote
+				const configuredRemote = yield* getGitConfigEffect(
+					"agency.remote",
+					gitRoot,
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				if (configuredRemote) {
+					// Check if the remote version of the branch exists
+					const remoteBranch = `${configuredRemote}/${configuredBranch}`
+					const remoteExists = yield* branchExistsEffect(gitRoot, remoteBranch)
+					if (remoteExists) {
+						return remoteBranch
+					}
+				}
+
+				// Fall back to the configured local branch
+				return configuredBranch
+			}).pipe(
+				Effect.mapError(
+					() => new GitError({ message: "Failed to resolve main branch" }),
+				),
+			),
+
 		getDefaultBaseBranchConfig: (gitRoot: string) =>
 			pipe(
 				getGitConfigEffect("agency.baseBranch", gitRoot),
