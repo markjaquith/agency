@@ -4,7 +4,7 @@
 	"trailingComma": "all",
 	"overrides": [
 		{
-			"files": "package.json",
+			"files": "*.json",
 			"options": {
 				"useTabs": false,
 				"tabWidth": 2
