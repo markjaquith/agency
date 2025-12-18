@@ -188,32 +188,9 @@ const taskContinue = (options: TaskOptions) =>
 				)
 			}
 		} else {
-			// Default: branch from main upstream branch
+			// Default: branch from main upstream branch (preferring remote)
 			baseBranchToBranchFrom =
-				(yield* git.getMainBranchConfig(targetPath)) ||
-				(yield* git.findMainBranch(targetPath)) ||
-				undefined
-
-			// Try to auto-detect from remote
-			if (!baseBranchToBranchFrom) {
-				const remote = yield* git
-					.resolveRemote(targetPath)
-					.pipe(Effect.catchAll(() => Effect.succeed(null)))
-
-				const commonBases: string[] = []
-				if (remote) {
-					commonBases.push(`${remote}/main`, `${remote}/master`)
-				}
-				commonBases.push("main", "master")
-
-				for (const base of commonBases) {
-					const exists = yield* git.branchExists(targetPath, base)
-					if (exists) {
-						baseBranchToBranchFrom = base
-						break
-					}
-				}
-			}
+				(yield* git.resolveMainBranch(targetPath)) || undefined
 		}
 
 		if (!baseBranchToBranchFrom) {
@@ -422,32 +399,9 @@ export const task = (options: TaskOptions = {}) =>
 				)
 			}
 		} else {
-			// Default: determine main upstream branch
+			// Default: determine main upstream branch (preferring remote)
 			baseBranchToBranchFrom =
-				(yield* git.getMainBranchConfig(targetPath)) ||
-				(yield* git.findMainBranch(targetPath)) ||
-				undefined
-
-			// If still no base branch, try to auto-detect from remote
-			if (!baseBranchToBranchFrom) {
-				const remote = yield* git
-					.resolveRemote(targetPath)
-					.pipe(Effect.catchAll(() => Effect.succeed(null)))
-
-				const commonBases: string[] = []
-				if (remote) {
-					commonBases.push(`${remote}/main`, `${remote}/master`)
-				}
-				commonBases.push("main", "master")
-
-				for (const base of commonBases) {
-					const exists = yield* git.branchExists(targetPath, base)
-					if (exists) {
-						baseBranchToBranchFrom = base
-						break
-					}
-				}
-			}
+				(yield* git.resolveMainBranch(targetPath)) || undefined
 
 			if (baseBranchToBranchFrom) {
 				verboseLog(
@@ -754,34 +708,9 @@ export const task = (options: TaskOptions = {}) =>
 		baseBranch =
 			(yield* git.getDefaultBaseBranchConfig(targetPath)) || undefined
 
-		// If no repo-level default, try to auto-detect
+		// If no repo-level default, try to auto-detect (preferring remote)
 		if (!baseBranch) {
-			// Try main branch config
-			baseBranch =
-				(yield* git.getMainBranchConfig(targetPath)) ||
-				(yield* git.findMainBranch(targetPath)) ||
-				undefined
-
-			// Try common base branches with dynamic remote
-			if (!baseBranch) {
-				const remote = yield* git
-					.resolveRemote(targetPath)
-					.pipe(Effect.catchAll(() => Effect.succeed(null)))
-
-				const commonBases: string[] = []
-				if (remote) {
-					commonBases.push(`${remote}/main`, `${remote}/master`)
-				}
-				commonBases.push("main", "master")
-
-				for (const base of commonBases) {
-					const exists = yield* git.branchExists(targetPath, base)
-					if (exists) {
-						baseBranch = base
-						break
-					}
-				}
-			}
+			baseBranch = (yield* git.resolveMainBranch(targetPath)) || undefined
 		}
 
 		if (baseBranch) {
@@ -861,14 +790,11 @@ const createFeatureBranchEffect = (
 		const git = yield* GitService
 		const promptService = yield* PromptService
 
-		// Use provided base branch if available, otherwise get or prompt for one
+		// Use provided base branch if available, otherwise resolve (preferring remote)
 		let baseBranch: string | undefined = providedBaseBranch
 
 		if (!baseBranch) {
-			baseBranch =
-				(yield* git.getMainBranchConfig(targetPath)) ||
-				(yield* git.findMainBranch(targetPath)) ||
-				undefined
+			baseBranch = (yield* git.resolveMainBranch(targetPath)) || undefined
 		}
 
 		// If no base branch is configured and not in silent mode, prompt for it
@@ -880,13 +806,6 @@ const createFeatureBranchEffect = (
 					suggestions,
 				)
 				verboseLog(`Selected base branch: ${baseBranch}`)
-
-				// Save the main branch config if it's not already set
-				const mainBranchConfig = yield* git.getMainBranchConfig(targetPath)
-				if (!mainBranchConfig) {
-					yield* git.setMainBranchConfig(baseBranch, targetPath)
-					log(done(`Set main branch to ${highlight.branch(baseBranch)}`))
-				}
 			} else {
 				return yield* Effect.fail(
 					new Error(
