@@ -9,7 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
 
     steps:
       - uses: actions/checkout@v4
