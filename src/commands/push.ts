@@ -21,7 +21,8 @@ import { spawnProcess } from "../utils/process"
 
 interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
-	branch?: string
+	emit?: string
+	branch?: string // Deprecated: use emit instead
 	force?: boolean
 	pr?: boolean
 	skipFilter?: boolean
@@ -77,10 +78,10 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 
 		// Step 1: Create emit branch (agency emit)
 		verboseLog("Step 1: Emitting...")
-		// Use emit command
+		// Use emit command - prefer emit option, fallback to branch for backward compatibility
 		const prEffectWithOptions = emit({
 			baseBranch: options.baseBranch,
-			branch: options.branch,
+			emit: options.emit || options.branch,
 			silent: true, // Suppress emit command output, we'll provide our own
 			force: options.force,
 			verbose: options.verbose,
@@ -99,7 +100,8 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 
 		// Compute the emit branch name (emit() command now stays on source branch)
 		// Use the branchInfo we already computed earlier
-		const emitBranchName = options.branch || branchInfo.emitBranch
+		const emitBranchName =
+			options.emit || options.branch || branchInfo.emitBranch
 		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
@@ -327,7 +329,8 @@ Arguments:
                     If not provided, will use saved config or auto-detect
 
 Options:
-  -b, --branch      Custom name for emit branch (defaults to pattern from config)
+  -e, --emit        Custom name for emit branch (defaults to pattern from config)
+  -b, --branch      (Deprecated: use --emit) Custom name for emit branch
   -f, --force       Force push to remote if branch has diverged
   --pr              Open GitHub PR in browser after pushing (requires gh CLI)
 

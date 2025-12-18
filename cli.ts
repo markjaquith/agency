@@ -94,7 +94,7 @@ const commands: Record<string, Command> = {
 			await runCommand(
 				emit({
 					baseBranch: args[0],
-					branch: options.branch,
+					emit: options.emit || options.branch,
 					silent: options.silent,
 					force: options.verbose,
 					verbose: options.verbose,
@@ -128,7 +128,7 @@ const commands: Record<string, Command> = {
 			await runCommand(
 				push({
 					baseBranch: args[0],
-					branch: options.branch,
+					emit: options.emit || options.branch,
 					silent: options.silent,
 					force: options.force,
 					verbose: options.verbose,
@@ -167,7 +167,7 @@ const commands: Record<string, Command> = {
 			await runCommand(
 				rebase({
 					baseBranch: args[0],
-					branch: options.branch,
+					emit: options.emit || options.branch,
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -515,6 +515,10 @@ try {
 			template: {
 				type: "string",
 				short: "t",
+			},
+			emit: {
+				type: "string",
+				short: "e",
 			},
 			branch: {
 				type: "string",

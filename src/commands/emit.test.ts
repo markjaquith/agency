@@ -130,7 +130,7 @@ describe("emit command", () => {
 
 			// Skip filter for speed - we're just testing branch creation
 			await runTestEffect(
-				emit({ branch: "custom-pr", silent: true, skipFilter: true }),
+				emit({ emit: "custom-pr", silent: true, skipFilter: true }),
 			)
 
 			const branches = await getGitOutput(tempDir, [
