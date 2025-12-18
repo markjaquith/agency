@@ -5,11 +5,33 @@ import { readFileSync } from "fs"
 import { join } from "path"
 
 // Regex to validate changeset frontmatter format
-// Must have package name with bump type (e.g., "agency": minor)
+// Must have package name with bump type (e.g., "@markjaquith/agency": minor)
 const frontmatterRegex = /^---\n([\s\S]*?)\n---\n/
-const packageBumpRegex = /"[^"]+"\s*:\s*(major|minor|patch)/
+const packageBumpRegex = /"([^"]+)"\s*:\s*(major|minor|patch)/
 
-function validateChangesetFile(filePath: string): {
+// Read the expected package name from package.json
+function getExpectedPackageName(): string {
+	const packageJsonPath = join(
+		execSync("git rev-parse --show-toplevel", {
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim(),
+		"package.json",
+	)
+	try {
+		const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"))
+		return packageJson.name
+	} catch (error) {
+		throw new Error(
+			`Could not read package.json: ${error instanceof Error ? error.message : String(error)}`,
+		)
+	}
+}
+
+function validateChangesetFile(
+	filePath: string,
+	expectedPackageName: string,
+): {
 	valid: boolean
 	error?: string
 } {
@@ -24,11 +46,21 @@ function validateChangesetFile(filePath: string): {
 
 		const frontmatter = frontmatterMatch[1]
 
-		// Check for package bump declaration
-		if (!packageBumpRegex.test(frontmatter)) {
+		// Check for package bump declaration and extract package name
+		const packageMatch = frontmatter.match(packageBumpRegex)
+		if (!packageMatch) {
 			return {
 				valid: false,
-				error: 'Missing package bump declaration (e.g., "agency": minor)',
+				error: `Missing package bump declaration (e.g., "${expectedPackageName}": minor)`,
+			}
+		}
+
+		// Validate package name matches package.json
+		const packageName = packageMatch[1]
+		if (packageName !== expectedPackageName) {
+			return {
+				valid: false,
+				error: `Package name "${packageName}" does not match expected "${expectedPackageName}"`,
 			}
 		}
 
@@ -103,9 +135,11 @@ try {
 		stdio: ["pipe", "pipe", "pipe"],
 	}).trim()
 
+	const expectedPackageName = getExpectedPackageName()
+
 	for (const file of changesetFiles) {
 		const filePath = join(gitRoot, file)
-		const result = validateChangesetFile(filePath)
+		const result = validateChangesetFile(filePath, expectedPackageName)
 		if (!result.valid) {
 			console.error(`❌ Invalid changeset file format in ${file}`)
 			console.error(`   ${result.error}`)
