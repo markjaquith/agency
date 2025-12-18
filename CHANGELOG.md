@@ -1,5 +1,11 @@
 # @markjaquith/agency
 
+## 0.6.1
+
+### Patch Changes
+
+- 56bf1db: Fix CLAUDE.md filtering during emit operations to ensure modified managed files are properly reverted on emit branches
+
 ## 0.6.0
 
 ### Minor Changes
