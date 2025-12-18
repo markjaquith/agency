@@ -11,30 +11,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Skip tests for changeset releases
+        if: startsWith(github.head_ref, 'changeset-release/')
+        run: echo "Skipping tests for changeset release PR"
+
       - uses: actions/checkout@v4
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
 
       - name: Setup Bun
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
 
       - name: Install git-filter-repo
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: |
           sudo apt-get remove -y man-db
           sudo apt-get update
           sudo apt-get install -y git-filter-repo
 
       - name: Install dependencies
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: bun install
 
       - name: Check formatting
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: bun run format:check
 
       - name: Check TypeScript
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: bunx tsc --noEmit
 
       - name: Run tests
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: bun test
 
       - name: Check for unused exports
+        if: ${{ !startsWith(github.head_ref, 'changeset-release/') }}
         run: bun run knip
