@@ -26,7 +26,8 @@ import { getTopLevelDir, dirToGlobPattern } from "../utils/glob"
 interface TaskOptions extends BaseCommandOptions {
 	path?: string
 	task?: string
-	branch?: string
+	emit?: string
+	branch?: string // Deprecated: use emit instead
 	from?: string
 	fromCurrent?: boolean
 	continue?: boolean
@@ -140,12 +141,12 @@ const taskContinue = (options: TaskOptions) =>
 		}
 
 		// Prompt for new branch name if not provided
-		let branchName = options.branch
+		let branchName = options.emit || options.branch
 		if (!branchName) {
 			if (silent) {
 				return yield* Effect.fail(
 					new Error(
-						"Branch name is required with --continue in silent mode. Use --branch to specify one.",
+						"Branch name is required with --continue in silent mode. Use --emit to specify one.",
 					),
 				)
 			}
@@ -455,7 +456,7 @@ export const task = (options: TaskOptions = {}) =>
 		}
 
 		// Determine branch name logic
-		let branchName = options.branch
+		let branchName = options.emit || options.branch
 
 		// If on main branch or using --from without a branch name, prompt for it (unless in silent mode)
 		if ((!isFeature || options.from) && !branchName) {
@@ -939,7 +940,8 @@ Arguments:
   branch-name       Create and switch to this branch before initializing
 
 Options:
-  -b, --branch      Branch name to create (alternative to positional arg)
+  -e, --emit        Branch name to create (alternative to positional arg)
+  -b, --branch      (Deprecated: use --emit) Branch name to create
   --from <branch>   Branch to branch from instead of main upstream branch
   --from-current    Branch from the current branch
   -c, --continue    Continue a task by copying agency files to a new branch

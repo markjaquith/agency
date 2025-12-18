@@ -119,7 +119,7 @@ describe("push command", () => {
 			await runTestEffect(
 				push({
 					baseBranch: "main",
-					branch: "custom-pr-branch",
+					emit: "custom-pr-branch",
 					silent: true,
 					skipFilter: true,
 				}),

@@ -362,7 +362,7 @@ describe("rebase command", () => {
 		expect(await fileExists(tempDir, "custom.txt")).toBe(true)
 	})
 
-	test("updates emit branch with --branch flag", async () => {
+	test("updates emit branch with --emit flag", async () => {
 		// Create feature branch with agency.json
 		await createBranch(tempDir, "agency/feature")
 		await setupAgencyJson(tempDir, "main", "feature")
@@ -389,7 +389,7 @@ describe("rebase command", () => {
 				silent: true,
 				verbose: false,
 				baseBranch: "main",
-				branch: "new-emit-branch",
+				emit: "new-emit-branch",
 			}),
 		)
 
@@ -463,7 +463,7 @@ describe("rebase command", () => {
 				silent: true,
 				verbose: false,
 				baseBranch: "main",
-				branch: "updated-emit",
+				emit: "updated-emit",
 			}),
 		)
 
@@ -480,5 +480,42 @@ describe("rebase command", () => {
 		expect(updatedJson.createdAt).toBe("2024-01-01T00:00:00.000Z")
 		expect(updatedJson.baseBranch).toBe("main")
 		expect(updatedJson.emitBranch).toBe("updated-emit")
+	})
+
+	test("supports deprecated --branch flag for backward compatibility", async () => {
+		// Create feature branch with agency.json
+		await createBranch(tempDir, "agency/feature")
+		await setupAgencyJson(tempDir, "main", "feature")
+
+		// Add commit to main
+		await checkoutBranch(tempDir, "main")
+		await Bun.write(join(tempDir, "main1.txt"), "main 1\n")
+		await Bun.spawn(["git", "add", "main1.txt"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+		await Bun.spawn(["git", "commit", "--no-verify", "-m", "Main commit"], {
+			cwd: tempDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		}).exited
+
+		// Rebase feature branch with --branch (deprecated)
+		await checkoutBranch(tempDir, "agency/feature")
+
+		await runTestEffect(
+			rebase({
+				silent: true,
+				verbose: false,
+				baseBranch: "main",
+				branch: "branch-flag-emit",
+			}),
+		)
+
+		// Verify agency.json has updated emit branch
+		const agencyJsonFile = Bun.file(join(tempDir, "agency.json"))
+		const agencyJson = await agencyJsonFile.json()
+		expect(agencyJson.emitBranch).toBe("branch-flag-emit")
 	})
 })

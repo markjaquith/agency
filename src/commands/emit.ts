@@ -24,7 +24,8 @@ import {
 import { withSpinner } from "../utils/spinner"
 
 interface EmitOptions extends BaseCommandOptions {
-	branch?: string
+	emit?: string
+	branch?: string // Deprecated: use emit instead
 	baseBranch?: string
 	force?: boolean
 	/** Skip the git-filter-repo step (for testing) */
@@ -101,9 +102,12 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 
 		let emitBranchName: string
 
-		if (options.branch) {
+		// Support both --emit (new) and --branch (deprecated)
+		const explicitBranchName = options.emit || options.branch
+
+		if (explicitBranchName) {
 			// Explicit branch name provided via CLI
-			emitBranchName = options.branch
+			emitBranchName = explicitBranchName
 		} else if (metadata?.emitBranch) {
 			// Use emitBranch from agency.json (source of truth)
 			emitBranchName = metadata.emitBranch
@@ -482,7 +486,8 @@ Arguments:
                     If not provided, will use saved config or prompt interactively
 
 Options:
-  -b, --branch      Custom name for emit branch (defaults to pattern from config)
+  -e, --emit        Custom name for emit branch (defaults to pattern from config)
+  -b, --branch      (Deprecated: use --emit) Custom name for emit branch
   -f, --force       Force emit branch creation even if current branch looks like an emit branch
 
 Configuration:

@@ -49,7 +49,7 @@ describe("task --continue", () => {
 		// Try to continue without agency files
 		await expect(
 			runTestEffect(
-				task({ silent: true, continue: true, branch: "new-feature" }),
+				task({ silent: true, continue: true, emit: "new-feature" }),
 			),
 		).rejects.toThrow("No agency.json found")
 	})
@@ -61,7 +61,7 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// First create a task branch with agency files
-		await runTestEffect(task({ silent: true, branch: "original-feature" }))
+		await runTestEffect(task({ silent: true, emit: "original-feature" }))
 
 		// Try to continue without branch name
 		await expect(
@@ -77,7 +77,7 @@ describe("task --continue", () => {
 
 		// Create a task branch with agency files
 		await runTestEffect(
-			task({ silent: true, branch: "original-feature", task: "Original task" }),
+			task({ silent: true, emit: "original-feature", task: "Original task" }),
 		)
 
 		// Verify we're on the source branch
@@ -93,7 +93,7 @@ describe("task --continue", () => {
 			task({
 				silent: true,
 				continue: true,
-				branch: "continued-feature",
+				emit: "continued-feature",
 			}),
 		)
 
@@ -118,7 +118,7 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// Create a task branch
-		await runTestEffect(task({ silent: true, branch: "feature-v1" }))
+		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Read original agency.json
 		const originalAgencyJson = JSON.parse(
@@ -128,7 +128,7 @@ describe("task --continue", () => {
 
 		// Continue to new branch
 		await runTestEffect(
-			task({ silent: true, continue: true, branch: "feature-v2" }),
+			task({ silent: true, continue: true, emit: "feature-v2" }),
 		)
 
 		// Read new agency.json
@@ -145,7 +145,7 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// Create a task branch
-		await runTestEffect(task({ silent: true, branch: "feature-v1" }))
+		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Create another branch that would conflict
 		await Bun.spawn(["git", "branch", "agency/feature-v2"], {
@@ -156,9 +156,7 @@ describe("task --continue", () => {
 
 		// Try to continue to the existing branch name
 		await expect(
-			runTestEffect(
-				task({ silent: true, continue: true, branch: "feature-v2" }),
-			),
+			runTestEffect(task({ silent: true, continue: true, emit: "feature-v2" })),
 		).rejects.toThrow("already exists")
 	})
 
@@ -169,14 +167,14 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// Create a task branch
-		await runTestEffect(task({ silent: true, branch: "feature-v1" }))
+		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Verify opencode.json exists (it's in injectedFiles)
 		expect(await fileExists(join(tempDir, "opencode.json"))).toBe(true)
 
 		// Continue to new branch
 		await runTestEffect(
-			task({ silent: true, continue: true, branch: "feature-v2" }),
+			task({ silent: true, continue: true, emit: "feature-v2" }),
 		)
 
 		// Verify opencode.json was copied
@@ -190,7 +188,7 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// Create a task branch and add a file
-		await runTestEffect(task({ silent: true, branch: "feature-v1" }))
+		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Add a file that's NOT in agency files
 		await Bun.write(join(tempDir, "feature-specific.txt"), "feature content")
@@ -210,7 +208,7 @@ describe("task --continue", () => {
 
 		// Continue to new branch
 		await runTestEffect(
-			task({ silent: true, continue: true, branch: "feature-v2" }),
+			task({ silent: true, continue: true, emit: "feature-v2" }),
 		)
 
 		// The new branch should be based on main, not on the old feature branch
@@ -258,14 +256,14 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// Create a task branch
-		await runTestEffect(task({ silent: true, branch: "feature-v1" }))
+		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Continue to new branch from develop
 		await runTestEffect(
 			task({
 				silent: true,
 				continue: true,
-				branch: "feature-v2",
+				emit: "feature-v2",
 				from: "develop",
 			}),
 		)
@@ -285,7 +283,7 @@ describe("task --continue", () => {
 		await initAgency(tempDir, "test")
 
 		// Create a task branch
-		await runTestEffect(task({ silent: true, branch: "feature-v1" }))
+		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Read original agency.json
 		const originalAgencyJson = JSON.parse(
@@ -298,7 +296,7 @@ describe("task --continue", () => {
 
 		// Continue to new branch
 		await runTestEffect(
-			task({ silent: true, continue: true, branch: "feature-v2" }),
+			task({ silent: true, continue: true, emit: "feature-v2" }),
 		)
 
 		// Read new agency.json

@@ -46,7 +46,7 @@ describe("save command", () => {
 
 		// Initialize with template
 		await initAgency(tempDir, "test-save")
-		await task({ silent: true, branch: "test-feature" })
+		await task({ silent: true, emit: "test-feature" })
 
 		// Modify the files
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Modified content")
@@ -71,7 +71,7 @@ describe("save command", () => {
 		await initAgency(tempDir, "test-no-files")
 		await task({
 			silent: true,
-			branch: "test-feature",
+			emit: "test-feature",
 		})
 
 		await expect(
@@ -104,7 +104,7 @@ describe("save command", () => {
 		await initAgency(tempDir, "test-partial")
 		await task({
 			silent: true,
-			branch: "test-feature",
+			emit: "test-feature",
 		})
 
 		// Remove AGENTS.md (just to test skipping behavior)
@@ -137,7 +137,7 @@ describe("save command", () => {
 
 		// Initialize with template
 		await initAgency(tempDir, "test-dir")
-		await task({ silent: true, branch: "test-feature" })
+		await task({ silent: true, emit: "test-feature" })
 
 		// Create a directory with files
 		const docsDir = join(tempDir, "docs")
@@ -166,7 +166,7 @@ describe("save command", () => {
 
 		// Initialize with template
 		await initAgency(tempDir, "test-task")
-		await task({ silent: true, branch: "test-feature" })
+		await task({ silent: true, emit: "test-feature" })
 
 		// Create a TASK.md with the {task} placeholder
 		await Bun.write(join(tempDir, "TASK.md"), "{task}\n\n## Notes")
@@ -185,7 +185,7 @@ describe("save command", () => {
 		await initAgency(tempDir, "test-task-invalid")
 		await task({
 			silent: true,
-			branch: "test-feature",
+			emit: "test-feature",
 		})
 
 		// Create a TASK.md without the {task} placeholder
@@ -208,7 +208,7 @@ describe("save command", () => {
 		await initAgency(tempDir, "test-task-subdir")
 		await task({
 			silent: true,
-			branch: "test-feature",
+			emit: "test-feature",
 		})
 
 		// Create a TASK.md in a subdirectory with the {task} placeholder
@@ -229,7 +229,7 @@ describe("save command", () => {
 		await initAgency(tempDir, "test-task-subdir-invalid")
 		await task({
 			silent: true,
-			branch: "test-feature",
+			emit: "test-feature",
 		})
 
 		// Create a TASK.md in a subdirectory without the {task} placeholder

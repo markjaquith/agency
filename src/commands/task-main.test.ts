@@ -10,6 +10,8 @@ import {
 	fileExists,
 	readFile,
 	runTestEffect,
+	runGitCommand,
+	getCurrentBranch,
 } from "../test-utils"
 
 describe("task command", () => {
@@ -48,7 +50,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -59,7 +61,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toContain("Repo Instructions")
@@ -73,7 +75,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 			expect(await fileExists(join(subdir, "AGENTS.md"))).toBe(false)
@@ -88,7 +90,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toBe(existingContent)
@@ -112,7 +114,7 @@ describe("task command", () => {
 				task({
 					path: tempDir,
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -144,7 +146,7 @@ describe("task command", () => {
 				task({
 					path: "..",
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -159,7 +161,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "opencode.json"))).toBe(true)
 		})
@@ -170,7 +172,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			const parsed = JSON.parse(content)
@@ -193,7 +195,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "opencode.json"))
 			const parsed = JSON.parse(content)
@@ -228,7 +230,7 @@ describe("task command", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -251,7 +253,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Should update opencode.jsonc, not create opencode.json
 			expect(await fileExists(join(tempDir, "opencode.jsonc"))).toBe(true)
@@ -291,7 +293,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Should merge with opencode.jsonc (not opencode.json)
 			const jsoncContent = await readFile(join(tempDir, "opencode.jsonc"))
@@ -320,7 +322,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "opencode.jsonc"))
 			const parsed = JSON.parse(content)
@@ -355,7 +357,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Should update .opencode/opencode.json, not create root opencode.json
 			expect(await fileExists(join(dotOpencodeDir, "opencode.json"))).toBe(true)
@@ -393,7 +395,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Should update .opencode/opencode.jsonc, not create root opencode.json
 			expect(await fileExists(join(dotOpencodeDir, "opencode.jsonc"))).toBe(
@@ -441,7 +443,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Should merge with .opencode/opencode.jsonc (not root opencode.json)
 			const dotDirContent = await readFile(
@@ -486,7 +488,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Should merge with .opencode/opencode.json (not root opencode.jsonc)
 			const dotDirContent = await readFile(
@@ -520,7 +522,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// Check agency.json to verify .opencode/opencode.json is in injectedFiles
 			const agencyJsonContent = await readFile(join(tempDir, "agency.json"))
@@ -537,7 +539,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "TASK.md"))).toBe(true)
 		})
@@ -548,7 +550,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "TASK.md"))
 			expect(content).toContain("{task}")
@@ -563,7 +565,7 @@ describe("task command", () => {
 				task({
 					silent: true,
 					task: "Build new feature",
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -582,7 +584,7 @@ describe("task command", () => {
 			await initAgency(tempDir, "test")
 
 			// Should succeed but skip TASK.md
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			// TASK.md should not be overwritten
 			const content = await readFile(join(tempDir, "TASK.md"))
@@ -611,7 +613,7 @@ describe("task command", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -632,7 +634,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			console.log = originalLog
 
@@ -662,7 +664,7 @@ describe("task command", () => {
 				task({
 					silent: false,
 					task: "Test task",
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -690,7 +692,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "my-feature" }))
+			await runTestEffect(task({ silent: true, emit: "my-feature" }))
 
 			// Verify we're now on the new branch
 			const proc = Bun.spawn(["git", "branch", "--show-current"], {
@@ -731,7 +733,7 @@ describe("task command", () => {
 					return await runTestEffect(
 						task({
 							silent: true,
-							branch: "existing-branch",
+							emit: "existing-branch",
 							task: "This should not be asked for",
 						}),
 					)
@@ -753,7 +755,7 @@ describe("task command", () => {
 			// Should succeed without needing branch option
 			await initAgency(tempDir, "test")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
@@ -796,7 +798,7 @@ describe("task command", () => {
 
 			await initAgency(tempDir, "custom")
 
-			await runTestEffect(task({ silent: true, branch: "test-feature" }))
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
 
 			const content = await readFile(join(tempDir, "AGENTS.md"))
 			expect(content).toBe(sourceContent)
@@ -811,7 +813,7 @@ describe("task command", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -829,7 +831,7 @@ describe("task command", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -854,7 +856,7 @@ describe("task command", () => {
 			await runTestEffect(
 				task({
 					silent: true,
-					branch: "test-feature",
+					emit: "test-feature",
 				}),
 			)
 
@@ -867,6 +869,29 @@ describe("task command", () => {
 
 			// opencode.json should be in injectedFiles
 			expect(metadata.injectedFiles).toContain("opencode.json")
+		})
+
+		test("supports deprecated --branch flag for backward compatibility", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await initAgency(tempDir, "test")
+
+			// Use deprecated --branch flag instead of --emit
+			await runTestEffect(
+				task({
+					silent: true,
+					branch: "backward-compat-test",
+				}),
+			)
+
+			// Should have created the branch with agency/ prefix
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/backward-compat-test")
+
+			// Should have correct emitBranch in agency.json
+			const metadata = JSON.parse(await readFile(join(tempDir, "agency.json")))
+			expect(metadata.emitBranch).toBe("backward-compat-test")
 		})
 	})
 })
