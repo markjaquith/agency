@@ -1,5 +1,23 @@
 # @markjaquith/agency
 
+## 0.7.0
+
+### Minor Changes
+
+- 4256865: Improve branch creation message formatting to display base branch, source branch, and emit branch relationships using a consistent format with arrow notation.
+
+### Patch Changes
+
+- d8c79b8: Fix agency task command to prompt for branch name when re-importing backpacked files from agency source branch
+- 9560990: Fix gh CLI timeout in push command to prevent CI hangs when creating pull requests with non-GitHub remotes
+- 0f3cc0d: Fix CI workflow to run all steps on changeset release PRs but conditionally skip test steps, allowing required checks to pass on release automation branches.
+- b8197e4: Add descriptive name to CI test job for better GitHub Actions visibility
+- ecb9c9c: Implement parallel test execution using find and xargs to improve test performance across CI, local scripts, and npm test command.
+- 716484f: Remove conditional skips from GitHub workflows to allow CI and validation to run for all pull requests, including those created by bots
+- 1bb2cb2: Simplify CI workflow conditional logic by moving changeset-release check to job level instead of repeating on each step, and add branch filtering to semantic PR linting.
+- 818c749: Skip CI for changeset-release PRs and remove push trigger from CI workflow to avoid redundant runs on merge to main
+- 3321f25: Skip changeset validation on auto-generated release PRs from changeset-release/main branch
+
 ## 0.6.1
 
 ### Patch Changes
