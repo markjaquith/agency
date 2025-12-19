@@ -45,6 +45,7 @@
   ],
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/npm": "^13.1.3",
     "@types/bun": "latest",
     "knip": "^5.70.1",
     "prettier": "^3.6.2",
