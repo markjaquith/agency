@@ -1,8 +1,6 @@
 {
   "version": 1,
-  "injectedFiles": [
-    "opencode.json"
-  ],
+  "injectedFiles": ["opencode.json"],
   "baseBranch": "origin/main",
   "emitBranch": "ci/npm-v4",
   "template": "agency",
