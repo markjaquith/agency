@@ -8,33 +8,44 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
-    if: github.head_ref != 'changeset-release/main'
 
     steps:
+      - name: Skip for changeset-release
+        if: github.head_ref == 'changeset-release/main'
+        run: echo "Skipping tests for changeset-release branch"
+
       - uses: actions/checkout@v4
+        if: github.head_ref != 'changeset-release/main'
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
+        if: github.head_ref != 'changeset-release/main'
         with:
           bun-version: latest
 
       - name: Install git-filter-repo
+        if: github.head_ref != 'changeset-release/main'
         run: |
           sudo apt-get remove -y man-db
           sudo apt-get update
           sudo apt-get install -y git-filter-repo
 
       - name: Install dependencies
+        if: github.head_ref != 'changeset-release/main'
         run: bun install
 
       - name: Check formatting
+        if: github.head_ref != 'changeset-release/main'
         run: bun run format:check
 
       - name: Check TypeScript
+        if: github.head_ref != 'changeset-release/main'
         run: bunx tsc --noEmit
 
       - name: Run tests
+        if: github.head_ref != 'changeset-release/main'
         run: find src -name "*.test.ts" -print0 | xargs -0 -n 1 -P 4 bun test
 
       - name: Check for unused exports
+        if: github.head_ref != 'changeset-release/main'
         run: bun run knip

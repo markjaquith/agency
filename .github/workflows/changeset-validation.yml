@@ -8,20 +8,27 @@ jobs:
   validate:
     name: Validate Changeset
     runs-on: ubuntu-latest
-    if: github.head_ref != 'changeset-release/main'
     steps:
+      - name: Skip for changeset-release
+        if: github.head_ref == 'changeset-release/main'
+        run: echo "Skipping validation for changeset-release branch"
+
       - name: Checkout Repo
+        if: github.head_ref != 'changeset-release/main'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Bun
+        if: github.head_ref != 'changeset-release/main'
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
 
       - name: Install Dependencies
+        if: github.head_ref != 'changeset-release/main'
         run: bun install
 
       - name: Check for Changeset
+        if: github.head_ref != 'changeset-release/main'
         run: bunx changeset status --since=origin/main
