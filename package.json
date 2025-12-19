@@ -1,6 +1,6 @@
 {
   "name": "@markjaquith/agency",
-  "version": "0.7.0",
+  "version": "0.0.0-development",
   "description": "Manages personal agents files",
   "license": "MIT",
   "author": "Mark Jaquith",
@@ -45,7 +45,6 @@
   ],
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/git": "^10.0.1",
     "@types/bun": "latest",
     "knip": "^5.70.1",
     "prettier": "^3.6.2",
