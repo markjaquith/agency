@@ -50,7 +50,15 @@ const tasks: Task[] = [
 		args: ["tsc", "--noEmit"],
 		color: "\x1b[34m",
 	}, // blue
-	{ name: "test", command: "bun", args: ["test"], color: "\x1b[33m" }, // yellow
+	{
+		name: "test",
+		command: "sh",
+		args: [
+			"-c",
+			'find src -name "*.test.ts" -print0 | xargs -0 -n 1 -P 4 bun test',
+		],
+		color: "\x1b[33m",
+	}, // yellow
 ]
 
 const reset = "\x1b[0m"
