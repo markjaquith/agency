@@ -759,6 +759,49 @@ describe("task command", () => {
 
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
 		})
+
+		test("fails when on agency source branch without branch name in silent mode", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await initAgency(tempDir, "test")
+
+			// Create a task branch with agency files
+			await runTestEffect(task({ silent: true, emit: "original-feature" }))
+
+			// Verify we're on the source branch with agency.json
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/original-feature")
+			expect(await fileExists(join(tempDir, "agency.json"))).toBe(true)
+
+			// Try to run agency task again without providing a branch name
+			// This should fail because we're on an agency source branch
+			await expect(runTestEffect(task({ silent: true }))).rejects.toThrow(
+				"agency source branch",
+			)
+		})
+
+		test("prompts for branch name when on agency source branch", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			await initAgency(tempDir, "test")
+
+			// Create a task branch with agency files
+			await runTestEffect(task({ silent: true, emit: "original-feature" }))
+
+			// Verify we're on the source branch with agency.json
+			const currentBranch = await getCurrentBranch(tempDir)
+			expect(currentBranch).toBe("agency/original-feature")
+			expect(await fileExists(join(tempDir, "agency.json"))).toBe(true)
+
+			// With a branch name provided, it should work
+			await runTestEffect(task({ silent: true, emit: "new-feature" }))
+
+			// Verify we're now on the new branch
+			const newBranch = await getCurrentBranch(tempDir)
+			expect(newBranch).toBe("agency/new-feature")
+		})
 	})
 
 	describe("template-based source files", () => {
