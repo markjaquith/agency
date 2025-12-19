@@ -35,6 +35,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "lts/*"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Verify the integrity of provenance attestations and registry signatures
         run: npm audit signatures
@@ -45,4 +46,4 @@ jobs:
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bunx semantic-release
+        run: bunx semantic-release --provenance
