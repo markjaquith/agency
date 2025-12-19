@@ -65,5 +65,10 @@
   },
   "trustedDependencies": [
     "@triggi/native-exec"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "tag": "latest",
+    "provenance": true
+  }
 }
