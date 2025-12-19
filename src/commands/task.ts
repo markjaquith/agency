@@ -377,6 +377,11 @@ export const task = (options: TaskOptions = {}) =>
 		const isFeature = yield* git.isFeatureBranch(currentBranch, targetPath)
 		verboseLog(`Is feature branch: ${isFeature}`)
 
+		// Check if we're on an agency source branch (has agency.json with backpacked files)
+		const agencyJsonPath = resolve(targetPath, "agency.json")
+		const hasAgencyJson = yield* fs.exists(agencyJsonPath)
+		verboseLog(`Has agency.json: ${hasAgencyJson}`)
+
 		// Determine base branch to branch from
 		let baseBranchToBranchFrom: string | undefined
 
@@ -468,14 +473,23 @@ export const task = (options: TaskOptions = {}) =>
 		// Determine branch name logic
 		let branchName = options.emit || options.branch
 
-		// If on main branch or using --from without a branch name, prompt for it (unless in silent mode)
-		if ((!isFeature || options.from) && !branchName) {
+		// If on main branch, using --from, or on an agency source branch without a branch name, prompt for it (unless in silent mode)
+		if ((!isFeature || options.from || hasAgencyJson) && !branchName) {
 			if (silent) {
 				if (options.from) {
 					return yield* Effect.fail(
 						new Error(
 							`Branch name is required when using --from flag.\n` +
 								`Use: 'agency task <branch-name> --from ${options.from}'`,
+						),
+					)
+				}
+				if (hasAgencyJson) {
+					return yield* Effect.fail(
+						new Error(
+							`You're currently on ${highlight.branch(currentBranch)}, which is an agency source branch.\n` +
+								`Branch name is required when re-importing backpacked files.\n` +
+								`Use: 'agency task <branch-name>' or 'agency task --continue <branch-name>'`,
 						),
 					)
 				}
