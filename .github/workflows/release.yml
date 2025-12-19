@@ -36,12 +36,6 @@ jobs:
       - name: Build
         run: bun run build
 
-      - name: Debug OIDC environment
-        run: |
-          echo "GITHUB_ACTIONS=$GITHUB_ACTIONS"
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL is set: $([[ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]] && echo 'yes' || echo 'no')"
-          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is set: $([[ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]] && echo 'yes' || echo 'no')"
-
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
