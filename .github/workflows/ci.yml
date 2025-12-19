@@ -33,7 +33,7 @@ jobs:
         run: bunx tsc --noEmit
 
       - name: Run tests
-        run: bun test
+        run: find src -name "*.test.ts" -print0 | xargs -0 -n 1 -P 4 bun test
 
       - name: Check for unused exports
         run: bun run knip
