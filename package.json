@@ -20,10 +20,8 @@
     "knip": "knip --production",
     "pushable": "./scripts/pushable",
     "check-commit-msg": "./scripts/check-commit-msg",
-    "changeset": "changeset",
-    "version": "changeset version",
-    "release": "bun run build && changeset publish --provenance",
-    "build": "bun build cli.ts --outdir dist --target node --minify"
+    "build": "bun build cli.ts --outdir dist --target node --minify",
+    "semantic-release": "semantic-release"
   },
   "exports": {
     ".": {
@@ -46,10 +44,12 @@
     "personal-agents"
   ],
   "devDependencies": {
-    "@changesets/cli": "^2.29.8",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@types/bun": "latest",
     "knip": "^5.70.1",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "semantic-release": "^24.2.4"
   },
   "peerDependencies": {
     "typescript": "^5"

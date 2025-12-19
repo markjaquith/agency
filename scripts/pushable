@@ -32,12 +32,6 @@ const tasks: Task[] = [
 		color: "\x1b[35m",
 	}, // magenta
 	{
-		name: "changeset",
-		command: "./scripts/check-changeset",
-		args: [],
-		color: "\x1b[95m",
-	}, // bright magenta
-	{
 		name: "format",
 		command: "bun",
 		args: ["run", "format:check"],
