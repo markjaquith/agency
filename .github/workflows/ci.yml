@@ -1,14 +1,13 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    if: github.head_ref != 'changeset-release/main'
 
     steps:
       - uses: actions/checkout@v4
