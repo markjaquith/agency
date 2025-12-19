@@ -65,6 +65,7 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "tag": "latest",
+    "access": "public",
     "provenance": true
   }
 }
