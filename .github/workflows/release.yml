@@ -44,5 +44,8 @@ jobs:
           version: bun run version
           commit: "chore: version packages"
           title: "chore: version packages"
+          # Use GitHub API for commits so they're attributed to PAT owner
+          # This allows subsequent workflow runs to be triggered
+          commitMode: github-api
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
