@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "injectedFiles": [
+    "opencode.json"
+  ],
+  "baseBranch": "origin/main",
+  "emitBranch": "chore/fix-check-skipping",
+  "template": "agency",
+  "createdAt": "2025-12-19T05:12:43.198Z"
+}
