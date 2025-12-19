@@ -165,9 +165,15 @@ The repository has validation scripts:
 - `scripts/check-commit-msg` - Validates commit messages locally
 - GitHub Actions workflow validates PR titles
 
-## Changesets
+## Releases
 
-This project uses Changesets for versioning and changelog generation. Ensure that you create a changeset for every branch, even for small changes.
+This project uses [semantic-release](https://semantic-release.gitbook.io/semantic-release/) for automated versioning and changelog generation. Releases are triggered automatically on merge to `main` based on conventional commit messages:
+
+- `feat:` commits trigger a **minor** version bump
+- `fix:` commits trigger a **patch** version bump
+- `feat!:` or commits with `BREAKING CHANGE:` trigger a **major** version bump
+
+No manual versioning or changeset files are required.
 
 ## Installing Development Version
 
