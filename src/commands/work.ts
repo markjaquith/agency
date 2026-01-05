@@ -116,6 +116,9 @@ export const work = (options: WorkOptions = {}) =>
 		}
 
 		const cliName = useOpencode ? "opencode" : "claude"
+		// Build the args array for execvp (first element should be the program name)
+		// OpenCode uses: opencode --prompt "prompt"
+		// Claude uses: claude "prompt"
 		const baseArgs = useOpencode
 			? [cliName, "--prompt", "Start the task"]
 			: [cliName, "Start the task"]
@@ -136,6 +139,7 @@ export const work = (options: WorkOptions = {}) =>
 
 		// For testing, we need to use spawn instead of exec since exec never returns
 		if (options._noExec) {
+			// spawnProcess expects [command, ...args] where cliArgs already has the full command array
 			const result = yield* spawnProcess(cliArgs, {
 				cwd: gitRoot,
 				stdout: "inherit",
