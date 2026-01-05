@@ -910,6 +910,7 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 		const { log, verboseLog } = createLoggers(options)
 
 		const fs = yield* FileSystemService
+		const git = yield* GitService
 
 		const gitRoot = yield* ensureGitRepo()
 
@@ -943,6 +944,26 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 		}
 
 		log(done("TASK.md edited"))
+
+		// Check if TASK.md has uncommitted changes
+		const hasChanges = yield* git.hasUncommittedChanges(gitRoot, "TASK.md")
+		verboseLog(`TASK.md has uncommitted changes: ${hasChanges}`)
+
+		if (hasChanges) {
+			// Commit the changes
+			yield* Effect.gen(function* () {
+				yield* git.gitAdd(["TASK.md"], gitRoot)
+				yield* git.gitCommit("chore: agency edit", gitRoot, {
+					noVerify: true,
+				})
+				log(done("Committed TASK.md changes"))
+			}).pipe(
+				Effect.catchAll((err) => {
+					verboseLog(`Failed to commit TASK.md: ${err}`)
+					return Effect.void
+				}),
+			)
+		}
 	})
 
 export const editHelp = `
