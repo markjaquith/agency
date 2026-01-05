@@ -364,7 +364,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				const configBranch = yield* getGitConfigEffect(
 					"agency.mainBranch",
 					gitRoot,
-				)
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
 				const mainBranch =
 					configBranch || (yield* findMainBranchEffect(gitRoot))
 
@@ -382,6 +382,49 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				// If mainBranch is "origin/main", we should also consider "main" as the main branch
 				const strippedMainBranch =
 					mainBranch.match(/^[^/]+\/(.+)$/)?.[1] || mainBranch
+
+				// If currentBranch is empty (detached HEAD), check if HEAD points to main branch
+				if (!currentBranch) {
+					const headCommit = yield* runGitCommandOrFail(
+						["git", "rev-parse", "HEAD"],
+						gitRoot,
+					)
+					const headSha = headCommit.trim()
+
+					// Check if HEAD matches the configured main branch
+					const mainCommitResult = yield* spawnProcess(
+						["git", "rev-parse", mainBranch],
+						{ cwd: gitRoot },
+					)
+					if (
+						mainCommitResult.exitCode === 0 &&
+						headSha === mainCommitResult.stdout.trim()
+					) {
+						return false
+					}
+
+					// If mainBranch doesn't have a remote prefix, also check the remote version
+					if (!mainBranch.includes("/")) {
+						const remote = yield* findDefaultRemoteEffect(gitRoot).pipe(
+							Effect.catchAll(() => Effect.succeed(null)),
+						)
+						if (remote) {
+							const remoteBranch = `${remote}/${mainBranch}`
+							const remoteCommitResult = yield* spawnProcess(
+								["git", "rev-parse", remoteBranch],
+								{ cwd: gitRoot },
+							)
+							if (
+								remoteCommitResult.exitCode === 0 &&
+								headSha === remoteCommitResult.stdout.trim()
+							) {
+								return false
+							}
+						}
+					}
+
+					return true
+				}
 
 				// Current branch is not a feature branch if it matches either the full or stripped name
 				return (
