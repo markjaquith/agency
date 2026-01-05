@@ -8,7 +8,10 @@ import {
 	initAgency,
 	readFile,
 	runTestEffect,
+	createFile,
+	runGitCommand,
 } from "../test-utils"
+import { chmod } from "fs/promises"
 
 describe("edit command", () => {
 	let tempDir: string
@@ -137,5 +140,96 @@ describe("edit command", () => {
 		await expect(runTestEffect(taskEdit({ silent: true }))).rejects.toThrow(
 			"Editor exited with code",
 		)
+	})
+
+	test("commits TASK.md with 'chore: agency edit' when file is modified", async () => {
+		await initGitRepo(tempDir)
+		process.chdir(tempDir)
+
+		// Initialize to create TASK.md
+		await initAgency(tempDir, "test-task")
+		await runTestEffect(task({ silent: true, emit: "test-feature" }))
+
+		// Get initial commit count
+		const result = Bun.spawnSync({
+			cmd: ["git", "rev-list", "--count", "HEAD"],
+			cwd: tempDir,
+			stdout: "pipe",
+		})
+		const initialCommits = new TextDecoder().decode(result.stdout).trim()
+
+		// Use a script that modifies TASK.md
+		const scriptPath = join(tempDir, "edit-script.sh")
+		await createFile(
+			tempDir,
+			"edit-script.sh",
+			'#!/bin/bash\necho "Updated task" >> "$1"\n',
+		)
+		await chmod(scriptPath, 0o755)
+		process.env.EDITOR = scriptPath
+
+		// Run edit command
+		await runTestEffect(taskEdit({ silent: true }))
+
+		// Check that a new commit was created
+		const finalResult = Bun.spawnSync({
+			cmd: ["git", "rev-list", "--count", "HEAD"],
+			cwd: tempDir,
+			stdout: "pipe",
+		})
+		const finalCommits = new TextDecoder().decode(finalResult.stdout).trim()
+		expect(Number.parseInt(finalCommits)).toBe(
+			Number.parseInt(initialCommits) + 1,
+		)
+
+		// Check the commit message
+		const msgResult = Bun.spawnSync({
+			cmd: ["git", "log", "-1", "--format=%s"],
+			cwd: tempDir,
+			stdout: "pipe",
+		})
+		const commitMessage = new TextDecoder().decode(msgResult.stdout).trim()
+		expect(commitMessage).toBe("chore: agency edit")
+
+		// Check that only TASK.md was committed
+		const filesResult = Bun.spawnSync({
+			cmd: ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+			cwd: tempDir,
+			stdout: "pipe",
+		})
+		const filesInCommit = new TextDecoder().decode(filesResult.stdout).trim()
+		expect(filesInCommit).toBe("TASK.md")
+	})
+
+	test("does not commit when TASK.md is not modified", async () => {
+		await initGitRepo(tempDir)
+		process.chdir(tempDir)
+
+		// Initialize to create TASK.md
+		await initAgency(tempDir, "test-task")
+		await runTestEffect(task({ silent: true, emit: "test-feature" }))
+
+		// Get initial commit count
+		const result = Bun.spawnSync({
+			cmd: ["git", "rev-list", "--count", "HEAD"],
+			cwd: tempDir,
+			stdout: "pipe",
+		})
+		const initialCommits = new TextDecoder().decode(result.stdout).trim()
+
+		// Use a mock editor that doesn't modify the file
+		process.env.EDITOR = "true"
+
+		// Run edit command
+		await runTestEffect(taskEdit({ silent: true }))
+
+		// Check that no new commit was created
+		const finalResult = Bun.spawnSync({
+			cmd: ["git", "rev-list", "--count", "HEAD"],
+			cwd: tempDir,
+			stdout: "pipe",
+		})
+		const finalCommits = new TextDecoder().decode(finalResult.stdout).trim()
+		expect(Number.parseInt(finalCommits)).toBe(Number.parseInt(initialCommits))
 	})
 })

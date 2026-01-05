@@ -850,5 +850,21 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
 				Effect.catchAll(() => Effect.succeed(null)),
 			),
+
+		/**
+		 * Check if a file has uncommitted changes (staged or unstaged).
+		 * Uses `git diff HEAD` to check for any changes to the file.
+		 * @param gitRoot - The git repository root
+		 * @param filePath - Path to the file relative to git root
+		 * @returns true if the file has changes, false otherwise
+		 */
+		hasUncommittedChanges: (gitRoot: string, filePath: string) =>
+			pipe(
+				runGitCommand(["git", "diff", "HEAD", "--", filePath], gitRoot),
+				Effect.map(
+					(result) => result.exitCode === 0 && result.stdout.length > 0,
+				),
+				Effect.catchAll(() => Effect.succeed(false)),
+			),
 	}),
 }) {}
