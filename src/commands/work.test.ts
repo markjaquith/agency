@@ -141,7 +141,7 @@ describe("work command", () => {
 			restore()
 
 			expect(spawnCalled).toBe(true)
-			expect(spawnArgs).toEqual(["opencode", "-p", "Start the task"])
+			expect(spawnArgs).toEqual(["opencode", "--prompt", "Start the task"])
 		})
 	})
 
@@ -171,7 +171,7 @@ describe("work command", () => {
 
 			restore()
 
-			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
+			expect(capturedArgs).toEqual(["opencode", "--prompt", "Start the task"])
 			// On macOS, temp directories can have /private prefix
 			expect(
 				capturedOptions.cwd === tempDir ||
@@ -278,7 +278,7 @@ describe("work command", () => {
 
 			restore()
 
-			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
+			expect(capturedArgs).toEqual(["opencode", "--prompt", "Start the task"])
 		})
 
 		test("--claude flag forces use of Claude Code", async () => {
@@ -387,7 +387,7 @@ describe("work command", () => {
 
 			expect(capturedArgs).toEqual([
 				"opencode",
-				"-p",
+				"--prompt",
 				"Start the task",
 				"--model",
 				"claude-sonnet-4-20250514",
@@ -456,7 +456,7 @@ describe("work command", () => {
 
 			restore()
 
-			expect(capturedArgs).toEqual(["opencode", "-p", "Start the task"])
+			expect(capturedArgs).toEqual(["opencode", "--prompt", "Start the task"])
 		})
 	})
 })
