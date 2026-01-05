@@ -117,7 +117,7 @@ export const work = (options: WorkOptions = {}) =>
 
 		const cliName = useOpencode ? "opencode" : "claude"
 		const baseArgs = useOpencode
-			? [cliName, "-p", "Start the task"]
+			? [cliName, "--prompt", "Start the task"]
 			: [cliName, "Start the task"]
 
 		// Append extra args if provided
