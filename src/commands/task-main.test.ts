@@ -676,13 +676,13 @@ describe("task command", () => {
 	})
 
 	describe("branch handling", () => {
-		test("fails when on main branch without branch name", async () => {
+		test("fails when no branch name provided (silent mode)", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 
 			await initAgency(tempDir, "test")
 			await expect(runTestEffect(task({ silent: true }))).rejects.toThrow(
-				"main branch",
+				"Branch name is required",
 			)
 		})
 

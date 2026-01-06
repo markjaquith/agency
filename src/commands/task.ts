@@ -415,7 +415,23 @@ export const task = (options: TaskOptions = {}) =>
 				)
 			}
 		} else {
-			// Default: determine main upstream branch (preferring remote)
+			// Default: fetch and use latest main upstream branch
+			// First, determine the remote to fetch from
+			const remote =
+				(yield* git.getRemoteConfig(targetPath)) ||
+				(yield* git.findDefaultRemote(targetPath))
+
+			if (remote) {
+				verboseLog(`Fetching from remote: ${remote}`)
+				yield* git.fetch(targetPath, remote).pipe(
+					Effect.catchAll((err) => {
+						verboseLog(`Failed to fetch from ${remote}: ${err}`)
+						return Effect.void
+					}),
+				)
+			}
+
+			// Now resolve the main branch (preferring remote)
 			baseBranchToBranchFrom =
 				(yield* git.resolveMainBranch(targetPath)) || undefined
 
@@ -431,7 +447,8 @@ export const task = (options: TaskOptions = {}) =>
 
 		// Check if the base branch is an agency source branch
 		// If so, we need to emit it first and use the emit branch instead
-		if (baseBranchToBranchFrom) {
+		// Skip this check if using --from-current (we want to stay on current branch, not branch from it)
+		if (baseBranchToBranchFrom && !options.fromCurrent) {
 			const cleanFromBase = extractCleanBranch(
 				baseBranchToBranchFrom,
 				config.sourceBranchPattern,
@@ -473,17 +490,14 @@ export const task = (options: TaskOptions = {}) =>
 		// Determine branch name logic
 		let branchName = options.emit || options.branch
 
-		// If on main branch, using --from, or on an agency source branch without a branch name, prompt for it (unless in silent mode)
-		if ((!isFeature || options.from || hasAgencyJson) && !branchName) {
+		// Determine if we need a new branch name:
+		// - With --from-current on a feature branch without agency.json: can stay on current branch
+		// - All other cases: require a new branch name
+		const canStayOnCurrentBranch =
+			options.fromCurrent && isFeature && !hasAgencyJson
+
+		if (!branchName && !canStayOnCurrentBranch) {
 			if (silent) {
-				if (options.from) {
-					return yield* Effect.fail(
-						new Error(
-							`Branch name is required when using --from flag.\n` +
-								`Use: 'agency task <branch-name> --from ${options.from}'`,
-						),
-					)
-				}
 				if (hasAgencyJson) {
 					return yield* Effect.fail(
 						new Error(
@@ -495,10 +509,9 @@ export const task = (options: TaskOptions = {}) =>
 				}
 				return yield* Effect.fail(
 					new Error(
-						`You're currently on ${highlight.branch(currentBranch)}, which appears to be your main branch.\n` +
-							`To initialize on a feature branch, either:\n` +
-							`  1. Switch to an existing feature branch first, then run 'agency task'\n` +
-							`  2. Provide a new branch name: 'agency task <branch-name>'`,
+						`Branch name is required.\n` +
+							`Use: 'agency task <branch-name>'\n` +
+							`Or use --from-current to initialize on the current branch.`,
 					),
 				)
 			}
@@ -983,28 +996,22 @@ Example:
 `
 
 export const help = `
-Usage: agency task [branch-name] [options]
+Usage: agency task <branch-name> [options]
 
 Initialize template files (AGENTS.md, TASK.md, opencode.json) in a git repository.
 
 IMPORTANT: 
   - You must run 'agency init' first to select a template
-  - This command must be run on a feature branch, not the main branch
-
-If you're on the main branch, you must either:
-  1. Switch to an existing feature branch first, then run 'agency task'
-  2. Provide a branch name: 'agency task <branch-name>'
-
-Initializes files at the root of the current git repository.
+  - A branch name is required (creates a new branch from the latest origin/main)
 
 Arguments:
-  branch-name       Create and switch to this branch before initializing
+  branch-name       Name for the new feature branch (required)
 
 Options:
   --emit            Branch name to create (alternative to positional arg)
   --branch          (Deprecated: use --emit) Branch name to create
   --from <branch>   Branch to branch from instead of main upstream branch
-  --from-current    Branch from the current branch
+  --from-current    Initialize on current branch instead of creating a new one
   --continue        Continue a task by copying agency files to a new branch
 
 Continue Mode (--continue):
@@ -1020,39 +1027,33 @@ Continue Mode (--continue):
   4. The emitBranch in agency.json is updated for the new branch
 
 Base Branch Selection:
-  By default, 'agency task' branches from the main upstream branch (e.g., origin/main).
-  You can override this behavior with:
+  By default, 'agency task' fetches from the remote and branches from the latest
+  main upstream branch (e.g., origin/main). You can override this behavior with:
   
   - --from <branch>: Branch from a specific branch
-  - --from-current: Branch from your current branch
+  - --from-current: Initialize on your current branch (no new branch created)
   
   If the base branch is an agency source branch (e.g., agency/branch-A), the command
   will automatically use its emit branch instead. This allows you to layer work on top
   of other feature branches while maintaining clean branch history.
 
 Examples:
-  agency task                          # Branch from main upstream branch
-  agency task --from agency/branch-B   # Branch from agency/branch-B's emit branch
-  agency task --from-current           # Branch from current branch's emit branch
+  agency task my-feature               # Create 'my-feature' from latest origin/main
   agency task my-feature --from develop # Create 'my-feature' from 'develop'
+  agency task --from-current           # Initialize on current branch (no new branch)
   agency task --continue my-feature-v2 # Continue task on new branch after PR merge
 
 Template Workflow:
   1. Run 'agency init' to select template (saved to .git/config)
-  2. Run 'agency task' to create template files on feature branch
+  2. Run 'agency task <branch-name>' to create feature branch with template files
   3. Use 'agency template save <file>' to update template with local changes
   4. Template directory only created when you save files to it
 
 Branch Creation:
   When creating a new branch without --from or --from-current:
-  1. Auto-detects main upstream branch (origin/main, origin/master, etc.)
-  2. Falls back to configured main branch in .git/config (agency.mainBranch)
-  3. In --silent mode, a base branch must already be configured
-  
-  When using --from with an agency source branch:
-  1. Verifies the emit branch exists for the source branch
-  2. Uses the emit branch as the actual base to avoid agency files
-  3. Fails if emit branch doesn't exist (run 'agency emit' first)
+  1. Fetches from the configured remote (or origin)
+  2. Auto-detects main upstream branch (origin/main, origin/master, etc.)
+  3. Creates new branch from the latest remote main branch
 
 Notes:
   - Files are created at the git repository root, not the current directory

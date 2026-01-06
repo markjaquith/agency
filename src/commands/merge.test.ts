@@ -64,7 +64,7 @@ describe("merge command", () => {
 		// Initialize AGENTS.md on feature branch
 		await initAgency(tempDir, "test")
 
-		await runTestEffect(task({ silent: true }))
+		await runTestEffect(task({ silent: true, fromCurrent: true }))
 
 		// Ensure agency.json has baseBranch set (task should auto-detect it, but ensure it's there)
 		const agencyJsonPath = join(tempDir, "agency.json")

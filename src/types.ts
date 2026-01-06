@@ -55,7 +55,7 @@ Agency is a CLI tool for managing \`AGENTS.md\`, \`TASK.md\`, and \`opencode.jso
 
 ## Key Commands
 
-- \`agency task\` - Initialize template files on a feature branch
+- \`agency task <branch-name>\` - Create feature branch and initialize template files
 - \`agency edit\` - Open TASK.md in system editor
 - \`agency template save\` - Save current file versions back to a template
 - \`agency template use\` - Switch to a different template

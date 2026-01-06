@@ -10,11 +10,26 @@ bun install -g @markjaquith/agency
 
 ## Primary Commands
 
-### `agency task [branch-name]`
+### `agency task <branch-name>`
 
-Initialize `AGENTS.md` and `TASK.md` files using the template you've set for this repo. Commits smuggled files and lands you on that branch.
+Create a new feature branch from the latest `origin/main` and initialize `AGENTS.md` and `TASK.md` files using the template you've set for this repo. Commits smuggled files and lands you on that branch.
 
-### `agency task edit`
+**Options:**
+
+- `--from <branch>` - Branch from a specific branch instead of `origin/main`
+- `--from-current` - Initialize on current branch instead of creating a new one
+- `--continue` - Continue a task by copying agency files to a new branch (after PR merge)
+
+**Examples:**
+
+```bash
+agency task my-feature              # Create 'my-feature' from latest origin/main
+agency task my-feature --from dev   # Create 'my-feature' from 'dev' branch
+agency task --from-current          # Initialize on current branch (no new branch)
+agency task --continue my-feature-v2 # Continue task on new branch after PR merge
+```
+
+### `agency edit`
 
 Open `TASK.md` in the system editor for editing. Nice if you have to paste in large amounts of context.
 
