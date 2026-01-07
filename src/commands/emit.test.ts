@@ -60,7 +60,7 @@ describe("emit command", () => {
 		// Initialize AGENTS.md and commit in one go
 		await initAgency(tempDir, "test")
 
-		await runTestEffect(task({ silent: true }))
+		await runTestEffect(task({ silent: true, fromCurrent: true }))
 		await addAndCommit(tempDir, "AGENTS.md", "Add AGENTS.md")
 
 		// Set up origin/main for git-filter-repo

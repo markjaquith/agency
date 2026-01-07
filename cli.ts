@@ -426,8 +426,8 @@ Global Options:
 
 Examples:
   agency init                         # Initialize with template (run first)
-  agency task                         # Initialize on current feature branch
-  agency task my-feature              # Create 'my-feature' branch and initialize
+  agency task my-feature              # Create 'my-feature' branch from origin/main
+  agency task --from-current          # Initialize on current feature branch
   agency emit                         # Emit a branch (prompts for base branch)
   agency switch                       # Toggle between source and emitted branch
 
