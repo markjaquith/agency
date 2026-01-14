@@ -14,6 +14,7 @@ interface ProcessResult {
  */
 interface SpawnOptions {
 	readonly cwd?: string
+	readonly stdin?: "pipe" | "inherit"
 	readonly stdout?: "pipe" | "inherit"
 	readonly stderr?: "pipe" | "inherit"
 	readonly env?: Record<string, string>
@@ -41,6 +42,7 @@ export const spawnProcess = (
 		try: async () => {
 			const proc = Bun.spawn([...args], {
 				cwd: options?.cwd ?? process.cwd(),
+				stdin: options?.stdin ?? "pipe",
 				stdout: options?.stdout ?? "pipe",
 				stderr: options?.stderr ?? "pipe",
 				env: options?.env ? { ...process.env, ...options.env } : process.env,

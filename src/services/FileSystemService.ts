@@ -152,13 +152,15 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 				options?: {
 					readonly cwd?: string
 					readonly captureOutput?: boolean
+					readonly interactive?: boolean
 				},
 			) =>
 				pipe(
 					spawnProcess(args, {
 						cwd: options?.cwd,
+						stdin: options?.interactive ? "inherit" : "pipe",
 						stdout: options?.captureOutput ? "pipe" : "inherit",
-						stderr: "pipe",
+						stderr: options?.interactive ? "inherit" : "pipe",
 					}),
 					Effect.mapError(
 						(processError) =>

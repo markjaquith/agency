@@ -954,7 +954,11 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 		const editorCommand =
 			editor === "open" ? [editor, "-W", taskFilePath] : [editor, taskFilePath]
 
-		const result = yield* fs.runCommand(editorCommand)
+		// Use interactive mode for editors that need terminal access (stdin/stdout/stderr)
+		// 'open' on macOS launches a separate app, so it doesn't need interactive mode
+		const result = yield* fs.runCommand(editorCommand, {
+			interactive: editor !== "open",
+		})
 
 		if (result.exitCode !== 0) {
 			return yield* Effect.fail(
