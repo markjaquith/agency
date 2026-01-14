@@ -941,6 +941,7 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 		}
 
 		// Get editor from environment or use sensible defaults
+		// On macOS, use 'open -W' to wait for the editor to close
 		const editor =
 			process.env.VISUAL ||
 			process.env.EDITOR ||
@@ -948,7 +949,12 @@ const taskEditEffect = (options: TaskEditOptions = {}) =>
 
 		verboseLog(`Using editor: ${editor}`)
 
-		const result = yield* fs.runCommand([editor, taskFilePath])
+		// Build the command array
+		// If using 'open' on macOS, add -W flag to wait for the app to close
+		const editorCommand =
+			editor === "open" ? [editor, "-W", taskFilePath] : [editor, taskFilePath]
+
+		const result = yield* fs.runCommand(editorCommand)
 
 		if (result.exitCode !== 0) {
 			return yield* Effect.fail(
