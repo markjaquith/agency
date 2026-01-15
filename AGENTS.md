@@ -160,6 +160,16 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 - `test: add tests for source command`
 - `chore: update dependencies`
 
+**Breaking Changes:**
+
+For breaking changes, put "BREAKING CHANGE: {change}" in the commit body (not on the first line).
+
+**Skip Release:**
+
+For changes that don't affect the code (e.g., documentation, tests), add `[skip release]` in the commit body to prevent a new release.
+
+## Commit Message Validation
+
 The repository has validation scripts:
 
 - `scripts/check-commit-msg` - Validates commit messages locally
