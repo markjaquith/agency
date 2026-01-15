@@ -6,7 +6,7 @@
   "author": "Mark Jaquith",
   "repository": {
     "type": "git",
-    "url": "https://github.com/markjaquith/agency"
+    "url": "git+https://github.com/markjaquith/agency.git"
   },
   "module": "index.ts",
   "type": "module",
