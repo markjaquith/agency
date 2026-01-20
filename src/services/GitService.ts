@@ -254,7 +254,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			gitRoot: string,
 			baseBranch?: string,
 		) => {
-			const args = ["git", "checkout", "--no-track", "-b", branchName]
+			const args = ["git", "checkout", "-q", "--no-track", "-b", branchName]
 			if (baseBranch) {
 				args.push(baseBranch)
 			}
@@ -263,7 +263,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		},
 
 		checkoutBranch: (gitRoot: string, branch: string) =>
-			runGitCommandVoid(["git", "checkout", branch], gitRoot),
+			runGitCommandVoid(["git", "checkout", "-q", branch], gitRoot),
 
 		gitAdd: (files: readonly string[], gitRoot: string) =>
 			runGitCommandVoid(["git", "add", ...files], gitRoot),

@@ -179,7 +179,13 @@ export async function checkoutBranch(
 	cwd: string,
 	branchName: string,
 ): Promise<void> {
-	await gitRun(cwd, ["checkout", branchName])
+	await gitRun(cwd, [
+		"-c",
+		"advice.detachedHead=false",
+		"checkout",
+		"-q",
+		branchName,
+	])
 }
 
 /**
@@ -189,7 +195,7 @@ export async function createBranch(
 	cwd: string,
 	branchName: string,
 ): Promise<void> {
-	await gitRun(cwd, ["checkout", "-b", branchName])
+	await gitRun(cwd, ["checkout", "-q", "-b", branchName])
 }
 
 /**

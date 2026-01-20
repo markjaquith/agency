@@ -122,7 +122,7 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		// If skipFilter, we skipped emit() so we must create the emit branch manually
 		if (options.skipFilter) {
 			yield* git.runGitCommand(
-				["git", "checkout", "-B", emitBranchName, sourceBranch],
+				["git", "checkout", "-q", "-B", emitBranchName, sourceBranch],
 				gitRoot,
 			)
 			// Switch back to source branch for consistency
