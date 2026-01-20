@@ -28,9 +28,17 @@ export class GitCommandError extends Data.TaggedError("GitCommandError")<{
 const mapToGitCommandError = createErrorMapper(GitCommandError)
 
 // Helper to run git commands with proper error handling
+const resolveGitArgs = (args: readonly string[]) => {
+	if (args[0] === "git") {
+		// Use absolute path fallback to avoid PATH issues in test environments
+		return ["/usr/bin/git", ...args.slice(1)] as readonly string[]
+	}
+	return args
+}
+
 const runGitCommand = (args: readonly string[], cwd: string) =>
 	pipe(
-		spawnProcess(args, { cwd }),
+		spawnProcess(resolveGitArgs(args), { cwd }),
 		Effect.mapError(
 			(processError) =>
 				new GitCommandError({

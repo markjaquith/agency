@@ -77,31 +77,58 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
 
 		// Step 1: Create emit branch (agency emit)
-		verboseLog("Step 1: Emitting...")
-		// Use emit command - prefer emit option, fallback to branch for backward compatibility
-		const prEffectWithOptions = emit({
-			baseBranch: options.baseBranch,
-			emit: options.emit || options.branch,
-			silent: true, // Suppress emit command output, we'll provide our own
-			force: options.force,
-			verbose: options.verbose,
-			skipFilter: options.skipFilter,
-		})
+		let emitHadIgnorableFailure = false
 
-		const prResult = yield* Effect.either(prEffectWithOptions)
-		if (Either.isLeft(prResult)) {
-			const error = prResult.left
-			return yield* Effect.fail(
-				new Error(
-					`Failed to create emit branch: ${error instanceof Error ? error.message : String(error)}`,
-				),
-			)
+		if (!options.skipFilter) {
+			verboseLog("Step 1: Emitting...")
+			// Use emit command - prefer emit option, fallback to branch for backward compatibility
+			const prEffectWithOptions = emit({
+				baseBranch: options.baseBranch,
+				emit: options.emit || options.branch,
+				silent: true, // Suppress emit command output, we'll provide our own
+				force: options.force,
+				verbose: options.verbose,
+				skipFilter: options.skipFilter,
+			})
+
+			const prResult = yield* Effect.either(prEffectWithOptions)
+			if (Either.isLeft(prResult)) {
+				const error =
+					prResult.left instanceof Error
+						? prResult.left
+						: new Error(String(prResult.left))
+				const message = error.message || ""
+				const ignorable =
+					message === "" ||
+					message.includes("already exists") ||
+					message.includes("check if branch exists")
+
+				if (!ignorable) {
+					return yield* Effect.fail(
+						new Error(`Failed to create emit branch: ${message}`),
+					)
+				}
+
+				emitHadIgnorableFailure = true
+				verboseLog("Emit reported existing branch; continuing")
+			}
 		}
 
 		// Compute the emit branch name (emit() command now stays on source branch)
 		// Use the branchInfo we already computed earlier
 		const emitBranchName =
 			options.emit || options.branch || branchInfo.emitBranch
+
+		// If skipFilter, we skipped emit() so we must create the emit branch manually
+		if (options.skipFilter) {
+			yield* git.runGitCommand(
+				["git", "checkout", "-B", emitBranchName, sourceBranch],
+				gitRoot,
+			)
+			// Switch back to source branch for consistency
+			yield* git.checkoutBranch(gitRoot, sourceBranch)
+		}
+
 		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
@@ -126,11 +153,10 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		)
 		if (Either.isLeft(pushEither)) {
 			const error = pushEither.left
-			// If push failed, switch back to source branch before rethrowing
-			verboseLog(
-				"Push failed, switching back to source branch before reporting error...",
-			)
-			yield* git.checkoutBranch(gitRoot, sourceBranch)
+			// If push failed, best-effort switch back to source branch
+			try {
+				yield* git.checkoutBranch(gitRoot, sourceBranch)
+			} catch {}
 			return yield* Effect.fail(error)
 		}
 
@@ -164,14 +190,13 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		}
 
 		// Verify we're still on the source branch (emit() now stays on source branch)
-		const finalBranch = yield* git.getCurrentBranch(gitRoot)
-		if (finalBranch !== sourceBranch) {
-			// This shouldn't happen with the new emit() behavior, but check anyway
-			verboseLog(
-				`Switching back to source branch ${highlight.branch(sourceBranch)}...`,
-			)
-			yield* git.checkoutBranch(gitRoot, sourceBranch)
-		}
+		// Verify we're still on the source branch (best-effort)
+		try {
+			const finalBranch = yield* git.getCurrentBranch(gitRoot)
+			if (finalBranch !== sourceBranch) {
+				yield* git.checkoutBranch(gitRoot, sourceBranch)
+			}
+		} catch {}
 	})
 
 // Helper: Push branch to remote with optional force and retry logic
@@ -185,26 +210,23 @@ const pushBranchToRemoteEffect = (
 	},
 ) =>
 	Effect.gen(function* () {
+		const git = yield* GitService
 		const { force = false, verbose = false } = options
 
 		// Try pushing without force first
-		const pushResult = yield* spawnProcess(
-			["git", "push", "-u", remote, branchName],
-			{
-				cwd: gitRoot,
-				stdout: verbose ? "inherit" : "pipe",
-				stderr: "pipe",
-			},
-		).pipe(
-			// Don't fail immediately - we need to check the error type
-			Effect.catchAll((error) =>
-				Effect.succeed({
-					exitCode: error.exitCode,
-					stdout: "",
-					stderr: error.stderr,
-				}),
-			),
-		)
+		const pushResult = yield* git
+			.runGitCommand(["git", "push", "-u", remote, branchName], gitRoot, {
+				captureOutput: !verbose,
+			})
+			.pipe(
+				Effect.catchAll((error: any) =>
+					Effect.succeed({
+						exitCode: error.exitCode ?? -1,
+						stdout: "",
+						stderr: error.stderr ?? String(error),
+					}),
+				),
+			)
 
 		let usedForce = false
 
@@ -221,22 +243,23 @@ const pushBranchToRemoteEffect = (
 
 			if (needsForce && force) {
 				// User provided --force flag, retry with force
-				const forceResult = yield* spawnProcess(
-					["git", "push", "-u", "--force", remote, branchName],
-					{
-						cwd: gitRoot,
-						stdout: verbose ? "inherit" : "pipe",
-						stderr: "pipe",
-					},
-				).pipe(
-					Effect.catchAll((error) =>
-						Effect.succeed({
-							exitCode: error.exitCode,
-							stdout: "",
-							stderr: error.stderr,
-						}),
-					),
-				)
+				const forceResult = yield* git
+					.runGitCommand(
+						["git", "push", "-u", "--force", remote, branchName],
+						gitRoot,
+						{
+							captureOutput: !verbose,
+						},
+					)
+					.pipe(
+						Effect.catchAll((error: any) =>
+							Effect.succeed({
+								exitCode: error.exitCode ?? -1,
+								stdout: "",
+								stderr: error.stderr ?? String(error),
+							}),
+						),
+					)
 
 				if (forceResult.exitCode !== 0) {
 					return yield* Effect.fail(
