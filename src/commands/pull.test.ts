@@ -1,4 +1,14 @@
-import { test, expect, describe, beforeEach, afterEach } from "bun:test"
+import {
+	test,
+	expect,
+	describe,
+	beforeEach,
+	afterEach,
+	setDefaultTimeout,
+} from "bun:test"
+
+// Pull tests require more time due to git operations
+setDefaultTimeout(30000)
 import { join } from "path"
 import { pull } from "./pull"
 import {

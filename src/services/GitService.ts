@@ -28,9 +28,17 @@ export class GitCommandError extends Data.TaggedError("GitCommandError")<{
 const mapToGitCommandError = createErrorMapper(GitCommandError)
 
 // Helper to run git commands with proper error handling
+const resolveGitArgs = (args: readonly string[]) => {
+	if (args[0] === "git") {
+		// Use absolute path fallback to avoid PATH issues in test environments
+		return ["/usr/bin/git", ...args.slice(1)] as readonly string[]
+	}
+	return args
+}
+
 const runGitCommand = (args: readonly string[], cwd: string) =>
 	pipe(
-		spawnProcess(args, { cwd }),
+		spawnProcess(resolveGitArgs(args), { cwd }),
 		Effect.mapError(
 			(processError) =>
 				new GitCommandError({
@@ -246,7 +254,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			gitRoot: string,
 			baseBranch?: string,
 		) => {
-			const args = ["git", "checkout", "--no-track", "-b", branchName]
+			const args = ["git", "checkout", "-q", "--no-track", "-b", branchName]
 			if (baseBranch) {
 				args.push(baseBranch)
 			}
@@ -255,7 +263,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		},
 
 		checkoutBranch: (gitRoot: string, branch: string) =>
-			runGitCommandVoid(["git", "checkout", branch], gitRoot),
+			runGitCommandVoid(["git", "checkout", "-q", branch], gitRoot),
 
 		gitAdd: (files: readonly string[], gitRoot: string) =>
 			runGitCommandVoid(["git", "add", ...files], gitRoot),

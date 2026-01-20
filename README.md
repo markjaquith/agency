@@ -37,6 +37,24 @@ Open `TASK.md` in the system editor for editing. Nice if you have to paste in la
 
 Launch Opencode to work on the current task defined in `TASK.md`. All your context will be loaded.
 
+### `agency loop`
+
+Run a Ralph Wiggum loop over the current `TASK.md`.
+The command repeatedly invokes `opencode run` in isolated iterations, committing progress after each loop, until all tasks are complete or a maximum loop count is reached.
+
+When all work is finished, the loop terminates and outputs `<promise>COMPLETE</promise>`.
+
+**Options:**
+
+- `--min-loops <n>` - Run at least `n` iterations, even if tasks complete earlier
+- `--max-loops <n>` - Stop after `n` iterations even if tasks remain
+
+**Example:**
+
+```bash
+agency loop --max-loops 10
+```
+
 ### `agency emit [base-branch]`
 
 Create an emit branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.

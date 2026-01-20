@@ -17,6 +17,7 @@ import { source, help as sourceHelp } from "./src/commands/source"
 import { merge, help as mergeHelp } from "./src/commands/merge"
 import { template, help as templateHelp } from "./src/commands/template"
 import { work, help as workHelp } from "./src/commands/work"
+import { loop, help as loopHelp } from "./src/commands/loop"
 import { status, help as statusHelp } from "./src/commands/status"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
@@ -383,6 +384,27 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: cleanHelp,
+	},
+	loop: {
+		name: "loop",
+		description: "Run a Ralph Wiggum loop to complete all tasks",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(loopHelp)
+				return
+			}
+			await runCommand(
+				loop({
+					silent: options.silent,
+					verbose: options.verbose,
+					maxLoops: options["max-loops"],
+					minLoops: options["min-loops"],
+					opencode: options.opencode,
+					claude: options.claude,
+				}),
+			)
+		},
+		help: loopHelp,
 	},
 }
 
