@@ -137,6 +137,10 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 			`Step 2: Pushing ${highlight.branch(emitBranchName)} to ${highlight.remote(remote)}...`,
 		)
 
+		// Switch to emit branch before pushing so that pre-push hooks run
+		// in the context of the emit branch (without backpack files)
+		yield* git.checkoutBranch(gitRoot, emitBranchName)
+
 		const pushEither = yield* Effect.either(
 			withSpinner(
 				pushBranchToRemoteEffect(gitRoot, emitBranchName, remote, {
@@ -153,10 +157,8 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		)
 		if (Either.isLeft(pushEither)) {
 			const error = pushEither.left
-			// If push failed, best-effort switch back to source branch
-			try {
-				yield* git.checkoutBranch(gitRoot, sourceBranch)
-			} catch {}
+			// If push failed, switch back to source branch
+			yield* git.checkoutBranch(gitRoot, sourceBranch)
 			return yield* Effect.fail(error)
 		}
 
@@ -189,14 +191,8 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 			}
 		}
 
-		// Verify we're still on the source branch (emit() now stays on source branch)
-		// Verify we're still on the source branch (best-effort)
-		try {
-			const finalBranch = yield* git.getCurrentBranch(gitRoot)
-			if (finalBranch !== sourceBranch) {
-				yield* git.checkoutBranch(gitRoot, sourceBranch)
-			}
-		} catch {}
+		// Switch back to source branch
+		yield* git.checkoutBranch(gitRoot, sourceBranch)
 	})
 
 // Helper: Push branch to remote with optional force and retry logic
