@@ -14,7 +14,9 @@
     "agency": "cli.ts"
   },
   "scripts": {
-    "test": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
+    "test": "find src -name '*.test.ts' ! -name '*.integration.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
+    "test:integration": "find src -name '*.integration.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
+    "test:all": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "knip": "knip --production",
