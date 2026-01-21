@@ -8,6 +8,7 @@ import { task, taskEdit, help as taskHelp, editHelp } from "./src/commands/task"
 import { tasks, help as tasksHelp } from "./src/commands/tasks"
 import { emit, help as emitHelp } from "./src/commands/emit"
 import { emitted, help as emittedHelp } from "./src/commands/emitted"
+import { pr, help as prHelp } from "./src/commands/pr"
 import { push, help as pushHelp } from "./src/commands/push"
 import { pull, help as pullHelp } from "./src/commands/pull"
 import { rebase, help as rebaseHelp } from "./src/commands/rebase"
@@ -117,6 +118,24 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: emittedHelp,
+	},
+	pr: {
+		name: "pr",
+		description: "Run gh pr with the emitted branch name",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(prHelp)
+				return
+			}
+			await runCommand(
+				pr({
+					args,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+		help: prHelp,
 	},
 	push: {
 		name: "push",
@@ -428,6 +447,7 @@ Commands:
     delete <file> ...      Delete files from configured template
   emit [base-branch]     Emit a branch with backpack files reverted
   emitted                Get the name of the emitted branch
+  pr <subcommand>        Run gh pr with the emitted branch name
   push [base-branch]     Emit, push to remote, return to source
   pull                   Pull commits from remote emit branch to source
   rebase [base-branch]   Rebase source branch onto base branch
