@@ -31,6 +31,10 @@ interface LoopOptions extends BaseCommandOptions {
 	 * Force use of Claude Code CLI
 	 */
 	claude?: boolean
+	/**
+	 * Additional arguments to pass to the CLI tool
+	 */
+	extraArgs?: string[]
 }
 
 interface LoopState {
@@ -193,6 +197,7 @@ export const loop = (options: LoopOptions = {}) =>
 				gitRoot,
 				options.verbose ?? false,
 				verboseLog,
+				options.extraArgs,
 			).pipe(
 				Effect.map(() => true),
 				Effect.catchAll(() => Effect.succeed(false)),
@@ -210,6 +215,7 @@ export const loop = (options: LoopOptions = {}) =>
 					gitRoot,
 					options.verbose ?? false,
 					verboseLog,
+					options.extraArgs,
 				).pipe(
 					Effect.map(() => true),
 					Effect.catchAll(() => Effect.succeed(false)),
@@ -317,6 +323,7 @@ function runHarness(
 	gitRoot: string,
 	verbose: boolean,
 	verboseLog: (msg: string) => void,
+	extraArgs?: string[],
 ): Effect.Effect<void, Error> {
 	return Effect.gen(function* () {
 		const prompt =
@@ -326,9 +333,13 @@ function runHarness(
 		// claude: use `claude "prompt"` (positional argument)
 		const baseArgs = useOpencode ? [cliName, "run", prompt] : [cliName, prompt]
 
+		// Append extra args if provided
+		const cliArgs =
+			extraArgs && extraArgs.length > 0 ? [...baseArgs, ...extraArgs] : baseArgs
+
 		// Log the command being run when verbose
 		// Quote arguments that contain spaces for proper display
-		const quotedArgs = baseArgs.map((arg) =>
+		const quotedArgs = cliArgs.map((arg) =>
 			arg.includes(" ") ? `"${arg}"` : arg,
 		)
 		verboseLog(`Running: ${quotedArgs.join(" ")}`)
@@ -336,7 +347,7 @@ function runHarness(
 		// When verbose, stream output directly to the terminal
 		// When not verbose, capture output silently
 		// Always inherit stdin so the process doesn't hang waiting for input
-		const result = yield* spawnProcess(baseArgs, {
+		const result = yield* spawnProcess(cliArgs, {
 			cwd: gitRoot,
 			stdin: "inherit",
 			stdout: verbose ? "inherit" : "pipe",
@@ -356,7 +367,7 @@ function runHarness(
 }
 
 export const help = `
-Usage: agency loop [options]
+Usage: agency loop [options] [-- extra-args...]
 
 Run a Ralph Wiggum loop that repeatedly invokes the harness (opencode or claude)
 to work on tasks defined in TASK.md until all tasks are complete.
@@ -377,15 +388,19 @@ Options:
   -s, --silent          Suppress output messages
   -v, --verbose         Stream harness output to terminal
 
+Pass-through Arguments:
+  Use -- to pass additional arguments to the underlying CLI tool.
+  Everything after -- will be forwarded to opencode or claude.
+
 Examples:
-  agency loop                      # Run until all tasks are done
-  agency loop --max-loops 5        # Stop after 5 iterations
-  agency loop --min-loops 3        # Require at least 3 iterations
-  agency loop --min-loops 3 --max-loops 10  # Between 3-10 iterations
+  agency loop                          # Run until all tasks are done
+  agency loop --max-loops 5            # Stop after 5 iterations
+  agency loop -- --agent deep          # Pass --agent deep to harness
 
 Notes:
   - Requires TASK.md to exist (run 'agency task' first)
   - Each iteration calls the harness which handles its own commit
   - The loop validates that completion claims match actual task status
   - Use --min-loops as a safeguard if you know the minimum work required
+  - Arguments after -- are passed directly to the underlying tool
 `

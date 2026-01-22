@@ -523,4 +523,99 @@ describe("loop command", () => {
 			expect(capturedOptions.stderr).toBe("pipe")
 		})
 	})
+
+	describe("extra args pass-through", () => {
+		test("passes extra args to opencode", async () => {
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\n- [x] Already done")
+
+			let capturedArgs: string[] = []
+			const restore = mockCliTools({
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: createEmptyStream(),
+						stderr: createEmptyStream(),
+					}
+				},
+			})
+
+			await runTestEffect(
+				loop({
+					silent: true,
+					maxLoops: 1,
+					extraArgs: ["--agent", "deep"],
+				}),
+			)
+			restore()
+
+			expect(capturedArgs[0]).toBe("opencode")
+			expect(capturedArgs[1]).toBe("run")
+			expect(capturedArgs[2]).toContain("Find the next logical task")
+			expect(capturedArgs.slice(-2)).toEqual(["--agent", "deep"])
+		})
+
+		test("passes extra args to claude", async () => {
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\n- [x] Already done")
+
+			let capturedArgs: string[] = []
+			const restore = mockCliTools({
+				hasClaude: true,
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: createEmptyStream(),
+						stderr: createEmptyStream(),
+					}
+				},
+			})
+
+			await runTestEffect(
+				loop({
+					silent: true,
+					maxLoops: 1,
+					claude: true,
+					extraArgs: ["--arbitrary", "switches"],
+				}),
+			)
+			restore()
+
+			expect(capturedArgs[0]).toBe("claude")
+			expect(capturedArgs[1]).toContain("Find the next logical task")
+			expect(capturedArgs.slice(-2)).toEqual(["--arbitrary", "switches"])
+		})
+
+		test("works without extra args", async () => {
+			const taskPath = join(tempDir, "TASK.md")
+			writeFileSync(taskPath, "# Test Task\n\n- [x] Already done")
+
+			let capturedArgs: string[] = []
+			const restore = mockCliTools({
+				onSpawn: (args) => {
+					capturedArgs = args
+					return {
+						exited: Promise.resolve(0),
+						exitCode: 0,
+						stdout: createEmptyStream(),
+						stderr: createEmptyStream(),
+					}
+				},
+			})
+
+			await runTestEffect(loop({ silent: true, maxLoops: 1 }))
+			restore()
+
+			// Should just have the base args without extra args
+			expect(capturedArgs).toEqual([
+				"opencode",
+				"run",
+				expect.stringContaining("Find the next logical task"),
+			])
+		})
+	})
 })
