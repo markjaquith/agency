@@ -382,8 +382,17 @@ import { TemplateService } from "./services/TemplateService"
 import { OpencodeService } from "./services/OpencodeService"
 import { ClaudeService } from "./services/ClaudeService"
 import { FilterRepoService } from "./services/FilterRepoService"
+import { MockFilterRepoService } from "./services/MockFilterRepoService"
 
-// Create test layer with all services
+// Re-export mock utilities for tests
+export {
+	clearCapturedFilterRepoCalls,
+	getCapturedFilterRepoCalls,
+	getLastCapturedFilterRepoCall,
+} from "./services/MockFilterRepoService"
+export type { CapturedFilterRepoCall } from "./services/MockFilterRepoService"
+
+// Create test layer with all services (real filter-repo)
 const TestLayer = Layer.mergeAll(
 	GitService.Default,
 	ConfigService.Default,
@@ -395,6 +404,18 @@ const TestLayer = Layer.mergeAll(
 	FilterRepoService.Default,
 )
 
+// Create test layer with mock filter-repo (for tests that don't need real filtering)
+const TestLayerWithMockFilterRepo = Layer.mergeAll(
+	GitService.Default,
+	ConfigService.Default,
+	FileSystemService.Default,
+	PromptService.Default,
+	TemplateService.Default,
+	OpencodeService.Default,
+	ClaudeService.Default,
+	MockFilterRepoService.Default,
+)
+
 export async function runTestEffect<A, E>(
 	effect: Effect.Effect<A, E, any>,
 ): Promise<A> {
@@ -403,6 +424,25 @@ export async function runTestEffect<A, E>(
 		E,
 		never
 	>
+	const program = Effect.catchAllDefect(providedEffect, (defect) =>
+		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+	) as Effect.Effect<A, E | Error, never>
+
+	return await Effect.runPromise(program)
+}
+
+/**
+ * Run a test effect with MockFilterRepoService instead of the real one.
+ * Use this for tests that need to verify filter-repo command construction
+ * without actually running git-filter-repo.
+ */
+export async function runTestEffectWithMockFilterRepo<A, E>(
+	effect: Effect.Effect<A, E, any>,
+): Promise<A> {
+	const providedEffect = Effect.provide(
+		effect,
+		TestLayerWithMockFilterRepo,
+	) as Effect.Effect<A, E, never>
 	const program = Effect.catchAllDefect(providedEffect, (defect) =>
 		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
 	) as Effect.Effect<A, E | Error, never>

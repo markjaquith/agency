@@ -16,6 +16,9 @@ import {
 	addAndCommit,
 	setupRemote,
 	runTestEffect,
+	runTestEffectWithMockFilterRepo,
+	clearCapturedFilterRepoCalls,
+	getLastCapturedFilterRepoCall,
 } from "../test-utils"
 
 // Cache the git-filter-repo availability check (it doesn't change during test run)
@@ -269,6 +272,56 @@ describe("emit command", () => {
 			console.log = originalLog
 
 			expect(logs.length).toBe(0)
+		})
+	})
+
+	describe("filter-repo command construction (with mock)", () => {
+		beforeEach(() => {
+			clearCapturedFilterRepoCalls()
+		})
+
+		test("constructs correct filter-repo arguments", async () => {
+			// Set up fresh branch with agency.json
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency/filter-test")
+
+			// Create agency.json with injected files
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			// Run emit with mock filter-repo (not skipFilter!)
+			await runTestEffectWithMockFilterRepo(emit({ silent: true }))
+
+			// Verify filter-repo was called with correct arguments
+			const lastCall = getLastCapturedFilterRepoCall()
+			expect(lastCall).toBeDefined()
+
+			// Should include paths for base files (TASK.md, AGENCY.md, CLAUDE.md, agency.json)
+			// and injected files (AGENTS.md)
+			expect(lastCall!.args).toContain("--path")
+			expect(lastCall!.args).toContain("TASK.md")
+			expect(lastCall!.args).toContain("AGENCY.md")
+			expect(lastCall!.args).toContain("CLAUDE.md")
+			expect(lastCall!.args).toContain("agency.json")
+			expect(lastCall!.args).toContain("AGENTS.md")
+
+			// Should include invert-paths and force flags
+			expect(lastCall!.args).toContain("--invert-paths")
+			expect(lastCall!.args).toContain("--force")
+
+			// Should include refs for the commit range
+			expect(lastCall!.args).toContain("--refs")
+
+			// Should have GIT_CONFIG_GLOBAL env set
+			expect(lastCall!.env?.GIT_CONFIG_GLOBAL).toBe("")
 		})
 	})
 })
