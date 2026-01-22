@@ -236,6 +236,47 @@ export async function deleteBranch(
 }
 
 /**
+ * Reset a git repo to clean state for test reuse.
+ * This is much faster than creating a new repo from scratch.
+ * - Checks out main branch
+ * - Removes all other branches
+ * - Resets to initial commit
+ * - Cleans untracked files
+ * - Removes agency git config
+ */
+export async function resetGitRepo(cwd: string): Promise<void> {
+	// Checkout main
+	await gitRun(cwd, ["checkout", "-q", "main"])
+
+	// Delete all branches except main
+	const branchOutput = await getGitOutput(cwd, ["branch", "--list"])
+	const branches = branchOutput
+		.split("\n")
+		.map((b) => b.replace(/^\*?\s*/, "").trim())
+		.filter((b) => b && b !== "main")
+
+	for (const branch of branches) {
+		await gitRun(cwd, ["branch", "-D", branch])
+	}
+
+	// Reset to first commit (the initial commit from template)
+	const firstCommit = (
+		await getGitOutput(cwd, ["rev-list", "--max-parents=0", "HEAD"])
+	).trim()
+	await gitRun(cwd, ["reset", "--hard", firstCommit])
+
+	// Clean untracked files and directories
+	await gitRun(cwd, ["clean", "-fdx"])
+
+	// Remove agency config
+	try {
+		await gitRun(cwd, ["config", "--unset", "agency.template"])
+	} catch {
+		// Ignore if not set
+	}
+}
+
+/**
  * Rename current branch
  */
 export async function renameBranch(
@@ -340,8 +381,18 @@ import { PromptService } from "./services/PromptService"
 import { TemplateService } from "./services/TemplateService"
 import { OpencodeService } from "./services/OpencodeService"
 import { ClaudeService } from "./services/ClaudeService"
+import { FilterRepoService } from "./services/FilterRepoService"
+import { MockFilterRepoService } from "./services/MockFilterRepoService"
 
-// Create test layer with all services
+// Re-export mock utilities for tests
+export {
+	clearCapturedFilterRepoCalls,
+	getCapturedFilterRepoCalls,
+	getLastCapturedFilterRepoCall,
+} from "./services/MockFilterRepoService"
+export type { CapturedFilterRepoCall } from "./services/MockFilterRepoService"
+
+// Create test layer with all services (real filter-repo)
 const TestLayer = Layer.mergeAll(
 	GitService.Default,
 	ConfigService.Default,
@@ -350,6 +401,19 @@ const TestLayer = Layer.mergeAll(
 	TemplateService.Default,
 	OpencodeService.Default,
 	ClaudeService.Default,
+	FilterRepoService.Default,
+)
+
+// Create test layer with mock filter-repo (for tests that don't need real filtering)
+const TestLayerWithMockFilterRepo = Layer.mergeAll(
+	GitService.Default,
+	ConfigService.Default,
+	FileSystemService.Default,
+	PromptService.Default,
+	TemplateService.Default,
+	OpencodeService.Default,
+	ClaudeService.Default,
+	MockFilterRepoService.Default,
 )
 
 export async function runTestEffect<A, E>(
@@ -360,6 +424,25 @@ export async function runTestEffect<A, E>(
 		E,
 		never
 	>
+	const program = Effect.catchAllDefect(providedEffect, (defect) =>
+		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+	) as Effect.Effect<A, E | Error, never>
+
+	return await Effect.runPromise(program)
+}
+
+/**
+ * Run a test effect with MockFilterRepoService instead of the real one.
+ * Use this for tests that need to verify filter-repo command construction
+ * without actually running git-filter-repo.
+ */
+export async function runTestEffectWithMockFilterRepo<A, E>(
+	effect: Effect.Effect<A, E, any>,
+): Promise<A> {
+	const providedEffect = Effect.provide(
+		effect,
+		TestLayerWithMockFilterRepo,
+	) as Effect.Effect<A, E, never>
 	const program = Effect.catchAllDefect(providedEffect, (defect) =>
 		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
 	) as Effect.Effect<A, E | Error, never>

@@ -1,5 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "ignoreDependencies": [],
-  "ignore": ["src/test-utils.ts", "src/utils/glob.ts", "**/*.test.ts"]
+  "ignore": [
+    "src/test-utils.ts",
+    "src/utils/glob.ts",
+    "src/services/MockFilterRepoService.ts",
+    "**/*.test.ts"
+  ]
 }

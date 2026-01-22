@@ -60,13 +60,9 @@ const rebaseCore = (gitRoot: string, options: RebaseOptions) =>
 		verboseLog(`Branch is an agency source branch`)
 
 		// Check for uncommitted changes
-		const statusResult = yield* git.runGitCommand(
-			["git", "status", "--porcelain"],
-			gitRoot,
-			{ captureOutput: true },
-		)
+		const statusOutput = yield* git.getStatus(gitRoot)
 
-		if (statusResult.stdout && statusResult.stdout.trim().length > 0) {
+		if (statusOutput && statusOutput.trim().length > 0) {
 			return yield* Effect.fail(
 				new Error(
 					`You have uncommitted changes. Please commit or stash them before rebasing.\n` +
@@ -114,11 +110,7 @@ const rebaseCore = (gitRoot: string, options: RebaseOptions) =>
 		const rebaseOperation = Effect.gen(function* () {
 			verboseLog(`Running: git rebase ${baseBranch}`)
 
-			const result = yield* git.runGitCommand(
-				["git", "rebase", baseBranch],
-				gitRoot,
-				{ captureOutput: true },
-			)
+			const result = yield* git.rebase(gitRoot, baseBranch)
 
 			if (result.exitCode !== 0) {
 				return yield* Effect.fail(

@@ -278,25 +278,17 @@ const findSourceBranchByEmitBranch = (
 		const git = yield* GitService
 
 		// Get all local branches
-		const branchesResult = yield* pipe(
-			git.runGitCommand(
-				["git", "branch", "--format=%(refname:short)"],
-				gitRoot,
-				{
-					captureOutput: true,
-				},
+		const branches = yield* pipe(
+			git.getAllLocalBranches(gitRoot),
+			Effect.map((allBranches) =>
+				allBranches.filter((b) => b !== currentBranch),
 			),
-			Effect.catchAll(() => Effect.succeed({ exitCode: 1, stdout: "" })),
+			Effect.catchAll(() => Effect.succeed([] as readonly string[])),
 		)
 
-		if (branchesResult.exitCode !== 0 || !branchesResult.stdout) {
+		if (branches.length === 0) {
 			return null
 		}
-
-		const branches = branchesResult.stdout
-			.split("\n")
-			.map((b) => b.trim())
-			.filter((b) => b.length > 0 && b !== currentBranch)
 
 		// Search each branch for agency.json with matching emitBranch
 		for (const branch of branches) {

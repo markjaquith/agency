@@ -27,6 +27,18 @@ test("hello world", () => {
 });
 ```
 
+**IMPORTANT: Never run `bun test` without specifying a file!** The full test suite takes 2+ minutes and will likely time out or fail. Always run tests for individual files:
+
+```sh
+# Good - run a specific test file
+bun test src/commands/init.test.ts
+
+# Bad - never do this
+bun test
+```
+
+The tests are slow because they create real git repositories and run actual git commands. Fast tests (like `task-parser.test.ts`) don't use git and complete in milliseconds.
+
 **Important:** Tests should not produce extraneous output. When using `verboseLog` or similar logging in implementation code, ensure that the logger respects the `silent` and `verbose` options passed through the command options. Helper functions should accept and forward these options to `createLoggers()` to prevent unwanted output during test runs.
 
 # Agency

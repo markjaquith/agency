@@ -121,10 +121,7 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 
 		// If skipFilter, we skipped emit() so we must create the emit branch manually
 		if (options.skipFilter) {
-			yield* git.runGitCommand(
-				["git", "checkout", "-q", "-B", emitBranchName, sourceBranch],
-				gitRoot,
-			)
+			yield* git.createOrResetBranch(gitRoot, emitBranchName, sourceBranch)
 			// Switch back to source branch for consistency
 			yield* git.checkoutBranch(gitRoot, sourceBranch)
 		}
@@ -207,13 +204,11 @@ const pushBranchToRemoteEffect = (
 ) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const { force = false, verbose = false } = options
+		const { force = false } = options
 
 		// Try pushing without force first
 		const pushResult = yield* git
-			.runGitCommand(["git", "push", "-u", remote, branchName], gitRoot, {
-				captureOutput: !verbose,
-			})
+			.push(gitRoot, remote, branchName, { setUpstream: true })
 			.pipe(
 				Effect.catchAll((error: any) =>
 					Effect.succeed({
@@ -240,13 +235,7 @@ const pushBranchToRemoteEffect = (
 			if (needsForce && force) {
 				// User provided --force flag, retry with force
 				const forceResult = yield* git
-					.runGitCommand(
-						["git", "push", "-u", "--force", remote, branchName],
-						gitRoot,
-						{
-							captureOutput: !verbose,
-						},
-					)
+					.push(gitRoot, remote, branchName, { setUpstream: true, force: true })
 					.pipe(
 						Effect.catchAll((error: any) =>
 							Effect.succeed({
