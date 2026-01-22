@@ -29,18 +29,13 @@ const mergeBranchEffect = (
 ) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const args = squash
-			? ["git", "merge", "--squash", branch]
-			: ["git", "merge", branch]
 
-		const result = yield* git.runGitCommand(args, gitRoot, {
-			captureOutput: true,
-		})
+		const result = yield* git.merge(gitRoot, branch, { squash })
 
 		if (result.exitCode !== 0) {
 			return yield* Effect.fail(
 				new GitCommandError({
-					command: args.join(" "),
+					command: `git merge${squash ? " --squash" : ""} ${branch}`,
 					exitCode: result.exitCode,
 					stderr: result.stderr,
 				}),
@@ -188,11 +183,7 @@ export const merge = (options: MergeOptions = {}) =>
 				`Pushing ${highlight.branch(baseBranchToMergeInto)} to ${highlight.remote(remote)}...`,
 			)
 
-			const pushResult = yield* git.runGitCommand(
-				["git", "push", remote, baseBranchToMergeInto],
-				gitRoot,
-				{ captureOutput: true },
-			)
+			const pushResult = yield* git.push(gitRoot, remote, baseBranchToMergeInto)
 
 			if (pushResult.exitCode !== 0) {
 				return yield* Effect.fail(

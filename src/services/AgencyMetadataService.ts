@@ -129,17 +129,13 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 				const git = yield* GitService
 
 				// Try to read agency.json from the branch using git show
-				const result = yield* git.runGitCommand(
-					["git", "show", `${branch}:agency.json`],
-					gitRoot,
-					{ captureOutput: true },
-				)
+				const content = yield* git.getFileAtRef(gitRoot, branch, "agency.json")
 
-				if (result.exitCode !== 0 || !result.stdout) {
+				if (!content) {
 					return null
 				}
 
-				return yield* parseAgencyMetadata(result.stdout)
+				return yield* parseAgencyMetadata(content)
 			}).pipe(Effect.catchAll(() => Effect.succeed(null))),
 
 		write: (gitRoot: string, metadata: AgencyMetadata) =>

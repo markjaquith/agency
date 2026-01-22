@@ -1,0 +1,448 @@
+# Large Sample YAML Configuration File
+# Generated for demonstration purposes
+
+application:
+  name: enterprise-platform
+  version: 3.14.159
+  environment: production
+  debug: false
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  workers: 16
+  timeout: 30
+  keepalive: 65
+  max_connections: 10000
+  ssl:
+    enabled: true
+    certificate: /etc/ssl/certs/server.crt
+    private_key: /etc/ssl/private/server.key
+    ca_bundle: /etc/ssl/certs/ca-bundle.crt
+    protocols:
+      - TLSv1.2
+      - TLSv1.3
+    ciphers:
+      - ECDHE-ECDSA-AES128-GCM-SHA256
+      - ECDHE-RSA-AES128-GCM-SHA256
+      - ECDHE-ECDSA-AES256-GCM-SHA384
+      - ECDHE-RSA-AES256-GCM-SHA384
+
+database:
+  primary:
+    driver: postgresql
+    host: db-primary.internal.example.com
+    port: 5432
+    name: enterprise_prod
+    username: app_user
+    password: ${DB_PASSWORD}
+    pool:
+      min_size: 10
+      max_size: 100
+      acquire_timeout: 30
+      idle_timeout: 600
+    options:
+      sslmode: require
+      connect_timeout: 10
+      application_name: enterprise-platform
+
+  replica:
+    - host: db-replica-1.internal.example.com
+      port: 5432
+      weight: 50
+    - host: db-replica-2.internal.example.com
+      port: 5432
+      weight: 30
+    - host: db-replica-3.internal.example.com
+      port: 5432
+      weight: 20
+
+cache:
+  redis:
+    cluster:
+      - host: redis-1.internal.example.com
+        port: 6379
+      - host: redis-2.internal.example.com
+        port: 6379
+      - host: redis-3.internal.example.com
+        port: 6379
+    password: ${REDIS_PASSWORD}
+    database: 0
+    prefix: "ent:"
+    ttl:
+      default: 3600
+      session: 86400
+      api_response: 300
+    connection:
+      timeout: 5
+      retry_attempts: 3
+      retry_delay: 1000
+
+message_queue:
+  rabbitmq:
+    hosts:
+      - mq-1.internal.example.com
+      - mq-2.internal.example.com
+      - mq-3.internal.example.com
+    port: 5672
+    virtual_host: /production
+    username: mq_user
+    password: ${MQ_PASSWORD}
+    exchanges:
+      - name: events
+        type: topic
+        durable: true
+      - name: commands
+        type: direct
+        durable: true
+      - name: notifications
+        type: fanout
+        durable: true
+    queues:
+      - name: user.events
+        exchange: events
+        routing_key: "user.*"
+        durable: true
+        prefetch: 10
+      - name: order.events
+        exchange: events
+        routing_key: "order.*"
+        durable: true
+        prefetch: 5
+      - name: payment.commands
+        exchange: commands
+        routing_key: payment
+        durable: true
+        prefetch: 1
+
+logging:
+  level: info
+  format: json
+  outputs:
+    - type: console
+      enabled: true
+      colorize: false
+    - type: file
+      enabled: true
+      path: /var/log/enterprise/app.log
+      rotation:
+        max_size: 100MB
+        max_age: 30
+        max_backups: 10
+        compress: true
+    - type: elasticsearch
+      enabled: true
+      hosts:
+        - https://es-1.internal.example.com:9200
+        - https://es-2.internal.example.com:9200
+      index_prefix: enterprise-logs
+      bulk_size: 1000
+      flush_interval: 5s
+
+monitoring:
+  metrics:
+    enabled: true
+    port: 9090
+    path: /metrics
+    labels:
+      service: enterprise-platform
+      environment: production
+      region: us-east-1
+
+  tracing:
+    enabled: true
+    provider: jaeger
+    endpoint: http://jaeger.internal.example.com:14268/api/traces
+    sample_rate: 0.1
+
+  health_check:
+    enabled: true
+    port: 8081
+    endpoints:
+      liveness: /health/live
+      readiness: /health/ready
+      startup: /health/startup
+
+security:
+  authentication:
+    jwt:
+      secret: ${JWT_SECRET}
+      algorithm: RS256
+      expiration: 3600
+      refresh_expiration: 604800
+      issuer: enterprise-platform
+      audience:
+        - web-client
+        - mobile-client
+        - api-client
+    oauth2:
+      providers:
+        - name: google
+          client_id: ${GOOGLE_CLIENT_ID}
+          client_secret: ${GOOGLE_CLIENT_SECRET}
+          scopes:
+            - openid
+            - email
+            - profile
+        - name: github
+          client_id: ${GITHUB_CLIENT_ID}
+          client_secret: ${GITHUB_CLIENT_SECRET}
+          scopes:
+            - user:email
+            - read:user
+        - name: azure
+          client_id: ${AZURE_CLIENT_ID}
+          client_secret: ${AZURE_CLIENT_SECRET}
+          tenant_id: ${AZURE_TENANT_ID}
+          scopes:
+            - openid
+            - email
+            - profile
+
+  rate_limiting:
+    enabled: true
+    default:
+      requests: 1000
+      window: 60s
+    endpoints:
+      /api/auth/login:
+        requests: 10
+        window: 60s
+      /api/auth/register:
+        requests: 5
+        window: 300s
+      /api/users:
+        requests: 100
+        window: 60s
+
+  cors:
+    enabled: true
+    allowed_origins:
+      - https://app.example.com
+      - https://admin.example.com
+      - https://dashboard.example.com
+    allowed_methods:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+      - DELETE
+      - OPTIONS
+    allowed_headers:
+      - Authorization
+      - Content-Type
+      - X-Request-ID
+      - X-Correlation-ID
+    exposed_headers:
+      - X-Request-ID
+      - X-RateLimit-Remaining
+    max_age: 86400
+    allow_credentials: true
+
+features:
+  feature_flags:
+    provider: launchdarkly
+    sdk_key: ${LAUNCHDARKLY_SDK_KEY}
+    defaults:
+      new_dashboard: false
+      beta_api: false
+      dark_mode: true
+      ai_recommendations: false
+      multi_factor_auth: true
+      websocket_notifications: true
+
+services:
+  user_service:
+    url: http://user-service.internal.example.com:8080
+    timeout: 5000
+    retry:
+      attempts: 3
+      backoff: exponential
+      initial_delay: 100
+      max_delay: 5000
+    circuit_breaker:
+      enabled: true
+      threshold: 5
+      timeout: 30000
+
+  order_service:
+    url: http://order-service.internal.example.com:8080
+    timeout: 10000
+    retry:
+      attempts: 3
+      backoff: exponential
+      initial_delay: 100
+      max_delay: 5000
+    circuit_breaker:
+      enabled: true
+      threshold: 5
+      timeout: 30000
+
+  payment_service:
+    url: http://payment-service.internal.example.com:8080
+    timeout: 30000
+    retry:
+      attempts: 5
+      backoff: exponential
+      initial_delay: 500
+      max_delay: 10000
+    circuit_breaker:
+      enabled: true
+      threshold: 3
+      timeout: 60000
+
+  notification_service:
+    url: http://notification-service.internal.example.com:8080
+    timeout: 5000
+    retry:
+      attempts: 3
+      backoff: linear
+      delay: 1000
+    circuit_breaker:
+      enabled: true
+      threshold: 10
+      timeout: 15000
+
+storage:
+  s3:
+    region: us-east-1
+    buckets:
+      uploads:
+        name: enterprise-uploads-prod
+        acl: private
+        encryption: AES256
+      assets:
+        name: enterprise-assets-prod
+        acl: public-read
+        cdn: https://cdn.example.com
+      backups:
+        name: enterprise-backups-prod
+        acl: private
+        encryption: aws:kms
+        kms_key_id: ${S3_KMS_KEY_ID}
+        lifecycle:
+          - transition:
+              days: 30
+              storage_class: STANDARD_IA
+          - transition:
+              days: 90
+              storage_class: GLACIER
+          - expiration:
+              days: 365
+
+email:
+  provider: sendgrid
+  api_key: ${SENDGRID_API_KEY}
+  from:
+    name: Enterprise Platform
+    email: noreply@example.com
+  templates:
+    welcome: d-abc123def456
+    password_reset: d-def456abc789
+    order_confirmation: d-ghi789jkl012
+    invoice: d-jkl012mno345
+  rate_limit:
+    per_minute: 100
+    per_hour: 1000
+    per_day: 10000
+
+scheduled_jobs:
+  - name: daily_report
+    schedule: "0 6 * * *"
+    timezone: America/New_York
+    enabled: true
+    timeout: 3600
+    retry:
+      attempts: 3
+      delay: 300
+
+  - name: hourly_sync
+    schedule: "0 * * * *"
+    timezone: UTC
+    enabled: true
+    timeout: 1800
+    retry:
+      attempts: 2
+      delay: 60
+
+  - name: weekly_cleanup
+    schedule: "0 2 * * 0"
+    timezone: UTC
+    enabled: true
+    timeout: 7200
+    retry:
+      attempts: 1
+      delay: 600
+
+  - name: monthly_archive
+    schedule: "0 3 1 * *"
+    timezone: UTC
+    enabled: true
+    timeout: 14400
+    retry:
+      attempts: 2
+      delay: 1800
+
+api:
+  versioning:
+    strategy: header
+    header_name: X-API-Version
+    default_version: v2
+    supported_versions:
+      - v1
+      - v2
+      - v3-beta
+
+  pagination:
+    default_limit: 20
+    max_limit: 100
+    cursor_based: true
+
+  documentation:
+    enabled: true
+    path: /api/docs
+    title: Enterprise Platform API
+    description: RESTful API for Enterprise Platform
+    contact:
+      name: API Support
+      email: api-support@example.com
+      url: https://developers.example.com
+
+localization:
+  default_locale: en-US
+  supported_locales:
+    - en-US
+    - en-GB
+    - es-ES
+    - es-MX
+    - fr-FR
+    - de-DE
+    - it-IT
+    - pt-BR
+    - ja-JP
+    - ko-KR
+    - zh-CN
+    - zh-TW
+  fallback_locale: en-US
+  date_format: ISO8601
+  timezone: UTC
+
+compliance:
+  gdpr:
+    enabled: true
+    data_retention_days: 730
+    anonymization_enabled: true
+    export_format: json
+
+  pci_dss:
+    enabled: true
+    encryption_at_rest: true
+    encryption_in_transit: true
+    audit_logging: true
+
+  hipaa:
+    enabled: false
+    phi_encryption: true
+    access_logging: true
+    break_glass_procedure: true
+# End of configuration

@@ -3,6 +3,7 @@ import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
+import { FilterRepoService } from "../services/FilterRepoService"
 import {
 	makeEmitBranchName,
 	makeSourceBranchName,
@@ -49,9 +50,10 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 		const git = yield* GitService
 		const configService = yield* ConfigService
 		const fs = yield* FileSystemService
+		const filterRepo = yield* FilterRepoService
 
 		// Check if git-filter-repo is installed
-		const hasFilterRepo = yield* git.checkCommandExists("git-filter-repo")
+		const hasFilterRepo = yield* filterRepo.isInstalled()
 		if (!hasFilterRepo) {
 			const isMac = process.platform === "darwin"
 			const installInstructions = isMac
@@ -197,8 +199,6 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 
 			// Run git-filter-repo
 			const filterRepoArgs = [
-				"git",
-				"filter-repo",
 				...filesToFilter.flatMap((f) => ["--path", f]),
 				"--invert-paths",
 				"--force",
@@ -206,18 +206,11 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 				`${forkPoint}..${emitBranchName}`,
 			]
 
-			const result = yield* git.runGitCommand(filterRepoArgs, gitRoot, {
+			yield* filterRepo.run(gitRoot, filterRepoArgs, {
 				env: { GIT_CONFIG_GLOBAL: "" },
-				captureOutput: true,
 			})
 
 			verboseLog("git-filter-repo completed")
-
-			if (result.exitCode !== 0) {
-				return yield* Effect.fail(
-					new Error(`git-filter-repo failed: ${result.stderr}`),
-				)
-			}
 
 			// Switch back to source branch (git-filter-repo may have checked out the emit branch)
 			yield* git.checkoutBranch(gitRoot, currentBranch)
@@ -327,26 +320,6 @@ const getRemoteTrackingBranch = (
 	})
 
 /**
- * Check if one commit is an ancestor of another.
- */
-const isAncestor = (
-	git: GitService,
-	gitRoot: string,
-	potentialAncestor: string,
-	commit: string,
-) =>
-	git
-		.runGitCommand(
-			["git", "merge-base", "--is-ancestor", potentialAncestor, commit],
-			gitRoot,
-			{},
-		)
-		.pipe(
-			Effect.map((result) => result.exitCode === 0),
-			Effect.catchAll(() => Effect.succeed(false)),
-		)
-
-/**
  * Find the best fork point by checking both local and remote tracking branches.
  *
  * Strategy:
@@ -399,8 +372,7 @@ const findBestForkPoint = (
 
 		// Strategy 3: Choose the more recent fork point
 		// If local fork point is an ancestor of remote, prefer remote (it's more recent)
-		const localIsAncestorOfRemote = yield* isAncestor(
-			git,
+		const localIsAncestorOfRemote = yield* git.isAncestor(
 			gitRoot,
 			localForkPoint,
 			remoteForkPoint,

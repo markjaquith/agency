@@ -28,17 +28,13 @@ const readAgencyMetadataFromBranch = (gitRoot: string, branch: string) =>
 		const git = yield* GitService
 
 		// Try to read agency.json from the branch using git show
-		const result = yield* git.runGitCommand(
-			["git", "show", `${branch}:agency.json`],
-			gitRoot,
-			{ captureOutput: true },
-		)
+		const content = yield* git.getFileAtRef(gitRoot, branch, "agency.json")
 
-		if (result.exitCode !== 0 || !result.stdout) {
+		if (!content) {
 			return null
 		}
 
-		return yield* parseAgencyMetadata(result.stdout)
+		return yield* parseAgencyMetadata(content)
 	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
 /**
@@ -73,20 +69,7 @@ const findAllTaskBranches = (gitRoot: string) =>
 		const git = yield* GitService
 
 		// Get all local branches
-		const branchesResult = yield* git.runGitCommand(
-			["git", "branch", "--format=%(refname:short)"],
-			gitRoot,
-			{ captureOutput: true },
-		)
-
-		if (branchesResult.exitCode !== 0 || !branchesResult.stdout) {
-			return []
-		}
-
-		const branches = branchesResult.stdout
-			.split("\n")
-			.map((b) => b.trim())
-			.filter((b) => b.length > 0)
+		const branches = yield* git.getAllLocalBranches(gitRoot)
 
 		// For each branch, try to read agency.json
 		const taskBranches: TaskBranchInfo[] = []

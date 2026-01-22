@@ -53,23 +53,8 @@ const readAgencyMetadata = (gitRoot: string, branch: string) =>
 const getAllLocalBranches = (gitRoot: string) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-
-		// Get all local branches using git branch --format
-		const result = yield* git.runGitCommand(
-			["git", "branch", "--format=%(refname:short)"],
-			gitRoot,
-			{ captureOutput: true },
-		)
-
-		if (result.exitCode !== 0) {
-			return []
-		}
-
-		return result.stdout
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0)
-	}).pipe(Effect.catchAll(() => Effect.succeed([])))
+		return yield* git.getAllLocalBranches(gitRoot)
+	}).pipe(Effect.catchAll(() => Effect.succeed([] as readonly string[])))
 
 /**
  * Get all branches that have been fully merged into the specified branch
@@ -87,25 +72,11 @@ const getBranchesMergedInto = (
 			`Finding branches merged into ${highlight.branch(targetBranch)}...`,
 		)
 
-		// Use git branch --merged to find all merged branches
-		const result = yield* git.runGitCommand(
-			["git", "branch", "--merged", targetBranch, "--format=%(refname:short)"],
-			gitRoot,
-			{ captureOutput: true },
-		)
-
-		if (result.exitCode !== 0) {
-			return []
-		}
-
-		const mergedBranches = result.stdout
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0)
+		const mergedBranches = yield* git.getMergedBranches(gitRoot, targetBranch)
 
 		verboseLog(`Found ${mergedBranches.length} merged branches`)
 		return mergedBranches
-	}).pipe(Effect.catchAll(() => Effect.succeed([])))
+	}).pipe(Effect.catchAll(() => Effect.succeed([] as readonly string[])))
 
 /**
  * Find source branches for the given branches (emit branches).

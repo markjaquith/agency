@@ -236,6 +236,47 @@ export async function deleteBranch(
 }
 
 /**
+ * Reset a git repo to clean state for test reuse.
+ * This is much faster than creating a new repo from scratch.
+ * - Checks out main branch
+ * - Removes all other branches
+ * - Resets to initial commit
+ * - Cleans untracked files
+ * - Removes agency git config
+ */
+export async function resetGitRepo(cwd: string): Promise<void> {
+	// Checkout main
+	await gitRun(cwd, ["checkout", "-q", "main"])
+
+	// Delete all branches except main
+	const branchOutput = await getGitOutput(cwd, ["branch", "--list"])
+	const branches = branchOutput
+		.split("\n")
+		.map((b) => b.replace(/^\*?\s*/, "").trim())
+		.filter((b) => b && b !== "main")
+
+	for (const branch of branches) {
+		await gitRun(cwd, ["branch", "-D", branch])
+	}
+
+	// Reset to first commit (the initial commit from template)
+	const firstCommit = (
+		await getGitOutput(cwd, ["rev-list", "--max-parents=0", "HEAD"])
+	).trim()
+	await gitRun(cwd, ["reset", "--hard", firstCommit])
+
+	// Clean untracked files and directories
+	await gitRun(cwd, ["clean", "-fdx"])
+
+	// Remove agency config
+	try {
+		await gitRun(cwd, ["config", "--unset", "agency.template"])
+	} catch {
+		// Ignore if not set
+	}
+}
+
+/**
  * Rename current branch
  */
 export async function renameBranch(
@@ -340,6 +381,7 @@ import { PromptService } from "./services/PromptService"
 import { TemplateService } from "./services/TemplateService"
 import { OpencodeService } from "./services/OpencodeService"
 import { ClaudeService } from "./services/ClaudeService"
+import { FilterRepoService } from "./services/FilterRepoService"
 
 // Create test layer with all services
 const TestLayer = Layer.mergeAll(
@@ -350,6 +392,7 @@ const TestLayer = Layer.mergeAll(
 	TemplateService.Default,
 	OpencodeService.Default,
 	ClaudeService.Default,
+	FilterRepoService.Default,
 )
 
 export async function runTestEffect<A, E>(

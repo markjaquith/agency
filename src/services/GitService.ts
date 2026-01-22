@@ -874,5 +874,201 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				),
 				Effect.catchAll(() => Effect.succeed(false)),
 			),
+
+		/**
+		 * Get all local branch names.
+		 * @param gitRoot - The git repository root
+		 * @returns Array of local branch names
+		 */
+		getAllLocalBranches: (gitRoot: string) =>
+			pipe(
+				runGitCommand(["git", "branch", "--format=%(refname:short)"], gitRoot),
+				Effect.map((result) => {
+					if (result.exitCode === 0 && result.stdout.trim()) {
+						return result.stdout.trim().split("\n") as readonly string[]
+					}
+					return [] as readonly string[]
+				}),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get local branches" }),
+				),
+			),
+
+		/**
+		 * Get branches that have been merged into a target branch.
+		 * @param gitRoot - The git repository root
+		 * @param targetBranch - The branch to check merges against
+		 * @returns Array of merged branch names
+		 */
+		getMergedBranches: (gitRoot: string, targetBranch: string) =>
+			pipe(
+				runGitCommand(
+					[
+						"git",
+						"branch",
+						"--merged",
+						targetBranch,
+						"--format=%(refname:short)",
+					],
+					gitRoot,
+				),
+				Effect.map((result) => {
+					if (result.exitCode === 0 && result.stdout.trim()) {
+						return result.stdout.trim().split("\n") as readonly string[]
+					}
+					return [] as readonly string[]
+				}),
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to get branches merged into ${targetBranch}`,
+						}),
+				),
+			),
+
+		/**
+		 * Push a branch to a remote.
+		 * @param gitRoot - The git repository root
+		 * @param remote - Remote name (e.g., "origin")
+		 * @param branch - Branch name to push
+		 * @param options - Push options
+		 * @returns Object with exitCode, stdout, stderr
+		 */
+		push: (
+			gitRoot: string,
+			remote: string,
+			branch: string,
+			options?: {
+				readonly setUpstream?: boolean
+				readonly force?: boolean
+			},
+		) => {
+			const args = ["git", "push"]
+			if (options?.setUpstream) {
+				args.push("-u")
+			}
+			if (options?.force) {
+				args.push("--force")
+			}
+			args.push(remote, branch)
+
+			return pipe(
+				runGitCommand(args, gitRoot),
+				Effect.mapError(
+					(error) =>
+						new GitError({
+							message: `Failed to push ${branch} to ${remote}`,
+							cause: error,
+						}),
+				),
+			)
+		},
+
+		/**
+		 * Merge a branch into the current branch.
+		 * @param gitRoot - The git repository root
+		 * @param branch - Branch to merge
+		 * @param options - Merge options
+		 * @returns Object with exitCode, stdout, stderr
+		 */
+		merge: (
+			gitRoot: string,
+			branch: string,
+			options?: {
+				readonly squash?: boolean
+				readonly noCommit?: boolean
+				readonly message?: string
+			},
+		) => {
+			const args = ["git", "merge"]
+			if (options?.squash) {
+				args.push("--squash")
+			}
+			if (options?.noCommit) {
+				args.push("--no-commit")
+			}
+			if (options?.message) {
+				args.push("-m", options.message)
+			}
+			args.push(branch)
+
+			return pipe(
+				runGitCommand(args, gitRoot),
+				Effect.mapError(
+					(error) =>
+						new GitError({
+							message: `Failed to merge ${branch}`,
+							cause: error,
+						}),
+				),
+			)
+		},
+
+		/**
+		 * Rebase current branch onto a base branch.
+		 * @param gitRoot - The git repository root
+		 * @param baseBranch - Branch to rebase onto
+		 * @returns Object with exitCode, stdout, stderr
+		 */
+		rebase: (gitRoot: string, baseBranch: string) =>
+			pipe(
+				runGitCommand(["git", "rebase", baseBranch], gitRoot),
+				Effect.mapError(
+					(error) =>
+						new GitError({
+							message: `Failed to rebase onto ${baseBranch}`,
+							cause: error,
+						}),
+				),
+			),
+
+		/**
+		 * Get the working tree status (porcelain format).
+		 * @param gitRoot - The git repository root
+		 * @returns Status output string
+		 */
+		getStatus: (gitRoot: string) =>
+			pipe(
+				runGitCommand(["git", "status", "--porcelain"], gitRoot),
+				Effect.map((result) => result.stdout),
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get git status" }),
+				),
+			),
+
+		/**
+		 * Check if one commit is an ancestor of another.
+		 * @param gitRoot - The git repository root
+		 * @param potentialAncestor - The commit that might be an ancestor
+		 * @param commit - The commit to check against
+		 * @returns true if potentialAncestor is an ancestor of commit
+		 */
+		isAncestor: (gitRoot: string, potentialAncestor: string, commit: string) =>
+			pipe(
+				runGitCommand(
+					["git", "merge-base", "--is-ancestor", potentialAncestor, commit],
+					gitRoot,
+				),
+				Effect.map((result) => result.exitCode === 0),
+				Effect.catchAll(() => Effect.succeed(false)),
+			),
+
+		/**
+		 * Create or reset a branch to point to a specific commit/branch.
+		 * Uses `git checkout -B` which creates the branch if it doesn't exist
+		 * or resets it if it does.
+		 * @param gitRoot - The git repository root
+		 * @param branchName - Name of the branch to create/reset
+		 * @param startPoint - Commit or branch to start from
+		 */
+		createOrResetBranch: (
+			gitRoot: string,
+			branchName: string,
+			startPoint: string,
+		) =>
+			runGitCommandVoid(
+				["git", "checkout", "-q", "-B", branchName, startPoint],
+				gitRoot,
+			),
 	}),
 }) {}

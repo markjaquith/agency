@@ -28,6 +28,7 @@ import { PromptService } from "./src/services/PromptService"
 import { TemplateService } from "./src/services/TemplateService"
 import { OpencodeService } from "./src/services/OpencodeService"
 import { ClaudeService } from "./src/services/ClaudeService"
+import { FilterRepoService } from "./src/services/FilterRepoService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -38,6 +39,7 @@ const CliLayer = Layer.mergeAll(
 	TemplateService.Default,
 	OpencodeService.Default,
 	ClaudeService.Default,
+	FilterRepoService.Default,
 )
 
 /**
