@@ -409,11 +409,17 @@ const commands: Record<string, Command> = {
 	loop: {
 		name: "loop",
 		description: "Run a Ralph Wiggum loop to complete all tasks",
-		run: async (_args: string[], options: Record<string, any>) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(loopHelp)
 				return
 			}
+
+			// Extract extra args (anything after --)
+			// Note: parseArgs with strict:false and allowPositionals:true will put
+			// args after -- in the positionals array
+			const extraArgs = args.length > 0 ? args : undefined
+
 			await runCommand(
 				loop({
 					silent: options.silent,
@@ -422,6 +428,7 @@ const commands: Record<string, Command> = {
 					minLoops: options["min-loops"],
 					opencode: options.opencode,
 					claude: options.claude,
+					extraArgs,
 				}),
 			)
 		},
