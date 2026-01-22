@@ -2,12 +2,12 @@ import { Effect, Data, pipe } from "effect"
 import { spawnProcess } from "../utils/process"
 
 // Error types for FilterRepo operations
-export class FilterRepoError extends Data.TaggedError("FilterRepoError")<{
+class FilterRepoError extends Data.TaggedError("FilterRepoError")<{
 	message: string
 	cause?: unknown
 }> {}
 
-export class FilterRepoNotInstalledError extends Data.TaggedError(
+class FilterRepoNotInstalledError extends Data.TaggedError(
 	"FilterRepoNotInstalledError",
 )<{
 	message: string
