@@ -422,6 +422,7 @@ export const task = (options: TaskOptions = {}) =>
 				(yield* git.findDefaultRemote(targetPath))
 
 			if (remote) {
+				log(info(`Fetching latest from ${highlight.branch(remote)}...`))
 				verboseLog(`Fetching from remote: ${remote}`)
 				yield* git.fetch(targetPath, remote).pipe(
 					Effect.catchAll((err) => {
