@@ -124,14 +124,24 @@ const commands: Record<string, Command> = {
 	pr: {
 		name: "pr",
 		description: "Run gh pr with the emitted branch name",
-		run: async (args: string[], options: Record<string, any>) => {
+		run: async (
+			_args: string[],
+			options: Record<string, any>,
+			rawArgs?: string[],
+		) => {
 			if (options.help) {
 				console.log(prHelp)
 				return
 			}
+			// Pass raw args (after filtering agency flags) directly to gh pr
+			// This allows flags like --web to pass through without needing --
+			const agencyFlags = ["--help", "-h", "--silent", "-s", "--verbose", "-v"]
+			const filteredArgs = (rawArgs ?? []).filter(
+				(arg) => !agencyFlags.includes(arg),
+			)
 			await runCommand(
 				pr({
-					args,
+					args: filteredArgs,
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -621,8 +631,8 @@ try {
 		allowPositionals: true,
 	})
 
-	// Run the command
-	await command.run(cmdPositionals, cmdValues)
+	// Run the command, passing raw args for commands that need them (like pr)
+	await command.run(cmdPositionals, cmdValues, commandArgs)
 } catch (error) {
 	if (error instanceof Error) {
 		console.error(`ⓘ ${error.message}`)
