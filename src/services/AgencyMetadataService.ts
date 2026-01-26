@@ -1,4 +1,4 @@
-import { join } from "node:path"
+import { join, dirname, resolve, relative } from "node:path"
 import { Context, Data, Effect, Layer } from "effect"
 import { Schema } from "@effect/schema"
 import { AgencyMetadata } from "../schemas"
@@ -105,6 +105,49 @@ const parseAgencyMetadata = (content: string) =>
 	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
 /**
+ * Resolve symlink targets for a list of files.
+ * For each file, if it's a symlink, also adds the target path to the result.
+ * This ensures that when filtering files from git history, both the symlink
+ * and its target are filtered (important when CLAUDE.md → AGENTS.md, for example).
+ */
+const resolveSymlinkTargets = (
+	fs: FileSystemService,
+	gitRoot: string,
+	files: string[],
+) =>
+	Effect.gen(function* () {
+		const result = new Set<string>(files)
+
+		for (const file of files) {
+			const fullPath = join(gitRoot, file)
+			const target = yield* fs.readSymlinkTarget(fullPath)
+
+			if (target) {
+				// The target path could be relative or absolute
+				// If relative, it's relative to the symlink's location
+				// We need to normalize it to be relative to gitRoot
+				let targetPath: string
+				if (target.startsWith("/")) {
+					// Absolute path - make it relative to gitRoot
+					targetPath = relative(gitRoot, target)
+				} else {
+					// Relative path - resolve from the symlink's directory
+					const symlinkDir = dirname(fullPath)
+					const absoluteTarget = resolve(symlinkDir, target)
+					targetPath = relative(gitRoot, absoluteTarget)
+				}
+
+				// Only add if it's within the gitRoot (not escaping the repo)
+				if (!targetPath.startsWith("..")) {
+					result.add(targetPath)
+				}
+			}
+		}
+
+		return Array.from(result)
+	})
+
+/**
  * Implementation of AgencyMetadataService
  */
 export const AgencyMetadataServiceLive = Layer.succeed(
@@ -164,7 +207,8 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 				const baseFiles = ["TASK.md", "AGENCY.md", "CLAUDE.md", "agency.json"]
 
 				if (!exists) {
-					return baseFiles
+					// Resolve symlinks even for base files
+					return yield* resolveSymlinkTargets(fs, gitRoot, baseFiles)
 				}
 
 				const content = yield* fs
@@ -172,13 +216,13 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 					.pipe(Effect.catchAll(() => Effect.succeed("")))
 
 				if (!content) {
-					return baseFiles
+					return yield* resolveSymlinkTargets(fs, gitRoot, baseFiles)
 				}
 
 				const metadata = yield* parseAgencyMetadata(content)
 
 				if (!metadata) {
-					return baseFiles
+					return yield* resolveSymlinkTargets(fs, gitRoot, baseFiles)
 				}
 
 				// Expand any glob patterns in injectedFiles to actual file paths
@@ -188,7 +232,8 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 					catch: () => new Error("Failed to expand glob patterns"),
 				})
 
-				return expandedFiles
+				// Resolve symlinks and add their targets
+				return yield* resolveSymlinkTargets(fs, gitRoot, expandedFiles)
 			}).pipe(
 				Effect.catchAll(() =>
 					Effect.succeed(["TASK.md", "AGENCY.md", "CLAUDE.md", "agency.json"]),
