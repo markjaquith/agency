@@ -1,5 +1,11 @@
 import { Effect, Data, pipe } from "effect"
-import { mkdir, copyFile as fsCopyFile, unlink } from "node:fs/promises"
+import {
+	mkdir,
+	copyFile as fsCopyFile,
+	unlink,
+	lstat,
+	readlink,
+} from "node:fs/promises"
 import { spawnProcess } from "../utils/process"
 
 // Error types for FileSystem operations
@@ -219,6 +225,37 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 							cause: error,
 						}),
 				}),
+
+			/**
+			 * Check if a path is a symbolic link.
+			 * Returns false if the file doesn't exist or if it's not a symlink.
+			 */
+			isSymlink: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						const stats = await lstat(path)
+						return stats.isSymbolicLink()
+					},
+					catch: () =>
+						// If we can't lstat, it's not a symlink (or doesn't exist)
+						false,
+				}).pipe(Effect.catchAll(() => Effect.succeed(false))),
+
+			/**
+			 * Read the target of a symbolic link.
+			 * Returns null if the file is not a symlink or doesn't exist.
+			 */
+			readSymlinkTarget: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						const stats = await lstat(path)
+						if (!stats.isSymbolicLink()) {
+							return null
+						}
+						return await readlink(path)
+					},
+					catch: () => null,
+				}).pipe(Effect.catchAll(() => Effect.succeed(null))),
 		}),
 	},
 ) {}

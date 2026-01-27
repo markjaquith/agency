@@ -1,5 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
+import { symlink } from "fs/promises"
 import { emit } from "../commands/emit"
 import { task } from "../commands/task"
 import {
@@ -322,6 +323,48 @@ describe("emit command", () => {
 
 			// Should have GIT_CONFIG_GLOBAL env set
 			expect(lastCall!.env?.GIT_CONFIG_GLOBAL).toBe("")
+		})
+
+		test("includes symlink targets in files to filter", async () => {
+			// Set up fresh branch
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency/symlink-test")
+
+			// Create AGENTS.md as the real file
+			await Bun.write(join(tempDir, "AGENTS.md"), "# Real file\n")
+
+			// Create CLAUDE.md as a symlink to AGENTS.md
+			await symlink("AGENTS.md", join(tempDir, "CLAUDE.md"))
+
+			// Create agency.json
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(
+				tempDir,
+				["AGENTS.md", "CLAUDE.md", "agency.json"],
+				"Add files with symlink",
+			)
+
+			// Run emit with mock filter-repo
+			await runTestEffectWithMockFilterRepo(emit({ silent: true }))
+
+			// Verify filter-repo was called with both CLAUDE.md AND AGENTS.md
+			const lastCall = getLastCapturedFilterRepoCall()
+			expect(lastCall).toBeDefined()
+
+			// Should include CLAUDE.md (the symlink)
+			expect(lastCall!.args).toContain("CLAUDE.md")
+
+			// Should also include AGENTS.md (the symlink target)
+			// This is the key assertion - the symlink target should be filtered too
+			expect(lastCall!.args).toContain("AGENTS.md")
 		})
 	})
 })
