@@ -23,7 +23,7 @@ interface SpawnOptions {
 /**
  * Generic error for process execution failures
  */
-export class ProcessError extends Data.TaggedError("ProcessError")<{
+class ProcessError extends Data.TaggedError("ProcessError")<{
 	command: string
 	exitCode: number
 	stderr: string
