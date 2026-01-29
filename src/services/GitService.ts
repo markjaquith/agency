@@ -515,6 +515,72 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				),
 			),
 
+		/**
+		 * Gets just the main branch name (e.g., "main" or "master") without any remote prefix.
+		 *
+		 * This is useful when you need to fetch a specific branch from a remote,
+		 * as `git fetch origin main` requires just the branch name, not `origin/main`.
+		 */
+		getMainBranchName: (gitRoot: string) =>
+			Effect.gen(function* () {
+				// Get the configured main branch
+				const configuredBranch = yield* getGitConfigEffect(
+					"agency.mainBranch",
+					gitRoot,
+				).pipe(Effect.catchAll(() => Effect.succeed(null)))
+
+				// If configured, strip any remote prefix and return
+				if (configuredBranch) {
+					// Strip remote prefix if present (e.g., "origin/main" -> "main")
+					return (
+						configuredBranch.match(/^[^/]+\/(.+)$/)?.[1] || configuredBranch
+					)
+				}
+
+				// Otherwise, find the main branch by checking what exists
+				// We need to check for common branch names that exist (local or remote)
+				const remotesResult = yield* runGitCommand(["git", "remote"], gitRoot)
+				const remotes =
+					remotesResult.exitCode === 0 && remotesResult.stdout.trim()
+						? remotesResult.stdout.trim().split("\n")
+						: []
+
+				// Determine the default remote
+				let defaultRemote: string | null = null
+				if (remotes.length > 0) {
+					if (remotes.includes("origin")) {
+						defaultRemote = "origin"
+					} else if (remotes.includes("upstream")) {
+						defaultRemote = "upstream"
+					} else {
+						defaultRemote = remotes[0] || null
+					}
+				}
+
+				// Check for common branch names (either remote or local)
+				for (const branchName of ["main", "master"]) {
+					// Check remote version first
+					if (defaultRemote) {
+						const remoteBranch = `${defaultRemote}/${branchName}`
+						const exists = yield* branchExistsEffect(gitRoot, remoteBranch)
+						if (exists) {
+							return branchName
+						}
+					}
+					// Check local version
+					const localExists = yield* branchExistsEffect(gitRoot, branchName)
+					if (localExists) {
+						return branchName
+					}
+				}
+
+				return null
+			}).pipe(
+				Effect.mapError(
+					() => new GitError({ message: "Failed to get main branch name" }),
+				),
+			),
+
 		getDefaultBaseBranchConfig: (gitRoot: string) =>
 			pipe(
 				getGitConfigEffect("agency.baseBranch", gitRoot),
