@@ -422,14 +422,36 @@ export const task = (options: TaskOptions = {}) =>
 				(yield* git.findDefaultRemote(targetPath))
 
 			if (remote) {
-				log(info(`Fetching latest from ${highlight.branch(remote)}...`))
-				verboseLog(`Fetching from remote: ${remote}`)
-				yield* git.fetch(targetPath, remote).pipe(
-					Effect.catchAll((err) => {
-						verboseLog(`Failed to fetch from ${remote}: ${err}`)
-						return Effect.void
-					}),
-				)
+				// Get just the branch name (e.g., "main") to fetch only that branch
+				// This is much faster than fetching all branches in large repos
+				const mainBranchName = yield* git.getMainBranchName(targetPath)
+
+				if (mainBranchName) {
+					log(
+						info(
+							`Fetching latest from ${highlight.branch(`${remote}/${mainBranchName}`)}...`,
+						),
+					)
+					verboseLog(`Fetching ${mainBranchName} from remote: ${remote}`)
+					yield* git.fetch(targetPath, remote, mainBranchName).pipe(
+						Effect.catchAll((err) => {
+							verboseLog(
+								`Failed to fetch ${mainBranchName} from ${remote}: ${err}`,
+							)
+							return Effect.void
+						}),
+					)
+				} else {
+					// Fallback: fetch all branches if we can't determine the main branch
+					log(info(`Fetching latest from ${highlight.branch(remote)}...`))
+					verboseLog(`Fetching all branches from remote: ${remote}`)
+					yield* git.fetch(targetPath, remote).pipe(
+						Effect.catchAll((err) => {
+							verboseLog(`Failed to fetch from ${remote}: ${err}`)
+							return Effect.void
+						}),
+					)
+				}
 			}
 
 			// Now resolve the main branch (preferring remote)
