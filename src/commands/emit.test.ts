@@ -305,12 +305,13 @@ describe("emit command", () => {
 			const lastCall = getLastCapturedFilterRepoCall()
 			expect(lastCall).toBeDefined()
 
-			// Should include paths for base files (TASK.md, AGENCY.md, CLAUDE.md, agency.json)
+			// Should include paths for base files (TASK.md, AGENCY.md, agency.json)
+			// Note: CLAUDE.md is NOT in base files - it's only filtered if it was created
+			// by agency (in which case it would be in injectedFiles)
 			// and injected files (AGENTS.md)
 			expect(lastCall!.args).toContain("--path")
 			expect(lastCall!.args).toContain("TASK.md")
 			expect(lastCall!.args).toContain("AGENCY.md")
-			expect(lastCall!.args).toContain("CLAUDE.md")
 			expect(lastCall!.args).toContain("agency.json")
 			expect(lastCall!.args).toContain("AGENTS.md")
 
@@ -336,12 +337,12 @@ describe("emit command", () => {
 			// Create CLAUDE.md as a symlink to AGENTS.md
 			await symlink("AGENTS.md", join(tempDir, "CLAUDE.md"))
 
-			// Create agency.json
+			// Create agency.json with CLAUDE.md in injectedFiles (since it's no longer in baseFiles)
 			await Bun.write(
 				join(tempDir, "agency.json"),
 				JSON.stringify({
 					version: 1,
-					injectedFiles: [],
+					injectedFiles: ["CLAUDE.md"],
 					template: "test",
 					createdAt: new Date().toISOString(),
 				}),

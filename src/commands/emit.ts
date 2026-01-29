@@ -197,10 +197,17 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 			})
 			verboseLog(`Files to filter: ${filesToFilter.join(", ")}`)
 
-			// Run git-filter-repo
+			// Run git-filter-repo with:
+			// 1. Path filtering to remove backpack files
+			// 2. Commit callback to drop file changes from commits marked with AGENCY_REMOVE_COMMIT
+			//    (clearing file_changes makes the commit empty and it gets pruned, while preserving tree state)
 			const filterRepoArgs = [
 				...filesToFilter.flatMap((f) => ["--path", f]),
 				"--invert-paths",
+				"--commit-callback",
+				// Clear file changes from commits with AGENCY_REMOVE_COMMIT marker
+				// This makes the commit empty (which gets pruned) while preserving the tree state
+				`if b"AGENCY_REMOVE_COMMIT" in commit.message: commit.file_changes = []`,
 				"--force",
 				"--refs",
 				`${forkPoint}..${emitBranchName}`,

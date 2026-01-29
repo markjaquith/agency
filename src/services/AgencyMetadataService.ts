@@ -49,7 +49,7 @@ export class AgencyMetadataService extends Context.Tag("AgencyMetadataService")<
 
 		/**
 		 * Get list of files to filter during PR/merge operations.
-		 * Always includes TASK.md, AGENCY.md, CLAUDE.md, and agency.json, plus any injectedFiles from metadata.
+		 * Always includes TASK.md, AGENCY.md, and agency.json, plus any injectedFiles from metadata.
 		 */
 		readonly getFilesToFilter: (
 			gitRoot: string,
@@ -204,7 +204,7 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 				const metadataPath = join(gitRoot, "agency.json")
 
 				const exists = yield* fs.exists(metadataPath)
-				const baseFiles = ["TASK.md", "AGENCY.md", "CLAUDE.md", "agency.json"]
+				const baseFiles = ["TASK.md", "AGENCY.md", "agency.json"]
 
 				if (!exists) {
 					// Resolve symlinks even for base files
@@ -236,7 +236,7 @@ export const AgencyMetadataServiceLive = Layer.succeed(
 				return yield* resolveSymlinkTargets(fs, gitRoot, expandedFiles)
 			}).pipe(
 				Effect.catchAll(() =>
-					Effect.succeed(["TASK.md", "AGENCY.md", "CLAUDE.md", "agency.json"]),
+					Effect.succeed(["TASK.md", "AGENCY.md", "agency.json"]),
 				),
 			),
 
