@@ -731,12 +731,18 @@ export const task = (options: TaskOptions = {}) =>
 		}
 
 		// Handle CLAUDE.md injection
+		// If CLAUDE.md is created (new file), include it in main commit and add to injectedFiles
+		// If CLAUDE.md is modified (existing file), commit separately with AGENCY_REMOVE_COMMIT marker
+		// so it can be completely removed during emission
 		const claudeResult = yield* claudeService.injectAgencySection(targetPath)
+		let claudeModifiedExisting = false
 		if (claudeResult.created) {
 			createdFiles.push("CLAUDE.md")
+			injectedFiles.push("CLAUDE.md")
 			log(done(`Created ${highlight.file("CLAUDE.md")}`))
 		} else if (claudeResult.modified) {
-			createdFiles.push("CLAUDE.md")
+			// Mark that we need a separate commit for CLAUDE.md modification
+			claudeModifiedExisting = true
 			log(done(`Updated ${highlight.file("CLAUDE.md")}`))
 		}
 
@@ -810,6 +816,27 @@ export const task = (options: TaskOptions = {}) =>
 					// If commit fails, it might be because there are no changes (e.g., files already staged)
 					// We can ignore this error and let the user handle it manually
 					verboseLog(`Failed to commit: ${err}`)
+					return Effect.void
+				}),
+			)
+		}
+
+		// Create separate commit for CLAUDE.md modification with AGENCY_REMOVE_COMMIT marker
+		// This commit will be completely removed during emission
+		if (claudeModifiedExisting) {
+			yield* Effect.gen(function* () {
+				yield* git.gitAdd(["CLAUDE.md"], targetPath)
+				// The AGENCY_REMOVE_COMMIT marker in the commit body tells emit to drop this commit entirely
+				const commitMessage = `chore: agency edit CLAUDE.md\n\nAGENCY_REMOVE_COMMIT`
+				yield* git.gitCommit(commitMessage, targetPath, {
+					noVerify: true,
+				})
+				verboseLog(
+					"Created CLAUDE.md modification commit (will be removed on emit)",
+				)
+			}).pipe(
+				Effect.catchAll((err) => {
+					verboseLog(`Failed to commit CLAUDE.md modification: ${err}`)
 					return Effect.void
 				}),
 			)

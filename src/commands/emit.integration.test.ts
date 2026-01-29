@@ -224,7 +224,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		// Create a new feature branch
 		await createBranch(tempDir, "agency/claude-test")
 
-		// Initialize agency on this branch (this will modify CLAUDE.md)
+		// Initialize agency on this branch - first commit has agency files (NOT including CLAUDE.md)
 		await Bun.write(
 			join(tempDir, "agency.json"),
 			JSON.stringify({
@@ -235,22 +235,27 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 			}),
 		)
 		await Bun.write(join(tempDir, "AGENTS.md"), "# Test AGENTS\n")
+		await addAndCommit(
+			tempDir,
+			"agency.json AGENTS.md",
+			"Initialize agency files",
+		)
 
-		// Simulate what agency task does - inject into CLAUDE.md
+		// Simulate what agency task now does - CLAUDE.md modification in a separate commit
+		// with AGENCY_REMOVE_COMMIT marker so the commit gets dropped during emit
 		const originalClaude = await Bun.file(join(tempDir, "CLAUDE.md")).text()
 		const modifiedClaude = `${originalClaude}\n# Agency References\n@AGENTS.md\n@TASK.md\n`
 		await Bun.write(join(tempDir, "CLAUDE.md"), modifiedClaude)
-
 		await addAndCommit(
 			tempDir,
-			"agency.json AGENTS.md CLAUDE.md",
-			"Initialize agency files",
+			"CLAUDE.md",
+			"chore: agency edit CLAUDE.md\n\nAGENCY_REMOVE_COMMIT",
 		)
 
 		// Add a feature file
 		await createCommit(tempDir, "Feature commit")
 
-		// Create emit branch (this should filter CLAUDE.md)
+		// Create emit branch (this should drop the CLAUDE.md modification commit)
 		await runTestEffect(emit({ silent: true, baseBranch: "main" }))
 
 		// Should still be on source branch
@@ -273,5 +278,272 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		)
 		expect(claudeContent).not.toContain("@AGENTS.md")
 		expect(claudeContent).not.toContain("@TASK.md")
+	})
+
+	describe("AGENCY_REMOVE_COMMIT edge cases", () => {
+		test("handles two contiguous AGENCY_REMOVE_COMMIT commits", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await checkoutBranch(tempDir, "main")
+
+			// Create two files on main that will be modified
+			await Bun.write(join(tempDir, "FILE1.md"), "Original content 1\n")
+			await Bun.write(join(tempDir, "FILE2.md"), "Original content 2\n")
+			await addAndCommit(tempDir, "FILE1.md FILE2.md", "Add files")
+
+			await createBranch(tempDir, "agency/contiguous-test")
+
+			// Create agency.json
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			// Two contiguous AGENCY_REMOVE_COMMIT commits
+			await Bun.write(join(tempDir, "FILE1.md"), "Modified content 1\n")
+			await addAndCommit(
+				tempDir,
+				"FILE1.md",
+				"chore: edit FILE1\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			await Bun.write(join(tempDir, "FILE2.md"), "Modified content 2\n")
+			await addAndCommit(
+				tempDir,
+				"FILE2.md",
+				"chore: edit FILE2\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			// Add a feature commit after
+			await createCommit(tempDir, "Feature commit")
+
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
+			await checkoutBranch(tempDir, "contiguous-test")
+
+			// Both files should be reverted to original
+			const file1 = await Bun.file(join(tempDir, "FILE1.md")).text()
+			const file2 = await Bun.file(join(tempDir, "FILE2.md")).text()
+			expect(file1).toBe("Original content 1\n")
+			expect(file2).toBe("Original content 2\n")
+
+			// Feature commit should still exist
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("test.txt")
+		})
+
+		test("handles two non-contiguous AGENCY_REMOVE_COMMIT commits", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await checkoutBranch(tempDir, "main")
+
+			await Bun.write(join(tempDir, "FILE1.md"), "Original content 1\n")
+			await Bun.write(join(tempDir, "FILE2.md"), "Original content 2\n")
+			await addAndCommit(tempDir, "FILE1.md FILE2.md", "Add files")
+
+			await createBranch(tempDir, "agency/non-contiguous-test")
+
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			// First AGENCY_REMOVE_COMMIT
+			await Bun.write(join(tempDir, "FILE1.md"), "Modified content 1\n")
+			await addAndCommit(
+				tempDir,
+				"FILE1.md",
+				"chore: edit FILE1\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			// Regular commit in between
+			await Bun.write(join(tempDir, "feature1.txt"), "feature 1\n")
+			await addAndCommit(tempDir, "feature1.txt", "Add feature 1")
+
+			// Second AGENCY_REMOVE_COMMIT
+			await Bun.write(join(tempDir, "FILE2.md"), "Modified content 2\n")
+			await addAndCommit(
+				tempDir,
+				"FILE2.md",
+				"chore: edit FILE2\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			// Another regular commit
+			await Bun.write(join(tempDir, "feature2.txt"), "feature 2\n")
+			await addAndCommit(tempDir, "feature2.txt", "Add feature 2")
+
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
+			await checkoutBranch(tempDir, "non-contiguous-test")
+
+			// Both files should be reverted to original
+			const file1 = await Bun.file(join(tempDir, "FILE1.md")).text()
+			const file2 = await Bun.file(join(tempDir, "FILE2.md")).text()
+			expect(file1).toBe("Original content 1\n")
+			expect(file2).toBe("Original content 2\n")
+
+			// Feature commits should still exist
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("feature1.txt")
+			expect(files).toContain("feature2.txt")
+		})
+
+		test("handles AGENCY_REMOVE_COMMIT as first commit after fork point", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await checkoutBranch(tempDir, "main")
+
+			await Bun.write(join(tempDir, "EXISTING.md"), "Original content\n")
+			await addAndCommit(tempDir, "EXISTING.md", "Add existing file")
+
+			await createBranch(tempDir, "agency/first-commit-test")
+
+			// First commit is AGENCY_REMOVE_COMMIT (modifying existing file)
+			await Bun.write(join(tempDir, "EXISTING.md"), "Modified content\n")
+			await addAndCommit(
+				tempDir,
+				"EXISTING.md",
+				"chore: edit EXISTING\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			// Then agency.json
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			// Feature commit
+			await createCommit(tempDir, "Feature commit")
+
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
+			await checkoutBranch(tempDir, "first-commit-test")
+
+			// File should be reverted to original
+			const content = await Bun.file(join(tempDir, "EXISTING.md")).text()
+			expect(content).toBe("Original content\n")
+
+			// Feature commit should exist
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("test.txt")
+		})
+
+		test("handles AGENCY_REMOVE_COMMIT as last commit", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await checkoutBranch(tempDir, "main")
+
+			await Bun.write(join(tempDir, "EXISTING.md"), "Original content\n")
+			await addAndCommit(tempDir, "EXISTING.md", "Add existing file")
+
+			await createBranch(tempDir, "agency/last-commit-test")
+
+			// agency.json first
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			// Feature commit
+			await Bun.write(join(tempDir, "feature.txt"), "feature\n")
+			await addAndCommit(tempDir, "feature.txt", "Add feature")
+
+			// Last commit is AGENCY_REMOVE_COMMIT
+			await Bun.write(join(tempDir, "EXISTING.md"), "Modified content\n")
+			await addAndCommit(
+				tempDir,
+				"EXISTING.md",
+				"chore: edit EXISTING\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
+			await checkoutBranch(tempDir, "last-commit-test")
+
+			// File should be reverted to original
+			const content = await Bun.file(join(tempDir, "EXISTING.md")).text()
+			expect(content).toBe("Original content\n")
+
+			// Feature commit should exist
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("feature.txt")
+		})
+
+		test("handles AGENCY_REMOVE_COMMIT as only commit (besides agency.json)", async () => {
+			if (!hasGitFilterRepo) {
+				console.log("Skipping test: git-filter-repo not installed")
+				return
+			}
+
+			await checkoutBranch(tempDir, "main")
+
+			await Bun.write(join(tempDir, "EXISTING.md"), "Original content\n")
+			await addAndCommit(tempDir, "EXISTING.md", "Add existing file")
+
+			await createBranch(tempDir, "agency/only-commit-test")
+
+			// agency.json
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			// Only other commit is AGENCY_REMOVE_COMMIT
+			await Bun.write(join(tempDir, "EXISTING.md"), "Modified content\n")
+			await addAndCommit(
+				tempDir,
+				"EXISTING.md",
+				"chore: edit EXISTING\n\nAGENCY_REMOVE_COMMIT",
+			)
+
+			await runTestEffect(emit({ silent: true, baseBranch: "main" }))
+			await checkoutBranch(tempDir, "only-commit-test")
+
+			// File should be reverted to original
+			const content = await Bun.file(join(tempDir, "EXISTING.md")).text()
+			expect(content).toBe("Original content\n")
+
+			// Emit branch should exist and have the file
+			const files = await getGitOutput(tempDir, ["ls-files"])
+			expect(files).toContain("EXISTING.md")
+		})
 	})
 })
