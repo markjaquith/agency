@@ -18,9 +18,9 @@ import { Schema } from "@effect/schema"
  * Otherwise, treats the pattern as a prefix.
  *
  * @example
- * makeSourceBranchName("main", "agency/%branch%") // "agency/main"
+ * makeSourceBranchName("main", "agency--%branch%") // "agency--main"
  * makeSourceBranchName("feature-foo", "wip/%branch%") // "wip/feature-foo"
- * makeSourceBranchName("main", "agency/") // "agency/main"
+ * makeSourceBranchName("main", "agency--") // "agency--main"
  */
 export function makeSourceBranchName(
 	cleanBranch: string,
@@ -39,10 +39,10 @@ export function makeSourceBranchName(
  * Returns null if the source branch name doesn't match the pattern.
  *
  * @example
- * extractCleanBranch("agency/main", "agency/%branch%") // "main"
+ * extractCleanBranch("agency--main", "agency--%branch%") // "main"
  * extractCleanBranch("wip/feature-foo", "wip/%branch%") // "feature-foo"
- * extractCleanBranch("agency/main", "agency/") // "main"
- * extractCleanBranch("main", "agency/%branch%") // null
+ * extractCleanBranch("agency--main", "agency--") // "main"
+ * extractCleanBranch("main", "agency--%branch%") // null
  */
 export function extractCleanBranch(
 	sourceBranchName: string,
@@ -182,11 +182,11 @@ export interface BranchPair {
  * both branch names.
  *
  * @example
- * resolveBranchPair("agency/main", "agency/%branch%", "%branch%")
- * // { sourceBranch: "agency/main", emitBranch: "main", isOnEmitBranch: false }
+ * resolveBranchPair("agency--main", "agency--%branch%", "%branch%")
+ * // { sourceBranch: "agency--main", emitBranch: "main", isOnEmitBranch: false }
  *
- * resolveBranchPair("main", "agency/%branch%", "%branch%")
- * // { sourceBranch: "agency/main", emitBranch: "main", isOnEmitBranch: true }
+ * resolveBranchPair("main", "agency--%branch%", "%branch%")
+ * // { sourceBranch: "agency--main", emitBranch: "main", isOnEmitBranch: true }
  */
 function resolveBranchPair(
 	currentBranch: string,

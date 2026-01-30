@@ -1117,7 +1117,7 @@ Base Branch Selection:
   - --from <branch>: Branch from a specific branch
   - --from-current: Initialize on your current branch (no new branch created)
   
-  If the base branch is an agency source branch (e.g., agency/branch-A), the command
+  If the base branch is an agency source branch (e.g., agency--branch-A), the command
   will automatically use its emit branch instead. This allows you to layer work on top
   of other feature branches while maintaining clean branch history.
 

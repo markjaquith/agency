@@ -705,7 +705,7 @@ describe("task command", () => {
 			})
 			await proc.exited
 			const currentBranch = await new Response(proc.stdout).text()
-			expect(currentBranch.trim()).toBe("agency/my-feature")
+			expect(currentBranch.trim()).toBe("agency--my-feature")
 
 			// Verify files were created
 			expect(await fileExists(join(tempDir, "AGENTS.md"))).toBe(true)
@@ -716,7 +716,7 @@ describe("task command", () => {
 			process.chdir(tempDir)
 
 			// Create a feature branch first (using source pattern)
-			await Bun.spawn(["git", "checkout", "-b", "agency/existing-branch"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency--existing-branch"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -774,7 +774,7 @@ describe("task command", () => {
 
 			// Verify we're on the source branch with agency.json
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/original-feature")
+			expect(currentBranch).toBe("agency--original-feature")
 			expect(await fileExists(join(tempDir, "agency.json"))).toBe(true)
 
 			// Try to run agency task again without providing a branch name
@@ -795,7 +795,7 @@ describe("task command", () => {
 
 			// Verify we're on the source branch with agency.json
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/original-feature")
+			expect(currentBranch).toBe("agency--original-feature")
 			expect(await fileExists(join(tempDir, "agency.json"))).toBe(true)
 
 			// With a branch name provided, it should work
@@ -803,7 +803,7 @@ describe("task command", () => {
 
 			// Verify we're now on the new branch
 			const newBranch = await getCurrentBranch(tempDir)
-			expect(newBranch).toBe("agency/new-feature")
+			expect(newBranch).toBe("agency--new-feature")
 		})
 	})
 
@@ -931,9 +931,9 @@ describe("task command", () => {
 				}),
 			)
 
-			// Should have created the branch with agency/ prefix
+			// Should have created the branch with agency-- prefix
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/backward-compat-test")
+			expect(currentBranch).toBe("agency--backward-compat-test")
 
 			// Should have correct emitBranch in agency.json
 			const metadata = JSON.parse(await readFile(join(tempDir, "agency.json")))

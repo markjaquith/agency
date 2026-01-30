@@ -53,8 +53,8 @@ describe("emit command", () => {
 		// Initialize git repo with main branch (already includes initial commit)
 		await initGitRepo(tempDir)
 
-		// Create a source branch (with agency/ prefix)
-		await createBranch(tempDir, "agency/test-feature")
+		// Create a source branch (with agency-- prefix)
+		await createBranch(tempDir, "agency--test-feature")
 
 		// Initialize AGENTS.md and commit in one go
 		await initAgency(tempDir, "test")
@@ -84,7 +84,7 @@ describe("emit command", () => {
 				return
 			}
 
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			expect(runTestEffect(emit({ silent: true }))).rejects.toThrow(
@@ -95,7 +95,7 @@ describe("emit command", () => {
 		test("creates emit branch with default name", async () => {
 			// Go back to main and create a fresh source branch (no inherited agency.json)
 			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			// Create agency.json for this branch
 			await Bun.write(
 				join(tempDir, "agency.json"),
@@ -121,11 +121,11 @@ describe("emit command", () => {
 
 			// Check we're still on the source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 		})
 
 		test("creates emit branch with custom name", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Skip filter for speed - we're just testing branch creation
@@ -142,11 +142,11 @@ describe("emit command", () => {
 
 			// Check we're still on the source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 		})
 
 		test("completes emit workflow successfully", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Should complete without throwing (skip filter for speed)
@@ -154,11 +154,11 @@ describe("emit command", () => {
 
 			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 		})
 
 		test("preserves files on source branch after emit", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Skip filter for speed - we're testing source branch preservation
@@ -166,7 +166,7 @@ describe("emit command", () => {
 
 			// Should still be on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Check that test file still exists on source branch
 			expect(await fileExists(join(tempDir, "test.txt"))).toBe(true)
@@ -176,7 +176,7 @@ describe("emit command", () => {
 		})
 
 		test("original branch remains untouched", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Create emit branch (skip filter for speed)
@@ -184,7 +184,7 @@ describe("emit command", () => {
 
 			// Should still be on feature branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Check that AGENTS.md still exist on original branch
 			const files = await getGitOutput(tempDir, ["ls-files"])
@@ -192,7 +192,7 @@ describe("emit command", () => {
 		})
 
 		test("works correctly when run multiple times (recreates emit branch)", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 
 			// Modify AGENTS.md on feature branch
 			await Bun.write(
@@ -205,7 +205,7 @@ describe("emit command", () => {
 			await runTestEffect(emit({ silent: true, skipFilter: true }))
 
 			// Switch back to feature branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Make another commit
 			await createCommit(tempDir, "Another feature commit")
@@ -215,11 +215,11 @@ describe("emit command", () => {
 
 			// Should complete successfully without interactive prompts and stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 		})
 
 		test("accepts explicit base branch argument", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// Create emit branch with explicit base branch (skip filter for speed)
@@ -229,11 +229,11 @@ describe("emit command", () => {
 
 			// Should stay on source branch
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 		})
 
 		test("throws error if provided base branch does not exist", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			// This should fail even with skipFilter since base branch validation happens first
@@ -260,7 +260,7 @@ describe("emit command", () => {
 
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
 
 			const logs: string[] = []
@@ -284,7 +284,7 @@ describe("emit command", () => {
 		test("constructs correct filter-repo arguments", async () => {
 			// Set up fresh branch with agency.json
 			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "agency/filter-test")
+			await createBranch(tempDir, "agency--filter-test")
 
 			// Create agency.json with injected files
 			await Bun.write(
@@ -329,7 +329,7 @@ describe("emit command", () => {
 		test("includes symlink targets in files to filter", async () => {
 			// Set up fresh branch
 			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "agency/symlink-test")
+			await createBranch(tempDir, "agency--symlink-test")
 
 			// Create AGENTS.md as the real file
 			await Bun.write(join(tempDir, "AGENTS.md"), "# Real file\n")

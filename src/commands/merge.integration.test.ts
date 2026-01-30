@@ -58,8 +58,8 @@ describe("merge command - integration tests (requires git-filter-repo)", () => {
 		// Set up origin for git-filter-repo
 		await setupRemote(tempDir, "origin", tempDir)
 
-		// Create a source branch (with agency/ prefix per new default config)
-		await createBranch(tempDir, "agency/feature")
+		// Create a source branch (with agency-- prefix per new default config)
+		await createBranch(tempDir, "agency--feature")
 
 		// Initialize AGENTS.md on feature branch
 		await initAgency(tempDir, "test")
@@ -102,7 +102,7 @@ describe("merge command - integration tests (requires git-filter-repo)", () => {
 
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Run merge - should create feature--PR and merge it to main
 			await runTestEffect(merge({ silent: true }))
@@ -130,7 +130,7 @@ describe("merge command - integration tests (requires git-filter-repo)", () => {
 			await runTestEffect(emit({ silent: true }))
 
 			// Go back to feature branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Make additional changes
 			await createCommit(tempDir, "More feature work")
@@ -186,7 +186,7 @@ describe("merge command - integration tests (requires git-filter-repo)", () => {
 			await checkoutBranch(tempDir, "feature")
 
 			// Delete the source branch
-			await deleteBranch(tempDir, "agency/feature", true)
+			await deleteBranch(tempDir, "agency--feature", true)
 
 			// Try to merge - should fail (error message may vary since source branch is deleted)
 			await expect(runTestEffect(merge({ silent: true }))).rejects.toThrow()

@@ -16,7 +16,9 @@ import { join } from "path"
 
 describe("makeSourceBranchName", () => {
 	test("replaces %branch% placeholder with branch name", () => {
-		expect(makeSourceBranchName("main", "agency/%branch%")).toBe("agency/main")
+		expect(makeSourceBranchName("main", "agency--%branch%")).toBe(
+			"agency--main",
+		)
 		expect(makeSourceBranchName("feature-foo", "wip/%branch%")).toBe(
 			"wip/feature-foo",
 		)
@@ -24,20 +26,22 @@ describe("makeSourceBranchName", () => {
 	})
 
 	test("treats pattern as prefix when %branch% is not present", () => {
-		expect(makeSourceBranchName("main", "agency/")).toBe("agency/main")
+		expect(makeSourceBranchName("main", "agency--")).toBe("agency--main")
 		expect(makeSourceBranchName("feature-foo", "wip-")).toBe("wip-feature-foo")
 	})
 
 	test("handles empty branch name", () => {
-		expect(makeSourceBranchName("", "agency/%branch%")).toBe("agency/")
-		expect(makeSourceBranchName("", "agency/")).toBe("agency/")
+		expect(makeSourceBranchName("", "agency--%branch%")).toBe("agency--")
+		expect(makeSourceBranchName("", "agency--")).toBe("agency--")
 	})
 })
 
 describe("extractCleanBranch", () => {
 	describe("with %branch% placeholder", () => {
 		test("extracts clean branch from source branch name", () => {
-			expect(extractCleanBranch("agency/main", "agency/%branch%")).toBe("main")
+			expect(extractCleanBranch("agency--main", "agency--%branch%")).toBe(
+				"main",
+			)
 			expect(extractCleanBranch("wip/feature-foo", "wip/%branch%")).toBe(
 				"feature-foo",
 			)
@@ -45,13 +49,13 @@ describe("extractCleanBranch", () => {
 		})
 
 		test("returns null when source branch name doesn't match pattern", () => {
-			expect(extractCleanBranch("main", "agency/%branch%")).toBeNull()
+			expect(extractCleanBranch("main", "agency--%branch%")).toBeNull()
 			expect(extractCleanBranch("feature-foo", "wip/%branch%")).toBeNull()
-			expect(extractCleanBranch("agency/main", "wip/%branch%")).toBeNull()
+			expect(extractCleanBranch("agency--main", "wip/%branch%")).toBeNull()
 		})
 
 		test("returns null for empty clean branch", () => {
-			expect(extractCleanBranch("agency/", "agency/%branch%")).toBeNull()
+			expect(extractCleanBranch("agency--", "agency--%branch%")).toBeNull()
 			expect(extractCleanBranch("wip/", "wip/%branch%")).toBeNull()
 		})
 
@@ -67,17 +71,17 @@ describe("extractCleanBranch", () => {
 
 	describe("without %branch% placeholder (prefix mode)", () => {
 		test("extracts clean branch by removing prefix", () => {
-			expect(extractCleanBranch("agency/main", "agency/")).toBe("main")
+			expect(extractCleanBranch("agency--main", "agency--")).toBe("main")
 			expect(extractCleanBranch("wip-feature-foo", "wip-")).toBe("feature-foo")
 		})
 
 		test("returns null when branch doesn't start with prefix", () => {
-			expect(extractCleanBranch("main", "agency/")).toBeNull()
+			expect(extractCleanBranch("main", "agency--")).toBeNull()
 			expect(extractCleanBranch("feature-foo", "wip-")).toBeNull()
 		})
 
 		test("returns null for empty clean branch", () => {
-			expect(extractCleanBranch("agency/", "agency/")).toBeNull()
+			expect(extractCleanBranch("agency--", "agency--")).toBeNull()
 			expect(extractCleanBranch("wip-", "wip-")).toBeNull()
 		})
 	})
@@ -181,7 +185,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		await initGitRepo(tempDir)
 
 		// Create source branch with agency.json
-		await Bun.spawn(["git", "checkout", "-b", "agency/main"], {
+		await Bun.spawn(["git", "checkout", "-b", "agency--main"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -199,13 +203,13 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		const result = await runTestEffect(
 			resolveBranchPairWithAgencyJson(
 				tempDir,
-				"agency/main",
-				"agency/%branch%",
+				"agency--main",
+				"agency--%branch%",
 				"%branch%",
 			),
 		)
 
-		expect(result.sourceBranch).toBe("agency/main")
+		expect(result.sourceBranch).toBe("agency--main")
 		expect(result.emitBranch).toBe("main")
 		expect(result.isOnEmitBranch).toBe(false)
 	})
@@ -215,7 +219,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		await initGitRepo(tempDir)
 
 		// Create a source branch with agency.json
-		await Bun.spawn(["git", "checkout", "-b", "agency/feature-bar"], {
+		await Bun.spawn(["git", "checkout", "-b", "agency--feature-bar"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -256,12 +260,12 @@ describe("resolveBranchPairWithAgencyJson", () => {
 			resolveBranchPairWithAgencyJson(
 				tempDir,
 				"feature-bar",
-				"agency/%branch%",
+				"agency--%branch%",
 				"%branch%",
 			),
 		)
 
-		expect(result.sourceBranch).toBe("agency/feature-bar")
+		expect(result.sourceBranch).toBe("agency--feature-bar")
 		expect(result.emitBranch).toBe("feature-bar")
 		expect(result.isOnEmitBranch).toBe(true)
 	})
@@ -271,7 +275,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		await initGitRepo(tempDir)
 
 		// Create source branch without agency.json
-		await Bun.spawn(["git", "checkout", "-b", "agency/feature-baz"], {
+		await Bun.spawn(["git", "checkout", "-b", "agency--feature-baz"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -281,13 +285,13 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		const result = await runTestEffect(
 			resolveBranchPairWithAgencyJson(
 				tempDir,
-				"agency/feature-baz",
-				"agency/%branch%",
+				"agency--feature-baz",
+				"agency--%branch%",
 				"%branch%",
 			),
 		)
 
-		expect(result.sourceBranch).toBe("agency/feature-baz")
+		expect(result.sourceBranch).toBe("agency--feature-baz")
 		expect(result.emitBranch).toBe("feature-baz")
 		expect(result.isOnEmitBranch).toBe(false)
 	})
@@ -297,7 +301,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		await initGitRepo(tempDir)
 
 		// Create a branch without the source pattern (legacy branch)
-		// No agency/feature-qux exists, so this is a legacy source branch
+		// No agency--feature-qux exists, so this is a legacy source branch
 		await Bun.spawn(["git", "checkout", "-b", "feature-qux"], {
 			cwd: tempDir,
 			stdout: "pipe",
@@ -308,7 +312,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 			resolveBranchPairWithAgencyJson(
 				tempDir,
 				"feature-qux",
-				"agency/%branch%",
+				"agency--%branch%",
 				"%branch%",
 			),
 		)
@@ -324,7 +328,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		await initGitRepo(tempDir)
 
 		// Create source branch, no agency.json
-		await Bun.spawn(["git", "checkout", "-b", "agency/main"], {
+		await Bun.spawn(["git", "checkout", "-b", "agency--main"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -334,13 +338,13 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		const result = await runTestEffect(
 			resolveBranchPairWithAgencyJson(
 				tempDir,
-				"agency/main",
-				"agency/%branch%",
+				"agency--main",
+				"agency--%branch%",
 				"%branch%",
 			),
 		)
 
-		expect(result.sourceBranch).toBe("agency/main")
+		expect(result.sourceBranch).toBe("agency--main")
 		expect(result.emitBranch).toBe("main")
 		expect(result.isOnEmitBranch).toBe(false)
 	})
@@ -350,7 +354,7 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		await initGitRepo(tempDir)
 
 		// Test with custom emit pattern that adds a suffix
-		await Bun.spawn(["git", "checkout", "-b", "agency/feature"], {
+		await Bun.spawn(["git", "checkout", "-b", "agency--feature"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -359,13 +363,13 @@ describe("resolveBranchPairWithAgencyJson", () => {
 		const result = await runTestEffect(
 			resolveBranchPairWithAgencyJson(
 				tempDir,
-				"agency/feature",
-				"agency/%branch%",
+				"agency--feature",
+				"agency--%branch%",
 				"%branch%--PR",
 			),
 		)
 
-		expect(result.sourceBranch).toBe("agency/feature")
+		expect(result.sourceBranch).toBe("agency--feature")
 		expect(result.emitBranch).toBe("feature--PR")
 		expect(result.isOnEmitBranch).toBe(false)
 	})

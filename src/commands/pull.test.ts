@@ -144,7 +144,7 @@ describe("pull command", () => {
 			await setupAgencyJson(tempDir)
 
 			// Create source branch: A1 A2
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "A1: Feature work")
 
 			// Simulate agency emit: create local emit branch (B1) with rewritten history
@@ -191,18 +191,18 @@ describe("pull command", () => {
 			}).exited
 
 			// Go back to source branch (still at A1)
-			await checkoutBranch(tempDir, "agency/feature")
-			const beforeCommitCount = await getCommitCount(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
+			const beforeCommitCount = await getCommitCount(tempDir, "agency--feature")
 
 			// Run pull command - should find B2 and B3 on remote that aren't on local emit
 			// and cherry-pick them onto source as A2 and A3
 			await runTestEffect(pull({ silent: true }))
 
 			// Should still be on source branch
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Should have the new commits
-			const afterCommitCount = await getCommitCount(tempDir, "agency/feature")
+			const afterCommitCount = await getCommitCount(tempDir, "agency--feature")
 			expect(afterCommitCount).toBe(beforeCommitCount + 2)
 
 			// Last commit should be the second remote commit
@@ -215,7 +215,7 @@ describe("pull command", () => {
 			await setupAgencyJson(tempDir)
 
 			// Create a source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature work")
 
 			// Create emit branch with same commits
@@ -229,7 +229,7 @@ describe("pull command", () => {
 			}).exited
 
 			// Go back to source branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Capture output
 			const originalLog = console.log
@@ -249,7 +249,7 @@ describe("pull command", () => {
 			)
 
 			// Should still be on source branch
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 		})
 
 		test("works with custom remote", async () => {
@@ -257,7 +257,7 @@ describe("pull command", () => {
 			await setupAgencyJson(tempDir)
 
 			// Create a source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature work")
 
 			// Create local emit branch
@@ -300,13 +300,13 @@ describe("pull command", () => {
 			}).exited
 
 			// Go back to source branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Run pull with custom remote
 			await runTestEffect(pull({ remote: "upstream", silent: true }))
 
 			// Should still be on source branch
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Should have the new commit
 			const lastCommit = await getLatestCommitMessage(tempDir)
@@ -331,7 +331,7 @@ describe("pull command", () => {
 			await setupAgencyJson(tempDir)
 
 			// Create a source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await setupAgencyJson(tempDir, "feature")
 			await createCommit(tempDir, "Feature work")
 
@@ -345,7 +345,7 @@ describe("pull command", () => {
 			await setupAgencyJson(tempDir)
 
 			// Create a source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await setupAgencyJson(tempDir, "feature")
 			await createCommit(tempDir, "Feature work")
 
@@ -362,7 +362,7 @@ describe("pull command", () => {
 			await setupAgencyJson(tempDir)
 
 			// Create a source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature work")
 
 			// Create emit branch
@@ -377,7 +377,7 @@ describe("pull command", () => {
 			}).exited
 
 			// Go back to source branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Capture output
 			const originalLog = console.log

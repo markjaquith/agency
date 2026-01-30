@@ -55,8 +55,8 @@ describe("switch command", () => {
 
 	describe("basic functionality", () => {
 		test("switches from emit branch to source branch", async () => {
-			// Create source and emit branches (source=agency/main, emit=main)
-			await createBranch(tempDir, "agency/main")
+			// Create source and emit branches (source=agency--main, emit=main)
+			await createBranch(tempDir, "agency--main")
 			await createCommit(tempDir, "Work on source")
 			// Emit branch is just "main" (already exists from setup)
 			await checkoutBranch(tempDir, "main")
@@ -66,15 +66,15 @@ describe("switch command", () => {
 
 			// Should be on source branch now
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/main")
+			expect(currentBranch).toBe("agency--main")
 		})
 
 		test("switches from source branch to emit branch", async () => {
 			// Create source branch (main becomes the emit branch)
-			await createBranch(tempDir, "agency/main")
+			await createBranch(tempDir, "agency--main")
 			await createCommit(tempDir, "Work on source")
 
-			// We're on agency/main (source), switch to main (emit)
+			// We're on agency--main (source), switch to main (emit)
 			// Run switch command
 			await runTestEffect(switchBranch({ silent: true }))
 
@@ -85,13 +85,13 @@ describe("switch command", () => {
 
 		test("toggles back and forth", async () => {
 			// Create source and emit branches
-			await createBranch(tempDir, "agency/main")
+			await createBranch(tempDir, "agency--main")
 			await createCommit(tempDir, "Work on source")
 			await checkoutBranch(tempDir, "main") // Go to emit
 
 			// Switch to source
 			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("agency/main")
+			expect(await getCurrentBranch(tempDir)).toBe("agency--main")
 
 			// Switch back to emit
 			await runTestEffect(switchBranch({ silent: true }))
@@ -99,7 +99,7 @@ describe("switch command", () => {
 
 			// And back to source
 			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("agency/main")
+			expect(await getCurrentBranch(tempDir)).toBe("agency--main")
 		})
 
 		test("works with custom emit branch pattern", async () => {
@@ -108,24 +108,24 @@ describe("switch command", () => {
 			await Bun.write(
 				configPath,
 				JSON.stringify({
-					sourceBranchPattern: "agency/%branch%",
-					emitBranch: "PR/%branch%",
+					sourceBranchPattern: "agency--%branch%",
+					emitBranch: "PR--%branch%",
 				}),
 			)
 			process.env.AGENCY_CONFIG_PATH = configPath
 
 			// Create source branch and its emit branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature work")
-			await createBranch(tempDir, "PR/feature")
+			await createBranch(tempDir, "PR--feature")
 
 			// Switch to source
 			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Switch back to emit
 			await runTestEffect(switchBranch({ silent: true }))
-			expect(await getCurrentBranch(tempDir)).toBe("PR/feature")
+			expect(await getCurrentBranch(tempDir)).toBe("PR--feature")
 		})
 	})
 
@@ -136,14 +136,14 @@ describe("switch command", () => {
 			await Bun.write(
 				configPath,
 				JSON.stringify({
-					sourceBranchPattern: "agency/%branch%",
+					sourceBranchPattern: "agency--%branch%",
 					emitBranch: "%branch%--PR",
 				}),
 			)
 			process.env.AGENCY_CONFIG_PATH = configPath
 
 			// Create source branch, but not the emit branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			// feature--PR doesn't exist
 
 			await expect(
@@ -153,7 +153,7 @@ describe("switch command", () => {
 
 		test("throws error when emit branch doesn't exist", async () => {
 			// Create source branch but no emit branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			// We never created 'feature' (emit), so it doesn't exist
 
 			await expect(
@@ -175,7 +175,7 @@ describe("switch command", () => {
 
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
-			await createBranch(tempDir, "agency/main")
+			await createBranch(tempDir, "agency--main")
 			await checkoutBranch(tempDir, "main")
 
 			// Capture output

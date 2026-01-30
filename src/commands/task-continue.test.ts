@@ -82,7 +82,7 @@ describe("task --continue", () => {
 
 		// Verify we're on the source branch
 		const originalBranch = await getCurrentBranch(tempDir)
-		expect(originalBranch).toBe("agency/original-feature")
+		expect(originalBranch).toBe("agency--original-feature")
 
 		// Read the original TASK.md
 		const originalTaskContent = await readFile(join(tempDir, "TASK.md"))
@@ -99,7 +99,7 @@ describe("task --continue", () => {
 
 		// Verify we're on the new branch
 		const newBranch = await getCurrentBranch(tempDir)
-		expect(newBranch).toBe("agency/continued-feature")
+		expect(newBranch).toBe("agency--continued-feature")
 
 		// Verify agency files were copied
 		expect(await fileExists(join(tempDir, "agency.json"))).toBe(true)
@@ -148,7 +148,7 @@ describe("task --continue", () => {
 		await runTestEffect(task({ silent: true, emit: "feature-v1" }))
 
 		// Create another branch that would conflict
-		await Bun.spawn(["git", "branch", "agency/feature-v2"], {
+		await Bun.spawn(["git", "branch", "agency--feature-v2"], {
 			cwd: tempDir,
 			stdout: "pipe",
 			stderr: "pipe",

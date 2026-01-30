@@ -87,7 +87,7 @@ describe("clean command", () => {
 		test("finds source branches for merged emit branches", async () => {
 			// Create source branch with agency pattern
 			await checkoutBranch(tempDir, "main")
-			await Bun.spawn(["git", "checkout", "-b", "agency/feature-2"], {
+			await Bun.spawn(["git", "checkout", "-b", "agency--feature-2"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
@@ -132,7 +132,7 @@ describe("clean command", () => {
 			// Verify both emit and source branches were deleted
 			const branches = await getGitOutput(tempDir, ["branch", "--list"])
 			expect(branches).not.toContain("feature-2")
-			expect(branches).not.toContain("agency/feature-2")
+			expect(branches).not.toContain("agency--feature-2")
 			expect(branches).toContain("main")
 		})
 

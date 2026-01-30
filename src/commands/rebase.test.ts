@@ -131,7 +131,7 @@ describe("rebase command", () => {
 
 	test("fails when there are uncommitted changes", async () => {
 		// Create feature branch with agency.json
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "main")
 
 		// Create uncommitted changes
@@ -149,7 +149,7 @@ describe("rebase command", () => {
 
 	test("rebases source branch onto main successfully", async () => {
 		// Create a feature branch
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "main", "feature")
 		await Bun.write(join(tempDir, "feature1.txt"), "feature 1\n")
 		await Bun.spawn(["git", "add", "feature1.txt"], {
@@ -163,7 +163,7 @@ describe("rebase command", () => {
 			stderr: "pipe",
 		}).exited
 
-		const commitCountBefore = await getCommitCount(tempDir, "agency/feature")
+		const commitCountBefore = await getCommitCount(tempDir, "agency--feature")
 
 		// Add commits to main
 		await checkoutBranch(tempDir, "main")
@@ -191,7 +191,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Switch back to feature and rebase
-		await checkoutBranch(tempDir, "agency/feature")
+		await checkoutBranch(tempDir, "agency--feature")
 
 		await runTestEffect(
 			rebase({
@@ -203,10 +203,10 @@ describe("rebase command", () => {
 
 		// Verify we're still on the feature branch
 		const currentBranch = await getCurrentBranch(tempDir)
-		expect(currentBranch).toBe("agency/feature")
+		expect(currentBranch).toBe("agency--feature")
 
 		// Verify commit count increased (original commits + new commits from main)
-		const commitCountAfter = await getCommitCount(tempDir, "agency/feature")
+		const commitCountAfter = await getCommitCount(tempDir, "agency--feature")
 		expect(commitCountAfter).toBe(commitCountBefore + 2)
 
 		// Verify all files exist
@@ -234,7 +234,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Create feature branch based on develop
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "develop", "feature")
 		await Bun.write(join(tempDir, "feature1.txt"), "feature 1\n")
 		await Bun.spawn(["git", "add", "feature1.txt"], {
@@ -263,7 +263,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Switch back to feature and rebase (should use develop from agency.json)
-		await checkoutBranch(tempDir, "agency/feature")
+		await checkoutBranch(tempDir, "agency--feature")
 
 		await runTestEffect(
 			rebase({
@@ -278,7 +278,7 @@ describe("rebase command", () => {
 
 	test("preserves agency files during rebase", async () => {
 		// Create feature branch with agency files
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "main", "feature")
 
 		// Add TASK.md and AGENTS.md
@@ -306,7 +306,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Rebase feature branch
-		await checkoutBranch(tempDir, "agency/feature")
+		await checkoutBranch(tempDir, "agency--feature")
 
 		await runTestEffect(
 			rebase({
@@ -346,7 +346,7 @@ describe("rebase command", () => {
 
 		// Create feature branch from main
 		await checkoutBranch(tempDir, "main")
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "main", "feature")
 
 		// Rebase onto custom-base instead of main
@@ -364,7 +364,7 @@ describe("rebase command", () => {
 
 	test("updates emit branch with --emit flag", async () => {
 		// Create feature branch with agency.json
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "main", "feature")
 
 		// Add commit to main
@@ -382,7 +382,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Rebase feature branch with new emit branch name
-		await checkoutBranch(tempDir, "agency/feature")
+		await checkoutBranch(tempDir, "agency--feature")
 
 		await runTestEffect(
 			rebase({
@@ -400,7 +400,7 @@ describe("rebase command", () => {
 
 		// Verify we're still on the feature branch
 		const currentBranch = await getCurrentBranch(tempDir)
-		expect(currentBranch).toBe("agency/feature")
+		expect(currentBranch).toBe("agency--feature")
 
 		// Verify there's a commit for the emit branch update
 		const proc = Bun.spawn(["git", "log", "--oneline", "-1"], {
@@ -411,13 +411,13 @@ describe("rebase command", () => {
 		await proc.exited
 		const output = await new Response(proc.stdout).text()
 		expect(output).toContain(
-			"chore: agency rebase (main) agency/feature → new-emit-branch",
+			"chore: agency rebase (main) agency--feature → new-emit-branch",
 		)
 	})
 
 	test("preserves other metadata when updating emit branch", async () => {
 		// Create feature branch with agency.json containing standard fields
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		const agencyJson = {
 			version: 1,
 			injectedFiles: ["AGENTS.md", "TASK.md", "opencode.json"],
@@ -456,7 +456,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Rebase with new emit branch
-		await checkoutBranch(tempDir, "agency/feature")
+		await checkoutBranch(tempDir, "agency--feature")
 
 		await runTestEffect(
 			rebase({
@@ -484,7 +484,7 @@ describe("rebase command", () => {
 
 	test("supports deprecated --branch flag for backward compatibility", async () => {
 		// Create feature branch with agency.json
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		await setupAgencyJson(tempDir, "main", "feature")
 
 		// Add commit to main
@@ -502,7 +502,7 @@ describe("rebase command", () => {
 		}).exited
 
 		// Rebase feature branch with --branch (deprecated)
-		await checkoutBranch(tempDir, "agency/feature")
+		await checkoutBranch(tempDir, "agency--feature")
 
 		await runTestEffect(
 			rebase({

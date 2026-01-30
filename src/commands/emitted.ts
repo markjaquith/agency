@@ -41,7 +41,7 @@ Usage: agency emitted [options]
 Get the name of the emitted branch (or what it would be).
 
 This command shows the emit branch name corresponding to your current branch:
-  - If on a source branch (e.g., agency/main), shows the emit branch (e.g., main)
+  - If on a source branch (e.g., agency--main), shows the emit branch (e.g., main)
   - If on an emit branch (e.g., main), shows the current branch name
 
 This is useful for scripting and automation where you need to know

@@ -433,7 +433,7 @@ Create an emit branch from the current source branch with backpack files (AGENTS
 reverted to their state on the base branch.
 
 Source and Emit Branches:
-  - Source branches: Your working branches with agency-specific files (e.g., agency/feature-foo)
+  - Source branches: Your working branches with agency-specific files (e.g., agency--feature-foo)
   - Emit branches: Clean branches suitable for PRs without agency files (e.g., feature-foo)
   
   This command creates a clean emit branch from your source branch by filtering out
@@ -472,20 +472,20 @@ Options:
 Configuration:
   ~/.config/agency/agency.json can contain:
   {
-    "sourceBranchPattern": "agency/%branch%",  // Pattern for source branch names
+    "sourceBranchPattern": "agency--%branch%",  // Pattern for source branch names
     "emitBranch": "%branch%"                   // Pattern for emit branch names
   }
   
   Use %branch% as placeholder for the clean branch name.
   
   Source Pattern Examples:
-    "agency/%branch%" -> main becomes agency/main (default)
+    "agency--%branch%" -> main becomes agency--main (default)
     "wip/%branch%" -> feature becomes wip/feature
   
   Emit Pattern Examples:
-    "%branch%" -> agency/main emits to main (default)
-    "%branch%--PR" -> agency/feature emits to feature--PR
-    "PR/%branch%" -> agency/feature emits to PR/feature
+    "%branch%" -> agency--main emits to main (default)
+    "%branch%--PR" -> agency--feature emits to feature--PR
+    "PR/%branch%" -> agency--feature emits to PR/feature
 
 Examples:
   agency emit                          # Prompt for base branch (first time) or use saved
