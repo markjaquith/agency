@@ -635,7 +635,31 @@ try {
 	await command.run(cmdPositionals, cmdValues, commandArgs)
 } catch (error) {
 	if (error instanceof Error) {
-		console.error(`ⓘ ${error.message}`)
+		let message = error.message
+
+		// Handle Effect FiberFailure errors that wrap tagged errors
+		// When the message is generic "An error has occurred", try to extract the actual error
+		if (message === "An error has occurred") {
+			// Try to extract the actual error from Effect's Cause structure
+			const causeSymbol = Object.getOwnPropertySymbols(error).find((s) =>
+				s.toString().includes("Cause"),
+			)
+			if (causeSymbol) {
+				const cause = (error as any)[causeSymbol]
+				if (cause && cause._tag === "Fail" && cause.failure) {
+					const failure = cause.failure
+					// Try common error message patterns
+					message =
+						failure.message ||
+						failure.stderr ||
+						(failure._tag
+							? `${failure._tag}: ${JSON.stringify(failure)}`
+							: JSON.stringify(failure))
+				}
+			}
+		}
+
+		console.error(`ⓘ ${message}`)
 	} else {
 		console.error("An unexpected error occurred:", error)
 	}

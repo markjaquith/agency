@@ -27,7 +27,14 @@ class ProcessError extends Data.TaggedError("ProcessError")<{
 	command: string
 	exitCode: number
 	stderr: string
-}> {}
+}> {
+	override get message(): string {
+		return (
+			this.stderr ||
+			`Process failed with exit code ${this.exitCode}: ${this.command}`
+		)
+	}
+}
 
 /**
  * Spawn a process with proper error handling and typed results.
