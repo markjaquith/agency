@@ -219,11 +219,11 @@ Examples:
   agency rebase --emit new-branch  # Rebase and set new emit branch name
 
 Workflow:
-  1. User works on agency/feature-A branch
+  1. User works on agency--feature-A branch
   2. User runs 'agency emit' and 'agency push' to create a PR
   3. PR gets merged into main
-  4. User runs 'agency rebase' to rebase agency/feature-A onto origin/main
-  5. User continues working on agency/feature-A with updated main branch
+  4. User runs 'agency rebase' to rebase agency--feature-A onto origin/main
+  5. User continues working on agency--feature-A with updated main branch
   6. User runs 'agency emit' again to create a fresh emit branch
 
 Notes:

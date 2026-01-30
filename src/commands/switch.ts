@@ -66,13 +66,13 @@ Usage: agency switch [options]
 Toggle between source branch and emit branch.
 
 Source and Emit Branches:
-  - Source branches: Your working branches with agency-specific files (e.g., agency/main)
+  - Source branches: Your working branches with agency-specific files (e.g., agency--main)
   - Emit branches: Clean branches suitable for PRs without agency files (e.g., main)
 
 This command intelligently switches between your source branch and its
 corresponding emit branch:
-  - If on an emit branch (e.g., main), switches to source (agency/main)
-  - If on a source branch (e.g., agency/main), switches to emit branch (main)
+  - If on an emit branch (e.g., main), switches to source (agency--main)
+  - If on a source branch (e.g., agency--main), switches to emit branch (main)
 
 Example:
   agency switch                  # Toggle between branches

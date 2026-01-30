@@ -27,7 +27,7 @@ export class AgencyMetadata extends Schema.Class<AgencyMetadata>(
  */
 export class AgencyConfig extends Schema.Class<AgencyConfig>("AgencyConfig")({
 	sourceBranchPattern: Schema.String.pipe(
-		Schema.annotations({ default: "agency/%branch%" }),
+		Schema.annotations({ default: "agency--%branch%" }),
 	),
 	emitBranch: Schema.String.pipe(Schema.annotations({ default: "%branch%" })),
 }) {}

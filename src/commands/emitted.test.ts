@@ -54,8 +54,8 @@ describe("emitted command", () => {
 
 	describe("basic functionality", () => {
 		test("returns emit branch name when on source branch", async () => {
-			// Create source branch (agency/main)
-			await createBranch(tempDir, "agency/main")
+			// Create source branch (agency--main)
+			await createBranch(tempDir, "agency--main")
 			await createCommit(tempDir, "Work on source")
 
 			// Capture output
@@ -73,7 +73,7 @@ describe("emitted command", () => {
 
 		test("returns emit branch name when on emit branch", async () => {
 			// Create source branch
-			await createBranch(tempDir, "agency/main")
+			await createBranch(tempDir, "agency--main")
 			await createCommit(tempDir, "Work on source")
 
 			// Switch to emit branch (main)
@@ -98,14 +98,14 @@ describe("emitted command", () => {
 			await Bun.write(
 				configPath,
 				JSON.stringify({
-					sourceBranchPattern: "agency/%branch%",
+					sourceBranchPattern: "agency--%branch%",
 					emitBranch: "%branch%--PR",
 				}),
 			)
 			process.env.AGENCY_CONFIG_PATH = configPath
 
 			// Create source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature work")
 
 			// Capture output
@@ -123,7 +123,7 @@ describe("emitted command", () => {
 
 		test("returns emit branch from agency.json when present", async () => {
 			// Create source branch
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 
 			// Create agency.json with custom emitBranch
 			const agencyJsonPath = join(tempDir, "agency.json")
@@ -181,7 +181,7 @@ describe("emitted command", () => {
 
 	describe("silent mode", () => {
 		test("still outputs when not in silent mode", async () => {
-			await createBranch(tempDir, "agency/main")
+			await createBranch(tempDir, "agency--main")
 
 			const originalLog = console.log
 			let logCalled = false
@@ -196,7 +196,7 @@ describe("emitted command", () => {
 		})
 
 		test("silent flag suppresses output", async () => {
-			await createBranch(tempDir, "agency/main")
+			await createBranch(tempDir, "agency--main")
 
 			const originalLog = console.log
 			let logCalled = false

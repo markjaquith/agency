@@ -42,7 +42,7 @@ describe("task command - branching functionality", () => {
 	})
 
 	describe("--from flag", () => {
-		test("creates new agency/some-branch when using --from some-branch with explicit name", async () => {
+		test("creates new agency--some-branch when using --from some-branch with explicit name", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 			await initAgency(tempDir, "test")
@@ -54,7 +54,7 @@ describe("task command - branching functionality", () => {
 			await runGitCommand(tempDir, ["git", "commit", "-m", "Add feature"])
 
 			// Run agency task my-feature --from some-branch
-			// This should create a NEW branch called agency/my-feature
+			// This should create a NEW branch called agency--my-feature
 			await runTestEffect(
 				task({
 					silent: true,
@@ -64,7 +64,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-feature")
+			expect(currentBranch).toBe("agency--my-feature")
 
 			// Verify feature.txt exists (came from some-branch)
 			const featureFile = await Bun.file(join(tempDir, "feature.txt")).text()
@@ -75,7 +75,7 @@ describe("task command - branching functionality", () => {
 			expect(taskMdExists).toBe(true)
 		})
 
-		test("throws error when agency/some-branch already exists", async () => {
+		test("throws error when agency--some-branch already exists", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 			await initAgency(tempDir, "test")
@@ -86,7 +86,7 @@ describe("task command - branching functionality", () => {
 			await runGitCommand(tempDir, ["git", "add", "."])
 			await runGitCommand(tempDir, ["git", "commit", "-m", "Add feature"])
 
-			// Create agency/my-feature first
+			// Create agency--my-feature first
 			await runTestEffect(
 				task({
 					silent: true,
@@ -134,7 +134,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-task")
+			expect(currentBranch).toBe("agency--my-task")
 
 			// Verify feature.txt exists (came from feature-base)
 			const featureFile = await Bun.file(join(tempDir, "feature.txt")).text()
@@ -191,12 +191,12 @@ describe("task command - branching functionality", () => {
 				task({
 					silent: true,
 					emit: "second-task",
-					from: "agency/first-task",
+					from: "agency--first-task",
 				}),
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/second-task")
+			expect(currentBranch).toBe("agency--second-task")
 
 			// Verify first-task.txt exists (came from emit branch)
 			const firstTaskFile = await Bun.file(
@@ -234,7 +234,7 @@ describe("task command - branching functionality", () => {
 					task({
 						silent: true,
 						emit: "second-task",
-						from: "agency/unemitted-task",
+						from: "agency--unemitted-task",
 					}),
 				),
 			).rejects.toThrow("emit branch")
@@ -266,7 +266,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-task")
+			expect(currentBranch).toBe("agency--my-task")
 
 			// Verify current.txt exists
 			const currentFile = await Bun.file(join(tempDir, "current.txt")).text()
@@ -301,12 +301,12 @@ describe("task command - branching functionality", () => {
 				task({
 					silent: true,
 					emit: "second-task",
-					from: "agency/first-task",
+					from: "agency--first-task",
 				}),
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/second-task")
+			expect(currentBranch).toBe("agency--second-task")
 
 			// Verify first.txt exists
 			const firstFile = await Bun.file(join(tempDir, "first.txt")).text()
@@ -335,7 +335,7 @@ describe("task command - branching functionality", () => {
 					task({
 						silent: true,
 						emit: "second-task",
-						from: "agency/unemitted-task",
+						from: "agency--unemitted-task",
 					}),
 				),
 			).rejects.toThrow("emit branch")
@@ -380,7 +380,7 @@ describe("task command - branching functionality", () => {
 			).rejects.toThrow("Branch name")
 		})
 
-		test("agency task out --from foo creates agency/out emitting to out", async () => {
+		test("agency task out --from foo creates agency--out emitting to out", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)
 			await initAgency(tempDir, "test")
@@ -397,7 +397,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/out")
+			expect(currentBranch).toBe("agency--out")
 
 			const agencyJson = JSON.parse(
 				await Bun.file(join(tempDir, "agency.json")).text(),
@@ -435,7 +435,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-task")
+			expect(currentBranch).toBe("agency--my-task")
 
 			// Verify main.txt exists but other.txt does not
 			const mainExists = await Bun.file(join(tempDir, "main.txt")).exists()
@@ -532,7 +532,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-task")
+			expect(currentBranch).toBe("agency--my-task")
 
 			// The new branch should have remote-only.txt (from origin/main)
 			const remoteFileExists = await Bun.file(
@@ -585,7 +585,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-task")
+			expect(currentBranch).toBe("agency--my-task")
 
 			// The new branch should have local.txt
 			const localFileExists = await Bun.file(
@@ -627,7 +627,7 @@ describe("task command - branching functionality", () => {
 			)
 
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/my-task")
+			expect(currentBranch).toBe("agency--my-task")
 		})
 	})
 })

@@ -130,7 +130,7 @@ describe("status command", () => {
 			await initAgency(tempDir, "test-template")
 
 			// Create source branch with agency.json
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
@@ -164,7 +164,7 @@ describe("status command", () => {
 
 		test("shows corresponding branch when it exists", async () => {
 			await initAgency(tempDir, "test-template")
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
@@ -183,7 +183,7 @@ describe("status command", () => {
 
 			// Create emit branch
 			await createBranch(tempDir, "feature")
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			let output = ""
 			const originalLog = console.log
@@ -391,8 +391,8 @@ describe("status command", () => {
 		test("reads metadata from source branch when on emit branch without agency.json on disk", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create source branch (agency/feature) with agency.json committed
-			await createBranch(tempDir, "agency/feature")
+			// Create source branch (agency--feature) with agency.json committed
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["AGENTS.md", "opencode.json"],
@@ -435,14 +435,14 @@ describe("status command", () => {
 			expect(data.baseBranch).toBe("main")
 			expect(data.managedFiles).toContain("AGENTS.md")
 			expect(data.managedFiles).toContain("opencode.json")
-			expect(data.sourceBranch).toBe("agency/feature")
+			expect(data.sourceBranch).toBe("agency--feature")
 		})
 
 		test("shows correct backpack when on emit branch", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create source branch (agency/feature) with agency.json committed
-			await createBranch(tempDir, "agency/feature")
+			// Create source branch (agency--feature) with agency.json committed
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["AGENTS.md"],

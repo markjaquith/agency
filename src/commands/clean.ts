@@ -179,7 +179,7 @@ export const clean = (options: CleanOptions = {}) =>
 
 		// Load config to get source and emit patterns
 		const config = yield* configService.loadConfig()
-		const sourcePattern = config.sourceBranchPattern || "agency/%branch%"
+		const sourcePattern = config.sourceBranchPattern || "agency--%branch%"
 		const emitPattern = config.emitBranch || "%branch%"
 
 		verboseLog(

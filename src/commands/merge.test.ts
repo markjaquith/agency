@@ -39,8 +39,8 @@ describe("merge command", () => {
 		// Set up origin for git-filter-repo
 		await setupRemote(tempDir, "origin", tempDir)
 
-		// Create a source branch (with agency/ prefix per new default config)
-		await createBranch(tempDir, "agency/feature")
+		// Create a source branch (with agency-- prefix per new default config)
+		await createBranch(tempDir, "agency--feature")
 
 		// Initialize AGENTS.md on feature branch
 		await initAgency(tempDir, "test")
@@ -119,7 +119,7 @@ describe("merge command", () => {
 		test("performs squash merge when --squash flag is set", async () => {
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Run merge with squash flag (skipFilter for speed, we're testing squash behavior)
 			await runTestEffect(
@@ -146,7 +146,7 @@ describe("merge command", () => {
 		test("performs regular merge when --squash flag is not set", async () => {
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Run merge without squash flag (skipFilter for speed, we're testing merge behavior)
 			await runTestEffect(
@@ -175,7 +175,7 @@ describe("merge command", () => {
 		test("pushes base branch to origin when --push flag is set", async () => {
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Get the current commit on main before merge
 			await checkoutBranch(tempDir, "main")
@@ -184,7 +184,7 @@ describe("merge command", () => {
 			).trim()
 
 			// Go back to feature branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Run merge with push flag (skipFilter for speed, we're testing push behavior)
 			await runTestEffect(merge({ silent: true, push: true, skipFilter: true }))
@@ -213,7 +213,7 @@ describe("merge command", () => {
 		test("does not push when --push flag is not set", async () => {
 			// We're on feature branch (source)
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 
 			// Get the current commit on origin/main before merge
 			const beforeOriginCommit = (

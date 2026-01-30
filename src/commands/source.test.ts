@@ -55,7 +55,7 @@ describe("source command", () => {
 	describe("basic functionality", () => {
 		test("switches from emit branch to source branch", async () => {
 			// Create source branch with agency.json
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
@@ -79,12 +79,12 @@ describe("source command", () => {
 				stderr: "pipe",
 			}).exited
 
-			// Run source command (should switch from feature emit branch to agency/feature source)
+			// Run source command (should switch from feature emit branch to agency--feature source)
 			await runTestEffect(source({ silent: true }))
 
-			// Should be on agency/feature now
+			// Should be on agency--feature now
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("agency/feature")
+			expect(currentBranch).toBe("agency--feature")
 		})
 
 		test("works with custom emit branch pattern", async () => {
@@ -93,19 +93,19 @@ describe("source command", () => {
 			await Bun.write(
 				configPath,
 				JSON.stringify({
-					sourceBranchPattern: "WIP/%branch%",
-					emitBranch: "PR/%branch%",
+					sourceBranchPattern: "WIP--%branch%",
+					emitBranch: "PR--%branch%",
 				}),
 			)
 			process.env.AGENCY_CONFIG_PATH = configPath
 
 			// Create source branch with agency.json
-			await createBranch(tempDir, "WIP/feature")
+			await createBranch(tempDir, "WIP--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
 				template: "test-template",
-				emitBranch: "PR/feature",
+				emitBranch: "PR--feature",
 				createdAt: new Date().toISOString(),
 			} as any)
 			// Stage and commit
@@ -117,19 +117,19 @@ describe("source command", () => {
 			await createCommit(tempDir, "Feature work")
 
 			// Create emit branch
-			await createBranch(tempDir, "PR/feature")
+			await createBranch(tempDir, "PR--feature")
 			await Bun.spawn(["rm", "agency.json"], {
 				cwd: tempDir,
 				stdout: "pipe",
 				stderr: "pipe",
 			}).exited
 
-			// Run source command (from PR/feature to WIP/feature)
+			// Run source command (from PR--feature to WIP--feature)
 			await runTestEffect(source({ silent: true }))
 
-			// Should be on WIP/feature now
+			// Should be on WIP--feature now
 			const currentBranch = await getCurrentBranch(tempDir)
-			expect(currentBranch).toBe("WIP/feature")
+			expect(currentBranch).toBe("WIP--feature")
 		})
 	})
 
@@ -156,7 +156,7 @@ describe("source command", () => {
 	describe("silent mode", () => {
 		test("silent flag suppresses output", async () => {
 			// Create source branch with agency.json
-			await createBranch(tempDir, "agency/feature")
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],

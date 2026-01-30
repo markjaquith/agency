@@ -52,8 +52,8 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		// Initialize git repo with main branch (already includes initial commit)
 		await initGitRepo(tempDir)
 
-		// Create a source branch (with agency/ prefix)
-		await createBranch(tempDir, "agency/test-feature")
+		// Create a source branch (with agency-- prefix)
+		await createBranch(tempDir, "agency--test-feature")
 
 		// Initialize AGENTS.md and commit in one go
 		await initAgency(tempDir, "test")
@@ -83,7 +83,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 
 		// Go back to main and create a fresh source branch
 		await checkoutBranch(tempDir, "main")
-		await createBranch(tempDir, "agency/feature")
+		await createBranch(tempDir, "agency--feature")
 		// Create agency.json with AGENTS.md as managed file
 		await Bun.write(
 			join(tempDir, "agency.json"),
@@ -104,7 +104,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 
 		// Should still be on feature branch
 		const currentBranch = await getCurrentBranch(tempDir)
-		expect(currentBranch).toBe("agency/feature")
+		expect(currentBranch).toBe("agency--feature")
 
 		// Switch to emit branch to verify files
 		await checkoutBranch(tempDir, "feature")
@@ -132,7 +132,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		// Store merge-base before advancing main
 		const initialMergeBase = await getGitOutput(tempDir, [
 			"merge-base",
-			"agency/test-feature",
+			"agency--test-feature",
 			"main",
 		])
 
@@ -141,7 +141,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 
 		// Should still be on test-feature branch
 		let currentBranch = await getCurrentBranch(tempDir)
-		expect(currentBranch).toBe("agency/test-feature")
+		expect(currentBranch).toBe("agency--test-feature")
 
 		// Switch to emit branch to verify AGENTS.md is filtered
 		await checkoutBranch(tempDir, "test-feature")
@@ -151,7 +151,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		expect(files).toContain("feature.txt")
 
 		// Switch back to source branch
-		await checkoutBranch(tempDir, "agency/test-feature")
+		await checkoutBranch(tempDir, "agency--test-feature")
 
 		// Simulate advancing main branch with a different file
 		await checkoutBranch(tempDir, "main")
@@ -159,7 +159,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		await addAndCommit(tempDir, "main-file.txt", "Main branch advancement")
 
 		// Rebase test-feature onto new main
-		await checkoutBranch(tempDir, "agency/test-feature")
+		await checkoutBranch(tempDir, "agency--test-feature")
 		const rebaseProc = Bun.spawn(["git", "rebase", "main"], {
 			cwd: tempDir,
 			stdout: "pipe",
@@ -174,7 +174,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		// Verify merge-base has changed after rebase
 		const newMergeBase = await getGitOutput(tempDir, [
 			"merge-base",
-			"agency/test-feature",
+			"agency--test-feature",
 			"main",
 		])
 		expect(newMergeBase.trim()).not.toBe(initialMergeBase.trim())
@@ -184,7 +184,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 
 		// Should still be on test-feature branch
 		currentBranch = await getCurrentBranch(tempDir)
-		expect(currentBranch).toBe("agency/test-feature")
+		expect(currentBranch).toBe("agency--test-feature")
 
 		// Switch to emit branch to verify files
 		await checkoutBranch(tempDir, "test-feature")
@@ -222,7 +222,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 		await addAndCommit(tempDir, "CLAUDE.md", "Add CLAUDE.md")
 
 		// Create a new feature branch
-		await createBranch(tempDir, "agency/claude-test")
+		await createBranch(tempDir, "agency--claude-test")
 
 		// Initialize agency on this branch - first commit has agency files (NOT including CLAUDE.md)
 		await Bun.write(
@@ -260,7 +260,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 
 		// Should still be on source branch
 		const currentBranch = await getCurrentBranch(tempDir)
-		expect(currentBranch).toBe("agency/claude-test")
+		expect(currentBranch).toBe("agency--claude-test")
 
 		// Switch to emit branch to verify CLAUDE.md is reverted to main's version
 		await checkoutBranch(tempDir, "claude-test")
@@ -294,7 +294,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 			await Bun.write(join(tempDir, "FILE2.md"), "Original content 2\n")
 			await addAndCommit(tempDir, "FILE1.md FILE2.md", "Add files")
 
-			await createBranch(tempDir, "agency/contiguous-test")
+			await createBranch(tempDir, "agency--contiguous-test")
 
 			// Create agency.json
 			await Bun.write(
@@ -352,7 +352,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 			await Bun.write(join(tempDir, "FILE2.md"), "Original content 2\n")
 			await addAndCommit(tempDir, "FILE1.md FILE2.md", "Add files")
 
-			await createBranch(tempDir, "agency/non-contiguous-test")
+			await createBranch(tempDir, "agency--non-contiguous-test")
 
 			await Bun.write(
 				join(tempDir, "agency.json"),
@@ -415,7 +415,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 			await Bun.write(join(tempDir, "EXISTING.md"), "Original content\n")
 			await addAndCommit(tempDir, "EXISTING.md", "Add existing file")
 
-			await createBranch(tempDir, "agency/first-commit-test")
+			await createBranch(tempDir, "agency--first-commit-test")
 
 			// First commit is AGENCY_REMOVE_COMMIT (modifying existing file)
 			await Bun.write(join(tempDir, "EXISTING.md"), "Modified content\n")
@@ -463,7 +463,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 			await Bun.write(join(tempDir, "EXISTING.md"), "Original content\n")
 			await addAndCommit(tempDir, "EXISTING.md", "Add existing file")
 
-			await createBranch(tempDir, "agency/last-commit-test")
+			await createBranch(tempDir, "agency--last-commit-test")
 
 			// agency.json first
 			await Bun.write(
@@ -512,7 +512,7 @@ describe("emit command - integration tests (requires git-filter-repo)", () => {
 			await Bun.write(join(tempDir, "EXISTING.md"), "Original content\n")
 			await addAndCommit(tempDir, "EXISTING.md", "Add existing file")
 
-			await createBranch(tempDir, "agency/only-commit-test")
+			await createBranch(tempDir, "agency--only-commit-test")
 
 			// agency.json
 			await Bun.write(

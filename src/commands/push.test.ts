@@ -78,8 +78,8 @@ describe("push command", () => {
 		// Setup agency.json
 		await setupAgencyJson(tempDir)
 
-		// Create a source branch (with agency/ prefix per new default config)
-		await createBranch(tempDir, "agency/feature")
+		// Create a source branch (with agency-- prefix per new default config)
+		await createBranch(tempDir, "agency--feature")
 		await createCommit(tempDir, "Feature work")
 	})
 
@@ -91,16 +91,16 @@ describe("push command", () => {
 
 	describe("basic functionality", () => {
 		test("creates emit branch, pushes it, and returns to source", async () => {
-			// We're on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// We're on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Run push command
 			await runTestEffect(
 				push({ baseBranch: "main", silent: true, skipFilter: true }),
 			)
 
-			// Should be back on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// emit branch (feature) should exist locally and on remote
 			const branches = await getGitOutput(tempDir, ["branch"])
@@ -125,8 +125,8 @@ describe("push command", () => {
 				}),
 			)
 
-			// Should be back on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Custom branch should exist
 			const branches = await getGitOutput(tempDir, ["branch"])
@@ -140,7 +140,7 @@ describe("push command", () => {
 			)
 
 			// Make more changes on source branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "More feature work")
 
 			// Second push should recreate the emit branch
@@ -148,8 +148,8 @@ describe("push command", () => {
 				push({ baseBranch: "main", silent: true, skipFilter: true }),
 			)
 
-			// Should still be back on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should still be back on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 		})
 	})
 
@@ -160,27 +160,27 @@ describe("push command", () => {
 				push({ baseBranch: "main", silent: true, skipFilter: true }),
 			)
 
-			// Now we're on agency/feature, switch to the emit branch (feature)
+			// Now we're on agency--feature, switch to the emit branch (feature)
 			await checkoutBranch(tempDir, "feature")
 
 			// Verify we're on the emit branch
 			expect(await getCurrentBranch(tempDir)).toBe("feature")
 
 			// Make a change on source branch that we'll push
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Another feature commit")
 
 			// Switch back to emit branch
 			await checkoutBranch(tempDir, "feature")
 
 			// Run push from emit branch - should detect we're on emit branch,
-			// switch to source (agency/feature), and continue
+			// switch to source (agency--feature), and continue
 			await runTestEffect(
 				push({ baseBranch: "main", silent: true, skipFilter: true }),
 			)
 
-			// Should be back on agency/feature branch (the source branch)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (the source branch)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 		})
 
 		test("throws error when not in a git repository", async () => {
@@ -239,7 +239,7 @@ describe("push command", () => {
 			)
 
 			// Make changes on source branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "More feature work")
 
 			// Modify the emit branch to create divergence
@@ -252,7 +252,7 @@ describe("push command", () => {
 			}).exited
 
 			// Go back to source branch and try to push again with --force
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Capture output to check for force push message
 			const originalLog = console.log
@@ -272,8 +272,8 @@ describe("push command", () => {
 
 			console.log = originalLog
 
-			// Should be back on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Should have reported force push
 			expect(logMessages.some((msg) => msg.includes("(forced)"))).toBe(true)
@@ -286,7 +286,7 @@ describe("push command", () => {
 			)
 
 			// Make changes on source branch
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "More feature work")
 
 			// Modify the emit branch to create divergence
@@ -299,7 +299,7 @@ describe("push command", () => {
 			}).exited
 
 			// Go back to source branch and try to push without --force
-			await checkoutBranch(tempDir, "agency/feature")
+			await checkoutBranch(tempDir, "agency--feature")
 
 			// Should throw error suggesting --force
 			await expect(
@@ -308,8 +308,8 @@ describe("push command", () => {
 				),
 			).rejects.toThrow(/agency push --force/)
 
-			// Should still be on agency/feature branch (not left in intermediate state)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should still be on agency--feature branch (not left in intermediate state)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 		})
 
 		test("does not report force push when --force is provided but not needed", async () => {
@@ -332,8 +332,8 @@ describe("push command", () => {
 
 			console.log = originalLog
 
-			// Should be back on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Should NOT have reported force push (since it wasn't actually used)
 			expect(logMessages.some((msg) => msg.includes("Force pushed"))).toBe(
@@ -360,8 +360,8 @@ describe("push command", () => {
 
 			console.error = originalError
 
-			// Should be back on agency/feature branch (command completes despite gh failure)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (command completes despite gh failure)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// Should have warned about gh failure
 			expect(
@@ -384,8 +384,8 @@ describe("push command", () => {
 
 			console.error = originalError
 
-			// Should be back on agency/feature branch (source)
-			expect(await getCurrentBranch(tempDir)).toBe("agency/feature")
+			// Should be back on agency--feature branch (source)
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 
 			// gh should NOT have been called (no error about GitHub PR)
 			expect(errorMessages.some((msg) => msg.includes("GitHub PR"))).toBe(false)
