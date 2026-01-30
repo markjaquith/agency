@@ -1,5 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from "bun:test"
 import { join } from "path"
+import { symlink } from "fs/promises"
 import { task } from "../commands/task"
 import {
 	createTempDir,
@@ -12,6 +13,8 @@ import {
 	runTestEffect,
 	runGitCommand,
 	getCurrentBranch,
+	getGitOutput,
+	addAndCommit,
 } from "../test-utils"
 
 describe("task command", () => {
@@ -935,6 +938,82 @@ describe("task command", () => {
 			// Should have correct emitBranch in agency.json
 			const metadata = JSON.parse(await readFile(join(tempDir, "agency.json")))
 			expect(metadata.emitBranch).toBe("backward-compat-test")
+		})
+	})
+
+	describe("CLAUDE.md symlink handling", () => {
+		test("commits CLAUDE.md modification when it is a symlink to another file", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create a pre-existing AGENTS.md and CLAUDE.md as a symlink to it
+			await Bun.write(
+				join(tempDir, "AGENTS.md"),
+				"# Agents\n\nOriginal content",
+			)
+			await symlink("AGENTS.md", join(tempDir, "CLAUDE.md"))
+			await addAndCommit(
+				tempDir,
+				["AGENTS.md", "CLAUDE.md"],
+				"Add AGENTS.md and CLAUDE.md symlink",
+			)
+
+			await initAgency(tempDir, "test")
+
+			// Run task - this will modify CLAUDE.md (which is a symlink to AGENTS.md)
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
+
+			// Check that the commit was created and includes both files
+			const commitLog = await getGitOutput(tempDir, [
+				"log",
+				"--oneline",
+				"-n",
+				"2",
+			])
+
+			// Should have the CLAUDE.md edit commit
+			expect(commitLog).toContain("agency edit CLAUDE.md")
+
+			// Verify that both AGENTS.md and CLAUDE.md were staged in the CLAUDE.md commit
+			// by checking the diff of the last commit
+			const lastCommitDiff = await getGitOutput(tempDir, [
+				"diff-tree",
+				"--no-commit-id",
+				"--name-only",
+				"-r",
+				"HEAD",
+			])
+
+			// The CLAUDE.md commit should include AGENTS.md (the symlink target)
+			expect(lastCommitDiff.trim().split("\n")).toContain("AGENTS.md")
+		})
+
+		test("commits CLAUDE.md modification normally when not a symlink", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create a pre-existing CLAUDE.md (not a symlink)
+			await Bun.write(
+				join(tempDir, "CLAUDE.md"),
+				"# Claude\n\nOriginal content",
+			)
+			await addAndCommit(tempDir, "CLAUDE.md", "Add CLAUDE.md")
+
+			await initAgency(tempDir, "test")
+
+			// Run task - this will modify CLAUDE.md
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
+
+			// Check that the commit was created
+			const commitLog = await getGitOutput(tempDir, [
+				"log",
+				"--oneline",
+				"-n",
+				"2",
+			])
+
+			// Should have the CLAUDE.md edit commit
+			expect(commitLog).toContain("agency edit CLAUDE.md")
 		})
 	})
 })

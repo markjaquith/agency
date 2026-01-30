@@ -847,7 +847,31 @@ export const task = (options: TaskOptions = {}) =>
 		// This commit will be completely removed during emission
 		if (claudeModifiedExisting) {
 			yield* Effect.gen(function* () {
-				yield* git.gitAdd(["CLAUDE.md"], targetPath)
+				// Check if CLAUDE.md is a symlink - if so, we need to add both the symlink
+				// and its target file, since git add on a symlink only stages the symlink itself
+				const claudePath = resolve(targetPath, "CLAUDE.md")
+				const filesToAdd = ["CLAUDE.md"]
+
+				const symlinkTarget = yield* fs.readSymlinkTarget(claudePath)
+				if (symlinkTarget) {
+					// Symlink target can be relative or absolute
+					// If relative, resolve it relative to the symlink's directory
+					const resolvedTarget = symlinkTarget.startsWith("/")
+						? symlinkTarget
+						: resolve(targetPath, symlinkTarget)
+
+					// Make the path relative to targetPath for git add
+					const relativeTarget = resolvedTarget.startsWith(targetPath)
+						? resolvedTarget.slice(targetPath.length + 1)
+						: resolvedTarget
+
+					filesToAdd.push(relativeTarget)
+					verboseLog(
+						`CLAUDE.md is a symlink to ${relativeTarget}, adding both files`,
+					)
+				}
+
+				yield* git.gitAdd(filesToAdd, targetPath)
 				// The AGENCY_REMOVE_COMMIT marker in the commit body tells emit to drop this commit entirely
 				const commitMessage = `chore: agency edit CLAUDE.md\n\nAGENCY_REMOVE_COMMIT`
 				yield* git.gitCommit(commitMessage, targetPath, {
