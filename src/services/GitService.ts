@@ -22,7 +22,14 @@ export class GitCommandError extends Data.TaggedError("GitCommandError")<{
 	command: string
 	exitCode: number
 	stderr: string
-}> {}
+}> {
+	override get message(): string {
+		return (
+			this.stderr ||
+			`Git command failed with exit code ${this.exitCode}: ${this.command}`
+		)
+	}
+}
 
 // Error mapper for git command failures
 const mapToGitCommandError = createErrorMapper(GitCommandError)
