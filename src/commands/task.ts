@@ -19,6 +19,7 @@ import {
 	makeSourceBranchName,
 } from "../utils/pr-branch"
 import { getTopLevelDir, dirToGlobPattern } from "../utils/glob"
+import { AGENCY_REMOVE_COMMIT } from "../constants"
 
 interface TaskOptions extends BaseCommandOptions {
 	path?: string
@@ -870,7 +871,7 @@ export const task = (options: TaskOptions = {}) =>
 
 				yield* git.gitAdd(filesToAdd, targetPath)
 				// The AGENCY_REMOVE_COMMIT marker in the commit body tells emit to drop this commit entirely
-				const commitMessage = `chore: agency edit CLAUDE.md\n\nAGENCY_REMOVE_COMMIT`
+				const commitMessage = `chore: agency edit CLAUDE.md\n\n${AGENCY_REMOVE_COMMIT}`
 				yield* git.gitCommit(commitMessage, targetPath, {
 					noVerify: true,
 				})
