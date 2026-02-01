@@ -2,10 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { FileSystemService } from "../services/FileSystemService"
-import {
-	AgencyMetadataService,
-	AgencyMetadataServiceLive,
-} from "../services/AgencyMetadataService"
+import { AgencyMetadataService } from "../services/AgencyMetadataService"
 import highlight, { done, info } from "../utils/colors"
 import {
 	createLoggers,
@@ -43,7 +40,7 @@ const rebaseCore = (gitRoot: string, options: RebaseOptions) =>
 		// Check if current branch has agency.json (is a source branch)
 		const metadataService = yield* Effect.gen(function* () {
 			return yield* AgencyMetadataService
-		}).pipe(Effect.provide(AgencyMetadataServiceLive))
+		}).pipe(Effect.provide(AgencyMetadataService.Default))
 
 		const metadata = yield* metadataService.readFromDisk(gitRoot)
 

@@ -8,10 +8,7 @@ import { PromptService } from "../services/PromptService"
 import { TemplateService } from "../services/TemplateService"
 import { OpencodeService } from "../services/OpencodeService"
 import { ClaudeService } from "../services/ClaudeService"
-import {
-	AgencyMetadataService,
-	AgencyMetadataServiceLive,
-} from "../services/AgencyMetadataService"
+import { AgencyMetadataService } from "../services/AgencyMetadataService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
@@ -103,7 +100,7 @@ const taskContinue = (options: TaskOptions) =>
 		const existingMetadata = yield* Effect.gen(function* () {
 			const service = yield* AgencyMetadataService
 			return yield* service.readFromDisk(targetPath)
-		}).pipe(Effect.provide(AgencyMetadataServiceLive))
+		}).pipe(Effect.provide(AgencyMetadataService.Default))
 
 		if (!existingMetadata) {
 			return yield* Effect.fail(

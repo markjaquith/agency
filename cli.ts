@@ -54,9 +54,30 @@ async function runCommand<E>(
 		E,
 		never
 	>
-	const program = Effect.catchAllDefect(providedEffect, (defect) =>
+
+	// Catch typed errors and convert to standard Error objects
+	const programWithErrorHandling = Effect.catchAll(providedEffect, (error) => {
+		// Convert typed errors to standard Error objects with clear messages
+		if (error instanceof Error) {
+			return Effect.fail(error)
+		}
+		// Handle objects with message property (common pattern for tagged errors)
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			"message" in error &&
+			typeof error.message === "string"
+		) {
+			return Effect.fail(new Error(error.message))
+		}
+		// Fallback: convert to string
+		return Effect.fail(new Error(String(error)))
+	})
+
+	// Catch defects (unexpected crashes) and convert to errors
+	const program = Effect.catchAllDefect(programWithErrorHandling, (defect) =>
 		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-	) as Effect.Effect<void, E | Error, never>
+	)
 
 	await Effect.runPromise(program)
 }

@@ -1,12 +1,14 @@
 import { Effect, DateTime } from "effect"
 import { join } from "node:path"
-import { Schema } from "@effect/schema"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
 import { FileSystemService } from "../services/FileSystemService"
+import {
+	AgencyMetadataService,
+	parseAgencyMetadata,
+} from "../services/AgencyMetadataService"
 import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
-import { AgencyMetadata } from "../schemas"
 import highlight, { plural } from "../utils/colors"
 import { createLoggers, ensureGitRepo, getTemplateName } from "../utils/effect"
 
@@ -72,30 +74,6 @@ const readAgencyMetadataFromBranch = (gitRoot: string, branch: string) =>
 		}
 
 		return yield* parseAgencyMetadata(content)
-	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
-
-/**
- * Parse and validate agency.json content.
- */
-const parseAgencyMetadata = (content: string) =>
-	Effect.gen(function* () {
-		const data = yield* Effect.try({
-			try: () => JSON.parse(content),
-			catch: () => new Error("Failed to parse agency.json"),
-		})
-
-		// Validate version
-		if (typeof data.version !== "number" || data.version !== 1) {
-			return null
-		}
-
-		// Parse and validate using Effect schema
-		const metadata = yield* Effect.try({
-			try: () => Schema.decodeUnknownSync(AgencyMetadata)(data),
-			catch: () => new Error("Invalid agency.json format"),
-		})
-
-		return metadata
 	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
 export const status = (options: StatusOptions = {}) =>
