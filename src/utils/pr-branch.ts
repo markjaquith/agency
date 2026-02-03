@@ -5,10 +5,7 @@
 import { Effect, pipe } from "effect"
 import { FileSystemService } from "../services/FileSystemService"
 import { GitService } from "../services/GitService"
-import {
-	AgencyMetadataService,
-	AgencyMetadataServiceLive,
-} from "../services/AgencyMetadataService"
+import { AgencyMetadataService } from "../services/AgencyMetadataService"
 import { AgencyMetadata } from "../schemas"
 import { Schema } from "@effect/schema"
 
@@ -249,7 +246,7 @@ const readAgencyJsonFromBranch = (
 	Effect.gen(function* () {
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.readFromBranch(gitRoot, branch)
-	}).pipe(Effect.provide(AgencyMetadataServiceLive))
+	}).pipe(Effect.provide(AgencyMetadataService.Default))
 
 /**
  * Get the agency.json metadata from the current branch (if it exists).
@@ -264,7 +261,7 @@ const getCurrentBranchAgencyJson = (
 	Effect.gen(function* () {
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.readFromDisk(gitRoot)
-	}).pipe(Effect.provide(AgencyMetadataServiceLive))
+	}).pipe(Effect.provide(AgencyMetadataService.Default))
 
 /**
  * Find the source branch by searching all branches for an agency.json

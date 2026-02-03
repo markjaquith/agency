@@ -23,6 +23,7 @@ import {
 	withBranchProtection,
 } from "../utils/effect"
 import { withSpinner } from "../utils/spinner"
+import { AGENCY_REMOVE_COMMIT } from "../constants"
 
 interface EmitOptions extends BaseCommandOptions {
 	emit?: string
@@ -207,7 +208,7 @@ const emitCore = (gitRoot: string, options: EmitOptions) =>
 				"--commit-callback",
 				// Clear file changes from commits with AGENCY_REMOVE_COMMIT marker
 				// This makes the commit empty (which gets pruned) while preserving the tree state
-				`if b"AGENCY_REMOVE_COMMIT" in commit.message: commit.file_changes = []`,
+				`if b"${AGENCY_REMOVE_COMMIT}" in commit.message: commit.file_changes = []`,
 				"--force",
 				"--refs",
 				`${forkPoint}..${emitBranchName}`,

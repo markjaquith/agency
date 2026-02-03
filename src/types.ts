@@ -2,10 +2,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { Schema } from "@effect/schema"
 import { ManagedFile, AgencyMetadata } from "./schemas"
-import {
-	AgencyMetadataService,
-	AgencyMetadataServiceLive,
-} from "./services/AgencyMetadataService"
+import { AgencyMetadataService } from "./services/AgencyMetadataService"
 import { FileSystemService } from "./services/FileSystemService"
 import { GitService } from "./services/GitService"
 
@@ -134,7 +131,7 @@ export async function readAgencyMetadata(
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.readFromDisk(gitRoot)
 	}).pipe(
-		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(AgencyMetadataService.Default),
 		Effect.provide(FileSystemService.Default),
 		Effect.provide(GitService.Default),
 	)
@@ -154,7 +151,7 @@ export async function writeAgencyMetadata(
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.write(gitRoot, metadata)
 	}).pipe(
-		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(AgencyMetadataService.Default),
 		Effect.provide(FileSystemService.Default),
 		Effect.provide(GitService.Default),
 	)
@@ -172,7 +169,7 @@ export async function getFilesToFilter(gitRoot: string): Promise<string[]> {
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.getFilesToFilter(gitRoot)
 	}).pipe(
-		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(AgencyMetadataService.Default),
 		Effect.provide(FileSystemService.Default),
 		Effect.provide(GitService.Default),
 	)
@@ -191,7 +188,7 @@ export async function getBaseBranchFromMetadata(
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.getBaseBranch(gitRoot)
 	}).pipe(
-		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(AgencyMetadataService.Default),
 		Effect.provide(FileSystemService.Default),
 		Effect.provide(GitService.Default),
 	)
@@ -211,7 +208,7 @@ export async function setBaseBranchInMetadata(
 		const metadataService = yield* AgencyMetadataService
 		return yield* metadataService.setBaseBranch(gitRoot, baseBranch)
 	}).pipe(
-		Effect.provide(AgencyMetadataServiceLive),
+		Effect.provide(AgencyMetadataService.Default),
 		Effect.provide(FileSystemService.Default),
 		Effect.provide(GitService.Default),
 	)

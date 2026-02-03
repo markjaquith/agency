@@ -5,6 +5,7 @@ import {
 	getTemplateDir,
 	getTemplatesDir,
 } from "../utils/paths"
+import { FileSystemService } from "./FileSystemService"
 
 // Error types for Template operations
 class TemplateError extends Data.TaggedError("TemplateError")<{
@@ -35,9 +36,14 @@ export class TemplateService extends Effect.Service<TemplateService>()(
 						}),
 				}),
 
-			createTemplateDir: (_templateName: string) =>
-				Effect.sync(() => {
-					// Directory creation is handled by FileSystemService.createDirectory
+			createTemplateDir: (templateName: string) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const templateDir = getTemplateDir(templateName)
+					const exists = yield* fs.exists(templateDir)
+					if (!exists) {
+						yield* fs.createDirectory(templateDir)
+					}
 				}),
 
 			listTemplates: () =>

@@ -1,9 +1,8 @@
 import { Effect } from "effect"
-import { Schema } from "@effect/schema"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { AgencyMetadata } from "../schemas"
+import { parseAgencyMetadata } from "../services/AgencyMetadataService"
 import highlight, { done } from "../utils/colors"
 import { createLoggers, ensureGitRepo } from "../utils/effect"
 import { extractCleanBranch, makeSourceBranchName } from "../utils/pr-branch"
@@ -28,23 +27,7 @@ const readAgencyMetadata = (gitRoot: string, branch: string) =>
 			return null
 		}
 
-		const data = yield* Effect.try({
-			try: () => JSON.parse(content),
-			catch: () => new Error("Failed to parse agency.json"),
-		})
-
-		// Validate version
-		if (typeof data.version !== "number" || data.version !== 1) {
-			return null
-		}
-
-		// Parse and validate using Effect schema
-		const metadata: AgencyMetadata | null = yield* Effect.try({
-			try: () => Schema.decodeUnknownSync(AgencyMetadata)(data),
-			catch: () => new Error("Invalid agency.json format"),
-		}).pipe(Effect.catchAll(() => Effect.succeed(null)))
-
-		return metadata
+		return yield* parseAgencyMetadata(content)
 	}).pipe(Effect.catchAll(() => Effect.succeed(null)))
 
 /**
