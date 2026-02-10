@@ -383,6 +383,7 @@ import { OpencodeService } from "./services/OpencodeService"
 import { ClaudeService } from "./services/ClaudeService"
 import { FilterRepoService } from "./services/FilterRepoService"
 import { MockFilterRepoService } from "./services/MockFilterRepoService"
+import { FormatterService } from "./services/FormatterService"
 
 // Re-export mock utilities for tests
 export {
@@ -402,6 +403,7 @@ const TestLayer = Layer.mergeAll(
 	OpencodeService.Default,
 	ClaudeService.Default,
 	FilterRepoService.Default,
+	FormatterService.Default,
 )
 
 // Create test layer with mock filter-repo (for tests that don't need real filtering)
@@ -414,6 +416,7 @@ const TestLayerWithMockFilterRepo = Layer.mergeAll(
 	OpencodeService.Default,
 	ClaudeService.Default,
 	MockFilterRepoService.Default,
+	FormatterService.Default,
 )
 
 export async function runTestEffect<A, E>(
