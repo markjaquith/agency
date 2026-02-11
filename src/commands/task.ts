@@ -9,6 +9,7 @@ import { TemplateService } from "../services/TemplateService"
 import { OpencodeService } from "../services/OpencodeService"
 import { ClaudeService } from "../services/ClaudeService"
 import { AgencyMetadataService } from "../services/AgencyMetadataService"
+import { FormatterService } from "../services/FormatterService"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
@@ -276,6 +277,10 @@ const taskContinue = (options: TaskOptions) =>
 			createdFiles.push(file)
 			log(done(`Created ${highlight.file(file)}`))
 		}
+
+		// Format created files using project's formatter (prettier/oxfmt)
+		const formatterService = yield* FormatterService
+		yield* formatterService.formatFiles(targetPath, createdFiles, verboseLog)
 
 		// Git add and commit the created files
 		if (createdFiles.length > 0) {
@@ -816,6 +821,10 @@ export const task = (options: TaskOptions = {}) =>
 			verboseLog(`Base branch: ${highlight.branch(baseBranch)}`)
 		}
 		verboseLog(`Tracked backpack file${plural(injectedFiles.length)}`)
+
+		// Format created files using project's formatter (prettier/oxfmt)
+		const formatterService = yield* FormatterService
+		yield* formatterService.formatFiles(targetPath, createdFiles, verboseLog)
 
 		// Git add and commit the created files
 		if (createdFiles.length > 0) {

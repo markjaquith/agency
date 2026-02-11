@@ -2,8 +2,12 @@ amends "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Config.pk
 import "package://github.com/jdx/hk/releases/download/v1.0.0/hk@1.0.0#/Builtins.pkl"
 
 local linters = new Mapping<String, Step> {
-    // Format check using prettier
-    ["prettier"] = Builtins.prettier
+    // Format check using oxfmt
+    ["oxfmt"] {
+        glob = "**/*.{ts,tsx,js,jsx,json,md}"
+        check = "bunx oxfmt --check {{files}}"
+        fix = "bunx oxfmt {{files}}"
+    }
 
     // Knip to find unused code
     ["knip"] {
