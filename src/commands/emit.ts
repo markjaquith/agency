@@ -43,7 +43,7 @@ export const emit = (options: EmitOptions = {}) =>
 		yield* withBranchProtection(gitRoot, emitCore(gitRoot, options))
 	})
 
-const emitCore = (gitRoot: string, options: EmitOptions) =>
+export const emitCore = (gitRoot: string, options: EmitOptions) =>
 	Effect.gen(function* () {
 		const { force = false, verbose = false, skipFilter = false } = options
 		const { log, verboseLog } = createLoggers(options)
