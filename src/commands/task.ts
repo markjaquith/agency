@@ -21,6 +21,8 @@ import {
 } from "../utils/pr-branch"
 import { getTopLevelDir, dirToGlobPattern } from "../utils/glob"
 import { AGENCY_REMOVE_COMMIT } from "../constants"
+import { emitCore } from "./emit"
+import { withBranchProtection } from "../utils/effect"
 
 interface TaskOptions extends BaseCommandOptions {
 	path?: string
@@ -30,6 +32,7 @@ interface TaskOptions extends BaseCommandOptions {
 	from?: string
 	fromCurrent?: boolean
 	continue?: boolean
+	squash?: boolean
 }
 
 interface TaskEditOptions extends BaseCommandOptions {}
@@ -37,10 +40,13 @@ interface TaskEditOptions extends BaseCommandOptions {}
 /**
  * Continue a task by creating a new branch with the same agency files.
  * This is useful after a PR is merged and you want to continue working on the task.
+ *
+ * With --squash: emits the old branch, squash-merges the emitted commits into the new
+ * branch as a single commit, and creates a fresh TASK.md with a new task description.
  */
 const taskContinue = (options: TaskOptions) =>
 	Effect.gen(function* () {
-		const { silent = false } = options
+		const { silent = false, squash = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
@@ -128,6 +134,11 @@ const taskContinue = (options: TaskOptions) =>
 		// Read all the existing files content before switching branches
 		const fileContents = new Map<string, string>()
 		for (const file of filesToCopy) {
+			// When squashing, skip reading TASK.md — we'll generate a fresh one
+			if (squash && file === "TASK.md") {
+				verboseLog("Skipping TASK.md read (will create fresh for --squash)")
+				continue
+			}
 			const filePath = resolve(targetPath, file)
 			const exists = yield* fs.exists(filePath)
 			if (exists) {
@@ -136,6 +147,26 @@ const taskContinue = (options: TaskOptions) =>
 				verboseLog(`Read ${file} (${content.length} bytes)`)
 			} else {
 				verboseLog(`File ${file} not found, skipping`)
+			}
+		}
+
+		// When squashing, prompt for fresh task description before switching branches
+		let freshTaskDescription: string | undefined
+		if (squash) {
+			if (options.task) {
+				freshTaskDescription = options.task
+				verboseLog(`Using task from option: ${freshTaskDescription}`)
+			} else if (!silent) {
+				freshTaskDescription = yield* promptService.prompt(
+					"New task description: ",
+				)
+				if (!freshTaskDescription) {
+					log(
+						info(
+							"Skipping task description (TASK.md will use default placeholder)",
+						),
+					)
+				}
 			}
 		}
 
@@ -172,6 +203,43 @@ const taskContinue = (options: TaskOptions) =>
 						`Choose a different branch name.`,
 				),
 			)
+		}
+
+		// When squashing, emit the old source branch first (before switching away)
+		// This creates a clean emit branch with backpack files stripped out
+		let oldEmitBranchName: string | undefined
+		if (squash) {
+			const cleanFromCurrent = extractCleanBranch(
+				currentBranch,
+				config.sourceBranchPattern,
+			)
+			oldEmitBranchName = cleanFromCurrent
+				? makeEmitBranchName(cleanFromCurrent, config.emitBranch)
+				: existingMetadata.emitBranch || undefined
+
+			if (!oldEmitBranchName) {
+				return yield* Effect.fail(
+					new Error(
+						`Could not determine emit branch name for ${highlight.branch(currentBranch)}.\n` +
+							`Ensure agency.json has an emitBranch field or the branch follows the source pattern.`,
+					),
+				)
+			}
+
+			verboseLog(
+				`Emitting ${highlight.branch(currentBranch)} → ${highlight.branch(oldEmitBranchName)}`,
+			)
+
+			yield* withBranchProtection(
+				targetPath,
+				emitCore(targetPath, {
+					silent: true,
+					verbose: options.verbose,
+					emit: oldEmitBranchName,
+				}),
+			)
+
+			log(done(`Emitted ${highlight.branch(oldEmitBranchName)} for squash`))
 		}
 
 		// Determine base branch to branch from
@@ -227,9 +295,69 @@ const taskContinue = (options: TaskOptions) =>
 		)
 		log(done(`Created and switched to ${highlight.branch(sourceBranchName)}`))
 
+		// When squashing, merge the emitted commits as a single squash commit
+		if (squash && oldEmitBranchName) {
+			verboseLog(
+				`Squash-merging ${highlight.branch(oldEmitBranchName)} into ${highlight.branch(sourceBranchName)}`,
+			)
+
+			// Squash merge the emitted (clean) branch
+			const mergeResult = yield* git
+				.merge(targetPath, oldEmitBranchName, { squash: true })
+				.pipe(
+					Effect.catchAll((err) => {
+						return Effect.fail(
+							new Error(
+								`Squash merge of ${oldEmitBranchName} failed.\n` +
+									`This typically means there are conflicts with the base branch.\n` +
+									`Try rebasing the old branch first with 'agency rebase', then retry.\n` +
+									`Details: ${err}`,
+							),
+						)
+					}),
+				)
+
+			// Check if the squash merge produced any staged changes
+			const statusResult = yield* git
+				.runGitCommand(["git", "diff", "--cached", "--quiet"], targetPath)
+				.pipe(
+					Effect.catchAll(() =>
+						Effect.succeed({ exitCode: 1, stdout: "", stderr: "" }),
+					),
+				)
+
+			if (statusResult.exitCode === 0) {
+				// No changes — the old branch had no code commits (only agency files)
+				verboseLog(
+					"Squash merge produced no changes (old branch had no code commits), skipping squash commit",
+				)
+			} else {
+				// There are staged changes — commit them
+				yield* git.gitCommit(
+					`squash: prior work from ${oldEmitBranchName}`,
+					targetPath,
+					{ noVerify: true },
+				)
+				log(
+					done(
+						`Squashed prior work from ${highlight.branch(oldEmitBranchName)}`,
+					),
+				)
+			}
+		}
+
 		// Calculate the new emit branch name
 		const newEmitBranchName = makeEmitBranchName(branchName, config.emitBranch)
 		verboseLog(`New emit branch name: ${newEmitBranchName}`)
+
+		// When squashing, generate fresh TASK.md content
+		if (squash) {
+			const taskTemplate = `{task}\n\n## Tasks\n\n- [ ] Populate this list with tasks\n`
+			const taskContent = freshTaskDescription
+				? taskTemplate.replace("{task}", freshTaskDescription)
+				: taskTemplate
+			fileContents.set("TASK.md", taskContent)
+		}
 
 		// Write all the files to the new branch
 		const createdFiles: string[] = []
@@ -287,7 +415,10 @@ const taskContinue = (options: TaskOptions) =>
 			yield* Effect.gen(function* () {
 				yield* git.gitAdd(createdFiles, targetPath)
 				// Format: chore: agency task --continue (baseBranch) originalSource => newSource => newEmit
-				const commitMessage = `chore: agency task --continue (${baseBranchToBranchFrom}) ${currentBranch} → ${sourceBranchName} → ${newEmitBranchName}`
+				const continueFlag = squash
+					? "agency task --continue --squash"
+					: "agency task --continue"
+				const commitMessage = `chore: ${continueFlag} (${baseBranchToBranchFrom}) ${currentBranch} → ${sourceBranchName} → ${newEmitBranchName}`
 				yield* git.gitCommit(commitMessage, targetPath, {
 					noVerify: true,
 				})
@@ -304,7 +435,9 @@ const taskContinue = (options: TaskOptions) =>
 
 		log(
 			info(
-				`Continued task with ${createdFiles.length} file${plural(createdFiles.length)} from ${highlight.branch(currentBranch)}`,
+				squash
+					? `Continued task with squash and ${createdFiles.length} file${plural(createdFiles.length)} from ${highlight.branch(currentBranch)}`
+					: `Continued task with ${createdFiles.length} file${plural(createdFiles.length)} from ${highlight.branch(currentBranch)}`,
 			),
 		)
 	})
@@ -313,6 +446,13 @@ export const task = (options: TaskOptions = {}) =>
 	Effect.gen(function* () {
 		const { silent = false, verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
+
+		// Validate --squash requires --continue
+		if (options.squash && !options.continue) {
+			return yield* Effect.fail(
+				new Error("The --squash flag can only be used with --continue."),
+			)
+		}
 
 		// Handle --continue flag
 		if (options.continue) {
@@ -1104,6 +1244,8 @@ Options:
   --from <branch>   Branch to branch from instead of main upstream branch
   --from-current    Initialize on current branch instead of creating a new one
   --continue        Continue a task by copying agency files to a new branch
+  --squash          With --continue: squash the old branch's emitted commits into one
+  --task <desc>     Task description for TASK.md (avoids interactive prompt)
 
 Continue Mode (--continue):
   After a PR is merged, use '--continue' to create a new branch that preserves
@@ -1116,6 +1258,20 @@ Continue Mode (--continue):
   2. Run 'agency task --continue <new-branch-name>'
   3. A new branch is created from main with all your agency files
   4. The emitBranch in agency.json is updated for the new branch
+
+Squash Mode (--continue --squash):
+  Combines --continue with squashing the old branch's emitted commits into a
+  single commit on the new branch. This is useful when you want to carry forward
+  code changes but collapse the commit history. A fresh TASK.md is created with
+  a new task description.
+  
+  The squash workflow:
+  1. Be on an agency source branch with agency files
+  2. Run 'agency task --continue --squash <new-branch-name>'
+  3. The old branch is emitted (backpack files stripped)
+  4. A new branch is created from main
+  5. The emitted commits are squash-merged as a single commit
+  6. Fresh agency files (including new TASK.md) are added
 
 Base Branch Selection:
   By default, 'agency task' fetches from the remote and branches from the latest
@@ -1133,6 +1289,7 @@ Examples:
   agency task my-feature --from develop # Create 'my-feature' from 'develop'
   agency task --from-current           # Initialize on current branch (no new branch)
   agency task --continue my-feature-v2 # Continue task on new branch after PR merge
+  agency task --continue --squash v2   # Continue with squashed code from old branch
 
 Template Workflow:
   1. Run 'agency init' to select template (saved to .git/config)

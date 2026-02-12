@@ -334,6 +334,7 @@ const commands: Record<string, Command> = {
 					from: options.from,
 					fromCurrent: options["from-current"],
 					continue: options.continue,
+					squash: options.squash,
 				}),
 			)
 		},
