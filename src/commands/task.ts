@@ -1480,6 +1480,7 @@ Examples:
   agency task --from-current           # Initialize on current branch (no new branch)
   agency task -w my-feature            # Create 'my-feature' in a worktree
   agency task --continue my-feature-v2 # Continue task on new branch after PR merge
+  agency task --continue --squash v2   # Continue with squashed code from old branch
 
 Template Workflow:
   1. Run 'agency init' to select template (saved to .git/config)
