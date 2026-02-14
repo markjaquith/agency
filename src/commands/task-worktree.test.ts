@@ -163,7 +163,7 @@ describe("task --worktree", () => {
 		process.chdir(tempDir)
 		await initAgency(tempDir, "test")
 
-		expect(
+		await expect(
 			runTestEffect(
 				task({
 					silent: true,
@@ -180,7 +180,7 @@ describe("task --worktree", () => {
 		process.chdir(tempDir)
 		await initAgency(tempDir, "test")
 
-		expect(
+		await expect(
 			runTestEffect(
 				task({
 					silent: true,
