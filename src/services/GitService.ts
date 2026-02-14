@@ -75,8 +75,8 @@ const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 // Exported clear function is provided for test isolation.
 const commonConfigFileCache = new Map<string, string>()
 
-/** Clear the internal config file path cache. Call between tests to avoid leaked state. */
-export const clearCommonConfigFileCache = () => commonConfigFileCache.clear()
+/** @internal Clear the internal config file path cache. Call between tests to avoid leaked state. */
+export const _clearCommonConfigFileCache = () => commonConfigFileCache.clear()
 
 // Helper to resolve the common git dir config file path.
 // In a worktree, this points to the main repo's .git/config (shared config).
