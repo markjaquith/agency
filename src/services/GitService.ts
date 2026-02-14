@@ -1262,6 +1262,8 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 		/**
 		 * Get the main repository root (the parent of the common .git directory).
 		 * For worktrees, this returns the main repo root, not the worktree root.
+		 * Uses `git rev-parse --show-toplevel` from the common git dir's parent
+		 * to correctly handle non-standard GIT_DIR layouts.
 		 */
 		getMainRepoRoot: (path: string) =>
 			Effect.gen(function* () {
@@ -1277,7 +1279,14 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 						}),
 					),
 				)
-				return resolve(commonGitDir, "..")
+				// Use --show-toplevel from the common git dir's parent instead of
+				// assuming .git is always a direct child (breaks with GIT_DIR or
+				// non-standard layouts).
+				const parentDir = resolve(commonGitDir, "..")
+				return yield* runGitCommandOrFail(
+					["git", "rev-parse", "--show-toplevel"],
+					parentDir,
+				)
 			}).pipe(
 				Effect.mapError(
 					(error) =>
