@@ -126,8 +126,9 @@ const getGitConfigEffect = (key: string, gitRoot: string) =>
 			),
 		),
 		Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
-		// Fall back gracefully if we can't resolve common dir
-		Effect.catchAll(() => Effect.succeed(null)),
+		// Only catch GitError from resolveCommonConfigFile (e.g. can't find common dir).
+		// Other errors (permissions, corrupted config) should propagate.
+		Effect.catchTag("GitError", () => Effect.succeed(null)),
 	)
 
 // Helper to set git config value (uses shared/common config for worktree compatibility)
