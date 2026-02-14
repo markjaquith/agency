@@ -70,17 +70,77 @@ const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 		Effect.flatMap(checkExitCodeAndReturnVoid(mapToGitCommandError(args))),
 	)
 
-// Helper to get git config value
-const getGitConfigEffect = (key: string, gitRoot: string) =>
+// Cache for resolved common config file paths (gitRoot → config file path).
+// Safe because the git directory structure does not change during a single CLI invocation.
+// Exported clear function is provided for test isolation.
+const commonConfigFileCache = new Map<string, string>()
+
+/** @internal Clear the internal config file path cache. Call between tests to avoid leaked state. */
+export const _clearCommonConfigFileCache = () => commonConfigFileCache.clear()
+
+// Helper to resolve the common git dir config file path.
+// In a worktree, this points to the main repo's .git/config (shared config).
+// In the main repo, this is just .git/config (identical behavior).
+// Results are cached per gitRoot to avoid repeated git spawns.
+const resolveCommonConfigFile = (gitRoot: string) =>
 	pipe(
-		runGitCommand(["git", "config", "--local", "--get", key], gitRoot),
-		Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
+		Effect.sync(() => commonConfigFileCache.get(gitRoot)),
+		Effect.flatMap((cached) =>
+			cached
+				? Effect.succeed(cached)
+				: pipe(
+						runGitCommand(["git", "rev-parse", "--git-common-dir"], gitRoot),
+						Effect.flatMap((result) => {
+							if (result.exitCode !== 0) {
+								return Effect.fail(
+									new GitError({
+										message: "Failed to get common git dir",
+									}),
+								)
+							}
+							return Effect.tryPromise({
+								try: () => realpath(resolve(gitRoot, result.stdout)),
+								catch: () =>
+									new GitError({
+										message: "Failed to resolve common git dir path",
+									}),
+							})
+						}),
+						Effect.map((commonDir) => {
+							const configFile = resolve(commonDir, "config")
+							commonConfigFileCache.set(gitRoot, configFile)
+							return configFile
+						}),
+					),
+		),
 	)
 
-// Helper to set git config value
+// Helper to get git config value (uses shared/common config for worktree compatibility)
+const getGitConfigEffect = (key: string, gitRoot: string) =>
+	pipe(
+		resolveCommonConfigFile(gitRoot),
+		Effect.flatMap((configFile) =>
+			runGitCommand(
+				["git", "config", "--file", configFile, "--get", key],
+				gitRoot,
+			),
+		),
+		Effect.map((result) => (result.exitCode === 0 ? result.stdout : null)),
+		// Only catch GitError from resolveCommonConfigFile (e.g. can't find common dir).
+		// Other errors (permissions, corrupted config) should propagate.
+		Effect.catchTag("GitError", () => Effect.succeed(null)),
+	)
+
+// Helper to set git config value (uses shared/common config for worktree compatibility)
 const setGitConfigEffect = (key: string, value: string, gitRoot: string) =>
 	pipe(
-		runGitCommandVoid(["git", "config", "--local", key, value], gitRoot),
+		resolveCommonConfigFile(gitRoot),
+		Effect.flatMap((configFile) =>
+			runGitCommandVoid(
+				["git", "config", "--file", configFile, key, value],
+				gitRoot,
+			),
+		),
 		Effect.mapError(
 			(error) =>
 				new GitError({
@@ -1143,5 +1203,211 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 				["git", "checkout", "-q", "-B", branchName, startPoint],
 				gitRoot,
 			),
+
+		// ===============================
+		// Worktree Support
+		// ===============================
+
+		/**
+		 * Check if the current directory is inside a git worktree (not the main repo).
+		 * Compares --git-dir with --git-common-dir; if they differ, we're in a worktree.
+		 */
+		isWorktree: (path: string) =>
+			Effect.gen(function* () {
+				const gitDirResult = yield* runGitCommand(
+					["git", "rev-parse", "--git-dir"],
+					path,
+				)
+				const commonDirResult = yield* runGitCommand(
+					["git", "rev-parse", "--git-common-dir"],
+					path,
+				)
+
+				if (gitDirResult.exitCode !== 0 || commonDirResult.exitCode !== 0) {
+					return false
+				}
+
+				const gitDir = yield* Effect.tryPromise({
+					try: () => realpath(resolve(path, gitDirResult.stdout)),
+					catch: () => new GitError({ message: "Failed to resolve git dir" }),
+				})
+				const commonDir = yield* Effect.tryPromise({
+					try: () => realpath(resolve(path, commonDirResult.stdout)),
+					catch: () =>
+						new GitError({ message: "Failed to resolve common git dir" }),
+				})
+
+				return gitDir !== commonDir
+			}).pipe(Effect.catchAll(() => Effect.succeed(false))),
+
+		/**
+		 * Get the common git directory (shared across worktrees).
+		 * In the main repo, this is `.git`. In a worktree, this points to the main repo's `.git`.
+		 */
+		getCommonGitDir: (path: string) =>
+			Effect.gen(function* () {
+				const result = yield* runGitCommandOrFail(
+					["git", "rev-parse", "--git-common-dir"],
+					path,
+				)
+				return yield* Effect.tryPromise({
+					try: () => realpath(resolve(path, result)),
+					catch: () =>
+						new GitError({ message: "Failed to resolve common git dir path" }),
+				})
+			}).pipe(
+				Effect.mapError(
+					(error) =>
+						new GitError({
+							message: "Failed to get common git directory",
+							cause: error,
+						}),
+				),
+			),
+
+		/**
+		 * Get the main repository root (the parent of the common .git directory).
+		 * For worktrees, this returns the main repo root, not the worktree root.
+		 * Uses `git rev-parse --show-toplevel` from the common git dir's parent
+		 * to correctly handle non-standard GIT_DIR layouts.
+		 */
+		getMainRepoRoot: (path: string) =>
+			Effect.gen(function* () {
+				const commonGitDir = yield* pipe(
+					runGitCommandOrFail(["git", "rev-parse", "--git-common-dir"], path),
+					Effect.flatMap((result) =>
+						Effect.tryPromise({
+							try: () => realpath(resolve(path, result)),
+							catch: () =>
+								new GitError({
+									message: "Failed to resolve common git dir path",
+								}),
+						}),
+					),
+				)
+				// Use --show-toplevel from the common git dir's parent instead of
+				// assuming .git is always a direct child (breaks with GIT_DIR or
+				// non-standard layouts).
+				const parentDir = resolve(commonGitDir, "..")
+				return yield* runGitCommandOrFail(
+					["git", "rev-parse", "--show-toplevel"],
+					parentDir,
+				)
+			}).pipe(
+				Effect.mapError(
+					(error) =>
+						new GitError({
+							message: "Failed to get main repository root",
+							cause: error,
+						}),
+				),
+			),
+
+		/**
+		 * Add a new git worktree.
+		 */
+		addWorktree: (
+			gitRoot: string,
+			worktreePath: string,
+			branch: string,
+			options?: {
+				readonly createBranch?: boolean
+				readonly baseBranch?: string
+				readonly noTrack?: boolean
+			},
+		) => {
+			const args = ["git", "worktree", "add"]
+
+			if (options?.createBranch) {
+				args.push("-b", branch)
+				if (options.noTrack) {
+					args.push("--no-track")
+				}
+				args.push(worktreePath)
+				if (options.baseBranch) {
+					args.push(options.baseBranch)
+				}
+			} else {
+				args.push(worktreePath, branch)
+			}
+
+			return runGitCommandVoid(args, gitRoot)
+		},
+
+		/**
+		 * List all worktrees for a repository.
+		 */
+		listWorktrees: (gitRoot: string) =>
+			Effect.gen(function* () {
+				const result = yield* runGitCommandOrFail(
+					["git", "worktree", "list", "--porcelain"],
+					gitRoot,
+				)
+
+				if (!result.trim()) {
+					return [] as readonly Worktree[]
+				}
+
+				const worktrees: Worktree[] = []
+				const entries = result.split("\n\n").filter((e) => e.trim())
+
+				for (const entry of entries) {
+					const lines = entry.split("\n")
+					let wtPath = ""
+					let head = ""
+					let branch: string | null = null
+					let bare = false
+					let detached = false
+
+					for (const line of lines) {
+						if (line.startsWith("worktree ")) {
+							wtPath = line.substring(9)
+						} else if (line.startsWith("HEAD ")) {
+							head = line.substring(5)
+						} else if (line.startsWith("branch ")) {
+							branch = line.substring(7).replace(/^refs\/heads\//, "")
+						} else if (line === "bare") {
+							bare = true
+						} else if (line === "detached") {
+							detached = true
+						}
+					}
+
+					if (wtPath) {
+						worktrees.push({ path: wtPath, head, branch, bare, detached })
+					}
+				}
+
+				return worktrees as readonly Worktree[]
+			}).pipe(
+				Effect.mapError(
+					() => new GitError({ message: "Failed to list worktrees" }),
+				),
+			),
+
+		/**
+		 * Remove a git worktree.
+		 */
+		removeWorktree: (
+			gitRoot: string,
+			worktreePath: string,
+			options?: { readonly force?: boolean },
+		) => {
+			const args = ["git", "worktree", "remove"]
+			if (options?.force) {
+				args.push("--force")
+			}
+			args.push(worktreePath)
+			return runGitCommandVoid(args, gitRoot)
+		},
 	}),
 }) {}
+
+/** Worktree information returned by listWorktrees */
+export interface Worktree {
+	readonly path: string
+	readonly head: string
+	readonly branch: string | null
+	readonly bare: boolean
+	readonly detached: boolean
+}
