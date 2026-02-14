@@ -5,6 +5,7 @@ import { existsSync } from "fs"
 import { task } from "../commands/task"
 import { worktreeList } from "../commands/worktree"
 import { AGENCY_WORKTREES_DIR } from "../constants"
+import { clearCommonConfigFileCache } from "../services/GitService"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -33,6 +34,7 @@ describe("task --worktree", () => {
 
 	afterEach(async () => {
 		process.chdir(originalCwd)
+		clearCommonConfigFileCache()
 		if (originalConfigDir !== undefined) {
 			process.env.AGENCY_CONFIG_DIR = originalConfigDir
 		} else {
@@ -219,6 +221,7 @@ describe("worktree list command", () => {
 
 	afterEach(async () => {
 		process.chdir(originalCwd)
+		clearCommonConfigFileCache()
 		if (originalConfigDir !== undefined) {
 			process.env.AGENCY_CONFIG_DIR = originalConfigDir
 		} else {

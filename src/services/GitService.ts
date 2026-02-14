@@ -70,8 +70,13 @@ const runGitCommandVoid = (args: readonly string[], cwd: string) =>
 		Effect.flatMap(checkExitCodeAndReturnVoid(mapToGitCommandError(args))),
 	)
 
-// Cache for resolved common config file paths (gitRoot → config file path)
+// Cache for resolved common config file paths (gitRoot → config file path).
+// Safe because the git directory structure does not change during a single CLI invocation.
+// Exported clear function is provided for test isolation.
 const commonConfigFileCache = new Map<string, string>()
+
+/** Clear the internal config file path cache. Call between tests to avoid leaked state. */
+export const clearCommonConfigFileCache = () => commonConfigFileCache.clear()
 
 // Helper to resolve the common git dir config file path.
 // In a worktree, this points to the main repo's .git/config (shared config).
