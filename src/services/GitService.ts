@@ -968,6 +968,38 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			),
 
 		/**
+		 * Get local branch names matching a prefix.
+		 * @param gitRoot - The git repository root
+		 * @param prefix - The prefix to match (e.g., "agency--")
+		 * @returns Array of matching local branch names
+		 */
+		getBranchesByPrefix: (gitRoot: string, prefix: string) =>
+			pipe(
+				runGitCommand(
+					[
+						"git",
+						"branch",
+						"--list",
+						`${prefix}*`,
+						"--format=%(refname:short)",
+					],
+					gitRoot,
+				),
+				Effect.map((result) => {
+					if (result.exitCode === 0 && result.stdout.trim()) {
+						return result.stdout.trim().split("\n") as readonly string[]
+					}
+					return [] as readonly string[]
+				}),
+				Effect.mapError(
+					() =>
+						new GitError({
+							message: `Failed to get branches with prefix "${prefix}"`,
+						}),
+				),
+			),
+
+		/**
 		 * Get branches that have been merged into a target branch.
 		 * @param gitRoot - The git repository root
 		 * @param targetBranch - The branch to check merges against
