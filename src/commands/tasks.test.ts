@@ -80,8 +80,8 @@ describe("tasks command", () => {
 			// Initialize agency
 			await initAgency(tempDir, "test-template")
 
-			// Create feature branch with agency.json
-			await createBranch(tempDir, "feature")
+			// Create feature branch with agency-- prefix and agency.json
+			await createBranch(tempDir, "agency--feature")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["AGENTS.md"],
@@ -107,15 +107,15 @@ describe("tasks command", () => {
 			await runTestEffect(tasks({}))
 
 			console.log = originalLog
-			expect(output).toContain("feature")
-			expect(output.trim()).toBe("feature")
+			expect(output).toContain("agency--feature")
+			expect(output.trim()).toBe("agency--feature")
 		})
 
 		test("lists multiple task branches", async () => {
 			await initAgency(tempDir, "test-template")
 
 			// Create first feature branch
-			await createBranch(tempDir, "feature-1")
+			await createBranch(tempDir, "agency--feature-1")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["AGENTS.md"],
@@ -132,7 +132,7 @@ describe("tasks command", () => {
 
 			// Go back to main and create second feature branch
 			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "feature-2")
+			await createBranch(tempDir, "agency--feature-2")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: ["opencode.json"],
@@ -156,22 +156,33 @@ describe("tasks command", () => {
 			await runTestEffect(tasks({}))
 
 			console.log = originalLog
-			expect(output).toContain("feature-1")
-			expect(output).toContain("feature-2")
+			expect(output).toContain("agency--feature-1")
+			expect(output).toContain("agency--feature-2")
 			const lines = output.trim().split("\n")
 			expect(lines.length).toBe(2)
 		})
 
-		test("ignores branches without agency.json", async () => {
+		test("ignores branches without agency-- prefix", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create a branch without agency.json
-			await createBranch(tempDir, "no-agency")
-			await createCommit(tempDir, "Some work")
+			// Create a branch without agency-- prefix (even with agency.json)
+			await createBranch(tempDir, "no-prefix")
+			await writeAgencyMetadata(tempDir, {
+				version: 1,
+				injectedFiles: [],
+				template: "test-template",
+				createdAt: new Date().toISOString(),
+			} as any)
+			await Bun.spawn(["git", "add", "agency.json"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Add agency.json")
 
-			// Go back to main and create a branch with agency.json
+			// Go back to main and create a branch with agency-- prefix
 			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "with-agency")
+			await createBranch(tempDir, "agency--with-prefix")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
@@ -194,9 +205,27 @@ describe("tasks command", () => {
 			await runTestEffect(tasks({}))
 
 			console.log = originalLog
-			expect(output).toContain("with-agency")
-			expect(output).not.toContain("no-agency")
-			expect(output.trim()).toBe("with-agency")
+			expect(output).toContain("agency--with-prefix")
+			expect(output).not.toContain("no-prefix")
+			expect(output.trim()).toBe("agency--with-prefix")
+		})
+
+		test("lists agency-- branches even without agency.json", async () => {
+			// Create a branch with agency-- prefix but no agency.json
+			await createBranch(tempDir, "agency--no-metadata")
+			await createCommit(tempDir, "Some work")
+
+			let output = ""
+			const originalLog = console.log
+			console.log = (msg: string) => {
+				output += msg + "\n"
+			}
+
+			await runTestEffect(tasks({}))
+
+			console.log = originalLog
+			expect(output).toContain("agency--no-metadata")
+			expect(output.trim()).toBe("agency--no-metadata")
 		})
 	})
 
@@ -204,7 +233,7 @@ describe("tasks command", () => {
 		test("outputs JSON format when --json is provided", async () => {
 			await initAgency(tempDir, "test-template")
 
-			await createBranch(tempDir, "feature")
+			await createBranch(tempDir, "agency--feature")
 			const createdAt = new Date().toISOString()
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
@@ -234,7 +263,7 @@ describe("tasks command", () => {
 			const data = JSON.parse(output.trim())
 			expect(Array.isArray(data)).toBe(true)
 			expect(data.length).toBe(1)
-			expect(data[0].branch).toBe("feature")
+			expect(data[0].branch).toBe("agency--feature")
 			expect(data[0].template).toBe("test-template")
 			expect(data[0].baseBranch).toBe("main")
 			expect(data[0].createdAt).toBeDefined()
@@ -255,14 +284,38 @@ describe("tasks command", () => {
 			expect(Array.isArray(data)).toBe(true)
 			expect(data.length).toBe(0)
 		})
+
+		test("JSON output shows null metadata for branches without agency.json", async () => {
+			// Create a branch with agency-- prefix but no agency.json
+			await createBranch(tempDir, "agency--no-metadata")
+			await createCommit(tempDir, "Some work")
+
+			let output = ""
+			const originalLog = console.log
+			console.log = (msg: string) => {
+				output += msg + "\n"
+			}
+
+			await runTestEffect(tasks({ json: true }))
+
+			console.log = originalLog
+
+			const data = JSON.parse(output.trim())
+			expect(Array.isArray(data)).toBe(true)
+			expect(data.length).toBe(1)
+			expect(data[0].branch).toBe("agency--no-metadata")
+			expect(data[0].template).toBeNull()
+			expect(data[0].baseBranch).toBeNull()
+			expect(data[0].createdAt).toBeNull()
+		})
 	})
 
 	describe("edge cases", () => {
 		test("handles branches with invalid agency.json gracefully", async () => {
 			await initAgency(tempDir, "test-template")
 
-			// Create branch with invalid agency.json
-			await createBranch(tempDir, "invalid")
+			// Create branch with invalid agency.json but agency-- prefix
+			await createBranch(tempDir, "agency--invalid")
 			await Bun.write(join(tempDir, "agency.json"), "{ invalid json }")
 			await Bun.spawn(["git", "add", "agency.json"], {
 				cwd: tempDir,
@@ -271,9 +324,9 @@ describe("tasks command", () => {
 			}).exited
 			await createCommit(tempDir, "Add invalid agency.json")
 
-			// Create branch with valid agency.json
+			// Create branch with valid agency.json and agency-- prefix
 			await checkoutBranch(tempDir, "main")
-			await createBranch(tempDir, "valid")
+			await createBranch(tempDir, "agency--valid")
 			await writeAgencyMetadata(tempDir, {
 				version: 1,
 				injectedFiles: [],
@@ -296,16 +349,18 @@ describe("tasks command", () => {
 			await runTestEffect(tasks({}))
 
 			console.log = originalLog
-			expect(output).toContain("valid")
-			expect(output).not.toContain("invalid")
-			expect(output.trim()).toBe("valid")
+			// Both branches should be listed since they match the prefix
+			expect(output).toContain("agency--valid")
+			expect(output).toContain("agency--invalid")
+			const lines = output.trim().split("\n")
+			expect(lines.length).toBe(2)
 		})
 
 		test("handles branches with old version agency.json", async () => {
 			await initAgency(tempDir, "test-template")
 
 			// Create branch with version 0 agency.json (future or old version)
-			await createBranch(tempDir, "old-version")
+			await createBranch(tempDir, "agency--old-version")
 			await Bun.write(
 				join(tempDir, "agency.json"),
 				JSON.stringify({
@@ -329,7 +384,8 @@ describe("tasks command", () => {
 			await runTestEffect(tasks({}))
 
 			console.log = originalLog
-			expect(output).toContain("No task branches found")
+			// Branch should still be listed since it matches the prefix
+			expect(output).toContain("agency--old-version")
 		})
 	})
 })
