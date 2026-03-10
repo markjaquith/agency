@@ -828,6 +828,53 @@ describe("task command", () => {
 			await cleanupTempDir(configDir)
 		})
 
+		test("copies files in subdirectories from template", async () => {
+			await initGitRepo(tempDir)
+			process.chdir(tempDir)
+
+			// Create template with files in subdirectories (including dotdirectories)
+			const templateDir = join(configDir, "templates", "custom")
+			await Bun.spawn(
+				["mkdir", "-p", join(templateDir, ".agents", "skills", "my-skill")],
+				{
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			).exited
+			await Bun.spawn(["mkdir", "-p", join(templateDir, "docs")], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			const skillContent = "# My Skill\n\nSkill instructions here"
+			const docContent = "# Docs\n\nDocs content"
+			await Bun.write(
+				join(templateDir, ".agents", "skills", "my-skill", "SKILL.md"),
+				skillContent,
+			)
+			await Bun.write(join(templateDir, "docs", "guide.md"), docContent)
+
+			await initAgency(tempDir, "custom")
+
+			await runTestEffect(task({ silent: true, emit: "test-feature" }))
+
+			// Files in dotdirectory should be created
+			expect(
+				await fileExists(
+					join(tempDir, ".agents", "skills", "my-skill", "SKILL.md"),
+				),
+			).toBe(true)
+			const skillFileContent = await readFile(
+				join(tempDir, ".agents", "skills", "my-skill", "SKILL.md"),
+			)
+			expect(skillFileContent).toBe(skillContent)
+
+			// Files in regular subdirectory should also be created
+			expect(await fileExists(join(tempDir, "docs", "guide.md"))).toBe(true)
+			const docFileContent = await readFile(join(tempDir, "docs", "guide.md"))
+			expect(docFileContent).toBe(docContent)
+		})
+
 		test("uses AGENTS.md from template directory if it exists", async () => {
 			await initGitRepo(tempDir)
 			process.chdir(tempDir)

@@ -1124,7 +1124,7 @@ const discoverTemplateFiles = (templateDir: string, verboseLog: Function) =>
 				for (const file of foundFiles) {
 					// Get relative path from template directory
 					const relativePath = file.replace(templateDir + "/", "")
-					if (relativePath && !relativePath.startsWith(".")) {
+					if (relativePath) {
 						templateFiles.push(relativePath)
 					}
 				}
