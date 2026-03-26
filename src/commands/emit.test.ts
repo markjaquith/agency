@@ -367,5 +367,37 @@ describe("emit command", () => {
 			// This is the key assertion - the symlink target should be filtered too
 			expect(lastCall!.args).toContain("AGENTS.md")
 		})
+
+		test("expands injected dot-directory globs into filter paths", async () => {
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency--dotdir-test")
+
+			await Bun.spawn(["mkdir", "-p", join(tempDir, ".agents", "foo")], {
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: [".agents/**"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await Bun.write(join(tempDir, ".agents", "foo", "bar.whatever"), "test\n")
+			await addAndCommit(
+				tempDir,
+				["agency.json", ".agents/foo/bar.whatever"],
+				"Add template dot-directory file",
+			)
+
+			await runTestEffectWithMockFilterRepo(emit({ silent: true }))
+
+			const lastCall = getLastCapturedFilterRepoCall()
+			expect(lastCall).toBeDefined()
+			expect(lastCall!.args).toContain(".agents/foo/bar.whatever")
+		})
 	})
 })
