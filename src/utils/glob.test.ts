@@ -97,10 +97,12 @@ describe("expandGlobs", () => {
 		await mkdir(join(tempDir, "plans"))
 		await mkdir(join(tempDir, "plans", "sub"))
 		await mkdir(join(tempDir, "other"))
+		await mkdir(join(tempDir, ".agents", "foo"), { recursive: true })
 
 		await writeFile(join(tempDir, "plans", "foo.md"), "foo")
 		await writeFile(join(tempDir, "plans", "sub", "bar.md"), "bar")
 		await writeFile(join(tempDir, "other", "baz.md"), "baz")
+		await writeFile(join(tempDir, ".agents", "foo", "bar.whatever"), "dot")
 		await writeFile(join(tempDir, "root.txt"), "root")
 	})
 
@@ -150,5 +152,10 @@ describe("expandGlobs", () => {
 		expect(files.sort()).toEqual(
 			["plans/foo.md", "plans/sub/bar.md", "other/baz.md"].sort(),
 		)
+	})
+
+	test("expands glob patterns inside dot-directories", async () => {
+		const files = await expandGlobs([".agents/**"], tempDir)
+		expect(files).toEqual([".agents/foo/bar.whatever"])
 	})
 })

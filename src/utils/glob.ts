@@ -38,7 +38,7 @@ export async function expandGlobs(
 		if (isGlobPattern(pattern)) {
 			// Expand glob pattern
 			const glob = new Bun.Glob(pattern)
-			for await (const file of glob.scan({ cwd })) {
+			for await (const file of glob.scan({ cwd, dot: true })) {
 				files.add(file)
 			}
 		} else {
