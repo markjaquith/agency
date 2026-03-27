@@ -10,6 +10,7 @@ import { OpencodeService } from "../services/OpencodeService"
 import { ClaudeService } from "../services/ClaudeService"
 import { AgencyMetadataService } from "../services/AgencyMetadataService"
 import { FormatterService } from "../services/FormatterService"
+import { spawnProcess } from "../utils/process"
 import { initializeManagedFiles, writeAgencyMetadata } from "../types"
 import { RepositoryNotInitializedError } from "../errors"
 import highlight, { done, info, plural } from "../utils/colors"
@@ -20,7 +21,11 @@ import {
 	makeSourceBranchName,
 } from "../utils/pr-branch"
 import { getTopLevelDir, dirToGlobPattern } from "../utils/glob"
-import { AGENCY_REMOVE_COMMIT } from "../constants"
+import {
+	AGENCY_REMOVE_COMMIT,
+	AGENCY_WORKTREES_DIR,
+	WORKTREE_INIT_SCRIPT,
+} from "../constants"
 import { emitCore } from "./emit"
 import { withBranchProtection } from "../utils/effect"
 
@@ -33,6 +38,7 @@ interface TaskOptions extends BaseCommandOptions {
 	fromCurrent?: boolean
 	continue?: boolean
 	squash?: boolean
+	worktree?: boolean
 }
 
 interface TaskEditOptions extends BaseCommandOptions {}
@@ -454,6 +460,20 @@ export const task = (options: TaskOptions = {}) =>
 			)
 		}
 
+		// Validate --worktree incompatibilities
+		if (options.worktree && options.fromCurrent) {
+			return yield* Effect.fail(
+				new Error(
+					"Cannot use --worktree with --from-current. Worktrees always create a new branch.",
+				),
+			)
+		}
+		if (options.worktree && options.continue) {
+			return yield* Effect.fail(
+				new Error("Cannot use --worktree with --continue."),
+			)
+		}
+
 		// Handle --continue flag
 		if (options.continue) {
 			return yield* taskContinue(options)
@@ -495,6 +515,11 @@ export const task = (options: TaskOptions = {}) =>
 
 			targetPath = yield* git.getGitRoot(process.cwd())
 		}
+
+		// For worktrees, resolve the main repo root (in case we're already in a worktree)
+		const mainRepoRoot = options.worktree
+			? yield* git.getMainRepoRoot(targetPath)
+			: targetPath
 
 		const createdFiles: string[] = []
 		const injectedFiles: string[] = []
@@ -732,7 +757,55 @@ export const task = (options: TaskOptions = {}) =>
 			}
 		}
 
-		if (sourceBranchName) {
+		if (sourceBranchName && options.worktree) {
+			// Create a worktree instead of just a branch
+			const branchCleanName = branchName!
+			const worktreePath = resolve(
+				mainRepoRoot,
+				AGENCY_WORKTREES_DIR,
+				branchCleanName,
+			)
+
+			// Ensure .agency-worktrees/ is in .git/info/exclude
+			yield* ensureWorktreeExclude(mainRepoRoot)
+
+			verboseLog(`Creating worktree at ${worktreePath}`)
+
+			// Create the worktree with a new branch
+			yield* git.addWorktree(mainRepoRoot, worktreePath, sourceBranchName, {
+				createBranch: true,
+				baseBranch: baseBranchToBranchFrom,
+				noTrack: true,
+			})
+
+			// Update targetPath to point to the worktree
+			targetPath = worktreePath
+
+			// Load config for emit pattern calculation
+			const configForDisplay = yield* configService.loadConfig()
+			const cleanBranchForDisplay =
+				extractCleanBranch(
+					sourceBranchName,
+					configForDisplay.sourceBranchPattern,
+				) || sourceBranchName
+			const emitBranchForDisplay = makeEmitBranchName(
+				cleanBranchForDisplay,
+				configForDisplay.emitBranch,
+			)
+
+			log(
+				info(
+					baseBranchToBranchFrom
+						? `(${highlight.branch(baseBranchToBranchFrom)}) ${highlight.branch(sourceBranchName)} → ${highlight.branch(emitBranchForDisplay)}`
+						: `${highlight.branch(sourceBranchName)} → ${highlight.branch(emitBranchForDisplay)}`,
+				),
+			)
+			log(
+				done(
+					`Created worktree at ${highlight.file(AGENCY_WORKTREES_DIR + "/" + branchCleanName)}`,
+				),
+			)
+		} else if (sourceBranchName) {
 			yield* createFeatureBranchEffect(
 				targetPath,
 				sourceBranchName,
@@ -1034,7 +1107,114 @@ export const task = (options: TaskOptions = {}) =>
 				}),
 			)
 		}
+
+		// Execute worktree-init script if this is a worktree task
+		if (options.worktree && templateName) {
+			const templateDir = yield* templateService.getTemplateDir(templateName)
+			yield* executeWorktreeInit(
+				templateDir,
+				targetPath,
+				yield* git.getCurrentBranch(targetPath),
+				branchName!,
+				mainRepoRoot,
+				templateName,
+				options,
+			)
+
+			// Print the worktree path for the user to cd into
+			log("")
+			log(info(`cd ${targetPath}`))
+		}
 	})
+
+// Helper: Ensure .agency-worktrees/ is in .git/info/exclude
+const ensureWorktreeExclude = (mainRepoRoot: string) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const fs = yield* FileSystemService
+
+		const commonGitDir = yield* git.getCommonGitDir(mainRepoRoot)
+		const excludeFile = resolve(commonGitDir, "info", "exclude")
+		const excludeEntry = AGENCY_WORKTREES_DIR + "/"
+
+		// Ensure info directory exists
+		const infoDir = resolve(commonGitDir, "info")
+		const infoDirExists = yield* fs.exists(infoDir)
+		if (!infoDirExists) {
+			yield* fs.createDirectory(infoDir)
+		}
+
+		// Read existing exclude file
+		const exists = yield* fs.exists(excludeFile)
+		let content = ""
+		if (exists) {
+			content = yield* fs.readFile(excludeFile)
+		}
+
+		// Check if the exclude entry already exists
+		const lines = content.split("\n")
+		if (lines.some((line) => line.trim() === excludeEntry)) {
+			return // Already excluded
+		}
+
+		// Append the exclude entry
+		const newContent =
+			content.endsWith("\n") || content === ""
+				? content + excludeEntry + "\n"
+				: content + "\n" + excludeEntry + "\n"
+
+		yield* fs.writeFile(excludeFile, newContent)
+	})
+
+// Helper: Execute worktree-init script from template if it exists
+const executeWorktreeInit = (
+	templateDir: string,
+	worktreePath: string,
+	sourceBranchName: string,
+	taskName: string,
+	mainRepoRoot: string,
+	templateName: string,
+	options: { silent?: boolean; verbose?: boolean },
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const { log, verboseLog } = createLoggers(options)
+
+		const initScript = join(templateDir, WORKTREE_INIT_SCRIPT)
+		const scriptExists = yield* fs.exists(initScript)
+
+		if (!scriptExists) {
+			verboseLog(`No ${WORKTREE_INIT_SCRIPT} script in template`)
+			return
+		}
+
+		verboseLog(`Executing ${WORKTREE_INIT_SCRIPT} from template`)
+
+		const result = yield* spawnProcess(["bash", initScript], {
+			cwd: worktreePath,
+			stdout: "inherit",
+			stderr: "inherit",
+			env: {
+				AGENCY_WORKTREE_PATH: worktreePath,
+				AGENCY_BRANCH: sourceBranchName,
+				AGENCY_TASK_NAME: taskName,
+				AGENCY_MAIN_REPO: mainRepoRoot,
+				AGENCY_TEMPLATE: templateName,
+			},
+		})
+
+		if (result.exitCode !== 0) {
+			log(info(`${WORKTREE_INIT_SCRIPT} exited with code ${result.exitCode}`))
+		} else {
+			log(done(`Executed ${highlight.file(WORKTREE_INIT_SCRIPT)}`))
+		}
+	}).pipe(
+		Effect.catchAll((err) => {
+			const { verboseLog } = createLoggers(options)
+			verboseLog(`Failed to execute ${WORKTREE_INIT_SCRIPT}: ${err}`)
+			return Effect.void
+		}),
+	)
 
 // Helper: Create feature branch with interactive prompts
 const createFeatureBranchEffect = (
@@ -1246,6 +1426,7 @@ Options:
   --continue        Continue a task by copying agency files to a new branch
   --squash          With --continue: squash the old branch's emitted commits into one
   --task <desc>     Task description for TASK.md (avoids interactive prompt)
+  -w, --worktree    Create a git worktree instead of switching branches
 
 Continue Mode (--continue):
   After a PR is merged, use '--continue' to create a new branch that preserves
@@ -1273,6 +1454,15 @@ Squash Mode (--continue --squash):
   5. The emitted commits are squash-merged as a single commit
   6. Fresh agency files (including new TASK.md) are added
 
+Worktree Mode (-w, --worktree):
+  Creates a git worktree at .agency-worktrees/<branch>/ so you can work on
+  multiple tasks in parallel without switching branches. The directory is
+  locally excluded from git via .git/info/exclude.
+
+  If your template includes a 'worktree-init' script, it will be executed
+  after setup with environment variables: AGENCY_WORKTREE_PATH, AGENCY_BRANCH,
+  AGENCY_TASK_NAME, AGENCY_MAIN_REPO, AGENCY_TEMPLATE.
+
 Base Branch Selection:
   By default, 'agency task' fetches from the remote and branches from the latest
   main upstream branch (e.g., origin/main). You can override this behavior with:
@@ -1288,6 +1478,7 @@ Examples:
   agency task my-feature               # Create 'my-feature' from latest origin/main
   agency task my-feature --from develop # Create 'my-feature' from 'develop'
   agency task --from-current           # Initialize on current branch (no new branch)
+  agency task -w my-feature            # Create 'my-feature' in a worktree
   agency task --continue my-feature-v2 # Continue task on new branch after PR merge
   agency task --continue --squash v2   # Continue with squashed code from old branch
 

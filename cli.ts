@@ -20,6 +20,7 @@ import { template, help as templateHelp } from "./src/commands/template"
 import { work, help as workHelp } from "./src/commands/work"
 import { loop, help as loopHelp } from "./src/commands/loop"
 import { status, help as statusHelp } from "./src/commands/status"
+import { worktreeList, help as worktreeHelp } from "./src/commands/worktree"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -337,6 +338,7 @@ const commands: Record<string, Command> = {
 					fromCurrent: options["from-current"],
 					continue: options.continue,
 					squash: options.squash,
+					worktree: options.worktree,
 				}),
 			)
 		},
@@ -468,6 +470,32 @@ const commands: Record<string, Command> = {
 		},
 		help: loopHelp,
 	},
+	worktree: {
+		name: "worktree",
+		description: "Worktree management commands",
+		run: async (args: string[], options: Record<string, any>) => {
+			const subcommand = args[0]
+
+			if (options.help || !subcommand) {
+				console.log(worktreeHelp)
+				return
+			}
+
+			if (subcommand === "list") {
+				await runCommand(
+					worktreeList({
+						silent: options.silent,
+						verbose: options.verbose,
+					}),
+				)
+			} else {
+				console.error(`Error: Unknown worktree subcommand '${subcommand}'`)
+				console.error("\nRun 'agency worktree --help' for usage information.")
+				process.exit(1)
+			}
+		},
+		help: worktreeHelp,
+	},
 }
 
 function showMainHelp() {
@@ -500,6 +528,7 @@ Commands:
   switch                 Toggle between source and emitted branch
   source                 Switch to source branch from emitted branch
   merge                  Merge emitted branch into base branch
+  worktree list          List agency worktrees for this repository
   status                 Show agency status for this repository
 
 Global Options:
@@ -630,6 +659,10 @@ try {
 			},
 			squash: {
 				type: "boolean",
+			},
+			worktree: {
+				type: "boolean",
+				short: "w",
 			},
 			push: {
 				type: "boolean",
