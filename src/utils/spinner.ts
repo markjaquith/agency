@@ -74,6 +74,7 @@ export const withSpinner = <A, E, R>(
 			if (failText) {
 				spinner.fail(failText)
 			} else {
+				spinner.clear()
 				spinner.stop()
 			}
 			throw error

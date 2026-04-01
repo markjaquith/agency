@@ -439,24 +439,3 @@ export const resolveBranchPairWithAgencyJson = (
 		// Strategy 4: Fall back to pattern-based resolution
 		return resolveBranchPair(currentBranch, sourcePattern, emitPattern)
 	})
-
-// Legacy function names for backward compatibility
-// These will be updated as we migrate the codebase
-
-/**
- * @deprecated Use makeEmitBranchName instead. This function now creates emit branches,
- * not PR branches with suffixes.
- */
-export function makePrBranchName(branchName: string, pattern: string): string {
-	return makeEmitBranchName(branchName, pattern)
-}
-
-/**
- * @deprecated Use extractCleanFromEmit instead. Extracts clean branch from emit branch.
- */
-export function extractSourceBranch(
-	emitBranchName: string,
-	pattern: string,
-): string | null {
-	return extractCleanFromEmit(emitBranchName, pattern)
-}

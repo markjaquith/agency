@@ -306,7 +306,9 @@ describe("push command", () => {
 				runTestEffect(
 					push({ baseBranch: "main", silent: true, skipFilter: true }),
 				),
-			).rejects.toThrow(/agency push --force/)
+			).rejects.toThrow(
+				/non-fast-forward update.*agency push --force|agency push --force.*non-fast-forward update/s,
+			)
 
 			// Should still be on agency--feature branch (not left in intermediate state)
 			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
