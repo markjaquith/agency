@@ -1,13 +1,8 @@
 import { Effect, Either } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
-import { GitService } from "../services/GitService"
+import { GitCommandError, GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import {
-	extractSourceBranch,
-	makePrBranchName,
-	resolveBranchPairWithAgencyJson,
-} from "../utils/pr-branch"
-import { FileSystemService } from "../services/FileSystemService"
+import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import {
@@ -28,6 +23,51 @@ interface PushOptions extends BaseCommandOptions {
 	skipFilter?: boolean
 }
 
+const getPushFailureStderr = (error: unknown): string => {
+	if (error instanceof GitCommandError) {
+		return error.stderr.trim()
+	}
+
+	if (
+		typeof error === "object" &&
+		error !== null &&
+		"cause" in error &&
+		(error as { cause?: unknown }).cause instanceof GitCommandError
+	) {
+		return (error as { cause: GitCommandError }).cause.stderr.trim()
+	}
+
+	if (error instanceof Error) {
+		return error.message.trim()
+	}
+
+	return String(error).trim()
+}
+
+const pushFailureNeedsForce = (stderr: string): boolean => {
+	const normalized = stderr.toLowerCase()
+
+	return [
+		"non-fast-forward",
+		"updates were rejected because the tip of your current branch is behind",
+		"fetch first",
+		"failed to push some refs",
+	].some((pattern) => normalized.includes(pattern))
+}
+
+const formatPushFailure = (error: unknown): Error => {
+	const stderr = getPushFailureStderr(error)
+
+	if (pushFailureNeedsForce(stderr)) {
+		return new Error(
+			"Failed to push branch to remote: the remote rejected a non-fast-forward update, which usually means the branch was rebased or rewritten.\n" +
+				"Run `agency push --force` to replace the remote branch.",
+		)
+	}
+
+	return new Error(`Failed to push branch to remote: ${stderr}`)
+}
+
 export const push = (options: PushOptions = {}) =>
 	Effect.gen(function* () {
 		const gitRoot = yield* ensureGitRepo()
@@ -39,7 +79,6 @@ export const push = (options: PushOptions = {}) =>
 
 const pushCore = (gitRoot: string, options: PushOptions) =>
 	Effect.gen(function* () {
-		const { verbose = false } = options
 		const { log, verboseLog } = createLoggers(options)
 
 		const git = yield* GitService
@@ -52,7 +91,6 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		let sourceBranch = yield* git.getCurrentBranch(gitRoot)
 
 		// Check if we're already on an emit branch using proper branch resolution
-		const fs = yield* FileSystemService
 		const branchInfo = yield* resolveBranchPairWithAgencyJson(
 			gitRoot,
 			sourceBranch,
@@ -153,7 +191,7 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 			),
 		)
 		if (Either.isLeft(pushEither)) {
-			const error = pushEither.left
+			const error = formatPushFailure(pushEither.left)
 			// If push failed, switch back to source branch
 			yield* git.checkoutBranch(gitRoot, sourceBranch)
 			return yield* Effect.fail(error)
@@ -226,11 +264,7 @@ const pushBranchToRemoteEffect = (
 			const stderr = pushResult.stderr
 
 			// Check if this is a force-push-needed error
-			const needsForce =
-				stderr.includes("rejected") ||
-				stderr.includes("non-fast-forward") ||
-				stderr.includes("fetch first") ||
-				stderr.includes("Updates were rejected")
+			const needsForce = pushFailureNeedsForce(stderr)
 
 			if (needsForce && force) {
 				// User provided --force flag, retry with force
@@ -258,15 +292,24 @@ const pushBranchToRemoteEffect = (
 			} else if (needsForce && !force) {
 				// User didn't provide --force but it's needed
 				return yield* Effect.fail(
-					new Error(
-						`Failed to push branch to remote. The branch has diverged from the remote.\n` +
-							`Run 'agency push --force' to force push the branch.`,
+					formatPushFailure(
+						new GitCommandError({
+							command: `git push -u ${remote} ${branchName}`,
+							exitCode: pushResult.exitCode,
+							stderr,
+						}),
 					),
 				)
 			} else {
 				// Some other error
 				return yield* Effect.fail(
-					new Error(`Failed to push branch to remote: ${stderr}`),
+					formatPushFailure(
+						new GitCommandError({
+							command: `git push -u ${remote} ${branchName}`,
+							exitCode: pushResult.exitCode,
+							stderr,
+						}),
+					),
 				)
 			}
 		}
