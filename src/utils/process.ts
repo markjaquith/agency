@@ -55,21 +55,28 @@ export const spawnProcess = (
 				env: options?.env ? { ...process.env, ...options.env } : process.env,
 			})
 
-			await proc.exited
-
-			const stdout =
+			// Start draining stdout/stderr immediately so verbose subprocesses
+			// cannot block on filled pipe buffers before they exit.
+			const stdoutPromise =
 				options?.stdout === "inherit"
-					? ""
-					: await new Response(proc.stdout).text()
-			const stderr =
+					? Promise.resolve("")
+					: new Response(proc.stdout ?? "").text()
+			const stderrPromise =
 				options?.stderr === "inherit"
-					? ""
-					: await new Response(proc.stderr).text()
+					? Promise.resolve("")
+					: new Response(proc.stderr ?? "").text()
+
+			const [exitCode, stdout, stderr] = await Promise.all([
+				proc.exited,
+				stdoutPromise,
+				stderrPromise,
+			])
 
 			return {
 				stdout: stdout.trim(),
 				stderr: stderr.trim(),
-				exitCode: proc.exitCode ?? 0,
+				exitCode:
+					typeof exitCode === "number" ? exitCode : (proc.exitCode ?? 0),
 			}
 		},
 		catch: (error) =>

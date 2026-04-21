@@ -3,6 +3,7 @@ import { join } from "path"
 import { symlink } from "fs/promises"
 import { emit } from "../commands/emit"
 import { task } from "../commands/task"
+import { resolveGitInternalPath } from "../utils/git-path"
 import {
 	createTempDir,
 	cleanupTempDir,
@@ -326,6 +327,30 @@ describe("emit command", () => {
 			expect(lastCall!.env?.GIT_CONFIG_GLOBAL).toBe("")
 		})
 
+		test("streams git-filter-repo output in verbose mode", async () => {
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency--verbose-filter-test")
+
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			await runTestEffectWithMockFilterRepo(
+				emit({ silent: true, verbose: true }),
+			)
+
+			const lastCall = getLastCapturedFilterRepoCall()
+			expect(lastCall).toBeDefined()
+			expect(lastCall!.streamOutput).toBe(true)
+		})
+
 		test("includes symlink targets in files to filter", async () => {
 			// Set up fresh branch
 			await checkoutBranch(tempDir, "main")
@@ -398,6 +423,26 @@ describe("emit command", () => {
 			const lastCall = getLastCapturedFilterRepoCall()
 			expect(lastCall).toBeDefined()
 			expect(lastCall!.args).toContain(".agents/foo/bar.whatever")
+		})
+	})
+
+	describe("git path resolution", () => {
+		test("resolves relative git internal paths from git root", () => {
+			expect(
+				resolveGitInternalPath(
+					"/repo/worktree",
+					"../.git/worktrees/worktree/filter-repo",
+				),
+			).toBe("/repo/.git/worktrees/worktree/filter-repo")
+		})
+
+		test("preserves absolute git internal paths", () => {
+			expect(
+				resolveGitInternalPath(
+					"/repo/worktree",
+					"/repo/.git/worktrees/worktree/filter-repo",
+				),
+			).toBe("/repo/.git/worktrees/worktree/filter-repo")
 		})
 	})
 })

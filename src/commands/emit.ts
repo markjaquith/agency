@@ -22,6 +22,7 @@ import {
 	resolveBaseBranch,
 	withBranchProtection,
 } from "../utils/effect"
+import { resolveGitInternalPath } from "../utils/git-path"
 import { withSpinner } from "../utils/spinner"
 import { AGENCY_REMOVE_COMMIT } from "../constants"
 
@@ -186,8 +187,12 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 
 		// Filter backpack files
 		const filterOperation = Effect.gen(function* () {
-			// Clean up .git/filter-repo directory
-			const filterRepoDir = `${gitRoot}/.git/filter-repo`
+			// Resolve the actual git-filter-repo state directory.
+			// In linked worktrees this lives under the worktree git dir, not repo/.git.
+			const filterRepoDir = yield* getFilterRepoStateDir(gitRoot)
+			verboseLog(
+				`Cleaning git-filter-repo state in ${highlight.file(filterRepoDir)}`,
+			)
 			yield* fs.deleteDirectory(filterRepoDir)
 			verboseLog("Cleaned up previous git-filter-repo state")
 
@@ -214,8 +219,15 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 				`${forkPoint}..${emitBranchName}`,
 			]
 
+			verboseLog(`git-filter-repo refs: ${forkPoint}..${emitBranchName}`)
+			verboseLog(
+				`git-filter-repo will evaluate ${filesToFilter.length} filtered path${filesToFilter.length === 1 ? "" : "s"}`,
+			)
+
 			yield* filterRepo.run(gitRoot, filterRepoArgs, {
 				env: { GIT_CONFIG_GLOBAL: "" },
+				verboseLog,
+				streamOutput: verbose,
 			})
 
 			verboseLog("git-filter-repo completed")
@@ -325,6 +337,23 @@ const getRemoteTrackingBranch = (
 		}
 
 		return null
+	})
+
+const getFilterRepoStateDir = (gitRoot: string) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const result = yield* git.runGitCommand(
+			["git", "rev-parse", "--git-path", "filter-repo"],
+			gitRoot,
+			{ captureOutput: true },
+		)
+
+		const gitPath = result.stdout.trim()
+		if (result.exitCode !== 0 || !gitPath) {
+			return `${gitRoot}/.git/filter-repo`
+		}
+
+		return resolveGitInternalPath(gitRoot, gitPath)
 	})
 
 /**
