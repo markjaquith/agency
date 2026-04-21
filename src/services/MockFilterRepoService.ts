@@ -8,6 +8,7 @@ export interface CapturedFilterRepoCall {
 	gitRoot: string
 	args: readonly string[]
 	env?: Record<string, string>
+	streamOutput?: boolean
 }
 
 /**
@@ -63,6 +64,8 @@ export class MockFilterRepoService extends Effect.Service<MockFilterRepoService>
 				args: readonly string[],
 				options?: {
 					readonly env?: Record<string, string>
+					readonly verboseLog?: (message: string) => void
+					readonly streamOutput?: boolean
 				},
 			) => {
 				// Capture the call
@@ -70,6 +73,7 @@ export class MockFilterRepoService extends Effect.Service<MockFilterRepoService>
 					gitRoot,
 					args,
 					env: options?.env,
+					streamOutput: options?.streamOutput,
 				})
 
 				// Return a successful result

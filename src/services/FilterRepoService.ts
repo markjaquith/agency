@@ -44,6 +44,8 @@ export class FilterRepoService extends Effect.Service<FilterRepoService>()(
 				args: readonly string[],
 				options?: {
 					readonly env?: Record<string, string>
+					readonly verboseLog?: (message: string) => void
+					readonly streamOutput?: boolean
 				},
 			) =>
 				Effect.gen(function* () {
@@ -64,11 +66,19 @@ export class FilterRepoService extends Effect.Service<FilterRepoService>()(
 					}
 
 					const fullArgs = ["git-filter-repo", ...args]
+					const verboseLog = options?.verboseLog ?? (() => {})
+
+					verboseLog(`Running ${fullArgs.join(" ")} in ${gitRoot}`)
+					if (options?.streamOutput) {
+						verboseLog("Streaming git-filter-repo output directly")
+					}
 
 					const result = yield* pipe(
 						spawnProcess(fullArgs, {
 							cwd: gitRoot,
 							env: options?.env,
+							stdout: options?.streamOutput ? "inherit" : "pipe",
+							stderr: options?.streamOutput ? "inherit" : "pipe",
 						}),
 						Effect.mapError(
 							(error) =>
@@ -78,6 +88,8 @@ export class FilterRepoService extends Effect.Service<FilterRepoService>()(
 								}),
 						),
 					)
+
+					verboseLog(`git-filter-repo exited with code ${result.exitCode}`)
 
 					if (result.exitCode !== 0) {
 						return yield* Effect.fail(
