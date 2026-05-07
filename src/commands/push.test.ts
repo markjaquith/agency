@@ -314,6 +314,50 @@ describe("push command", () => {
 			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
 		})
 
+		test("reports pre-push hook output without suggesting --force", async () => {
+			await Bun.spawn(
+				["git", "config", "core.hooksPath", join(tempDir, ".git", "hooks")],
+				{
+					cwd: tempDir,
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			).exited
+			const hookPath = join(tempDir, ".git", "hooks", "pre-push")
+			await Bun.write(
+				hookPath,
+				[
+					"#!/bin/sh",
+					"printf 'pre-push hook stdout failure\\n'",
+					"printf 'pre-push hook stderr failure\\n' >&2",
+					"exit 1",
+					"",
+				].join("\n"),
+			)
+			await Bun.spawn(["chmod", "+x", hookPath], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			let error: unknown
+			try {
+				await runTestEffect(
+					push({ baseBranch: "main", silent: true, skipFilter: true }),
+				)
+			} catch (caught) {
+				error = caught
+			}
+
+			expect(error).toBeInstanceOf(Error)
+			const message = error instanceof Error ? error.message : String(error)
+			expect(message).toContain("pre-push hook stdout failure")
+			expect(message).toContain("pre-push hook stderr failure")
+			expect(message).not.toContain("agency push --force")
+
+			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
+		})
+
 		test("does not report force push when --force is provided but not needed", async () => {
 			// Capture output to check for force push message
 			const originalLog = console.log

@@ -44,15 +44,21 @@ const getPushFailureStderr = (error: unknown): string => {
 	return String(error).trim()
 }
 
+const formatProcessOutput = (result: {
+	readonly stdout?: string
+	readonly stderr?: string
+}): string => [result.stdout, result.stderr].filter(Boolean).join("\n").trim()
+
 const pushFailureNeedsForce = (stderr: string): boolean => {
 	const normalized = stderr.toLowerCase()
 
-	return [
-		"non-fast-forward",
-		"updates were rejected because the tip of your current branch is behind",
-		"fetch first",
-		"failed to push some refs",
-	].some((pattern) => normalized.includes(pattern))
+	return (
+		normalized.includes("non-fast-forward") ||
+		normalized.includes(
+			"updates were rejected because the tip of your current branch is behind",
+		) ||
+		(normalized.includes("[rejected]") && normalized.includes("fetch first"))
+	)
 }
 
 const formatPushFailure = (error: unknown): Error => {
@@ -261,7 +267,7 @@ const pushBranchToRemoteEffect = (
 
 		// If push failed, check if we should retry with --force
 		if (pushResult.exitCode !== 0) {
-			const stderr = pushResult.stderr
+			const stderr = formatProcessOutput(pushResult)
 
 			// Check if this is a force-push-needed error
 			const needsForce = pushFailureNeedsForce(stderr)
@@ -283,7 +289,7 @@ const pushBranchToRemoteEffect = (
 				if (forceResult.exitCode !== 0) {
 					return yield* Effect.fail(
 						new Error(
-							`Failed to force push branch to remote: ${forceResult.stderr}`,
+							`Failed to force push branch to remote: ${formatProcessOutput(forceResult)}`,
 						),
 					)
 				}
