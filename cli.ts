@@ -186,6 +186,7 @@ const commands: Record<string, Command> = {
 					emit: options.emit || options.branch,
 					silent: options.silent,
 					force: options.force,
+					noVerify: options["no-verify"],
 					verbose: options.verbose,
 					pr: options.pr,
 				}),
@@ -592,6 +593,9 @@ try {
 			force: {
 				type: "boolean",
 				short: "f",
+			},
+			"no-verify": {
+				type: "boolean",
 			},
 			verbose: {
 				type: "boolean",
