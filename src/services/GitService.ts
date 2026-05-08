@@ -1046,6 +1046,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			options?: {
 				readonly setUpstream?: boolean
 				readonly force?: boolean
+				readonly noVerify?: boolean
 			},
 		) => {
 			const args = ["git", "push"]
@@ -1054,6 +1055,9 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			}
 			if (options?.force) {
 				args.push("--force")
+			}
+			if (options?.noVerify) {
+				args.push("--no-verify")
 			}
 			args.push(remote, branch)
 

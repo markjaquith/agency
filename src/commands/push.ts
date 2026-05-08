@@ -19,6 +19,7 @@ interface PushOptions extends BaseCommandOptions {
 	emit?: string
 	branch?: string // Deprecated: use emit instead
 	force?: boolean
+	noVerify?: boolean
 	pr?: boolean
 	skipFilter?: boolean
 }
@@ -186,6 +187,7 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 			withSpinner(
 				pushBranchToRemoteEffect(gitRoot, emitBranchName, remote, {
 					force: options.force,
+					noVerify: options.noVerify,
 					verbose: options.verbose,
 				}),
 				{
@@ -243,16 +245,17 @@ const pushBranchToRemoteEffect = (
 	remote: string,
 	options: {
 		readonly force?: boolean
+		readonly noVerify?: boolean
 		readonly verbose?: boolean
 	},
 ) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const { force = false } = options
+		const { force = false, noVerify = false } = options
 
 		// Try pushing without force first
 		const pushResult = yield* git
-			.push(gitRoot, remote, branchName, { setUpstream: true })
+			.push(gitRoot, remote, branchName, { setUpstream: true, noVerify })
 			.pipe(
 				Effect.catchAll((error: any) =>
 					Effect.succeed({
@@ -275,7 +278,11 @@ const pushBranchToRemoteEffect = (
 			if (needsForce && force) {
 				// User provided --force flag, retry with force
 				const forceResult = yield* git
-					.push(gitRoot, remote, branchName, { setUpstream: true, force: true })
+					.push(gitRoot, remote, branchName, {
+						setUpstream: true,
+						force: true,
+						noVerify,
+					})
 					.pipe(
 						Effect.catchAll((error: any) =>
 							Effect.succeed({
@@ -405,15 +412,17 @@ Arguments:
 
 Options:
   --emit            Custom name for emit branch (defaults to pattern from config)
-  --branch          (Deprecated: use --emit) Custom name for emit branch
-  -f, --force       Force push to remote if branch has diverged
-  --pr              Open GitHub PR in browser after pushing (requires gh CLI)
+	--branch          (Deprecated: use --emit) Custom name for emit branch
+	-f, --force       Force push to remote if branch has diverged
+	--no-verify      Bypass git pre-push hooks
+	--pr              Open GitHub PR in browser after pushing (requires gh CLI)
 
 Examples:
   agency push                          # Create PR, push, return to source
-  agency push origin/main              # Explicitly use origin/main as base
-  agency push --force                  # Force push if branch has diverged
-  agency push --pr                     # Push and open GitHub PR in browser
+	agency push origin/main              # Explicitly use origin/main as base
+	agency push --force                  # Force push if branch has diverged
+	agency push --no-verify              # Push without running pre-push hooks
+	agency push --pr                     # Push and open GitHub PR in browser
 
 Notes:
   - Must be run from a source branch (not a emit branch)
