@@ -18,6 +18,11 @@ interface SpawnOptions {
 	readonly stdout?: "pipe" | "inherit"
 	readonly stderr?: "pipe" | "inherit"
 	readonly env?: Record<string, string>
+	readonly onProgress?: (progress: {
+		readonly elapsedMs: number
+		readonly pid?: number
+	}) => void
+	readonly progressIntervalMs?: number
 }
 
 /**
@@ -54,6 +59,17 @@ export const spawnProcess = (
 				stderr: options?.stderr ?? "pipe",
 				env: options?.env ? { ...process.env, ...options.env } : process.env,
 			})
+			const startedAt = Date.now()
+			const progressInterval = options?.onProgress
+				? setInterval(
+						() =>
+							options.onProgress?.({
+								elapsedMs: Date.now() - startedAt,
+								pid: proc.pid,
+							}),
+						options.progressIntervalMs ?? 10_000,
+					)
+				: null
 
 			// Start draining stdout/stderr immediately so verbose subprocesses
 			// cannot block on filled pipe buffers before they exit.
@@ -70,7 +86,11 @@ export const spawnProcess = (
 				proc.exited,
 				stdoutPromise,
 				stderrPromise,
-			])
+			]).finally(() => {
+				if (progressInterval) {
+					clearInterval(progressInterval)
+				}
+			})
 
 			return {
 				stdout: stdout.trim(),
