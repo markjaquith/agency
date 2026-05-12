@@ -23,4 +23,19 @@ describe("spawnProcess", () => {
 		expect(result.stderr).toContain("err:0:")
 		expect(result.stderr).toContain("err:1999:")
 	})
+
+	test("reports progress while process is still running", async () => {
+		const progress: number[] = []
+		const script = "await new Promise((resolve) => setTimeout(resolve, 80))"
+
+		const result = await Effect.runPromise(
+			spawnProcess([process.execPath, "-e", script], {
+				onProgress: ({ elapsedMs }) => progress.push(elapsedMs),
+				progressIntervalMs: 10,
+			}),
+		)
+
+		expect(result.exitCode).toBe(0)
+		expect(progress.length).toBeGreaterThan(0)
+	})
 })
