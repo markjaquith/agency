@@ -349,6 +349,37 @@ describe("emit command", () => {
 			const lastCall = getLastCapturedFilterRepoCall()
 			expect(lastCall).toBeDefined()
 			expect(lastCall!.streamOutput).toBe(true)
+			expect(lastCall!.progressIntervalMs).toBe(5000)
+		})
+
+		test("logs filter preflight diagnostics in verbose mode", async () => {
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency--filter-diagnostics-test")
+
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Add agency.json")
+
+			const logs: string[] = []
+			const originalLog = console.log
+			console.log = (...args: any[]) => logs.push(args.join(" "))
+
+			try {
+				await runTestEffectWithMockFilterRepo(emit({ verbose: true }))
+			} finally {
+				console.log = originalLog
+			}
+
+			expect(logs.join("\n")).toContain("Commit range contains")
+			expect(logs.join("\n")).toContain("Filtered paths are touched by")
+			expect(logs.join("\n")).toContain("Filtered path diff contains")
 		})
 
 		test("includes symlink targets in files to filter", async () => {

@@ -46,6 +46,7 @@ export class FilterRepoService extends Effect.Service<FilterRepoService>()(
 					readonly env?: Record<string, string>
 					readonly verboseLog?: (message: string) => void
 					readonly streamOutput?: boolean
+					readonly progressIntervalMs?: number
 				},
 			) =>
 				Effect.gen(function* () {
@@ -79,6 +80,15 @@ export class FilterRepoService extends Effect.Service<FilterRepoService>()(
 							env: options?.env,
 							stdout: options?.streamOutput ? "inherit" : "pipe",
 							stderr: options?.streamOutput ? "inherit" : "pipe",
+							onProgress: options?.streamOutput
+								? ({ elapsedMs, pid }) => {
+										const elapsedSeconds = Math.round(elapsedMs / 1000)
+										verboseLog(
+											`git-filter-repo still running after ${elapsedSeconds}s${pid ? ` (pid ${pid})` : ""}`,
+										)
+									}
+								: undefined,
+							progressIntervalMs: options?.progressIntervalMs,
 						}),
 						Effect.mapError(
 							(error) =>

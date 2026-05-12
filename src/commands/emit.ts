@@ -143,7 +143,7 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 			gitRoot,
 			currentBranch,
 			baseBranch,
-			verbose,
+			options,
 		)
 
 		verboseLog(`Branch forked at commit: ${highlight.commit(forkPoint)}`)
@@ -223,11 +223,19 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 			verboseLog(
 				`git-filter-repo will evaluate ${filesToFilter.length} filtered path${filesToFilter.length === 1 ? "" : "s"}`,
 			)
+			yield* logFilterPreflight(
+				gitRoot,
+				forkPoint,
+				emitBranchName,
+				filesToFilter,
+				verboseLog,
+			)
 
 			yield* filterRepo.run(gitRoot, filterRepoArgs, {
 				env: { GIT_CONFIG_GLOBAL: "" },
 				verboseLog,
 				streamOutput: verbose,
+				progressIntervalMs: 5_000,
 			})
 
 			verboseLog("git-filter-repo completed")
@@ -243,6 +251,77 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 		})
 
 		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
+	})
+
+const logFilterPreflight = (
+	gitRoot: string,
+	forkPoint: string,
+	emitBranchName: string,
+	filesToFilter: readonly string[],
+	verboseLog: (message: string) => void,
+) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const range = `${forkPoint}..${emitBranchName}`
+		const summarize = (value: string) => value.trim() || "0"
+
+		const commitCount = yield* git
+			.runGitCommand(["git", "rev-list", "--count", range], gitRoot, {
+				captureOutput: true,
+			})
+			.pipe(Effect.option)
+
+		if (commitCount._tag === "Some" && commitCount.value.exitCode === 0) {
+			verboseLog(
+				`Commit range contains ${summarize(commitCount.value.stdout)} commit${summarize(commitCount.value.stdout) === "1" ? "" : "s"}`,
+			)
+		} else {
+			verboseLog("Unable to count commits in git-filter-repo range")
+		}
+
+		if (filesToFilter.length === 0) {
+			verboseLog("No filtered paths were resolved before git-filter-repo")
+			return
+		}
+
+		const pathArgs = ["--", ...filesToFilter]
+		const matchingCommitCount = yield* git
+			.runGitCommand(
+				["git", "rev-list", "--count", range, ...pathArgs],
+				gitRoot,
+				{ captureOutput: true },
+			)
+			.pipe(Effect.option)
+
+		if (
+			matchingCommitCount._tag === "Some" &&
+			matchingCommitCount.value.exitCode === 0
+		) {
+			verboseLog(
+				`Filtered paths are touched by ${summarize(matchingCommitCount.value.stdout)} commit${summarize(matchingCommitCount.value.stdout) === "1" ? "" : "s"} in the range`,
+			)
+		} else {
+			verboseLog("Unable to count commits touching filtered paths")
+		}
+
+		const changedFiles = yield* git
+			.runGitCommand(
+				["git", "diff", "--name-only", range, ...pathArgs],
+				gitRoot,
+				{ captureOutput: true },
+			)
+			.pipe(Effect.option)
+
+		if (changedFiles._tag === "Some" && changedFiles.value.exitCode === 0) {
+			const changedFileCount = changedFiles.value.stdout
+				.split("\n")
+				.filter(Boolean).length
+			verboseLog(
+				`Filtered path diff contains ${changedFileCount} changed file${changedFileCount === 1 ? "" : "s"}`,
+			)
+		} else {
+			verboseLog("Unable to count changed filtered files")
+		}
 	})
 
 // Helper: Ensure emitBranch is set in agency.json metadata
@@ -368,11 +447,11 @@ const findBestForkPoint = (
 	gitRoot: string,
 	featureBranch: string,
 	baseBranch: string,
-	verbose: boolean,
+	options: Pick<EmitOptions, "silent" | "verbose">,
 ) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const { verboseLog } = createLoggers({ verbose })
+		const { verboseLog } = createLoggers(options)
 
 		// Strategy 1: Get fork-point against local base branch
 		const localForkPoint = yield* getForkPointOrMergeBase(

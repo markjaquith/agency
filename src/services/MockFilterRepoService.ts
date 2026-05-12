@@ -9,6 +9,7 @@ export interface CapturedFilterRepoCall {
 	args: readonly string[]
 	env?: Record<string, string>
 	streamOutput?: boolean
+	progressIntervalMs?: number
 }
 
 /**
@@ -66,6 +67,7 @@ export class MockFilterRepoService extends Effect.Service<MockFilterRepoService>
 					readonly env?: Record<string, string>
 					readonly verboseLog?: (message: string) => void
 					readonly streamOutput?: boolean
+					readonly progressIntervalMs?: number
 				},
 			) => {
 				// Capture the call
@@ -74,6 +76,7 @@ export class MockFilterRepoService extends Effect.Service<MockFilterRepoService>
 					args,
 					env: options?.env,
 					streamOutput: options?.streamOutput,
+					progressIntervalMs: options?.progressIntervalMs,
 				})
 
 				// Return a successful result
