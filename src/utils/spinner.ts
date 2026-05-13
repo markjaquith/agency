@@ -1,5 +1,12 @@
 import ora from "ora"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
+
+interface Spinner {
+	succeed: (text?: string) => unknown
+	fail: (text?: string) => unknown
+	clear: () => unknown
+	stop: () => unknown
+}
 
 /**
  * Check if we're running in a test environment
@@ -20,6 +27,8 @@ interface SpinnerConfig {
 	failText?: string
 	/** Whether the spinner is enabled (defaults to true) */
 	enabled?: boolean
+	/** Creates the spinner instance. Intended for tests. */
+	createSpinner?: (text: string) => Spinner
 }
 
 /**
@@ -53,31 +62,35 @@ export const withSpinner = <A, E, R>(
 		return effect
 	}
 
-	return Effect.gen(function* () {
-		const spinner = ora({
-			text,
-			spinner: "dots",
-			color: "cyan",
-		}).start()
+	const createSpinner =
+		config.createSpinner ??
+		((text: string) =>
+			ora({
+				text,
+				spinner: "dots",
+				color: "cyan",
+			}).start())
 
-		try {
-			const result = yield* effect
+	return Effect.acquireUseRelease(
+		Effect.sync(() => createSpinner(text)),
+		() => effect,
+		(spinner, exit) =>
+			Effect.sync(() => {
+				if (Exit.isSuccess(exit)) {
+					if (successText) {
+						spinner.succeed(successText)
+					} else {
+						spinner.stop()
+					}
+					return
+				}
 
-			if (successText) {
-				spinner.succeed(successText)
-			} else {
-				spinner.stop()
-			}
-
-			return result
-		} catch (error) {
-			if (failText) {
-				spinner.fail(failText)
-			} else {
-				spinner.clear()
-				spinner.stop()
-			}
-			throw error
-		}
-	})
+				if (failText) {
+					spinner.fail(failText)
+				} else {
+					spinner.clear()
+					spinner.stop()
+				}
+			}),
+	)
 }
