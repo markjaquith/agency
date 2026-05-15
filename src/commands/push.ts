@@ -122,56 +122,42 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		verboseLog(`Starting push workflow from ${highlight.branch(sourceBranch)}`)
 
 		// Step 1: Create emit branch (agency emit)
-		let emitHadIgnorableFailure = false
+		verboseLog("Step 1: Emitting...")
+		// Use the emit command for the entire emit step so push and emit stay in sync.
+		const prEffectWithOptions = emit({
+			baseBranch: options.baseBranch,
+			emit: options.emit || options.branch,
+			silent: options.silent,
+			force: options.force,
+			verbose: options.verbose,
+			skipFilter: options.skipFilter,
+		})
 
-		if (!options.skipFilter) {
-			verboseLog("Step 1: Emitting...")
-			// Use emit command - prefer emit option, fallback to branch for backward compatibility
-			const prEffectWithOptions = emit({
-				baseBranch: options.baseBranch,
-				emit: options.emit || options.branch,
-				silent: true, // Suppress emit command output, we'll provide our own
-				force: options.force,
-				verbose: options.verbose,
-				skipFilter: options.skipFilter,
-			})
+		const prResult = yield* Effect.either(prEffectWithOptions)
+		if (Either.isLeft(prResult)) {
+			const error =
+				prResult.left instanceof Error
+					? prResult.left
+					: new Error(String(prResult.left))
+			const message = error.message || ""
+			const ignorable =
+				message === "" ||
+				message.includes("already exists") ||
+				message.includes("check if branch exists")
 
-			const prResult = yield* Effect.either(prEffectWithOptions)
-			if (Either.isLeft(prResult)) {
-				const error =
-					prResult.left instanceof Error
-						? prResult.left
-						: new Error(String(prResult.left))
-				const message = error.message || ""
-				const ignorable =
-					message === "" ||
-					message.includes("already exists") ||
-					message.includes("check if branch exists")
-
-				if (!ignorable) {
-					return yield* Effect.fail(
-						new Error(`Failed to create emit branch: ${message}`),
-					)
-				}
-
-				emitHadIgnorableFailure = true
-				verboseLog("Emit reported existing branch; continuing")
+			if (!ignorable) {
+				return yield* Effect.fail(
+					new Error(`Failed to create emit branch: ${message}`),
+				)
 			}
+
+			verboseLog("Emit reported existing branch; continuing")
 		}
 
 		// Compute the emit branch name (emit() command now stays on source branch)
 		// Use the branchInfo we already computed earlier
 		const emitBranchName =
 			options.emit || options.branch || branchInfo.emitBranch
-
-		// If skipFilter, we skipped emit() so we must create the emit branch manually
-		if (options.skipFilter) {
-			yield* git.createOrResetBranch(gitRoot, emitBranchName, sourceBranch)
-			// Switch back to source branch for consistency
-			yield* git.checkoutBranch(gitRoot, sourceBranch)
-		}
-
-		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
 
 		// Step 2: Push to remote (git push)
 		const remote = yield* getRemoteName(gitRoot)
