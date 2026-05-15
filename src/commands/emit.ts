@@ -158,9 +158,7 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 			)
 			branchExisted = existed
 
-			// Unset any remote tracking branch for the emit branch
-			yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
-			yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
+			yield* configureEmitBranchTracking(gitRoot, emitBranchName, verboseLog)
 		})
 
 		yield* withSpinner(createBranch, {
@@ -433,6 +431,48 @@ const getFilterRepoStateDir = (gitRoot: string) =>
 		}
 
 		return resolveGitInternalPath(gitRoot, gitPath)
+	})
+
+const configureEmitBranchTracking = (
+	gitRoot: string,
+	emitBranchName: string,
+	verboseLog: (message: string) => void,
+) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const remote = yield* git.resolveRemote(gitRoot).pipe(Effect.option)
+
+		if (remote._tag === "None") {
+			yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
+			yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
+			return
+		}
+
+		const remoteBranch = `${remote.value}/${emitBranchName}`
+		const remoteBranchExists = yield* git.branchExists(gitRoot, remoteBranch)
+
+		if (!remoteBranchExists) {
+			yield* git.unsetGitConfig(`branch.${emitBranchName}.remote`, gitRoot)
+			yield* git.unsetGitConfig(`branch.${emitBranchName}.merge`, gitRoot)
+			verboseLog(
+				`No existing remote branch ${highlight.branch(remoteBranch)}; leaving ${highlight.branch(emitBranchName)} without upstream`,
+			)
+			return
+		}
+
+		yield* git.setGitConfig(
+			`branch.${emitBranchName}.remote`,
+			remote.value,
+			gitRoot,
+		)
+		yield* git.setGitConfig(
+			`branch.${emitBranchName}.merge`,
+			`refs/heads/${emitBranchName}`,
+			gitRoot,
+		)
+		verboseLog(
+			`Set ${highlight.branch(emitBranchName)} upstream to ${highlight.branch(remoteBranch)}`,
+		)
 	})
 
 /**

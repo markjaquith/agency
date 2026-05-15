@@ -125,6 +125,50 @@ describe("emit command", () => {
 			expect(currentBranch).toBe("agency--feature")
 		})
 
+		test("sets emit branch upstream when remote branch exists", async () => {
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency--feature")
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await addAndCommit(tempDir, "agency.json", "Feature commit")
+
+			await getGitOutput(tempDir, [
+				"update-ref",
+				"refs/remotes/origin/feature",
+				"HEAD",
+			])
+
+			await runTestEffect(emit({ silent: true, skipFilter: true }))
+
+			const remote = await getGitOutput(tempDir, [
+				"config",
+				"--get",
+				"branch.feature.remote",
+			])
+			const merge = await getGitOutput(tempDir, [
+				"config",
+				"--get",
+				"branch.feature.merge",
+			])
+			expect(remote.trim()).toBe("origin")
+			expect(merge.trim()).toBe("refs/heads/feature")
+
+			await checkoutBranch(tempDir, "feature")
+			const pushRef = await getGitOutput(tempDir, [
+				"rev-parse",
+				"--abbrev-ref",
+				"@{push}",
+			])
+			expect(pushRef.trim()).toBe("origin/feature")
+		})
+
 		test("creates emit branch with custom name", async () => {
 			await createBranch(tempDir, "agency--feature")
 			await createCommit(tempDir, "Feature commit")
