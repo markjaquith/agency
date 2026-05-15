@@ -115,6 +115,39 @@ describe("push command", () => {
 			expect(remoteBranches).toContain("feature")
 		})
 
+		test("forwards verbose output from emit step", async () => {
+			const originalLog = console.log
+			const logMessages: string[] = []
+			console.log = (msg: string) => {
+				logMessages.push(msg)
+			}
+
+			try {
+				await runTestEffect(
+					push({
+						baseBranch: "main",
+						verbose: true,
+						skipFilter: true,
+					}),
+				)
+			} finally {
+				console.log = originalLog
+			}
+
+			expect(logMessages).toContain("Step 1: Emitting...")
+			expect(
+				logMessages.some(
+					(msg) => msg.includes("Using base branch:") && msg.includes("main"),
+				),
+			).toBe(true)
+			expect(
+				logMessages.some((msg) =>
+					msg.includes("Skipping git-filter-repo (skipFilter=true)"),
+				),
+			).toBe(true)
+			expect(logMessages.some((msg) => msg.includes("Emitted"))).toBe(true)
+		})
+
 		test("works with custom branch name", async () => {
 			await runTestEffect(
 				push({
