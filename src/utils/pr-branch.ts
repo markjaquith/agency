@@ -439,3 +439,70 @@ export const resolveBranchPairWithAgencyJson = (
 		// Strategy 4: Fall back to pattern-based resolution
 		return resolveBranchPair(currentBranch, sourcePattern, emitPattern)
 	})
+
+/**
+ * Resolve branch pair only when the current branch is in agency context.
+ * Unlike resolveBranchPairWithAgencyJson, this intentionally does not treat
+ * arbitrary legacy branches as source branches.
+ */
+export const resolveAgencyBranchPairWithAgencyJson = (
+	gitRoot: string,
+	currentBranch: string,
+	sourcePattern: string,
+	emitPattern: string,
+): Effect.Effect<BranchPair | null, never, GitService | FileSystemService> =>
+	Effect.gen(function* () {
+		const fromCurrentAgencyJson = yield* tryResolveFromCurrentAgencyJson(
+			gitRoot,
+			currentBranch,
+		)
+		if (fromCurrentAgencyJson) {
+			return fromCurrentAgencyJson
+		}
+
+		const fromOtherBranchAgencyJson =
+			yield* tryResolveFromOtherBranchAgencyJson(gitRoot, currentBranch)
+		if (fromOtherBranchAgencyJson) {
+			return fromOtherBranchAgencyJson
+		}
+
+		const fromPatternedSource = yield* tryResolveFromPatternedSourceBranch(
+			gitRoot,
+			currentBranch,
+			sourcePattern,
+			emitPattern,
+		)
+		if (fromPatternedSource) {
+			return fromPatternedSource
+		}
+
+		if (extractCleanBranch(currentBranch, sourcePattern)) {
+			return resolveBranchPair(currentBranch, sourcePattern, emitPattern)
+		}
+
+		if (emitPattern !== "%branch%") {
+			const cleanFromEmit = extractCleanFromEmit(currentBranch, emitPattern)
+
+			if (cleanFromEmit) {
+				const git = yield* GitService
+				const possibleSourceBranch = makeSourceBranchName(
+					cleanFromEmit,
+					sourcePattern,
+				)
+				const sourceExists = yield* pipe(
+					git.branchExists(gitRoot, possibleSourceBranch),
+					Effect.catchAll(() => Effect.succeed(false)),
+				)
+
+				if (sourceExists) {
+					return {
+						sourceBranch: possibleSourceBranch,
+						emitBranch: currentBranch,
+						isOnEmitBranch: true,
+					}
+				}
+			}
+		}
+
+		return null
+	})
