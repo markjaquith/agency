@@ -13,6 +13,7 @@ import {
 	addAndCommit,
 	renameBranch,
 	runTestEffect,
+	runTestEffectWithMockFilterRepo,
 } from "../test-utils"
 
 async function setupAgencyJson(gitRoot: string): Promise<void> {
@@ -187,6 +188,22 @@ describe("push command", () => {
 	})
 
 	describe("error handling", () => {
+		test("throws when emitted CLAUDE.md references AGENCY.md", async () => {
+			await Bun.write(
+				join(tempDir, "CLAUDE.md"),
+				"# Instructions\n\n@AGENCY.md\n",
+			)
+			await addAndCommit(tempDir, "CLAUDE.md", "Add Claude agency reference")
+
+			await expect(
+				runTestEffectWithMockFilterRepo(
+					push({ baseBranch: "main", silent: true }),
+				),
+			).rejects.toThrow(
+				"Failed to create emit branch: CLAUDE.md on emitted branch feature still references @AGENCY.md",
+			)
+		})
+
 		test("switches to source branch when run from emit branch", async () => {
 			// First create the emit branch from source branch
 			await runTestEffect(
