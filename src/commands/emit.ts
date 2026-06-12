@@ -248,7 +248,32 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 			enabled: !options.silent && !verbose,
 		})
 
+		yield* validateClaudeDoesNotReferenceAgency(gitRoot, emitBranchName)
+
 		log(done(`Emitted ${highlight.branch(emitBranchName)}`))
+	})
+
+const validateClaudeDoesNotReferenceAgency = (
+	gitRoot: string,
+	emitBranchName: string,
+) =>
+	Effect.gen(function* () {
+		const git = yield* GitService
+		const claudeContents = yield* git.getFileAtRef(
+			gitRoot,
+			emitBranchName,
+			"CLAUDE.md",
+		)
+
+		if (!claudeContents?.includes("@AGENCY.md")) {
+			return
+		}
+
+		return yield* Effect.fail(
+			new Error(
+				`CLAUDE.md on emitted branch ${emitBranchName} still references @AGENCY.md. Remove the agency file reference before emitting.`,
+			),
+		)
 	})
 
 const logFilterPreflight = (

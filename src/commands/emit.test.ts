@@ -326,6 +326,36 @@ describe("emit command", () => {
 			clearCapturedFilterRepoCalls()
 		})
 
+		test("throws when emitted CLAUDE.md references AGENCY.md", async () => {
+			await checkoutBranch(tempDir, "main")
+			await createBranch(tempDir, "agency--claude-reference-test")
+
+			await Bun.write(
+				join(tempDir, "agency.json"),
+				JSON.stringify({
+					version: 1,
+					injectedFiles: ["AGENTS.md"],
+					template: "test",
+					createdAt: new Date().toISOString(),
+				}),
+			)
+			await Bun.write(
+				join(tempDir, "CLAUDE.md"),
+				"# Instructions\n\n@AGENCY.md\n",
+			)
+			await addAndCommit(
+				tempDir,
+				["agency.json", "CLAUDE.md"],
+				"Add Claude agency reference",
+			)
+
+			await expect(
+				runTestEffectWithMockFilterRepo(emit({ silent: true })),
+			).rejects.toThrow(
+				"CLAUDE.md on emitted branch claude-reference-test still references @AGENCY.md",
+			)
+		})
+
 		test("constructs correct filter-repo arguments", async () => {
 			// Set up fresh branch with agency.json
 			await checkoutBranch(tempDir, "main")
