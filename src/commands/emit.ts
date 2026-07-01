@@ -54,6 +54,21 @@ export const emitCore = (gitRoot: string, options: EmitOptions) =>
 		const fs = yield* FileSystemService
 		const filterRepo = yield* FilterRepoService
 
+		// Check for uncommitted changes
+		const statusOutput = yield* git.getStatus(gitRoot)
+
+		if (statusOutput && statusOutput.trim().length > 0) {
+			return yield* Effect.fail(
+				new Error(
+					`You have uncommitted changes. Please commit or stash them before emitting.\n` +
+						`The emit command performs internal checkouts that would destroy uncommitted work.\n` +
+						`Run 'git status' to see the changes.`,
+				),
+			)
+		}
+
+		verboseLog(`Working directory is clean`)
+
 		// Check if git-filter-repo is installed
 		const hasFilterRepo = yield* filterRepo.isInstalled()
 		if (!hasFilterRepo) {

@@ -91,6 +91,21 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		const git = yield* GitService
 		const configService = yield* ConfigService
 
+		// Check for uncommitted changes
+		const statusOutput = yield* git.getStatus(gitRoot)
+
+		if (statusOutput && statusOutput.trim().length > 0) {
+			return yield* Effect.fail(
+				new Error(
+					`You have uncommitted changes. Please commit or stash them before pushing.\n` +
+						`The push command performs internal checkouts that would destroy uncommitted work.\n` +
+						`Run 'git status' to see the changes.`,
+				),
+			)
+		}
+
+		verboseLog(`Working directory is clean`)
+
 		// Load config to check emit branch pattern
 		const config = yield* configService.loadConfig()
 
