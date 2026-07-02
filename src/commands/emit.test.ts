@@ -78,6 +78,29 @@ describe("emit command", () => {
 	})
 
 	describe("basic functionality", () => {
+		test("fails when there are uncommitted changes", async () => {
+			// Create uncommitted changes
+			await Bun.write(join(tempDir, "uncommitted.txt"), "uncommitted\n")
+
+			expect(
+				runTestEffect(emit({ silent: true, skipFilter: true })),
+			).rejects.toThrow(/uncommitted changes/)
+		})
+
+		test("fails when there are staged but uncommitted changes", async () => {
+			// Create a staged but uncommitted change
+			await Bun.write(join(tempDir, "staged.txt"), "staged\n")
+			await Bun.spawn(["git", "add", "staged.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			expect(
+				runTestEffect(emit({ silent: true, skipFilter: true })),
+			).rejects.toThrow(/uncommitted changes/)
+		})
+
 		test("throws error when git-filter-repo is not installed", async () => {
 			const hasGitFilterRepo = await checkGitFilterRepo()
 			if (hasGitFilterRepo) {

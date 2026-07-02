@@ -30,9 +30,9 @@ async function setupAgencyJson(gitRoot: string): Promise<void> {
 	await addAndCommit(gitRoot, "agency.json", "Add agency.json")
 }
 
-async function setupBareRemote(tempDir: string): Promise<string> {
-	// Create a bare repository to use as remote
-	const remoteDir = join(tempDir, "remote.git")
+async function setupBareRemote(): Promise<string> {
+	// Create a bare repository outside the working tree to avoid polluting git status
+	const remoteDir = await createTempDir()
 	await Bun.spawn(["git", "init", "--bare", remoteDir], {
 		stdout: "pipe",
 		stderr: "pipe",
@@ -64,7 +64,7 @@ describe("push command", () => {
 		}
 
 		// Setup bare remote and push main
-		remoteDir = await setupBareRemote(tempDir)
+		remoteDir = await setupBareRemote()
 		await Bun.spawn(["git", "remote", "add", "origin", remoteDir], {
 			cwd: tempDir,
 			stdout: "pipe",
@@ -88,9 +88,37 @@ describe("push command", () => {
 		process.chdir(originalCwd)
 		delete process.env.AGENCY_CONFIG_PATH
 		await cleanupTempDir(tempDir)
+		await cleanupTempDir(remoteDir)
 	})
 
 	describe("basic functionality", () => {
+		test("fails when there are uncommitted changes", async () => {
+			// Create uncommitted changes
+			await Bun.write(join(tempDir, "uncommitted.txt"), "uncommitted\n")
+
+			expect(
+				runTestEffect(
+					push({ baseBranch: "main", silent: true, skipFilter: true }),
+				),
+			).rejects.toThrow(/uncommitted changes/)
+		})
+
+		test("fails when there are staged but uncommitted changes", async () => {
+			// Create a staged but uncommitted change
+			await Bun.write(join(tempDir, "staged.txt"), "staged\n")
+			await Bun.spawn(["git", "add", "staged.txt"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			expect(
+				runTestEffect(
+					push({ baseBranch: "main", silent: true, skipFilter: true }),
+				),
+			).rejects.toThrow(/uncommitted changes/)
+		})
+
 		test("creates emit branch, pushes it, and returns to source", async () => {
 			// We're on agency--feature branch (source)
 			expect(await getCurrentBranch(tempDir)).toBe("agency--feature")
