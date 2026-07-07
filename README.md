@@ -104,6 +104,31 @@ Toggle between source branch and emit branch. If on an emit branch (e.g., `foo--
 
 Switch to the source branch for the current emit branch.
 
+### `agency completions <bash|zsh>`
+
+Generate shell completion scripts. The generated scripts are static, so shell startup and tab completion do not call `agency`.
+
+**zsh:**
+
+```bash
+mkdir -p ~/.zsh/completions
+agency completions zsh > ~/.zsh/completions/_agency
+```
+
+Then add this to `~/.zshrc` before `compinit`:
+
+```bash
+fpath=(~/.zsh/completions $fpath)
+autoload -Uz compinit && compinit
+```
+
+**bash:**
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+agency completions bash > ~/.local/share/bash-completion/completions/agency
+```
+
 ## Requirements
 
 - [Bun](https://bun.sh) >= 1.0.0 (recommended)

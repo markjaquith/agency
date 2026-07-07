@@ -20,6 +20,10 @@ import { template, help as templateHelp } from "./src/commands/template"
 import { work, help as workHelp } from "./src/commands/work"
 import { loop, help as loopHelp } from "./src/commands/loop"
 import { status, help as statusHelp } from "./src/commands/status"
+import {
+	completions,
+	help as completionsHelp,
+} from "./src/commands/completions"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -469,6 +473,18 @@ const commands: Record<string, Command> = {
 		},
 		help: loopHelp,
 	},
+	completions: {
+		name: "completions",
+		description: "Generate shell completion scripts",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(completionsHelp)
+				return
+			}
+			await runCommand(completions(args[0]))
+		},
+		help: completionsHelp,
+	},
 }
 
 function showMainHelp() {
@@ -502,6 +518,7 @@ Commands:
   source                 Switch to source branch from emitted branch
   merge                  Merge emitted branch into base branch
   status                 Show agency status for this repository
+  completions <shell>    Generate bash or zsh completion scripts
 
 Global Options:
   -h, --help             Show help for a command
