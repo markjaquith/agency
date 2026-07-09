@@ -178,7 +178,7 @@ const commands: Record<string, Command> = {
 	},
 	push: {
 		name: "push",
-		description: "Emit, push to remote, return to source",
+		description: "Push the emitted branch or fall through to git push",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(pushHelp)
@@ -187,9 +187,11 @@ const commands: Record<string, Command> = {
 			await runCommand(
 				push({
 					baseBranch: args[0],
+					gitArgs: args,
 					emit: options.emit || options.branch,
 					silent: options.silent,
 					force: options.force,
+					forceWithLease: options["force-with-lease"],
 					noVerify: options["no-verify"],
 					verbose: options.verbose,
 					pr: options.pr,
@@ -508,7 +510,7 @@ Commands:
   emit [base-branch]     Emit a branch with backpack files reverted
   emitted                Get the name of the emitted branch
   pr <subcommand>        Run gh pr with the emitted branch name
-  push [base-branch]     Emit, push to remote, return to source
+  push [arguments]       Push the emitted branch or fall through to git push
   pull                   Pull commits from remote emit branch to source
   rebase [base-branch]   Rebase source branch onto base branch
   base                   Get or set the base branch
@@ -610,6 +612,9 @@ try {
 			force: {
 				type: "boolean",
 				short: "f",
+			},
+			"force-with-lease": {
+				type: "boolean",
 			},
 			"no-verify": {
 				type: "boolean",

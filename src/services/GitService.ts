@@ -1046,6 +1046,7 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			options?: {
 				readonly setUpstream?: boolean
 				readonly force?: boolean
+				readonly forceWithLease?: boolean
 				readonly noVerify?: boolean
 			},
 		) => {
@@ -1055,6 +1056,9 @@ export class GitService extends Effect.Service<GitService>()("GitService", {
 			}
 			if (options?.force) {
 				args.push("--force")
+			}
+			if (options?.forceWithLease) {
+				args.push("--force-with-lease")
 			}
 			if (options?.noVerify) {
 				args.push("--no-verify")

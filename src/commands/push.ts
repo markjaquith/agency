@@ -2,7 +2,7 @@ import { Effect, Either } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { GitCommandError, GitService } from "../services/GitService"
 import { ConfigService } from "../services/ConfigService"
-import { resolveBranchPairWithAgencyJson } from "../utils/pr-branch"
+import { resolveAgencyBranchPairWithAgencyJson } from "../utils/pr-branch"
 import { emit } from "./emit"
 import highlight, { done } from "../utils/colors"
 import {
@@ -16,13 +16,53 @@ import { spawnProcess } from "../utils/process"
 
 interface PushOptions extends BaseCommandOptions {
 	baseBranch?: string
+	gitArgs?: string[]
 	emit?: string
 	branch?: string // Deprecated: use emit instead
 	force?: boolean
+	forceWithLease?: boolean
 	noVerify?: boolean
 	pr?: boolean
 	skipFilter?: boolean
 }
+
+const getFallbackGitPushArgs = (options: PushOptions): string[] => {
+	const args: string[] = []
+
+	if (options.force) {
+		args.push("--force")
+	}
+	if (options.forceWithLease) {
+		args.push("--force-with-lease")
+	}
+	if (options.noVerify) {
+		args.push("--no-verify")
+	}
+
+	args.push(...(options.gitArgs ?? []))
+	return args
+}
+
+const pushWithGit = (gitRoot: string, options: PushOptions) =>
+	Effect.gen(function* () {
+		const args = ["git", "push", ...getFallbackGitPushArgs(options)]
+		const result = yield* spawnProcess(args, {
+			cwd: gitRoot,
+			stdin: "inherit",
+			stdout: options.silent ? "pipe" : "inherit",
+			stderr: options.silent ? "pipe" : "inherit",
+		})
+
+		if (result.exitCode !== 0) {
+			return yield* Effect.fail(
+				new GitCommandError({
+					command: args.join(" "),
+					exitCode: result.exitCode,
+					stderr: result.stderr,
+				}),
+			)
+		}
+	})
 
 const getPushFailureStderr = (error: unknown): string => {
 	if (error instanceof GitCommandError) {
@@ -91,7 +131,26 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		const git = yield* GitService
 		const configService = yield* ConfigService
 
-		// Check for uncommitted changes
+		// Load config to check emit branch pattern
+		const config = yield* configService.loadConfig()
+
+		// Get current branch
+		let sourceBranch = yield* git.getCurrentBranch(gitRoot)
+
+		// Check if we're already on an emit branch using proper branch resolution
+		const branchInfo = yield* resolveAgencyBranchPairWithAgencyJson(
+			gitRoot,
+			sourceBranch,
+			config.sourceBranchPattern,
+			config.emitBranch,
+		)
+
+		if (!branchInfo) {
+			verboseLog("Outside agency branch context; falling back to git push")
+			return yield* pushWithGit(gitRoot, options)
+		}
+
+		// Agency push performs internal checkouts, so require a clean worktree.
 		const statusOutput = yield* git.getStatus(gitRoot)
 
 		if (statusOutput && statusOutput.trim().length > 0) {
@@ -105,20 +164,6 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 		}
 
 		verboseLog(`Working directory is clean`)
-
-		// Load config to check emit branch pattern
-		const config = yield* configService.loadConfig()
-
-		// Get current branch
-		let sourceBranch = yield* git.getCurrentBranch(gitRoot)
-
-		// Check if we're already on an emit branch using proper branch resolution
-		const branchInfo = yield* resolveBranchPairWithAgencyJson(
-			gitRoot,
-			sourceBranch,
-			config.sourceBranchPattern,
-			config.emitBranch,
-		)
 
 		// If we're on an emit branch, switch to the source branch first
 		if (branchInfo.isOnEmitBranch) {
@@ -188,13 +233,15 @@ const pushCore = (gitRoot: string, options: PushOptions) =>
 			withSpinner(
 				pushBranchToRemoteEffect(gitRoot, emitBranchName, remote, {
 					force: options.force,
+					forceWithLease: options.forceWithLease,
 					noVerify: options.noVerify,
 					verbose: options.verbose,
 				}),
 				{
-					text: options.force
-						? `Pushing to ${highlight.remote(remote)} (forced)`
-						: `Pushing to ${highlight.remote(remote)}`,
+					text:
+						options.force || options.forceWithLease
+							? `Pushing to ${highlight.remote(remote)} (forced)`
+							: `Pushing to ${highlight.remote(remote)}`,
 					enabled: !options.silent && !options.verbose,
 				},
 			),
@@ -246,13 +293,14 @@ const pushBranchToRemoteEffect = (
 	remote: string,
 	options: {
 		readonly force?: boolean
+		readonly forceWithLease?: boolean
 		readonly noVerify?: boolean
 		readonly verbose?: boolean
 	},
 ) =>
 	Effect.gen(function* () {
 		const git = yield* GitService
-		const { force = false, noVerify = false } = options
+		const { force = false, forceWithLease = false, noVerify = false } = options
 
 		// Try pushing without force first
 		const pushResult = yield* git
@@ -276,12 +324,13 @@ const pushBranchToRemoteEffect = (
 			// Check if this is a force-push-needed error
 			const needsForce = pushFailureNeedsForce(stderr)
 
-			if (needsForce && force) {
-				// User provided --force flag, retry with force
+			if (needsForce && (force || forceWithLease)) {
+				// Retry using the force mode explicitly requested by the user.
 				const forceResult = yield* git
 					.push(gitRoot, remote, branchName, {
 						setUpstream: true,
-						force: true,
+						force,
+						forceWithLease,
 						noVerify,
 					})
 					.pipe(
@@ -303,7 +352,7 @@ const pushBranchToRemoteEffect = (
 				}
 
 				usedForce = true
-			} else if (needsForce && !force) {
+			} else if (needsForce) {
 				// User didn't provide --force but it's needed
 				return yield* Effect.fail(
 					formatPushFailure(
@@ -386,9 +435,10 @@ const openGitHubPR = (
 	})
 
 export const help = `
-Usage: agency push [base-branch] [options]
+Usage: agency push [arguments] [options]
 
-Create a emit branch, push it to remote, and return to the source branch.
+Create an emit branch, push it to remote, and return to the source branch.
+Outside agency branch context, fall through to plain 'git push'.
 
 This command is a convenience wrapper that runs operations in sequence:
   1. agency emit [base-branch]  - Create emit branch with backpack files reverted
@@ -404,31 +454,29 @@ Base Branch Selection:
   Same as 'agency emit' - see 'agency emit --help' for details
 
 Prerequisites:
-  - git-filter-repo must be installed: brew install git-filter-repo
-  - Remote 'origin' must be configured
+  - Agency branch pushes require git-filter-repo: brew install git-filter-repo
+  - A Git remote must be configured
 
 Arguments:
-  base-branch       Base branch to compare against (e.g., origin/main)
-                    If not provided, will use saved config or auto-detect
+  arguments         In agency context, the first argument is the base branch.
+                    Otherwise, arguments are passed to git push as remote/refspecs.
 
 Options:
   --emit            Custom name for emit branch (defaults to pattern from config)
-	--branch          (Deprecated: use --emit) Custom name for emit branch
-	-f, --force       Force push to remote if branch has diverged
-	--no-verify      Bypass git pre-push hooks
-	--pr              Open GitHub PR in browser after pushing (requires gh CLI)
+  --branch          (Deprecated: use --emit) Custom name for emit branch
+  -f, --force       Force push to remote if branch has diverged
+  --force-with-lease  Force push only if the remote branch is unchanged
+  --no-verify       Bypass git pre-push hooks
+  --pr              Open GitHub PR in browser after pushing (requires gh CLI)
 
 Examples:
-  agency push                          # Create PR, push, return to source
-	agency push origin/main              # Explicitly use origin/main as base
-	agency push --force                  # Force push if branch has diverged
-	agency push --no-verify              # Push without running pre-push hooks
-	agency push --pr                     # Push and open GitHub PR in browser
+  agency push                       # Push the emitted branch or current branch
+  agency push origin/main           # Use an explicit base in agency context
+  agency push origin feature        # Pass remote/refspec outside agency context
 
 Notes:
-  - Must be run from a source branch (not a emit branch)
-  - Creates or recreates the emit branch
-  - Pushes with -u flag to set up tracking
-  - Automatically returns to source branch after pushing
+  - Outside agency context, positional arguments and --force, --force-with-lease, and --no-verify are passed to git push
+  - In agency context, creates or recreates the emit branch and pushes it with -u
+  - In agency context, automatically returns to the source branch after pushing
   - If any step fails, the command stops and reports the error
 `
