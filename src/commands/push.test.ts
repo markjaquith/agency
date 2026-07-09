@@ -40,6 +40,21 @@ async function setupBareRemote(): Promise<string> {
 	return remoteDir
 }
 
+async function checkoutNonAgencyBranch(gitRoot: string): Promise<void> {
+	const proc = Bun.spawn(
+		["git", "checkout", "-q", "-b", "plain-feature", "origin/main"],
+		{
+			cwd: gitRoot,
+			stdout: "pipe",
+			stderr: "pipe",
+		},
+	)
+	const exitCode = await proc.exited
+	if (exitCode !== 0) {
+		throw new Error(await new Response(proc.stderr).text())
+	}
+}
+
 describe("push command", () => {
 	let tempDir: string
 	let remoteDir: string
@@ -92,6 +107,114 @@ describe("push command", () => {
 	})
 
 	describe("basic functionality", () => {
+		test("falls back to git push outside agency context", async () => {
+			await checkoutNonAgencyBranch(tempDir)
+			await createCommit(tempDir, "Plain feature work")
+			await Bun.write(join(tempDir, "uncommitted.txt"), "uncommitted\n")
+
+			await runTestEffect(
+				push({
+					gitArgs: ["origin", "plain-feature"],
+					silent: true,
+				}),
+			)
+
+			const localHead = await getGitOutput(tempDir, ["rev-parse", "HEAD"])
+			const remoteHead = await getGitOutput(tempDir, [
+				"rev-parse",
+				"refs/remotes/origin/plain-feature",
+			])
+			expect(remoteHead.trim()).toBe(localHead.trim())
+			expect(await Bun.file(join(tempDir, "uncommitted.txt")).exists()).toBe(
+				true,
+			)
+		})
+
+		test("forwards --no-verify to the git push fallback", async () => {
+			await checkoutNonAgencyBranch(tempDir)
+			await createCommit(tempDir, "Plain feature work")
+
+			await Bun.spawn(
+				["git", "config", "core.hooksPath", join(tempDir, ".git", "hooks")],
+				{
+					cwd: tempDir,
+					stdout: "pipe",
+					stderr: "pipe",
+				},
+			).exited
+			const hookPath = join(tempDir, ".git", "hooks", "pre-push")
+			await Bun.write(hookPath, "#!/bin/sh\nexit 1\n")
+			await Bun.spawn(["chmod", "+x", hookPath], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			await runTestEffect(
+				push({
+					gitArgs: ["origin", "plain-feature"],
+					noVerify: true,
+					silent: true,
+				}),
+			)
+
+			const remoteBranches = await getGitOutput(tempDir, [
+				"ls-remote",
+				"--heads",
+				"origin",
+				"plain-feature",
+			])
+			expect(remoteBranches).toContain("plain-feature")
+		})
+
+		test("forwards force modes to the git push fallback", async () => {
+			await checkoutNonAgencyBranch(tempDir)
+			await createCommit(tempDir, "Initial plain feature work")
+			await Bun.spawn(["git", "push", "-u", "origin", "plain-feature"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+
+			await createCommit(tempDir, "Remote state for lease")
+			await Bun.spawn(["git", "push"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await Bun.spawn(["git", "reset", "--hard", "HEAD~1"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Lease-protected rewrite")
+
+			await runTestEffect(push({ forceWithLease: true, silent: true }))
+
+			await createCommit(tempDir, "Remote state for force")
+			await Bun.spawn(["git", "push"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await Bun.spawn(["git", "reset", "--hard", "HEAD~1"], {
+				cwd: tempDir,
+				stdout: "pipe",
+				stderr: "pipe",
+			}).exited
+			await createCommit(tempDir, "Forced rewrite")
+
+			await runTestEffect(push({ force: true, silent: true }))
+
+			const localHead = await getGitOutput(tempDir, ["rev-parse", "HEAD"])
+			const remoteHead = await getGitOutput(tempDir, [
+				"ls-remote",
+				"origin",
+				"refs/heads/plain-feature",
+			])
+			expect(remoteHead.split("\t")[0]).toBe(localHead.trim())
+		})
+
 		test("fails when there are uncommitted changes", async () => {
 			// Create uncommitted changes
 			await Bun.write(join(tempDir, "uncommitted.txt"), "uncommitted\n")
