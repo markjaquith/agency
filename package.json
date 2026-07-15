@@ -21,6 +21,7 @@
     "index.ts",
     "cli.ts",
     "src",
+    "skills",
     "README.md",
     "LICENSE"
   ],

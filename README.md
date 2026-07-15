@@ -243,6 +243,12 @@ aliases, parent/child backlinks, phase directories, duplicate references,
 unknown dependencies, and dependency cycles. YAML duplicate keys, anchors,
 aliases, and custom tags are rejected.
 
+## Agent Skill
+
+`skills/agency/SKILL.md` contains an agent-oriented operating guide for Agency.
+Install or link that directory into your agent's skill location when you want
+Agency workflows to be discovered automatically.
+
 ## Development
 
 ```bash
