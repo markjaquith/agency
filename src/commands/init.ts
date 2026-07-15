@@ -14,7 +14,11 @@ export const init = (options: InitOptions = {}) =>
 		const root = yield* workbase.initialize(
 			options.path ?? options.cwd ?? process.cwd(),
 		)
-		log(`Initialized Agency workbase at ${root}`)
+		log(
+			options.json
+				? JSON.stringify({ root }, null, 2)
+				: `Initialized Agency workbase at ${root}`,
+		)
 	})
 
 export const help = `
@@ -22,4 +26,7 @@ Usage: agency init [path]
 
 Initialize an Agency workbase. The current directory is used when path is
 omitted.
+
+Options:
+  --json              Output the initialized workbase as JSON
 `

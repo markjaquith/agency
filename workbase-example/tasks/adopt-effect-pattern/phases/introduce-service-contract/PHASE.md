@@ -1,4 +1,5 @@
 ---
+description: Introduce the replacement service contract.
 repo: agency
 repos:
   - effect

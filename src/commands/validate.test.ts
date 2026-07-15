@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
 import { validate } from "./validate"
 
 describe("validate command", () => {
@@ -36,6 +41,32 @@ pr: null
 		await expect(
 			runTestEffect(validate({ cwd: root, silent: true })),
 		).resolves.toBeUndefined()
+	})
+
+	test("outputs the validation report as JSON", async () => {
+		await Bun.write(
+			join(root, "tasks/example/TASK.md"),
+			`---
+ticketUrl: https://example.com/tasks/example
+repo: agency
+branch: task/example
+base: main
+pr: null
+---
+`,
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(validate({ cwd: root, json: true })),
+		)
+
+		expect(JSON.parse(logs[0]!)).toEqual({
+			root,
+			issues: [],
+			epicCount: 0,
+			taskCount: 1,
+			phaseCount: 0,
+			valid: true,
+		})
 	})
 
 	test("fails with document diagnostics", async () => {

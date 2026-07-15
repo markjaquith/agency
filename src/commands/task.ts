@@ -7,6 +7,7 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
 	readonly ticketUrl?: string
+	readonly description?: string
 	readonly epic?: string
 	readonly repo?: string
 	readonly references?: readonly string[]
@@ -34,6 +35,7 @@ export const task = (options: TaskOptions) =>
 					{
 						id,
 						ticketUrl: options.ticketUrl,
+						description: options.description,
 						epic: options.epic,
 						multiPhase: options.multiPhase,
 						repo: options.repo,
@@ -43,7 +45,12 @@ export const task = (options: TaskOptions) =>
 					},
 					cwd,
 				)
-				log(`Created task '${record.id}'`)
+				const { content: _, ...output } = record
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Created task '${record.id}'`,
+				)
 				return
 			}
 			case "list": {
@@ -65,9 +72,10 @@ export const task = (options: TaskOptions) =>
 				const id = options.args[0]
 				if (!id) return yield* Effect.fail(new Error("Task ID is required"))
 				const record = yield* tasks.show(id, cwd)
+				const { content: _, ...output } = record
 				log(
 					options.json
-						? JSON.stringify(record.data, null, 2)
+						? JSON.stringify(output, null, 2)
 						: record.content.trimEnd(),
 				)
 				return
@@ -89,6 +97,7 @@ Subcommands:
 
 Create options:
   --ticket-url <url>    External ticket URL
+  --description <text>  Short description of the task
   --epic <id>           Parent epic
   --repo <alias>        Writable repository
   --reference <alias>   Read-only repository; repeatable
@@ -97,5 +106,5 @@ Create options:
   --multi-phase         Create a task container for phases
 
 Options:
-  --json                Output structured JSON
+  --json                Output results as JSON
 `

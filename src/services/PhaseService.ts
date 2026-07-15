@@ -29,6 +29,7 @@ export interface PhaseRecord {
 export interface CreatePhaseInput {
 	readonly taskId: string
 	readonly id: string
+	readonly description?: string
 	readonly repo: string
 	readonly repos?: readonly string[]
 	readonly branch: string
@@ -89,6 +90,9 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					}
 
 					const data = yield* decodePhase({
+						...(input.description !== undefined
+							? { description: input.description }
+							: {}),
 						repo: input.repo,
 						...(input.repos?.length ? { repos: input.repos } : {}),
 						branch: input.branch,

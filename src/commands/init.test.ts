@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { stat } from "node:fs/promises"
 import { join } from "node:path"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
 import { init } from "./init"
 
 describe("init command", () => {
@@ -37,6 +42,15 @@ describe("init command", () => {
 		expect(await Bun.file(join(parent, ".gitignore")).text()).toStartWith(
 			"custom\n",
 		)
+	})
+
+	test("outputs the initialized workbase as JSON", async () => {
+		const root = join(parent, "json-workbase")
+		const logs = await captureLogs(() =>
+			runTestEffect(init({ path: root, json: true })),
+		)
+
+		expect(JSON.parse(logs[0]!)).toEqual({ root })
 	})
 
 	test("rejects an existing Agency configuration", async () => {

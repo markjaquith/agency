@@ -1,5 +1,6 @@
 ---
 ticketUrl: https://example.com/tickets/adopt-effect-pattern
+description: Simplify an Agency service by adopting an Effect pattern.
 phases:
   - id: introduce-service-contract
   - id: migrate-service

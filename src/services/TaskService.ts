@@ -28,6 +28,7 @@ export interface TaskRecord {
 export interface CreateTaskInput {
 	readonly id: string
 	readonly ticketUrl: string
+	readonly description?: string
 	readonly epic?: string
 	readonly multiPhase?: boolean
 	readonly repo?: string
@@ -77,6 +78,9 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				if (input.multiPhase) {
 					data = yield* decodeTask({
 						ticketUrl: input.ticketUrl,
+						...(input.description !== undefined
+							? { description: input.description }
+							: {}),
 						...(input.epic ? { epic: input.epic } : {}),
 						phases: [],
 					})
@@ -88,6 +92,9 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					}
 					data = yield* decodeTask({
 						ticketUrl: input.ticketUrl,
+						...(input.description !== undefined
+							? { description: input.description }
+							: {}),
 						...(input.epic ? { epic: input.epic } : {}),
 						repo: input.repo,
 						...(input.repos?.length ? { repos: input.repos } : {}),

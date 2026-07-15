@@ -1,5 +1,6 @@
 ---
 ticketUrl: https://example.com/tickets/workspace-orchestration
+description: Coordinate the first pass at workbase-aware task orchestration.
 repos:
   - agency
   - effect

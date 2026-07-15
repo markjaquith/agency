@@ -46,13 +46,19 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 			ticketUrl: string,
 			repos: readonly string[],
 			startPath: string = process.cwd(),
+			description?: string,
 		) =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystemService
 				const workbase = yield* WorkbaseService
 				const root = yield* workbase.discover(startPath)
 				const validId = yield* decodeId(id)
-				const data = yield* decodeEpic({ ticketUrl, repos, tasks: [] })
+				const data = yield* decodeEpic({
+					ticketUrl,
+					...(description !== undefined ? { description } : {}),
+					repos,
+					tasks: [],
+				})
 				const directory = join(root, "epics", validId)
 				const path = join(directory, "EPIC.md")
 

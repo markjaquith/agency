@@ -2,6 +2,8 @@ import { Schema } from "@effect/schema"
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1))
 
+const Description = Schema.optional(NonEmptyString)
+
 const IdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
 export const EntityId = NonEmptyString.pipe(Schema.pattern(IdPattern))
@@ -34,18 +36,21 @@ const ExecutionUnit = {
 
 export const EpicFrontmatter = Schema.Struct({
 	ticketUrl: Url,
+	description: Description,
 	repos: Schema.NonEmptyArray(RepositoryAlias),
 	tasks: Schema.Array(Dependency),
 })
 
 const SinglePhaseTaskFrontmatter = Schema.Struct({
 	ticketUrl: Url,
+	description: Description,
 	epic: Schema.optional(EntityId),
 	...ExecutionUnit,
 })
 
 const MultiPhaseTaskFrontmatter = Schema.Struct({
 	ticketUrl: Url,
+	description: Description,
 	epic: Schema.optional(EntityId),
 	phases: Schema.Array(Dependency),
 })
@@ -55,7 +60,10 @@ export const TaskFrontmatter = Schema.Union(
 	MultiPhaseTaskFrontmatter,
 )
 
-export const PhaseFrontmatter = Schema.Struct(ExecutionUnit)
+export const PhaseFrontmatter = Schema.Struct({
+	description: Description,
+	...ExecutionUnit,
+})
 
 export type WorkbaseConfig = Schema.Schema.Type<typeof WorkbaseConfig>
 export type Dependency = Schema.Schema.Type<typeof Dependency>

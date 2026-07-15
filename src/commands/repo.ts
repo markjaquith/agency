@@ -23,8 +23,12 @@ export const repo = (options: RepoOptions) =>
 						new Error("Usage: agency repo add <alias> <remote>"),
 					)
 				}
-				yield* repositories.add(alias, remote, cwd)
-				log(`Added repository '${alias}'`)
+				const path = yield* repositories.add(alias, remote, cwd)
+				log(
+					options.json
+						? JSON.stringify({ alias, path }, null, 2)
+						: `Added repository '${alias}'`,
+				)
 				return
 			}
 
@@ -35,8 +39,12 @@ export const repo = (options: RepoOptions) =>
 						new Error("Usage: agency repo link <alias> <path>"),
 					)
 				}
-				yield* repositories.link(alias, path, cwd)
-				log(`Linked repository '${alias}'`)
+				const destination = yield* repositories.link(alias, path, cwd)
+				log(
+					options.json
+						? JSON.stringify({ alias, path: destination }, null, 2)
+						: `Linked repository '${alias}'`,
+				)
 				return
 			}
 

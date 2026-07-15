@@ -25,7 +25,7 @@ export const pr = (options: PrOptions) =>
 			options.draft,
 			options.cwd ?? process.cwd(),
 		)
-		log(url)
+		log(options.json ? JSON.stringify({ url }, null, 2) : url)
 	})
 
 export const help = `
@@ -36,4 +36,5 @@ task or phase document.
 
 Options:
   --draft             Create a draft pull request
+  --json              Output the pull request URL as JSON
 `

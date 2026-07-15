@@ -89,6 +89,7 @@ supported. If phases are known up front, create a multi-phase task.
 ```bash
 agency epic create <id> \
   --ticket-url <url> \
+  [--description <text>] \
   --repo <read-only-alias> \
   [--repo <another-alias>]
 ```
@@ -101,6 +102,7 @@ Epic task ordering and dependencies live in `EPIC.md`. Creating a task with
 ```bash
 agency task create <id> \
   --ticket-url <url> \
+  [--description <text>] \
   [--epic <epic-id>] \
   --repo <writable-alias> \
   [--reference <read-only-alias>] \
@@ -118,6 +120,7 @@ Create the task container:
 ```bash
 agency task create <id> \
   --ticket-url <url> \
+  [--description <text>] \
   [--epic <epic-id>] \
   --multi-phase
 ```
@@ -126,6 +129,7 @@ Then create each phase:
 
 ```bash
 agency phase create <task-id> <phase-id> \
+  [--description <text>] \
   --repo <writable-alias> \
   [--reference <read-only-alias>] \
   --branch <branch> \
@@ -143,6 +147,7 @@ Agency documents use YAML 1.2 frontmatter:
 ```yaml
 ---
 ticketUrl: https://example.com/tickets/example
+description: Deliver the example outcome.
 repo: application
 repos:
   - api
@@ -155,9 +160,14 @@ pr: null
 Follow these invariants:
 
 - `ticketUrl` belongs to epics and tasks, not phases.
+- `description` is an optional non-empty summary on epics, tasks, and phases.
 - `repo` is the one writable repository for an execution unit.
 - `repos` contains only read-only references and must not repeat `repo`.
 - Epics may declare `repos` but never `repo`.
+
+Commands that print Agency-owned results accept `--json` for machine-readable
+output, including mutations, entity inspection, status, validation, and PR creation.
+
 - Multi-phase task frontmatter owns the phase dependency graph.
 - Epic frontmatter owns the child-task dependency graph.
 - `pr` is either a GitHub PR URL string or `null`.

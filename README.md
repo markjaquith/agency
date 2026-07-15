@@ -135,6 +135,7 @@ writable branches.
 ```yaml
 ---
 ticketUrl: https://example.com/tickets/checkout
+description: Coordinate the checkout experience across frontend and backend.
 repos:
   - frontend
   - backend
@@ -151,6 +152,7 @@ tasks:
 ```yaml
 ---
 ticketUrl: https://example.com/tickets/refresh-copy
+description: Refresh user-facing checkout copy.
 epic: checkout
 repo: frontend
 repos:
@@ -166,6 +168,7 @@ pr: null
 ```yaml
 ---
 ticketUrl: https://example.com/tickets/build-checkout
+description: Deliver checkout through sequenced backend and frontend changes.
 epic: checkout
 phases:
   - id: backend-api
@@ -179,6 +182,7 @@ Each listed phase has a `phases/{id}/PHASE.md` containing its execution fields:
 
 ```yaml
 ---
+description: Build the checkout interface against the new backend API.
 repo: frontend
 repos:
   - backend
@@ -202,6 +206,7 @@ agency repo link backend ~/Dev/backend
 
 agency task create refresh-copy \
   --ticket-url https://example.com/tickets/refresh-copy \
+  --description "Refresh user-facing checkout copy" \
   --repo frontend \
   --reference backend \
   --branch task/refresh-copy \
@@ -217,19 +222,23 @@ agency pr create refresh-copy
 ### Workbase and Repositories
 
 ```text
-agency init [path]
-agency repo add <alias> <remote>
-agency repo link <alias> <path>
+agency init [path] [--json]
+agency repo add <alias> <remote> [--json]
+agency repo link <alias> <path> [--json]
 agency repo list [--json]
 ```
 
 `repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
 repository. Alias names are then used by all documents and commands.
 
+Commands that print Agency-owned results accept `--json`, including initialization,
+repository mutations, entity creation/list/show, status, validation, and PR creation.
+
 ### Epics
 
 ```text
-agency epic create <id> --ticket-url <url> --repo <alias> [--repo <alias>...]
+agency epic create <id> --ticket-url <url> [--description <text>] [--json]
+  --repo <alias> [--repo <alias>...]
 agency epic list [--json]
 agency epic show <id> [--json]
 ```
@@ -244,13 +253,14 @@ Create a single-phase task:
 ```text
 agency task create <id> --ticket-url <url> --repo <alias>
   --branch <name> --base <name>
-  [--epic <id>] [--reference <alias>...]
+  [--description <text>] [--epic <id>] [--reference <alias>...] [--json]
 ```
 
 Create a multi-phase task container:
 
 ```text
-agency task create <id> --ticket-url <url> --multi-phase [--epic <id>]
+agency task create <id> --ticket-url <url> --multi-phase
+  [--description <text>] [--epic <id>] [--json]
 ```
 
 Inspect tasks:
@@ -268,7 +278,8 @@ Create the task with `--multi-phase` when phases are known in advance.
 ```text
 agency phase create <task-id> <phase-id>
   --repo <alias> --branch <name> --base <name>
-  [--reference <alias>...] [--depends-on <phase-id>...]
+  [--description <text>] [--reference <alias>...]
+  [--depends-on <phase-id>...] [--json]
 
 agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]
@@ -278,7 +289,7 @@ agency phase show <task-id> <phase-id> [--json]
 
 ```text
 agency work <task-id> [phase-id] [--opencode | --claude]
-agency pr create <task-id> [phase-id] [--draft]
+agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
 `agency work` fetches repositories, creates or reuses worktrees under `code/`,

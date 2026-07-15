@@ -7,6 +7,7 @@ interface EpicOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
 	readonly ticketUrl?: string
+	readonly description?: string
 	readonly repos?: readonly string[]
 	readonly json?: boolean
 }
@@ -32,8 +33,14 @@ export const epic = (options: EpicOptions) =>
 					options.ticketUrl,
 					options.repos,
 					cwd,
+					options.description,
 				)
-				log(`Created epic '${record.id}'`)
+				const { content: _, ...output } = record
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Created epic '${record.id}'`,
+				)
 				return
 			}
 
@@ -57,13 +64,10 @@ export const epic = (options: EpicOptions) =>
 				const id = options.args[0]
 				if (!id) return yield* Effect.fail(new Error("Epic ID is required"))
 				const record = yield* epics.show(id, cwd)
+				const { content: _, ...output } = record
 				log(
 					options.json
-						? JSON.stringify(
-								{ id: record.id, path: record.path, data: record.data },
-								null,
-								2,
-							)
+						? JSON.stringify(output, null, 2)
 						: record.content.trimEnd(),
 				)
 				return
@@ -88,8 +92,9 @@ Subcommands:
 
 Create options:
   --ticket-url <url>    External ticket URL
+  --description <text>  Short description of the epic
   --repo <alias>        Read-only repository alias; repeatable
 
 Options:
-  --json                Output structured JSON
+  --json                Output results as JSON
 `

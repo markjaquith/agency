@@ -92,6 +92,7 @@ const commands: Record<string, Command> = {
 			await runCommand(
 				init({
 					path: args[0],
+					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -112,6 +113,7 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					ticketUrl: options["ticket-url"],
+					description: options.description,
 					repos: options.repo,
 					json: options.json,
 					silent: options.silent,
@@ -123,7 +125,7 @@ const commands: Record<string, Command> = {
 	},
 	pr: {
 		name: "pr",
-		description: "Run gh pr with the emitted branch name",
+		description: "Create a pull request for an execution unit",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(prHelp)
@@ -135,6 +137,7 @@ const commands: Record<string, Command> = {
 					taskId: args[1],
 					phaseId: args[2],
 					draft: options.draft,
+					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -151,6 +154,7 @@ const commands: Record<string, Command> = {
 				phase({
 					subcommand: args[0],
 					args: args.slice(1),
+					description: options.description,
 					repo: options.repo?.[0],
 					references: options.reference,
 					branch: options.branch,
@@ -197,6 +201,7 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					ticketUrl: options["ticket-url"],
+					description: options.description,
 					epic: options.epic,
 					repo: options.repo?.[0],
 					references: options.reference,
@@ -282,7 +287,7 @@ Commands:
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
   task <subcommand>      Manage tasks
-  work                   Start working on TASK.md with OpenCode
+  work <task> [phase]    Materialize worktrees and launch an agent
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
@@ -298,7 +303,7 @@ Global Options:
 Examples:
   agency init                         # Initialize the current directory
   agency task list                    # List tasks
-  agency work                         # Start working with OpenCode
+  agency work refresh-cli-copy        # Start working on a task
 
 For more information about a command, run:
   agency <command> --help
@@ -378,6 +383,9 @@ try {
 				type: "boolean",
 			},
 			"ticket-url": {
+				type: "string",
+			},
+			description: {
 				type: "string",
 			},
 			repo: {

@@ -1,3 +1,4 @@
+import { spyOn } from "bun:test"
 import { Effect, Layer } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -38,4 +39,19 @@ export async function runTestEffect<A, E>(
 	) as Effect.Effect<A, E | Error, never>
 
 	return Effect.runPromise(program)
+}
+
+export async function captureLogs(
+	run: () => Promise<unknown>,
+): Promise<string[]> {
+	const logs: string[] = []
+	const log = spyOn(console, "log").mockImplementation((...args) => {
+		logs.push(args.join(" "))
+	})
+	try {
+		await run()
+		return logs
+	} finally {
+		log.mockRestore()
+	}
 }

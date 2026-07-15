@@ -6,6 +6,7 @@ import { createLoggers } from "../utils/effect"
 interface PhaseOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
+	readonly description?: string
 	readonly repo?: string
 	readonly references?: readonly string[]
 	readonly branch?: string
@@ -40,6 +41,7 @@ export const phase = (options: PhaseOptions) =>
 					{
 						taskId,
 						id: phaseId,
+						description: options.description,
 						repo: options.repo,
 						repos: options.references,
 						branch: options.branch,
@@ -48,14 +50,26 @@ export const phase = (options: PhaseOptions) =>
 					},
 					cwd,
 				)
-				log(`Created phase '${record.id}' on task '${record.taskId}'`)
+				const { content: _, ...output } = record
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Created phase '${record.id}' on task '${record.taskId}'`,
+				)
 				return
 			}
 			case "list": {
 				if (!taskId) return yield* Effect.fail(new Error("Task ID is required"))
 				const records = yield* phases.list(taskId, cwd)
-				if (options.json) log(JSON.stringify(records, null, 2))
-				else for (const record of records) log(record.id)
+				if (options.json) {
+					log(
+						JSON.stringify(
+							records.map(({ content: _, ...record }) => record),
+							null,
+							2,
+						),
+					)
+				} else for (const record of records) log(record.id)
 				return
 			}
 			case "show": {
@@ -65,9 +79,10 @@ export const phase = (options: PhaseOptions) =>
 					)
 				}
 				const record = yield* phases.show(taskId, phaseId, cwd)
+				const { content: _, ...output } = record
 				log(
 					options.json
-						? JSON.stringify(record.data, null, 2)
+						? JSON.stringify(output, null, 2)
 						: record.content.trimEnd(),
 				)
 				return
@@ -88,6 +103,7 @@ Subcommands:
   show <task> <phase>   Show a phase
 
 Create options:
+  --description <text>  Short description of the phase
   --repo <alias>        Writable repository
   --reference <alias>   Read-only repository; repeatable
   --branch <name>       Working branch
@@ -95,5 +111,5 @@ Create options:
   --depends-on <id>     Phase dependency; repeatable
 
 Options:
-  --json                Output structured JSON
+  --json                Output results as JSON
 `
