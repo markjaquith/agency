@@ -3,7 +3,7 @@
   "entry": [
     "cli.ts",
     "index.ts",
-    "src/commands/{base,clean,completions,emitted,loop,merge,pull,push,rebase,save,source,switch,tasks,template,template-delete,template-list,template-view,use}.ts"
+    "src/commands/{base,clean,completions,emitted,init,loop,merge,pull,push,rebase,save,source,switch,tasks,template,template-delete,template-list,template-view,use}.ts"
   ],
   "ignoreIssues": {
     "src/commands/{emit,task}.ts": ["exports"],

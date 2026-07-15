@@ -101,6 +101,50 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 	"WorkbaseService",
 	{
 		sync: () => ({
+			initialize: (path: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const root = resolve(path)
+					const configPath = join(root, "agency.json")
+
+					if (yield* fs.exists(configPath)) {
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `Agency configuration already exists: ${configPath}`,
+						})
+					}
+
+					yield* fs.createDirectory(root)
+					yield* fs.writeJSON(configPath, { version: 2 })
+					for (const directory of ["repos", "epics", "tasks"]) {
+						yield* fs.createDirectory(join(root, directory))
+					}
+
+					const ignorePath = join(root, ".gitignore")
+					const requiredPatterns = [
+						"/repos/",
+						"/tasks/*/code/",
+						"/tasks/*/phases/*/code/",
+					]
+					const existing = (yield* fs.exists(ignorePath))
+						? yield* fs.readFile(ignorePath)
+						: ""
+					const existingLines = new Set(existing.split(/\r?\n/))
+					const missing = requiredPatterns.filter(
+						(pattern) => !existingLines.has(pattern),
+					)
+					if (missing.length > 0) {
+						const prefix =
+							existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""
+						yield* fs.writeFile(
+							ignorePath,
+							`${existing}${prefix}${missing.join("\n")}\n`,
+						)
+					}
+
+					return root
+				}),
+
 			discover: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService

@@ -2,7 +2,7 @@
 
 import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
-import { init, help as initHelp } from "./src/commands/init"
+import { init, help as initHelp } from "./src/commands/workbase-init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { work, help as workHelp } from "./src/commands/work"
@@ -87,15 +87,15 @@ const VERSION = packageJson.version
 const commands: Record<string, Command> = {
 	init: {
 		name: "init",
-		description: "Initialize agency with template selection",
-		run: async (_args: string[], options: Record<string, any>) => {
+		description: "Initialize an Agency workbase",
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(initHelp)
 				return
 			}
 			await runCommand(
 				init({
-					template: options.template,
+					path: args[0],
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -247,7 +247,7 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
-  init                   Initialize agency with template selection (run first)
+  init [path]            Initialize an Agency workbase
   task [branch]          Initialize template files on a feature branch
   work                   Start working on TASK.md with OpenCode
   pr <subcommand>        Run gh pr with the emitted branch name
@@ -263,7 +263,7 @@ Global Options:
   -v, --verbose          Show verbose output including detailed debugging info
 
 Examples:
-  agency init                         # Initialize with template (run first)
+  agency init                         # Initialize the current directory
   agency task my-feature              # Create 'my-feature' branch from origin/main
   agency work                         # Start working with OpenCode
 
