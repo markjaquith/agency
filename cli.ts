@@ -8,6 +8,7 @@ import { pr, help as prHelp } from "./src/commands/pr"
 import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
+import { repo, help as repoHelp } from "./src/commands/repo"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -20,6 +21,7 @@ import { ClaudeService } from "./src/services/ClaudeService"
 import { FilterRepoService } from "./src/services/FilterRepoService"
 import { FormatterService } from "./src/services/FormatterService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
+import { RepositoryService } from "./src/services/RepositoryService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -33,6 +35,7 @@ const CliLayer = Layer.mergeAll(
 	FilterRepoService.Default,
 	FormatterService.Default,
 	WorkbaseService.Default,
+	RepositoryService.Default,
 )
 
 /**
@@ -127,6 +130,26 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: prHelp,
+	},
+	repo: {
+		name: "repo",
+		description: "Manage workbase repositories",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(repoHelp)
+				return
+			}
+			await runCommand(
+				repo({
+					subcommand: args[0],
+					args: args.slice(1),
+					silent: options.silent,
+					verbose: options.verbose,
+					json: options.json,
+				}),
+			)
+		},
+		help: repoHelp,
 	},
 	task: {
 		name: "task",
@@ -228,6 +251,7 @@ Commands:
   task [branch]          Initialize template files on a feature branch
   work                   Start working on TASK.md with OpenCode
   pr <subcommand>        Run gh pr with the emitted branch name
+  repo <subcommand>      Manage workbase repositories
   status                 Show agency status for this repository
   validate               Validate the current workbase
 

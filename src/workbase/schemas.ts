@@ -6,7 +6,7 @@ const EntityId = NonEmptyString.pipe(
 	Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
 )
 
-const RepositoryAlias = EntityId
+export const RepositoryAlias = EntityId
 
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 

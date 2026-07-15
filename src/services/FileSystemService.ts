@@ -7,6 +7,7 @@ import {
 	readlink,
 	readdir,
 	stat,
+	symlink,
 } from "node:fs/promises"
 import { spawnProcess } from "../utils/process"
 
@@ -28,8 +29,20 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 			exists: (path: string) =>
 				Effect.tryPromise({
 					try: async () => {
-						const file = Bun.file(path)
-						return await file.exists()
+						try {
+							await lstat(path)
+							return true
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								error.code === "ENOENT"
+							) {
+								return false
+							}
+							throw error
+						}
 					},
 					catch: () =>
 						new FileSystemError({
@@ -198,6 +211,16 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 							}),
 					),
 				),
+
+			createSymlink: (target: string, path: string) =>
+				Effect.tryPromise({
+					try: () => symlink(target, path, "dir"),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to create symlink ${path} -> ${target}`,
+							cause: error,
+						}),
+				}),
 
 			/**
 			 * Recursively collect all files in a directory.
