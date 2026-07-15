@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { TaskService } from "../services/TaskService"
 import { createLoggers } from "../utils/effect"
+import { parseRepositoryReferences } from "../workbase/repository-reference"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -39,7 +40,7 @@ export const task = (options: TaskOptions) =>
 						epic: options.epic,
 						multiPhase: options.multiPhase,
 						repo: options.repo,
-						repos: options.references,
+						repos: parseRepositoryReferences(options.references),
 						branch: options.branch,
 						base: options.base,
 					},
@@ -100,7 +101,8 @@ Create options:
   --description <text>  Short description of the task
   --epic <id>           Parent epic
   --repo <alias>        Writable repository
-  --reference <alias>   Read-only repository; repeatable
+  --reference <alias>:<ref>
+                        Read-only repository reference; repeatable
   --branch <name>       Working branch
   --base <name>         Base branch
   --multi-phase         Create a task container for phases

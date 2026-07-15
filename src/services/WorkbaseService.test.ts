@@ -66,7 +66,8 @@ describe("WorkbaseService", () => {
 			`---
 ticketUrl: https://example.com/epics/example
 repos:
-  - agency
+  - repo: agency
+    ref: main
 tasks:
   - id: example-task
 ---
@@ -93,7 +94,8 @@ phases:
 			`---
 repo: agency
 repos:
-  - effect
+  - repo: effect
+    ref: main
 branch: task/example
 base: main
 pr: null
@@ -123,7 +125,8 @@ pr: null
 			`---
 ticketUrl: https://example.com/epics/example
 repos:
-  - missing
+  - repo: missing
+    ref: main
 tasks:
   - id: example-task
     dependsOn:
@@ -140,7 +143,8 @@ tasks:
 ticketUrl: https://example.com/tasks/example
 repo: agency
 repos:
-  - agency
+  - repo: agency
+    ref: main
 branch: task/example
 base: main
 pr: null
@@ -189,5 +193,35 @@ pr: not-a-url
 		expect(report.issues.some((issue) => issue.path.endsWith("TASK.md"))).toBe(
 			true,
 		)
+	})
+
+	test("reports duplicate writable branch ownership", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await mkdir(join(root, "repos/agency"), { recursive: true })
+		for (const id of ["first", "second"]) {
+			await write(
+				root,
+				`tasks/${id}/TASK.md`,
+				`---
+ticketUrl: https://example.com/tasks/${id}
+repo: agency
+branch: task/shared
+base: main
+pr: null
+---
+`,
+			)
+		}
+
+		const report = await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.validate(root))),
+		)
+
+		expect(report.valid).toBe(false)
+		expect(report.issues).toContainEqual({
+			path: "tasks/second/TASK.md",
+			message:
+				"Writable branch 'task/shared' for repository 'agency' is also owned by tasks/first/TASK.md",
+		})
 	})
 })

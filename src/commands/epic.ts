@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { EpicService } from "../services/EpicService"
 import { createLoggers } from "../utils/effect"
+import { parseRepositoryReferences } from "../workbase/repository-reference"
 
 interface EpicOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -24,14 +25,14 @@ export const epic = (options: EpicOptions) =>
 				if (!id || !options.ticketUrl || !options.repos?.length) {
 					return yield* Effect.fail(
 						new Error(
-							"Usage: agency epic create <id> --ticket-url <url> --repo <alias>",
+							"Usage: agency epic create <id> --ticket-url <url> --repo <alias>:<ref>",
 						),
 					)
 				}
 				const record = yield* epics.create(
 					id,
 					options.ticketUrl,
-					options.repos,
+					parseRepositoryReferences(options.repos),
 					cwd,
 					options.description,
 				)
@@ -93,7 +94,7 @@ Subcommands:
 Create options:
   --ticket-url <url>    External ticket URL
   --description <text>  Short description of the epic
-  --repo <alias>        Read-only repository alias; repeatable
+  --repo <alias>:<ref>  Read-only repository reference; repeatable
 
 Options:
   --json                Output results as JSON

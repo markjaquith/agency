@@ -7,6 +7,7 @@ import { EpicService, type EpicRecord } from "./EpicService"
 import {
 	EntityId,
 	TaskFrontmatter,
+	type RepositoryReference,
 	type TaskFrontmatter as TaskData,
 } from "../workbase/schemas"
 import {
@@ -32,7 +33,7 @@ export interface CreateTaskInput {
 	readonly epic?: string
 	readonly multiPhase?: boolean
 	readonly repo?: string
-	readonly repos?: readonly string[]
+	readonly repos?: readonly RepositoryReference[]
 	readonly branch?: string
 	readonly base?: string
 }
@@ -105,7 +106,12 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				}
 
 				const referencedRepos =
-					"repo" in data ? [data.repo, ...(data.repos ?? [])] : []
+					"repo" in data
+						? [
+								data.repo,
+								...(data.repos ?? []).map((reference) => reference.repo),
+							]
+						: []
 				for (const alias of referencedRepos) {
 					if (!(yield* fs.exists(join(root, "repos", alias)))) {
 						return yield* new TaskError({

@@ -91,8 +91,8 @@ execution fields and worktrees.
 agency epic create <id> \
   --ticket-url <url> \
   [--description <text>] \
-  --repo <read-only-alias> \
-  [--repo <another-alias>]
+  --repo <read-only-alias>:<ref> \
+  [--repo <another-alias>:<ref>]
 ```
 
 Epic task ordering and dependencies live in `EPIC.md`. Creating a task with
@@ -106,7 +106,7 @@ agency task create <id> \
   [--description <text>] \
   [--epic <epic-id>] \
   --repo <writable-alias> \
-  [--reference <read-only-alias>] \
+  [--reference <read-only-alias>:<ref>] \
   --branch <branch> \
   --base <base>
 ```
@@ -132,7 +132,7 @@ Then create each phase:
 agency phase create <task-id> <phase-id> \
   [--description <text>] \
   --repo <writable-alias> \
-  [--reference <read-only-alias>] \
+  [--reference <read-only-alias>:<ref>] \
   --branch <branch> \
   --base <base> \
   [--depends-on <phase-id>]
@@ -165,7 +165,8 @@ ticketUrl: https://example.com/tickets/example
 description: Deliver the example outcome.
 repo: application
 repos:
-  - api
+  - repo: api
+    ref: main
 branch: task/example
 base: main
 pr: null
@@ -177,8 +178,10 @@ Follow these invariants:
 - `ticketUrl` belongs to epics and tasks, not phases.
 - `description` is an optional non-empty summary on epics, tasks, and phases.
 - `repo` is the one writable repository for an execution unit.
-- `repos` contains only read-only references and must not repeat `repo`.
+- `repos` contains `{ repo, ref }` read-only references and must not repeat `repo`.
 - Epics may declare `repos` but never `repo`.
+- A writable `(repo, branch)` pair belongs to exactly one task or phase.
+- Use a commit SHA for a read-only `ref` when reproducibility matters.
 
 Commands that print Agency-owned results accept `--json` for machine-readable
 output, including mutations, entity inspection, status, validation, and PR creation.
@@ -202,7 +205,7 @@ agency validate
 Use `--json` when diagnostics will be consumed programmatically. Resolve all
 validation errors before materializing worktrees or creating PRs. Validation
 checks schemas, aliases, backlinks, phase directories, duplicate references,
-unknown dependencies, and dependency cycles.
+duplicate writable branch ownership, unknown dependencies, and dependency cycles.
 
 ## Worktrees And Agent Launch
 
@@ -217,7 +220,13 @@ writable checkout, and replaces the current process with the selected agent.
 The workbase may delegate writable checkout creation through
 `worktreeCreateCommand` in `agency.json`. Do not bypass that command or create a
 parallel worktree manually. Supplemental read-only checkouts are still detached
-Git worktrees managed directly by Agency.
+Git worktrees managed directly by Agency at their declared refs.
+
+Agency inspects `git worktree list --porcelain` before materializing. It reuses a
+writable checkout only when both path and branch match, and reuses a reference
+checkout only when its commit matches the declared ref. If a branch is checked
+out elsewhere, choose a different branch or remove the conflicting worktree;
+never force a second checkout of the branch.
 
 Do not run `agency work` from inside an active agent session unless the user
 explicitly wants to launch a nested/replacement agent process. If already

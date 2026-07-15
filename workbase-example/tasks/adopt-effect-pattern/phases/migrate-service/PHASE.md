@@ -1,7 +1,8 @@
 ---
 repo: agency
 repos:
-  - effect
+  - repo: effect
+    ref: main
 branch: task/adopt-effect-pattern-migration
 base: task/adopt-effect-pattern-contract
 pr: null

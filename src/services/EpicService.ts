@@ -3,7 +3,11 @@ import { Data, Effect, Either } from "effect"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
-import { EpicFrontmatter, EntityId } from "../workbase/schemas"
+import {
+	EpicFrontmatter,
+	EntityId,
+	type RepositoryReference,
+} from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
 	parseFrontmatter,
@@ -44,7 +48,7 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 		create: (
 			id: string,
 			ticketUrl: string,
-			repos: readonly string[],
+			repos: readonly RepositoryReference[],
 			startPath: string = process.cwd(),
 			description?: string,
 		) =>
@@ -68,7 +72,7 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 					})
 				}
 
-				for (const alias of data.repos) {
+				for (const { repo: alias } of data.repos) {
 					if (!(yield* fs.exists(join(root, "repos", alias)))) {
 						return yield* new EpicError({
 							message: `Unknown repository alias '${alias}'`,

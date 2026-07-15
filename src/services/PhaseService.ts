@@ -8,6 +8,7 @@ import {
 	EntityId,
 	PhaseFrontmatter,
 	type PhaseFrontmatter as PhaseData,
+	type RepositoryReference,
 } from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
@@ -31,7 +32,7 @@ export interface CreatePhaseInput {
 	readonly id: string
 	readonly description?: string
 	readonly repo: string
-	readonly repos?: readonly string[]
+	readonly repos?: readonly RepositoryReference[]
 	readonly branch: string
 	readonly base: string
 	readonly dependsOn?: readonly string[]
@@ -126,9 +127,14 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					const existingExecution = isMultiPhase ? undefined : task.data
 					const aliases = new Set([
 						data.repo,
-						...(data.repos ?? []),
+						...(data.repos ?? []).map((reference) => reference.repo),
 						...(existingExecution
-							? [existingExecution.repo, ...(existingExecution.repos ?? [])]
+							? [
+									existingExecution.repo,
+									...(existingExecution.repos ?? []).map(
+										(reference) => reference.repo,
+									),
+								]
 							: []),
 					])
 					for (const alias of aliases) {
@@ -199,7 +205,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							yield* fs.moveDirectory(oldCodePath, firstCodePath)
 							for (const alias of [
 								firstData.repo,
-								...(firstData.repos ?? []),
+								...(firstData.repos ?? []).map((reference) => reference.repo),
 							]) {
 								const checkoutPath = join(firstCodePath, alias)
 								if (!(yield* fs.isDirectory(checkoutPath))) continue

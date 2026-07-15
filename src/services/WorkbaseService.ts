@@ -344,15 +344,18 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						const data = record.data
 						const writable = "repo" in data ? data.repo : undefined
 						const references = "repos" in data ? (data.repos ?? []) : []
+						const referenceAliases = references.map(
+							(reference) => reference.repo,
+						)
 
-						if (writable && references.includes(writable)) {
+						if (writable && referenceAliases.includes(writable)) {
 							issue(
 								record.path,
 								`Repository '${writable}' cannot also be a reference`,
 							)
 						}
 
-						const all = [writable, ...references].filter(
+						const all = [writable, ...referenceAliases].filter(
 							(alias): alias is string => alias !== undefined,
 						)
 						for (const alias of new Set(all)) {
@@ -361,8 +364,28 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							}
 						}
 
-						if (new Set(references).size !== references.length) {
+						if (new Set(referenceAliases).size !== referenceAliases.length) {
 							issue(record.path, "Repository references must be unique")
+						}
+					}
+
+					const branchOwners = new Map<
+						string,
+						DocumentRecord<TaskData | PhaseData>
+					>()
+					const validateBranchOwnership = (
+						record: DocumentRecord<TaskData | PhaseData>,
+					) => {
+						if (!("repo" in record.data)) return
+						const key = `${record.data.repo}\u0000${record.data.branch}`
+						const owner = branchOwners.get(key)
+						if (owner) {
+							issue(
+								record.path,
+								`Writable branch '${record.data.branch}' for repository '${record.data.repo}' is also owned by ${relative(root, owner.path)}`,
+							)
+						} else {
+							branchOwners.set(key, record)
 						}
 					}
 
@@ -395,6 +418,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 
 					for (const task of tasks.values()) {
 						validateRepositories(task)
+						validateBranchOwnership(task)
 						if (task.data.epic) {
 							const parent = epics.get(task.data.epic)
 							if (!parent) {
@@ -446,6 +470,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 
 					for (const phase of phases.values()) {
 						validateRepositories(phase)
+						validateBranchOwnership(phase)
 					}
 
 					issues.sort((a, b) =>

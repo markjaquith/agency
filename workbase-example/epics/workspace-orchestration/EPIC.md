@@ -2,8 +2,10 @@
 ticketUrl: https://example.com/tickets/workspace-orchestration
 description: Coordinate the first pass at workbase-aware task orchestration.
 repos:
-  - agency
-  - effect
+  - repo: agency
+    ref: main
+  - repo: effect
+    ref: main
 tasks:
   - id: define-workbase-config
   - id: discover-task-documents

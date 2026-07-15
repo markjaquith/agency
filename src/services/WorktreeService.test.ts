@@ -20,11 +20,12 @@ const git = async (args: string[], cwd?: string) => {
 
 describe("WorktreeService", () => {
 	let root: string
+	let source: string
 
 	beforeEach(async () => {
 		root = await createTempDir()
 		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
-		const source = join(root, "source")
+		source = join(root, "source")
 		await mkdir(source, { recursive: true })
 		await git(["init", "--initial-branch=main"], source)
 		await git(["config", "user.email", "test@example.com"], source)
@@ -48,7 +49,7 @@ describe("WorktreeService", () => {
 							id: "example",
 							ticketUrl: "https://example.com/task",
 							repo: "agency",
-							repos: ["effect"],
+							repos: [{ repo: "effect", ref: "main" }],
 							branch: "task/example",
 							base: "main",
 						},
@@ -190,6 +191,188 @@ describe("WorktreeService", () => {
 			{ stdout: "pipe", stderr: "pipe" },
 		)
 		expect(status.exitCode).toBe(0)
+	})
+
+	test("rejects a writable branch checked out in another worktree", async () => {
+		const repository = join(root, "repos/agency")
+		await git(["-C", repository, "branch", "task/shared", "main"])
+		const outside = join(root, "outside")
+		await git(["-C", repository, "worktree", "add", outside, "task/shared"])
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "conflict",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/shared",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("conflict", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("already checked out at")
+	})
+
+	test("rejects duplicate Agency ownership before materializing", async () => {
+		for (const id of ["first-owner", "second-owner"]) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: `https://example.com/${id}`,
+								repo: "agency",
+								branch: "task/shared-owner",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+		}
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("first-owner", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("also owned by tasks/first-owner/TASK.md")
+	})
+
+	test("rejects an existing Agency checkout on the wrong branch", async () => {
+		const repository = join(root, "repos/agency")
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "wrong",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/expected",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await git(["-C", repository, "branch", "task/wrong", "main"])
+		const checkout = join(root, "tasks/wrong/code/agency")
+		await mkdir(join(root, "tasks/wrong/code"), { recursive: true })
+		await git(["-C", repository, "worktree", "add", checkout, "task/wrong"])
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("wrong", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("is not registered to branch 'task/expected'")
+	})
+
+	test("rejects a reused reference checkout after its ref advances", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "pinned-reference",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/pinned-reference",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("pinned-reference", undefined, root),
+				),
+			),
+		)
+
+		await Bun.write(join(source, "README.md"), "updated\n")
+		await git(["add", "README.md"], source)
+		await git(["-c", "commit.gpgsign=false", "commit", "-m", "update"], source)
+		await git(["push", join(root, "repos/effect"), "main"], source)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("pinned-reference", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("does not match reference 'main'")
+	})
+
+	test("rejects a reference checkout attached to a branch", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "attached-reference",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/attached-reference",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const checkout = join(root, "tasks/attached-reference/code/effect")
+		await mkdir(join(root, "tasks/attached-reference/code"), {
+			recursive: true,
+		})
+		await git([
+			"-C",
+			join(root, "repos/effect"),
+			"worktree",
+			"add",
+			checkout,
+			"main",
+		])
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("attached-reference", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("is attached to branch 'main'")
 	})
 
 	test("supports Worktrunk as the configured command", async () => {

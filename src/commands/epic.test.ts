@@ -33,7 +33,7 @@ describe("epic command", () => {
 					subcommand: "create",
 					args: ["example"],
 					ticketUrl: "https://example.com/epic",
-					repos: ["agency"],
+					repos: ["agency:main"],
 					cwd: root,
 					json: true,
 				}),
@@ -45,7 +45,7 @@ describe("epic command", () => {
 			path: join(root, "epics/example/EPIC.md"),
 			data: {
 				ticketUrl: "https://example.com/epic",
-				repos: ["agency"],
+				repos: [{ repo: "agency", ref: "main" }],
 				tasks: [],
 			},
 		})
@@ -57,7 +57,7 @@ describe("epic command", () => {
 				subcommand: "create",
 				args: ["example"],
 				ticketUrl: "https://example.com/epic",
-				repos: ["agency"],
+				repos: ["agency:main"],
 				cwd: root,
 				silent: true,
 			}),
@@ -74,7 +74,7 @@ describe("epic command", () => {
 				path: join(root, "epics/example/EPIC.md"),
 				data: {
 					ticketUrl: "https://example.com/epic",
-					repos: ["agency"],
+					repos: [{ repo: "agency", ref: "main" }],
 					tasks: [],
 				},
 			},
@@ -95,7 +95,7 @@ describe("epic command", () => {
 			path: join(root, "epics/example/EPIC.md"),
 			data: {
 				ticketUrl: "https://example.com/epic",
-				repos: ["agency"],
+				repos: [{ repo: "agency", ref: "main" }],
 				tasks: [],
 			},
 		})

@@ -7,7 +7,7 @@ describe("body-of-work descriptions", () => {
 		const epic = Schema.decodeUnknownSync(EpicFrontmatter)({
 			ticketUrl: "https://example.com/epic",
 			description: "Coordinate the rollout.",
-			repos: ["agency"],
+			repos: [{ repo: "agency", ref: "main" }],
 			tasks: [],
 		})
 		const singlePhaseTask = Schema.decodeUnknownSync(TaskFrontmatter)({
@@ -40,7 +40,7 @@ describe("body-of-work descriptions", () => {
 	test("allows omitted descriptions for existing documents", () => {
 		const epic = Schema.decodeUnknownSync(EpicFrontmatter)({
 			ticketUrl: "https://example.com/epic",
-			repos: ["agency"],
+			repos: [{ repo: "agency", ref: "main" }],
 			tasks: [],
 		})
 

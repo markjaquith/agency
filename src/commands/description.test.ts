@@ -24,7 +24,7 @@ describe("create command descriptions", () => {
 				args: ["rollout"],
 				ticketUrl: "https://example.com/epic",
 				description: "Coordinate the rollout.",
-				repos: ["agency"],
+				repos: ["agency:main"],
 				cwd: root,
 				silent: true,
 			}),

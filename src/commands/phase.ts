@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { PhaseService } from "../services/PhaseService"
 import { createLoggers } from "../utils/effect"
+import { parseRepositoryReferences } from "../workbase/repository-reference"
 
 interface PhaseOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -44,7 +45,7 @@ export const phase = (options: PhaseOptions) =>
 						id: phaseId,
 						description: options.description,
 						repo: options.repo,
-						repos: options.references,
+						repos: parseRepositoryReferences(options.references),
 						branch: options.branch,
 						base: options.base,
 						dependsOn: options.dependsOn,
@@ -107,7 +108,8 @@ Subcommands:
 Create options:
   --description <text>  Short description of the phase
   --repo <alias>        Writable repository
-  --reference <alias>   Read-only repository; repeatable
+  --reference <alias>:<ref>
+                        Read-only repository reference; repeatable
   --branch <name>       Working branch
   --base <name>         Base branch
   --depends-on <id>     Phase dependency; repeatable

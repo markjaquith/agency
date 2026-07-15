@@ -25,7 +25,7 @@ describe("EpicService", () => {
 					service.create(
 						"workspace-orchestration",
 						"https://example.com/tickets/epic",
-						["agency"],
+						[{ repo: "agency", ref: "main" }],
 						root,
 					),
 				),
@@ -60,7 +60,7 @@ describe("EpicService", () => {
 						service.create(
 							"example",
 							"https://example.com/tickets/epic",
-							["missing"],
+							[{ repo: "missing", ref: "main" }],
 							root,
 						),
 					),

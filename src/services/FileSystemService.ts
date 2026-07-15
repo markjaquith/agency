@@ -6,6 +6,7 @@ import {
 	lstat,
 	readlink,
 	readdir,
+	realpath,
 	rename,
 	stat,
 	symlink,
@@ -71,6 +72,16 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					catch: () =>
 						new FileSystemError({
 							message: `Failed to check if path is directory: ${path}`,
+						}),
+				}),
+
+			realPath: (path: string) =>
+				Effect.tryPromise({
+					try: () => realpath(path),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to resolve path: ${path}`,
+							cause: error,
 						}),
 				}),
 

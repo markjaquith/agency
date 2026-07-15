@@ -27,7 +27,7 @@ describe("task and phase services", () => {
 					service.create(
 						"example",
 						"https://example.com/epic",
-						["agency"],
+						[{ repo: "agency", ref: "main" }],
 						root,
 					),
 				),
@@ -42,7 +42,7 @@ describe("task and phase services", () => {
 							ticketUrl: "https://example.com/task",
 							epic: "example",
 							repo: "agency",
-							repos: ["effect"],
+							repos: [{ repo: "effect", ref: "main" }],
 							branch: "task/one",
 							base: "main",
 						},
@@ -125,7 +125,7 @@ describe("task and phase services", () => {
 							ticketUrl: "https://example.com/task",
 							description: "Deliver the complete task.",
 							repo: "agency",
-							repos: ["effect"],
+							repos: [{ repo: "effect", ref: "main" }],
 							branch: "task/single",
 							base: "main",
 						},
@@ -208,7 +208,7 @@ describe("task and phase services", () => {
 		)
 		expect(firstPhase.data).toEqual({
 			repo: "agency",
-			repos: ["effect"],
+			repos: [{ repo: "effect", ref: "main" }],
 			branch: "task/single",
 			base: "main",
 			pr: "https://github.com/example/agency/pull/42",

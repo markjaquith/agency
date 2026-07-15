@@ -10,6 +10,11 @@ export const EntityId = NonEmptyString.pipe(Schema.pattern(IdPattern))
 
 export const RepositoryAlias = NonEmptyString.pipe(Schema.pattern(IdPattern))
 
+export const RepositoryReference = Schema.Struct({
+	repo: RepositoryAlias,
+	ref: NonEmptyString,
+})
+
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 
 const GitHubPullRequestUrl = NonEmptyString.pipe(
@@ -28,7 +33,7 @@ export const Dependency = Schema.Struct({
 
 const ExecutionUnit = {
 	repo: RepositoryAlias,
-	repos: Schema.optional(Schema.Array(RepositoryAlias)),
+	repos: Schema.optional(Schema.Array(RepositoryReference)),
 	branch: NonEmptyString,
 	base: NonEmptyString,
 	pr: Schema.NullOr(GitHubPullRequestUrl),
@@ -37,7 +42,7 @@ const ExecutionUnit = {
 export const EpicFrontmatter = Schema.Struct({
 	ticketUrl: Url,
 	description: Description,
-	repos: Schema.NonEmptyArray(RepositoryAlias),
+	repos: Schema.NonEmptyArray(RepositoryReference),
 	tasks: Schema.Array(Dependency),
 })
 
@@ -67,6 +72,7 @@ export const PhaseFrontmatter = Schema.Struct({
 
 export type WorkbaseConfig = Schema.Schema.Type<typeof WorkbaseConfig>
 export type Dependency = Schema.Schema.Type<typeof Dependency>
+export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

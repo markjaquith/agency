@@ -125,8 +125,8 @@ path settings:
 ```
 
 The configured command applies only to the writable checkout. Supplemental
-read-only repositories remain detached Git worktrees so they do not acquire
-writable branches.
+read-only repositories remain detached Git worktrees at their declared refs so
+they do not acquire writable branches.
 
 ## Frontmatter
 
@@ -137,8 +137,10 @@ writable branches.
 ticketUrl: https://example.com/tickets/checkout
 description: Coordinate the checkout experience across frontend and backend.
 repos:
-  - frontend
-  - backend
+  - repo: frontend
+    ref: main
+  - repo: backend
+    ref: main
 tasks:
   - id: backend-api
   - id: frontend-ui
@@ -156,7 +158,8 @@ description: Refresh user-facing checkout copy.
 epic: checkout
 repo: frontend
 repos:
-  - backend
+  - repo: backend
+    ref: main
 branch: task/refresh-copy
 base: main
 pr: null
@@ -185,7 +188,8 @@ Each listed phase has a `phases/{id}/PHASE.md` containing its execution fields:
 description: Build the checkout interface against the new backend API.
 repo: frontend
 repos:
-  - backend
+  - repo: backend
+    ref: main
 branch: task/checkout-ui
 base: task/checkout-api
 pr: null
@@ -208,7 +212,7 @@ agency task create refresh-copy \
   --ticket-url https://example.com/tickets/refresh-copy \
   --description "Refresh user-facing checkout copy" \
   --repo frontend \
-  --reference backend \
+  --reference backend:main \
   --branch task/refresh-copy \
   --base main
 
@@ -238,7 +242,7 @@ repository mutations, entity creation/list/show, status, validation, and PR crea
 
 ```text
 agency epic create <id> --ticket-url <url> [--description <text>] [--json]
-  --repo <alias> [--repo <alias>...]
+  --repo <alias>:<ref> [--repo <alias>:<ref>...]
 agency epic list [--json]
 agency epic show <id> [--json]
 ```
@@ -253,7 +257,7 @@ Create a single-phase task:
 ```text
 agency task create <id> --ticket-url <url> --repo <alias>
   --branch <name> --base <name>
-  [--description <text>] [--epic <id>] [--reference <alias>...] [--json]
+  [--description <text>] [--epic <id>] [--reference <alias>:<ref>...] [--json]
 ```
 
 Create a multi-phase task container:
@@ -289,7 +293,7 @@ phase. Dependencies remain explicit through `--depends-on`.
 ```text
 agency phase create <task-id> <phase-id>
   --repo <alias> --branch <name> --base <name>
-  [--description <text>] [--reference <alias>...]
+  [--description <text>] [--reference <alias>:<ref>...]
   [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
 
 agency phase list <task-id> [--json]
@@ -306,6 +310,18 @@ agency pr create <task-id> [phase-id] [--draft] [--json]
 `agency work` fetches repositories, creates or reuses worktrees under `code/`,
 and launches an agent in the writable checkout with absolute task and phase
 context paths.
+
+Each writable `(repo, branch)` pair may belong to only one task or phase. Agency
+validation reports duplicate ownership, and `agency work` checks Git's worktree
+registry before creating or reusing a checkout. It reuses only an exact
+path/branch match; if the branch is checked out elsewhere or the target path has
+the wrong branch, the command fails with the conflicting path instead of forcing
+another checkout.
+
+Read-only references use `<alias>:<ref>` on the CLI and `{ repo, ref }` in YAML.
+Agency resolves the ref to a commit and creates a detached worktree. Existing
+reference worktrees are reused only while their commit still matches the declared
+ref; use a commit SHA as `ref` when reproducibility matters.
 
 `agency pr create` requires a clean writable worktree. It pushes the branch,
 runs `gh pr create --fill`, and writes the returned GitHub PR URL into `pr` in
