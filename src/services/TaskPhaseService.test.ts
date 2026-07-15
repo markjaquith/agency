@@ -6,6 +6,7 @@ import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { EpicService } from "./EpicService"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
+import { PullRequestService } from "./PullRequestService"
 
 describe("task and phase services", () => {
 	let root: string
@@ -114,7 +115,7 @@ describe("task and phase services", () => {
 		expect(phases.map((phase) => phase.id)).toEqual(["first", "second"])
 	})
 
-	test("does not implicitly convert a single-phase task", async () => {
+	test("converts a single-phase task when the existing phase ID is provided", async () => {
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -122,10 +123,24 @@ describe("task and phase services", () => {
 						{
 							id: "single",
 							ticketUrl: "https://example.com/task",
+							description: "Deliver the complete task.",
 							repo: "agency",
+							repos: ["effect"],
 							branch: "task/single",
 							base: "main",
 						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"single",
+						undefined,
+						"https://github.com/example/agency/pull/42",
 						root,
 					),
 				),
@@ -148,6 +163,55 @@ describe("task and phase services", () => {
 					),
 				),
 			),
-		).rejects.toThrow("conversion is not implemented")
+		).rejects.toThrow("requires --first-phase")
+
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "single",
+							id: "extra",
+							firstPhase: "implementation",
+							repo: "agency",
+							branch: "task/extra",
+							base: "main",
+							dependsOn: ["implementation"],
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("single", root)),
+			),
+		)
+		expect(task.data).toEqual({
+			ticketUrl: "https://example.com/task",
+			description: "Deliver the complete task.",
+			phases: [
+				{ id: "implementation" },
+				{ id: "extra", dependsOn: ["implementation"] },
+			],
+		})
+		expect(task.content).toContain("Describe the task outcome.")
+
+		const firstPhase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.show("single", "implementation", root),
+				),
+			),
+		)
+		expect(firstPhase.data).toEqual({
+			repo: "agency",
+			repos: ["effect"],
+			branch: "task/single",
+			base: "main",
+			pr: "https://github.com/example/agency/pull/42",
+		})
 	})
 })

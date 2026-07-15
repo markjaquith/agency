@@ -6,6 +6,7 @@ import {
 	lstat,
 	readlink,
 	readdir,
+	rename,
 	stat,
 	symlink,
 } from "node:fs/promises"
@@ -125,6 +126,16 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					catch: (error) =>
 						new FileSystemError({
 							message: `Failed to create directory: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			moveDirectory: (from: string, to: string) =>
+				Effect.tryPromise({
+					try: () => rename(from, to),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to move directory from ${from} to ${to}`,
 							cause: error,
 						}),
 				}),

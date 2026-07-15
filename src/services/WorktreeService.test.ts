@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { TaskService } from "./TaskService"
+import { PhaseService } from "./PhaseService"
 import { WorktreeService } from "./WorktreeService"
 
 const git = async (args: string[], cwd?: string) => {
@@ -121,6 +122,74 @@ describe("WorktreeService", () => {
 		expect(
 			await Bun.file(join(workspace.writablePath, "README.md")).text(),
 		).toBe("example\n")
+	})
+
+	test("moves and repairs an existing worktree when converting a task", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "promoted",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/promoted",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const originalWorkspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("promoted", undefined, root),
+				),
+			),
+		)
+
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "promoted",
+							id: "follow-up",
+							firstPhase: "implementation",
+							repo: "agency",
+							branch: "task/follow-up",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		expect(
+			await Bun.file(
+				join(originalWorkspace.writablePath, "README.md"),
+			).exists(),
+		).toBe(false)
+		const movedWorkspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("promoted", "implementation", root),
+				),
+			),
+		)
+		expect(movedWorkspace.writablePath).toBe(
+			join(root, "tasks/promoted/phases/implementation/code/agency"),
+		)
+		expect(
+			await Bun.file(join(movedWorkspace.writablePath, "README.md")).text(),
+		).toBe("example\n")
+		const status = Bun.spawnSync(
+			["git", "-C", movedWorkspace.writablePath, "status", "--porcelain"],
+			{ stdout: "pipe", stderr: "pipe" },
+		)
+		expect(status.exitCode).toBe(0)
 	})
 
 	test("supports Worktrunk as the configured command", async () => {

@@ -160,6 +160,7 @@ const commands: Record<string, Command> = {
 					branch: options.branch,
 					base: options.base,
 					dependsOn: options["depends-on"],
+					firstPhase: options["first-phase"],
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -400,6 +401,7 @@ try {
 			base: { type: "string" },
 			"multi-phase": { type: "boolean" },
 			"depends-on": { type: "string", multiple: true },
+			"first-phase": { type: "string" },
 			draft: { type: "boolean" },
 			opencode: {
 				type: "boolean",

@@ -81,8 +81,9 @@ outcome. Use a multi-phase task when the outcome requires multiple intended PRs,
 possibly across repositories or with sequencing dependencies. Use an epic when
 several independently meaningful tasks need orchestration.
 
-Do not add a phase to a single-phase task: automatic conversion is not
-supported. If phases are known up front, create a multi-phase task.
+If phases are known up front, create a multi-phase task. To add a phase later,
+use `--first-phase <id>` to name the phase created from the task's existing
+execution fields and worktrees.
 
 ## Create Epics
 
@@ -139,6 +140,20 @@ agency phase create <task-id> <phase-id> \
 
 Repeat `--reference` and `--depends-on` when needed. Phase worktrees live under
 `tasks/{task-id}/phases/{phase-id}/code/{alias}`.
+
+Convert an existing single-phase task while adding another phase:
+
+```bash
+agency phase create <task-id> <new-phase-id> \
+  --first-phase <existing-phase-id> \
+  --repo <writable-alias> \
+  --branch <new-branch> \
+  --base <base> \
+  [--depends-on <existing-phase-id>]
+```
+
+The conversion preserves task-level metadata and prose, moves execution metadata
+into the named existing phase, and relocates any materialized worktrees.
 
 ## Frontmatter Rules
 

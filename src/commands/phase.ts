@@ -12,6 +12,7 @@ interface PhaseOptions extends BaseCommandOptions {
 	readonly branch?: string
 	readonly base?: string
 	readonly dependsOn?: readonly string[]
+	readonly firstPhase?: string
 	readonly json?: boolean
 }
 
@@ -47,6 +48,7 @@ export const phase = (options: PhaseOptions) =>
 						branch: options.branch,
 						base: options.base,
 						dependsOn: options.dependsOn,
+						firstPhase: options.firstPhase,
 					},
 					cwd,
 				)
@@ -109,6 +111,7 @@ Create options:
   --branch <name>       Working branch
   --base <name>         Base branch
   --depends-on <id>     Phase dependency; repeatable
+  --first-phase <id>    Existing execution phase ID when converting a task
 
 Options:
   --json                Output results as JSON

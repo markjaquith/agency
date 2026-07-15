@@ -270,8 +270,19 @@ agency task list [--json]
 agency task show <id> [--json]
 ```
 
-Adding a phase to an existing single-phase task is intentionally not automated.
-Create the task with `--multi-phase` when phases are known in advance.
+To add a phase to an existing single-phase task, name the phase that will own
+the task's current execution fields with `--first-phase`:
+
+```text
+agency phase create refresh-copy verification
+  --first-phase implementation
+  --repo frontend --branch task/refresh-copy-verification --base main
+  --depends-on implementation
+```
+
+Agency converts `TASK.md` to the multi-phase shape, creates both phase documents,
+and moves existing worktrees from the task's `code/` directory into the first
+phase. Dependencies remain explicit through `--depends-on`.
 
 ### Phases
 
@@ -279,7 +290,7 @@ Create the task with `--multi-phase` when phases are known in advance.
 agency phase create <task-id> <phase-id>
   --repo <alias> --branch <name> --base <name>
   [--description <text>] [--reference <alias>...]
-  [--depends-on <phase-id>...] [--json]
+  [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
 
 agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]

@@ -159,4 +159,48 @@ describe("task and phase command JSON output", () => {
 			data: { repo: "agency", branch: "task/another-first", base: "main" },
 		})
 	})
+
+	test("converts a single-phase task with an explicit first phase ID", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["single"],
+				ticketUrl: "https://example.com/single",
+				repo: "agency",
+				branch: "task/single",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["single", "follow-up"],
+				firstPhase: "implementation",
+				repo: "agency",
+				branch: "task/follow-up",
+				base: "main",
+				dependsOn: ["implementation"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				task({
+					subcommand: "show",
+					args: ["single"],
+					cwd: root,
+					json: true,
+				}),
+			),
+		)
+		expect(JSON.parse(logs[0]!).data.phases).toEqual([
+			{ id: "implementation" },
+			{ id: "follow-up", dependsOn: ["implementation"] },
+		])
+	})
 })
