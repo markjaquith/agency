@@ -94,7 +94,7 @@ Available placeholders are:
 
 - `{repo}`: absolute repository alias path under `repos/`
 - `{worktree}`: absolute checkout path Agency requires
-- `{branch}`: execution branch, prepared by Agency before the command runs
+- `{branch}`: execution branch the custom command must create or check out
 - `{base}`: configured execution base
 
 `{repo}` and `{worktree}` are required. Agency invokes the command directly
@@ -116,6 +116,9 @@ path settings:
 		"--config-set",
 		"worktree-path=\"{worktree}\"",
 		"switch",
+		"--create",
+		"--base",
+		"{base}",
 		"{branch}",
 		"--no-cd",
 		"--format",
@@ -123,6 +126,10 @@ path settings:
 	]
 }
 ```
+
+Custom commands own writable branch creation. Agency checks for conflicting
+worktrees first, invokes the command only when the branch is not checked out,
+and verifies that `{worktree}` exists afterward.
 
 The configured command applies only to the writable checkout. Supplemental
 read-only repositories remain detached Git worktrees at their declared refs so

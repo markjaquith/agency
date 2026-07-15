@@ -194,36 +194,6 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								})
 							}
 
-							const branchExists = yield* fs.runCommand(
-								[
-									"git",
-									"-C",
-									repositoryPath,
-									"show-ref",
-									"--verify",
-									branchRef,
-								],
-								{ captureOutput: true },
-							)
-							if (branchExists.exitCode !== 0) {
-								const createBranch = yield* fs.runCommand(
-									[
-										"git",
-										"-C",
-										repositoryPath,
-										"branch",
-										checkout.branch,
-										execution.base,
-									],
-									{ captureOutput: true },
-								)
-								if (createBranch.exitCode !== 0) {
-									return yield* new WorktreeError({
-										message: `Failed to create branch '${checkout.branch}': ${createBranch.stderr}`,
-									})
-								}
-							}
-
 							let args: string[]
 							let env: Record<string, string> | undefined
 							if (config.worktreeCreateCommand) {
@@ -248,6 +218,35 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								}
 								env = worktreeCommandEnvironment(variables)
 							} else {
+								const branchExists = yield* fs.runCommand(
+									[
+										"git",
+										"-C",
+										repositoryPath,
+										"show-ref",
+										"--verify",
+										branchRef,
+									],
+									{ captureOutput: true },
+								)
+								if (branchExists.exitCode !== 0) {
+									const createBranch = yield* fs.runCommand(
+										[
+											"git",
+											"-C",
+											repositoryPath,
+											"branch",
+											checkout.branch,
+											execution.base,
+										],
+										{ captureOutput: true },
+									)
+									if (createBranch.exitCode !== 0) {
+										return yield* new WorktreeError({
+											message: `Failed to create branch '${checkout.branch}': ${createBranch.stderr}`,
+										})
+									}
+								}
 								args = [
 									"git",
 									"-C",
