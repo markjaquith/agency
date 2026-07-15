@@ -80,7 +80,12 @@ export const phase = (options: PhaseOptions) =>
 	})
 
 export const help = `
-Usage: agency phase <create|list|show> <task-id> [phase-id]
+Usage: agency phase <subcommand> <task-id> [phase-id]
+
+Subcommands:
+  create <task> <phase> Create a phase
+  list <task>           List task phases
+  show <task> <phase>   Show a phase
 
 Create options:
   --repo <alias>        Writable repository
@@ -88,4 +93,7 @@ Create options:
   --branch <name>       Working branch
   --base <name>         Base branch
   --depends-on <id>     Phase dependency; repeatable
+
+Options:
+  --json                Output structured JSON
 `

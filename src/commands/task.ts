@@ -80,7 +80,12 @@ export const task = (options: TaskOptions) =>
 	})
 
 export const help = `
-Usage: agency task <create|list|show>
+Usage: agency task <subcommand>
+
+Subcommands:
+  create <id>           Create a task
+  list                  List tasks
+  show <id>             Show a task
 
 Create options:
   --ticket-url <url>    External ticket URL
@@ -90,4 +95,7 @@ Create options:
   --branch <name>       Working branch
   --base <name>         Base branch
   --multi-phase         Create a task container for phases
+
+Options:
+  --json                Output structured JSON
 `
