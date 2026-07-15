@@ -3,7 +3,7 @@
   "entry": [
     "cli.ts",
     "index.ts",
-    "src/commands/{base,clean,completions,emit,emitted,init,loop,merge,pull,push,rebase,save,source,switch,task,tasks,template,template-delete,template-list,template-view,use}.ts",
+    "src/commands/{base,clean,completions,emit,emitted,init,loop,merge,pull,push,rebase,save,source,switch,task,tasks,template,template-delete,template-list,template-view,use,work}.ts",
     "src/{constants,errors}.ts",
     "src/utils/{git-path,spinner}.ts"
   ],

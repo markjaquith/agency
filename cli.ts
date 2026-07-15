@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect"
 import { init, help as initHelp } from "./src/commands/workbase-init"
 import { task, help as taskHelp } from "./src/commands/task-v2"
 import { pr, help as prHelp } from "./src/commands/pr"
-import { work, help as workHelp } from "./src/commands/work"
+import { work, help as workHelp } from "./src/commands/work-v2"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { repo, help as repoHelp } from "./src/commands/repo"
@@ -27,6 +27,7 @@ import { RepositoryService } from "./src/services/RepositoryService"
 import { EpicService } from "./src/services/EpicService"
 import { TaskService } from "./src/services/TaskService"
 import { PhaseService } from "./src/services/PhaseService"
+import { WorktreeService } from "./src/services/WorktreeService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -44,6 +45,7 @@ const CliLayer = Layer.mergeAll(
 	EpicService.Default,
 	TaskService.Default,
 	PhaseService.Default,
+	WorktreeService.Default,
 )
 
 /**
@@ -239,18 +241,14 @@ const commands: Record<string, Command> = {
 				return
 			}
 
-			// Extract extra args (anything after --)
-			// Note: parseArgs with strict:false and allowPositionals:true will put
-			// args after -- in the positionals array
-			const extraArgs = args.length > 0 ? args : undefined
-
 			await runCommand(
 				work({
+					taskId: args[0],
+					phaseId: args[1],
 					silent: options.silent,
 					verbose: options.verbose,
 					opencode: options.opencode,
 					claude: options.claude,
-					extraArgs,
 				}),
 			)
 		},

@@ -389,6 +389,7 @@ import { RepositoryService } from "./services/RepositoryService"
 import { EpicService } from "./services/EpicService"
 import { TaskService } from "./services/TaskService"
 import { PhaseService } from "./services/PhaseService"
+import { WorktreeService } from "./services/WorktreeService"
 
 // Re-export mock utilities for tests
 export {
@@ -414,6 +415,7 @@ const TestLayer = Layer.mergeAll(
 	EpicService.Default,
 	TaskService.Default,
 	PhaseService.Default,
+	WorktreeService.Default,
 )
 
 // Create test layer with mock filter-repo (for tests that don't need real filtering)
@@ -432,6 +434,7 @@ const TestLayerWithMockFilterRepo = Layer.mergeAll(
 	EpicService.Default,
 	TaskService.Default,
 	PhaseService.Default,
+	WorktreeService.Default,
 )
 
 export async function runTestEffect<A, E>(
