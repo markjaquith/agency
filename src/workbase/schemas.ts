@@ -46,7 +46,7 @@ const SinglePhaseTaskFrontmatter = Schema.Struct({
 const MultiPhaseTaskFrontmatter = Schema.Struct({
 	ticketUrl: Url,
 	epic: Schema.optional(EntityId),
-	phases: Schema.NonEmptyArray(Dependency),
+	phases: Schema.Array(Dependency),
 })
 
 export const TaskFrontmatter = Schema.Union(

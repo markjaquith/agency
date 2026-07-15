@@ -3,13 +3,14 @@
 import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
 import { init, help as initHelp } from "./src/commands/workbase-init"
-import { task, help as taskHelp } from "./src/commands/task"
+import { task, help as taskHelp } from "./src/commands/task-v2"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
+import { phase, help as phaseHelp } from "./src/commands/phase"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -24,6 +25,8 @@ import { FormatterService } from "./src/services/FormatterService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
 import { RepositoryService } from "./src/services/RepositoryService"
 import { EpicService } from "./src/services/EpicService"
+import { TaskService } from "./src/services/TaskService"
+import { PhaseService } from "./src/services/PhaseService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -39,6 +42,8 @@ const CliLayer = Layer.mergeAll(
 	WorkbaseService.Default,
 	RepositoryService.Default,
 	EpicService.Default,
+	TaskService.Default,
+	PhaseService.Default,
 )
 
 /**
@@ -156,6 +161,28 @@ const commands: Record<string, Command> = {
 		},
 		help: prHelp,
 	},
+	phase: {
+		name: "phase",
+		description: "Manage task phases",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(phaseHelp)
+			await runCommand(
+				phase({
+					subcommand: args[0],
+					args: args.slice(1),
+					repo: options.repo?.[0],
+					references: options.reference,
+					branch: options.branch,
+					base: options.base,
+					dependsOn: options["depends-on"],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+		help: phaseHelp,
+	},
 	repo: {
 		name: "repo",
 		description: "Manage workbase repositories",
@@ -184,18 +211,20 @@ const commands: Record<string, Command> = {
 				console.log(taskHelp)
 				return
 			}
-			// Initialize with optional branch name
-			const branch = args[0] || options.emit || options.branch
 			await runCommand(
 				task({
-					emit: branch,
+					subcommand: args[0],
+					args: args.slice(1),
+					ticketUrl: options["ticket-url"],
+					epic: options.epic,
+					repo: options.repo?.[0],
+					references: options.reference,
+					branch: options.branch,
+					base: options.base,
+					multiPhase: options["multi-phase"],
+					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
-					task: options.task,
-					from: options.from,
-					fromCurrent: options["from-current"],
-					continue: options.continue,
-					squash: options.squash,
 				}),
 			)
 		},
@@ -274,7 +303,8 @@ Usage: agency <command> [options]
 Commands:
   init [path]            Initialize an Agency workbase
   epic <subcommand>      Manage epics
-  task [branch]          Initialize template files on a feature branch
+  phase <subcommand>     Manage task phases
+  task <subcommand>      Manage tasks
   work                   Start working on TASK.md with OpenCode
   pr <subcommand>        Run gh pr with the emitted branch name
   repo <subcommand>      Manage workbase repositories
@@ -290,7 +320,7 @@ Global Options:
 
 Examples:
   agency init                         # Initialize the current directory
-  agency task my-feature              # Create 'my-feature' branch from origin/main
+  agency task list                    # List tasks
   agency work                         # Start working with OpenCode
 
 For more information about a command, run:
@@ -370,27 +400,8 @@ try {
 				type: "boolean",
 				short: "v",
 			},
-			template: {
-				type: "string",
-				short: "t",
-			},
-			emit: {
-				type: "string",
-			},
 			branch: {
 				type: "string",
-			},
-			task: {
-				type: "string",
-			},
-			from: {
-				type: "string",
-			},
-			"from-current": {
-				type: "boolean",
-			},
-			continue: {
-				type: "boolean",
 			},
 			json: {
 				type: "boolean",
@@ -402,9 +413,14 @@ try {
 				type: "string",
 				multiple: true,
 			},
-			squash: {
-				type: "boolean",
+			reference: {
+				type: "string",
+				multiple: true,
 			},
+			epic: { type: "string" },
+			base: { type: "string" },
+			"multi-phase": { type: "boolean" },
+			"depends-on": { type: "string", multiple: true },
 			opencode: {
 				type: "boolean",
 			},

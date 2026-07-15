@@ -3,17 +3,20 @@
   "entry": [
     "cli.ts",
     "index.ts",
-    "src/commands/{base,clean,completions,emitted,init,loop,merge,pull,push,rebase,save,source,switch,tasks,template,template-delete,template-list,template-view,use}.ts"
+    "src/commands/{base,clean,completions,emit,emitted,init,loop,merge,pull,push,rebase,save,source,switch,task,tasks,template,template-delete,template-list,template-view,use}.ts",
+    "src/{constants,errors}.ts",
+    "src/utils/{git-path,spinner}.ts"
   ],
   "ignoreIssues": {
     "src/commands/{emit,task}.ts": ["exports"],
     "src/services/GitService.ts": ["exports"],
     "src/types.ts": ["exports"],
+    "src/utils/colors.ts": ["exports"],
     "src/utils/effect.ts": ["exports"],
-    "src/utils/pr-branch.ts": ["types"],
+    "src/utils/pr-branch.ts": ["exports", "types"],
     "src/utils/task-parser.ts": ["files"]
   },
-  "ignoreDependencies": [],
+  "ignoreDependencies": ["ora"],
   "ignore": [
     "src/test-utils.ts",
     "src/utils/glob.ts",
