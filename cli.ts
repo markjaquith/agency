@@ -4,9 +4,9 @@ import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
 import { init, help as initHelp } from "./src/commands/workbase-init"
 import { task, help as taskHelp } from "./src/commands/task-v2"
-import { pr, help as prHelp } from "./src/commands/pr"
+import { pr, help as prHelp } from "./src/commands/pr-v2"
 import { work, help as workHelp } from "./src/commands/work-v2"
-import { status, help as statusHelp } from "./src/commands/status"
+import { status, help as statusHelp } from "./src/commands/status-v2"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -28,6 +28,7 @@ import { EpicService } from "./src/services/EpicService"
 import { TaskService } from "./src/services/TaskService"
 import { PhaseService } from "./src/services/PhaseService"
 import { WorktreeService } from "./src/services/WorktreeService"
+import { PullRequestService } from "./src/services/PullRequestService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -46,6 +47,7 @@ const CliLayer = Layer.mergeAll(
 	TaskService.Default,
 	PhaseService.Default,
 	WorktreeService.Default,
+	PullRequestService.Default,
 )
 
 /**
@@ -138,24 +140,17 @@ const commands: Record<string, Command> = {
 	pr: {
 		name: "pr",
 		description: "Run gh pr with the emitted branch name",
-		run: async (
-			_args: string[],
-			options: Record<string, any>,
-			rawArgs?: string[],
-		) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(prHelp)
 				return
 			}
-			// Pass raw args (after filtering agency flags) directly to gh pr
-			// This allows flags like --web to pass through without needing --
-			const agencyFlags = ["--help", "-h", "--silent", "-s", "--verbose", "-v"]
-			const filteredArgs = (rawArgs ?? []).filter(
-				(arg) => !agencyFlags.includes(arg),
-			)
 			await runCommand(
 				pr({
-					args: filteredArgs,
+					subcommand: args[0],
+					taskId: args[1],
+					phaseId: args[2],
+					draft: options.draft,
 					silent: options.silent,
 					verbose: options.verbose,
 				}),
@@ -304,7 +299,7 @@ Commands:
   phase <subcommand>     Manage task phases
   task <subcommand>      Manage tasks
   work                   Start working on TASK.md with OpenCode
-  pr <subcommand>        Run gh pr with the emitted branch name
+  pr create             Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show agency status for this repository
   validate               Validate the current workbase
@@ -419,6 +414,7 @@ try {
 			base: { type: "string" },
 			"multi-phase": { type: "boolean" },
 			"depends-on": { type: "string", multiple: true },
+			draft: { type: "boolean" },
 			opencode: {
 				type: "boolean",
 			},
