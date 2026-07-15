@@ -194,6 +194,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					readonly cwd?: string
 					readonly captureOutput?: boolean
 					readonly interactive?: boolean
+					readonly env?: Record<string, string>
 				},
 			) =>
 				pipe(
@@ -202,6 +203,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 						stdin: options?.interactive ? "inherit" : "pipe",
 						stdout: options?.captureOutput ? "pipe" : "inherit",
 						stderr: options?.interactive ? "inherit" : "pipe",
+						env: options?.env,
 					}),
 					Effect.mapError(
 						(processError) =>

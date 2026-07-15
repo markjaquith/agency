@@ -14,6 +14,7 @@ import {
 	type PhaseFrontmatter as PhaseData,
 	type TaskFrontmatter as TaskData,
 } from "../workbase/schemas"
+import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -182,6 +183,21 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 										message: `Invalid workbase configuration in ${configPath}:\n${decoded.error}`,
 									})
 								}
+								if (decoded.value.worktreeCreateCommand) {
+									try {
+										validateWorktreeCreateCommand(
+											decoded.value.worktreeCreateCommand,
+										)
+									} catch (cause) {
+										return yield* new WorkbaseConfigError({
+											path: configPath,
+											message:
+												cause instanceof Error
+													? cause.message
+													: "Invalid worktreeCreateCommand",
+										})
+									}
+								}
 								return current
 							}
 						}
@@ -194,6 +210,33 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						}
 						current = parent
 					}
+				}),
+
+			loadConfig: (startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const fs = yield* FileSystemService
+					const root = yield* service.discover(startPath)
+					const configPath = join(root, "agency.json")
+					const content = yield* fs.readFile(configPath)
+					let input: unknown
+					try {
+						input = JSON.parse(content)
+					} catch (cause) {
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `Invalid JSON in ${configPath}`,
+							cause,
+						})
+					}
+					const decoded = decode(WorkbaseConfig, input)
+					if (!decoded.success) {
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `Invalid workbase configuration in ${configPath}:\n${decoded.error}`,
+						})
+					}
+					return { root, config: decoded.value }
 				}),
 
 			validate: (startPath: string = process.cwd()) =>

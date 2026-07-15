@@ -1,3 +1,16 @@
 {
-  "version": 2
+  "version": 2,
+  "worktreeCreateCommand": [
+    "wt",
+    "-C",
+    "{repo}",
+    "-y",
+    "--config-set",
+    "worktree-path=\"{worktree}\"",
+    "switch",
+    "{branch}",
+    "--no-cd",
+    "--format",
+    "json"
+  ]
 }

@@ -77,4 +77,102 @@ describe("WorktreeService", () => {
 		)
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
 	})
+
+	test("uses a configured worktree creation command", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: [
+					"git",
+					"-C",
+					"{repo}",
+					"worktree",
+					"add",
+					"{worktree}",
+					"{branch}",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "configured",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/configured",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("configured", undefined, root),
+				),
+			),
+		)
+		expect(
+			await Bun.file(join(workspace.writablePath, "README.md")).text(),
+		).toBe("example\n")
+	})
+
+	test("supports Worktrunk as the configured command", async () => {
+		if (Bun.spawnSync(["which", "wt"], { stdout: "ignore" }).exitCode !== 0) {
+			return
+		}
+
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: [
+					"wt",
+					"-C",
+					"{repo}",
+					"-y",
+					"--config-set",
+					'worktree-path="{worktree}"',
+					"switch",
+					"{branch}",
+					"--no-cd",
+					"--format",
+					"json",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "worktrunk",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/worktrunk",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("worktrunk", undefined, root),
+				),
+			),
+		)
+		expect(
+			await Bun.file(join(workspace.writablePath, "README.md")).text(),
+		).toBe("example\n")
+	})
 })

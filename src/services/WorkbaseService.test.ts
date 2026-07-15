@@ -37,6 +37,25 @@ describe("WorkbaseService", () => {
 		expect(discovered).toBe(root)
 	})
 
+	test("rejects an invalid worktree command template", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: ["tool", "{repo}"],
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.discover(root)),
+				),
+			),
+		).rejects.toThrow("{worktree}")
+	})
+
 	test("validates a workbase with an epic and multi-phase task", async () => {
 		await write(root, "agency.json", '{"version":2}\n')
 		await mkdir(join(root, "repos/agency"), { recursive: true })

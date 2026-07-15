@@ -4,6 +4,10 @@ import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
+import {
+	expandWorktreeCreateCommand,
+	worktreeCommandEnvironment,
+} from "../workbase/worktree-command"
 
 class WorktreeError extends Data.TaggedError("WorktreeError")<{
 	readonly message: string
@@ -33,7 +37,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
-					const root = yield* workbase.discover(startPath)
+					const { root, config } = yield* workbase.loadConfig(startPath)
 					const task = yield* tasks.show(taskId, root)
 
 					let execution: {
@@ -92,7 +96,6 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							}
 						}
 
-						const args = ["git", "-C", repositoryPath, "worktree", "add"]
 						if (alias === execution.repo) {
 							const branchExists = yield* fs.runCommand(
 								[
@@ -105,20 +108,94 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								],
 								{ captureOutput: true },
 							)
-							if (branchExists.exitCode === 0) {
-								args.push(checkoutPath, execution.branch)
+							if (branchExists.exitCode !== 0) {
+								const createBranch = yield* fs.runCommand(
+									[
+										"git",
+										"-C",
+										repositoryPath,
+										"branch",
+										execution.branch,
+										execution.base,
+									],
+									{ captureOutput: true },
+								)
+								if (createBranch.exitCode !== 0) {
+									return yield* new WorktreeError({
+										message: `Failed to create branch '${execution.branch}': ${createBranch.stderr}`,
+									})
+								}
+							}
+
+							let args: string[]
+							let env: Record<string, string> | undefined
+							if (config.worktreeCreateCommand) {
+								const variables = {
+									repo: repositoryPath,
+									worktree: checkoutPath,
+									branch: execution.branch,
+									base: execution.base,
+								}
+								try {
+									args = expandWorktreeCreateCommand(
+										config.worktreeCreateCommand,
+										variables,
+									)
+								} catch (cause) {
+									return yield* new WorktreeError({
+										message:
+											cause instanceof Error
+												? cause.message
+												: "Invalid worktreeCreateCommand",
+									})
+								}
+								env = worktreeCommandEnvironment(variables)
 							} else {
-								args.push("-b", execution.branch, checkoutPath, execution.base)
+								args = [
+									"git",
+									"-C",
+									repositoryPath,
+									"worktree",
+									"add",
+									checkoutPath,
+									execution.branch,
+								]
+							}
+
+							const result = yield* fs.runCommand(args, {
+								cwd: repositoryPath,
+								captureOutput: true,
+								env,
+							})
+							if (result.exitCode !== 0) {
+								return yield* new WorktreeError({
+									message: `Failed to create worktree for '${alias}': ${result.stderr}`,
+								})
+							}
+							if (!(yield* fs.isDirectory(checkoutPath))) {
+								return yield* new WorktreeError({
+									message: `Worktree command did not create ${checkoutPath}`,
+								})
 							}
 						} else {
-							args.push("--detach", checkoutPath, "HEAD")
-						}
-
-						const result = yield* fs.runCommand(args, { captureOutput: true })
-						if (result.exitCode !== 0) {
-							return yield* new WorktreeError({
-								message: `Failed to create worktree for '${alias}': ${result.stderr}`,
-							})
+							const result = yield* fs.runCommand(
+								[
+									"git",
+									"-C",
+									repositoryPath,
+									"worktree",
+									"add",
+									"--detach",
+									checkoutPath,
+									"HEAD",
+								],
+								{ captureOutput: true },
+							)
+							if (result.exitCode !== 0) {
+								return yield* new WorktreeError({
+									message: `Failed to create worktree for '${alias}': ${result.stderr}`,
+								})
+							}
 						}
 					}
 

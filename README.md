@@ -67,8 +67,66 @@ workbase/
             backend/
 ```
 
-The workbase `agency.json` currently contains only `{ "version": 2 }`.
-Repository metadata comes directly from Git under `repos/{alias}`.
+Repository metadata comes directly from Git under `repos/{alias}`. Workbase
+configuration may provide a custom writable-worktree creation command.
+
+### Custom Worktree Command
+
+By default, Agency creates worktrees with Git. Set `worktreeCreateCommand` to an
+argv template when another tool should create writable worktrees:
+
+```json
+{
+	"version": 2,
+	"worktreeCreateCommand": [
+		"my-worktree-tool",
+		"--repo",
+		"{repo}",
+		"--destination",
+		"{worktree}",
+		"--branch",
+		"{branch}"
+	]
+}
+```
+
+Available placeholders are:
+
+- `{repo}`: absolute repository alias path under `repos/`
+- `{worktree}`: absolute checkout path Agency requires
+- `{branch}`: execution branch, prepared by Agency before the command runs
+- `{base}`: configured execution base
+
+`{repo}` and `{worktree}` are required. Agency invokes the command directly
+without a shell, sets matching `AGENCY_REPO`, `AGENCY_WORKTREE`,
+`AGENCY_BRANCH`, and `AGENCY_BASE` environment variables, and verifies that the
+requested destination exists afterward.
+
+Worktrunk can be configured per workbase without changing the user's Worktrunk
+path settings:
+
+```json
+{
+	"version": 2,
+	"worktreeCreateCommand": [
+		"wt",
+		"-C",
+		"{repo}",
+		"-y",
+		"--config-set",
+		"worktree-path=\"{worktree}\"",
+		"switch",
+		"{branch}",
+		"--no-cd",
+		"--format",
+		"json"
+	]
+}
+```
+
+The configured command applies only to the writable checkout. Supplemental
+read-only repositories remain detached Git worktrees so they do not acquire
+writable branches.
 
 ## Frontmatter
 

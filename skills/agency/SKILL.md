@@ -189,6 +189,11 @@ Use `--opencode` or `--claude` to require a specific agent. This command fetches
 repositories, creates or reuses the execution worktrees, changes into the
 writable checkout, and replaces the current process with the selected agent.
 
+The workbase may delegate writable checkout creation through
+`worktreeCreateCommand` in `agency.json`. Do not bypass that command or create a
+parallel worktree manually. Supplemental read-only checkouts are still detached
+Git worktrees managed directly by Agency.
+
 Do not run `agency work` from inside an active agent session unless the user
 explicitly wants to launch a nested/replacement agent process. If already
 working in an Agency checkout, read the owning `TASK.md` and optional `PHASE.md`
