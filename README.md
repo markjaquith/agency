@@ -1,6 +1,7 @@
 # @markjaquith/agency
 
-Smuggle project-level LLM instruction into any Git repo. Plan your tasks. Commit your plans. Execute your plans using Opencode. Filter those plans out out your PRs.
+Agency manages durable epics, tasks, phases, repository references, worktrees,
+and pull requests from a filesystem-backed workbase.
 
 ## Installation
 
@@ -8,170 +9,43 @@ Smuggle project-level LLM instruction into any Git repo. Plan your tasks. Commit
 bun install -g @markjaquith/agency
 ```
 
-## Primary Commands
+## Workbase
 
-### `agency task <branch-name>`
-
-Create a new feature branch from the latest `origin/main` and initialize `AGENTS.md` and `TASK.md` files using the template you've set for this repo. Commits smuggled files and lands you on that branch.
-
-**Options:**
-
-- `--from <branch>` - Branch from a specific branch instead of `origin/main`
-- `--from-current` - Initialize on current branch instead of creating a new one
-- `--continue` - Continue a task by copying agency files to a new branch (after PR merge)
-
-**Examples:**
-
-```bash
-agency task my-feature              # Create 'my-feature' from latest origin/main
-agency task my-feature --from dev   # Create 'my-feature' from 'dev' branch
-agency task --from-current          # Initialize on current branch (no new branch)
-agency task --continue my-feature-v2 # Continue task on new branch after PR merge
+```text
+workbase/
+  agency.json
+  repos/
+  epics/
+  tasks/
 ```
 
-### `agency edit`
+Repository aliases are bare Git repositories or symlinks under `repos/`.
+Epics, tasks, and phases are Markdown documents with validated YAML frontmatter.
 
-Open `TASK.md` in the system editor for editing. Nice if you have to paste in large amounts of context.
+## Commands
 
-### `agency work`
-
-Launch Opencode to work on the current task defined in `TASK.md`. All your context will be loaded.
-
-### `agency loop`
-
-Run a Ralph Wiggum loop over the current `TASK.md`.
-The command repeatedly invokes `opencode run` in isolated iterations, committing progress after each loop, until all tasks are complete or a maximum loop count is reached.
-
-When all work is finished, the loop terminates and outputs `<promise>COMPLETE</promise>`.
-
-**Options:**
-
-- `--min-loops <n>` - Run at least `n` iterations, even if tasks complete earlier
-- `--max-loops <n>` - Stop after `n` iterations even if tasks remain
-
-**Example:**
-
-```bash
-agency loop --max-loops 10
+```text
+agency init [path]
+agency repo add|link|list
+agency epic create|list|show
+agency task create|list|show
+agency phase create|list|show
+agency work <task-id> [phase-id]
+agency status
+agency validate
+agency pr create <task-id> [phase-id]
 ```
 
-### `agency emit [base-branch]`
-
-Create an emit branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
-
-### `agency push [base-branch]`
-
-Runs `agency emit`, pushes the branch, and then switches back to the source branch.
-
-**Options:**
-
-- `--pr` - Open GitHub PR in browser after pushing (requires `gh` CLI)
-- `--force` - Force push to remote if branch has diverged
-- `--branch <name>` - Custom name for emit branch
-
-### `agency merge`
-
-Runs `agency emit`, and then merges the PR back into the base branch locally.
-
-**Options:**
-
-- `--squash` - Use squash merge instead of regular merge (stages changes, requires manual commit)
-- `--push` - Push the base branch to origin after merging
-
-## Other Commands
-
-### `agency template use [template]`
-
-Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
-
-### `agency template save <files...>`
-
-Save the specified files back to the configured template directory (so they will be used for future `agency task` commands).
-
-### `agency base get`
-
-Get the base branch for the current feature branch.
-
-### `agency base set <branch>`
-
-Set the base branch for the current feature branch.
-
-### `agency switch`
-
-Toggle between source branch and emit branch. If on an emit branch (e.g., `foo--PR`), switches to source branch (e.g., `foo`). If on source branch and emit branch exists, switches to emit branch.
-
-### `agency source`
-
-Switch to the source branch for the current emit branch.
-
-### `agency completions <bash|zsh>`
-
-Generate shell completion scripts. The generated scripts are static, so shell startup and tab completion do not call `agency`.
-
-**zsh:**
-
-```bash
-mkdir -p ~/.zsh/completions
-agency completions zsh > ~/.zsh/completions/_agency
-```
-
-Then add this to `~/.zshrc` before `compinit`:
-
-```bash
-fpath=(~/.zsh/completions $fpath)
-autoload -Uz compinit && compinit
-```
-
-**bash:**
-
-```bash
-mkdir -p ~/.local/share/bash-completion/completions
-agency completions bash > ~/.local/share/bash-completion/completions/agency
-```
-
-## Requirements
-
-- [Bun](https://bun.sh) >= 1.0.0 (recommended)
-- TypeScript ^5
+Run `agency <command> --help` for command-specific options.
 
 ## Development
 
-To install dependencies:
-
 ```bash
 bun install
+bun link
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-### Git Hooks
-
-This project uses [hk](https://github.com/jdx/hk) for git hook management. The configuration is in `hk.pkl`.
-
-To install the git hooks:
-
-```bash
-hk install
-```
-
-**Pre-commit hook runs:**
-
-- Prettier formatting
-- Knip (unused code detection)
-- TypeScript type checking
-
-**Commit-msg hook validates:**
-
-- Conventional commits format
-- Commit message history
-
-**Pre-push hook runs the same checks as pre-commit.**
-
-Note: Tests are intentionally excluded from git hooks as they are slow. Run them manually with `bun test`.
+Run focused tests with `bun test <test-file>`.
 
 ## License
 

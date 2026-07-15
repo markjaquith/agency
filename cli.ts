@@ -2,26 +2,18 @@
 
 import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
-import { init, help as initHelp } from "./src/commands/workbase-init"
-import { task, help as taskHelp } from "./src/commands/task-v2"
-import { pr, help as prHelp } from "./src/commands/pr-v2"
-import { work, help as workHelp } from "./src/commands/work-v2"
-import { status, help as statusHelp } from "./src/commands/status-v2"
+import { init, help as initHelp } from "./src/commands/init"
+import { task, help as taskHelp } from "./src/commands/task"
+import { pr, help as prHelp } from "./src/commands/pr"
+import { work, help as workHelp } from "./src/commands/work"
+import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
-import { GitService } from "./src/services/GitService"
-import { ConfigService } from "./src/services/ConfigService"
 import { FileSystemService } from "./src/services/FileSystemService"
-import { PromptService } from "./src/services/PromptService"
-import { TemplateService } from "./src/services/TemplateService"
-import { OpencodeService } from "./src/services/OpencodeService"
-import { ClaudeService } from "./src/services/ClaudeService"
-import { FilterRepoService } from "./src/services/FilterRepoService"
-import { FormatterService } from "./src/services/FormatterService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
 import { RepositoryService } from "./src/services/RepositoryService"
 import { EpicService } from "./src/services/EpicService"
@@ -32,15 +24,7 @@ import { PullRequestService } from "./src/services/PullRequestService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
-	GitService.Default,
-	ConfigService.Default,
 	FileSystemService.Default,
-	PromptService.Default,
-	TemplateService.Default,
-	OpencodeService.Default,
-	ClaudeService.Default,
-	FilterRepoService.Default,
-	FormatterService.Default,
 	WorkbaseService.Default,
 	RepositoryService.Default,
 	EpicService.Default,
@@ -251,7 +235,7 @@ const commands: Record<string, Command> = {
 	},
 	status: {
 		name: "status",
-		description: "Show agency status for this repository",
+		description: "Show status for the current workbase",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(statusHelp)
@@ -299,14 +283,14 @@ Commands:
   phase <subcommand>     Manage task phases
   task <subcommand>      Manage tasks
   work                   Start working on TASK.md with OpenCode
-  pr create             Create a pull request for an execution unit
+  pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
-  status                 Show agency status for this repository
+  status                 Show status for the current workbase
   validate               Validate the current workbase
 
 Global Options:
   -h, --help             Show help for a command
-  -v, --version          Show version number
+  -V, --version          Show version number
   --no-color             Disable color output
   -s, --silent           Suppress output messages
   -v, --verbose          Show verbose output including detailed debugging info
@@ -332,7 +316,7 @@ try {
 			},
 			version: {
 				type: "boolean",
-				short: "v",
+				short: "V",
 			},
 			"no-color": {
 				type: "boolean",
@@ -359,13 +343,7 @@ try {
 	// Show help if no command
 	if (!commandName) {
 		showMainHelp()
-		process.exit(1)
-	}
-
-	// Show main help if --help with no command
-	if (values.help && !commandName) {
-		showMainHelp()
-		process.exit(0)
+		process.exit(values.help ? 0 : 1)
 	}
 
 	// Check if command exists

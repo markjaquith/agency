@@ -1,12 +1,12 @@
 {
   "name": "@markjaquith/agency",
   "version": "2.0.0",
-  "description": "Manages personal agents files",
+  "description": "Manage agentic work across repositories with durable workbases",
   "keywords": [
     "agents",
     "bun",
-    "personal-agents",
-    "typescript"
+    "typescript",
+    "worktrees"
   ],
   "license": "MIT",
   "author": "Mark Jaquith",
@@ -21,7 +21,6 @@
     "index.ts",
     "cli.ts",
     "src",
-    "templates",
     "README.md",
     "LICENSE"
   ],
@@ -53,8 +52,6 @@
   "dependencies": {
     "@effect/schema": "^0.75.5",
     "effect": "^3.19.15",
-    "jsonc-parser": "^3.3.1",
-    "ora": "^8.2.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

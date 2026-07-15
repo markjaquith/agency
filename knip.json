@@ -1,27 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "cli.ts",
-    "index.ts",
-    "src/commands/{base,clean,completions,emit,emitted,init,loop,merge,pr,pull,push,rebase,save,source,status,switch,task,tasks,template,template-delete,template-list,template-view,use,work}.ts",
-    "src/{constants,errors}.ts",
-    "src/utils/{git-path,pr-branch,spinner}.ts"
-  ],
-  "ignoreIssues": {
-    "src/commands/{emit,task}.ts": ["exports"],
-    "src/services/GitService.ts": ["exports"],
-    "src/services/AgencyMetadataService.ts": ["exports"],
-    "src/types.ts": ["exports"],
-    "src/utils/colors.ts": ["exports"],
-    "src/utils/effect.ts": ["exports"],
-    "src/utils/pr-branch.ts": ["exports", "types"],
-    "src/utils/task-parser.ts": ["files"]
-  },
-  "ignoreDependencies": ["ora"],
-  "ignore": [
-    "src/test-utils.ts",
-    "src/utils/glob.ts",
-    "src/services/MockFilterRepoService.ts",
-    "**/*.test.ts"
-  ]
+  "entry": ["cli.ts", "index.ts"],
+  "ignoreDependencies": [],
+  "ignore": ["src/test-utils.ts", "**/*.test.ts"]
 }
