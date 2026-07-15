@@ -22,13 +22,8 @@ describe("WorkbaseService", () => {
 		await cleanupTempDir(root)
 	})
 
-	test("discovers a v2 workbase above legacy agency metadata", async () => {
+	test("discovers a workbase from a nested directory", async () => {
 		await write(root, "agency.json", '{"version":2}\n')
-		await write(
-			root,
-			"nested/repository/agency.json",
-			'{"version":1,"injectedFiles":[],"template":"test","createdAt":"2026-01-01T00:00:00Z"}\n',
-		)
 		await mkdir(join(root, "nested/repository/src"), { recursive: true })
 
 		const discovered = await runTestEffect(

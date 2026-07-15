@@ -1,6 +1,7 @@
 # Claude Code Instructions
 
-This project uses the agency CLI for managing development tasks and templates.
+This project uses Agency workbases for durable epics, tasks, phases, and
+repository worktrees.
 
 ## Agency
 

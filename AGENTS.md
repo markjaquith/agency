@@ -37,13 +37,16 @@ bun test src/commands/init.test.ts
 bun test
 ```
 
-The tests are slow because they create real git repositories and run actual git commands. Fast tests (like `task-parser.test.ts`) don't use git and complete in milliseconds.
+The tests create real Git repositories and run actual Git commands. Frontmatter
+tests are fast; worktree and repository tests are slower.
 
 **Important:** Tests should not produce extraneous output. When using `verboseLog` or similar logging in implementation code, ensure that the logger respects the `silent` and `verbose` options passed through the command options. Helper functions should accept and forward these options to `createLoggers()` to prevent unwanted output during test runs.
 
 # Agency
 
-This is a CLI tool called `agency` that helps you do agentic coding in projects where you you cannot assert full ownership. For example, you don't own `AGENTS.md` or `CLAUDE.md`, and can't just create them. And you want a way to store notes about a task (branch) you are working on, but want to clean those files out before pushing a public branch.
+Agency is a CLI for managing agentic work across repositories. Durable epics,
+tasks, and phases live in a workbase, while repository aliases and execution
+worktrees provide local code access.
 
 ## Architecture
 
@@ -53,12 +56,12 @@ The codebase uses Effect TS for type-safe, composable error handling and depende
 
 Core functionality is organized into Effect services that provide clean interfaces and typed error handling:
 
-- **GitService**: All git operations with proper error types (GitError, NotInGitRepoError, GitCommandError)
-- **ConfigService**: Configuration management with schema validation using @effect/schema
-- **PromptService**: User input operations with readline integration
-- **TemplateService**: Template discovery and management
-- **FileSystemService**: Comprehensive file I/O operations
-- Etc
+- **WorkbaseService**: Workbase discovery and structural validation
+- **RepositoryService**: Bare repository and symlink alias management
+- **EpicService**, **TaskService**, **PhaseService**: Domain document operations
+- **WorktreeService**: Execution worktree materialization
+- **PullRequestService**: GitHub PR creation and frontmatter updates
+- **FileSystemService**: File and subprocess operations
 
 ### Error Handling
 
@@ -83,46 +86,34 @@ All data types are validated using @effect/schema for runtime type safety:
 ```typescript
 import { Schema } from "@effect/schema"
 
-export const AgencyMetadata = Schema.Struct({
-	version: Schema.Literal(1),
-	managedFiles: Schema.Array(ManagedFile),
-	// ...
+export const WorkbaseConfig = Schema.Struct({
+	version: Schema.Literal(2),
 })
 ```
 
 ### Command Pattern
 
-Commands follow a consistent pattern with Effect-based implementations and backward-compatible async wrappers:
+Commands follow a consistent Effect-based pattern:
 
 ```typescript
-// Effect implementation
-export const commandEffect = (options) =>
+export const command = (options) =>
 	Effect.gen(function* () {
 		const service = yield* ServiceName
 		// ... implementation
 	})
-
-// Backward-compatible wrapper
-export async function command(options) {
-	const program = commandEffect(options).pipe(
-		Effect.provide(ServiceNameLive),
-		Effect.catchAllDefect((defect) =>
-			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
-		),
-	)
-	await Effect.runPromise(program)
-}
 ```
 
 ## Commands
 
-- `agency init [path]`: Initializes `AGENTS.md` file using templates. On first run, prompts for a template name and saves it to `.git/config`. Subsequent runs use the saved template.
-- `agency template use [template]`: Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
-- `agency save`: Saves current `AGENTS.md` file back to the configured template directory.
-- `agency source [template]`: Returns the path to a template's source directory. Shows interactive selection if no template name provided.
-- `agency switch`: Toggles between source branch and emit branch. If on an emit branch (e.g., `feature-x`), switches to source branch (e.g., `agency/feature-x`). If on source branch, switches to emit branch.
-- `agency emit [branch]`: Creates an emit branch with managed files reverted to their merge-base state (removes modifications made on feature branch). Default branch name is current branch with `--PR` suffix.
-- `agency push`: Creates an emit branch and then pushes it to remote.
+- `agency init [path]`: Initialize a workbase.
+- `agency repo add|link|list`: Manage repository aliases.
+- `agency epic create|list|show`: Manage epics.
+- `agency task create|list|show`: Manage tasks.
+- `agency phase create|list|show`: Manage task phases.
+- `agency work <task> [phase]`: Materialize worktrees and launch an agent.
+- `agency status`: Show workbase status.
+- `agency validate`: Validate workbase documents and relationships.
+- `agency pr create <task> [phase]`: Create and record a GitHub PR.
 
 ## Error Handling
 
@@ -163,13 +154,13 @@ All commits must follow the [Conventional Commits](https://www.conventionalcommi
 - `perf`: Performance improvements
 - `ci`: CI/CD configuration changes
 
-**Scope (optional):** The area of the codebase affected (e.g., `cli`, `emit`, `init`, `use`)
+**Scope (optional):** The area of the codebase affected (e.g., `cli`, `task`, `repo`, `validate`)
 
 **Examples:**
 
-- `feat(emit): add support for custom branch patterns`
-- `fix(init): handle missing template directory`
-- `test: add tests for source command`
+- `feat(task): add task filtering`
+- `fix(init): handle an existing workbase`
+- `test: add tests for phase validation`
 - `chore: update dependencies`
 
 **Breaking Changes:**
@@ -232,22 +223,22 @@ Keep help text concise and focused. Avoid verbose examples that demonstrate stan
 
 ```
 Examples:
-  agency switch                  # Toggle between branches
-  agency switch --silent         # Switch without output
-  agency switch --verbose        # Switch with verbose output
-  agency switch --help           # Show this help message
+  agency task list
+  agency task list --silent
+  agency task list --verbose
+  agency task --help
 ```
 
 **Good (concise):**
 
 ```
 Example:
-  agency switch                  # Toggle between branches
+  agency task list
 ```
 
 **When to show options in examples:**
 
-- Command-specific flags that change behavior significantly (e.g., `--force`, `--template`)
+- Command-specific flags that change behavior significantly (e.g., `--multi-phase`, `--draft`)
 - Non-obvious flag combinations
 - Flags that users commonly need (e.g., setting a base branch)
 
