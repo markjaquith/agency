@@ -5,6 +5,8 @@ import {
 	unlink,
 	lstat,
 	readlink,
+	readdir,
+	stat,
 } from "node:fs/promises"
 import { spawnProcess } from "../utils/process"
 
@@ -38,16 +40,19 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 			isDirectory: (path: string) =>
 				Effect.tryPromise({
 					try: async () => {
-						const file = Bun.file(path)
-						const exists = await file.exists()
-						if (!exists) {
-							return false
+						try {
+							return (await stat(path)).isDirectory()
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								error.code === "ENOENT"
+							) {
+								return false
+							}
+							throw error
 						}
-						// Use stat to check if it's a directory
-						const stat = await import("node:fs/promises").then((fs) =>
-							fs.stat(path),
-						)
-						return stat.isDirectory()
 					},
 					catch: () =>
 						new FileSystemError({
@@ -107,6 +112,23 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					catch: (error) =>
 						new FileSystemError({
 							message: `Failed to create directory: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			readDirectory: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						const entries = await readdir(path, { withFileTypes: true })
+						return entries.map((entry) => ({
+							name: entry.name,
+							isDirectory: entry.isDirectory(),
+							isSymlink: entry.isSymbolicLink(),
+						}))
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to read directory: ${path}`,
 							cause: error,
 						}),
 				}),

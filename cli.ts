@@ -7,6 +7,7 @@ import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
+import { validate, help as validateHelp } from "./src/commands/validate"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -18,6 +19,7 @@ import { OpencodeService } from "./src/services/OpencodeService"
 import { ClaudeService } from "./src/services/ClaudeService"
 import { FilterRepoService } from "./src/services/FilterRepoService"
 import { FormatterService } from "./src/services/FormatterService"
+import { WorkbaseService } from "./src/services/WorkbaseService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -30,6 +32,7 @@ const CliLayer = Layer.mergeAll(
 	ClaudeService.Default,
 	FilterRepoService.Default,
 	FormatterService.Default,
+	WorkbaseService.Default,
 )
 
 /**
@@ -194,6 +197,24 @@ const commands: Record<string, Command> = {
 		},
 		help: statusHelp,
 	},
+	validate: {
+		name: "validate",
+		description: "Validate the current workbase",
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(validateHelp)
+				return
+			}
+			await runCommand(
+				validate({
+					silent: options.silent,
+					verbose: options.verbose,
+					json: options.json,
+				}),
+			)
+		},
+		help: validateHelp,
+	},
 }
 
 function showMainHelp() {
@@ -208,6 +229,7 @@ Commands:
   work                   Start working on TASK.md with OpenCode
   pr <subcommand>        Run gh pr with the emitted branch name
   status                 Show agency status for this repository
+  validate               Validate the current workbase
 
 Global Options:
   -h, --help             Show help for a command

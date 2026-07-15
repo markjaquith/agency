@@ -384,6 +384,7 @@ import { ClaudeService } from "./services/ClaudeService"
 import { FilterRepoService } from "./services/FilterRepoService"
 import { MockFilterRepoService } from "./services/MockFilterRepoService"
 import { FormatterService } from "./services/FormatterService"
+import { WorkbaseService } from "./services/WorkbaseService"
 
 // Re-export mock utilities for tests
 export {
@@ -404,6 +405,7 @@ const TestLayer = Layer.mergeAll(
 	ClaudeService.Default,
 	FilterRepoService.Default,
 	FormatterService.Default,
+	WorkbaseService.Default,
 )
 
 // Create test layer with mock filter-repo (for tests that don't need real filtering)
@@ -417,6 +419,7 @@ const TestLayerWithMockFilterRepo = Layer.mergeAll(
 	ClaudeService.Default,
 	MockFilterRepoService.Default,
 	FormatterService.Default,
+	WorkbaseService.Default,
 )
 
 export async function runTestEffect<A, E>(
