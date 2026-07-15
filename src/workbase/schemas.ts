@@ -2,11 +2,11 @@ import { Schema } from "@effect/schema"
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1))
 
-const EntityId = NonEmptyString.pipe(
-	Schema.pattern(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/),
-)
+const IdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
-export const RepositoryAlias = EntityId
+export const EntityId = NonEmptyString.pipe(Schema.pattern(IdPattern))
+
+export const RepositoryAlias = NonEmptyString.pipe(Schema.pattern(IdPattern))
 
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 
@@ -34,7 +34,7 @@ const ExecutionUnit = {
 export const EpicFrontmatter = Schema.Struct({
 	ticketUrl: Url,
 	repos: Schema.NonEmptyArray(RepositoryAlias),
-	tasks: Schema.NonEmptyArray(Dependency),
+	tasks: Schema.Array(Dependency),
 })
 
 const SinglePhaseTaskFrontmatter = Schema.Struct({

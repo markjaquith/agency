@@ -386,6 +386,7 @@ import { MockFilterRepoService } from "./services/MockFilterRepoService"
 import { FormatterService } from "./services/FormatterService"
 import { WorkbaseService } from "./services/WorkbaseService"
 import { RepositoryService } from "./services/RepositoryService"
+import { EpicService } from "./services/EpicService"
 
 // Re-export mock utilities for tests
 export {
@@ -408,6 +409,7 @@ const TestLayer = Layer.mergeAll(
 	FormatterService.Default,
 	WorkbaseService.Default,
 	RepositoryService.Default,
+	EpicService.Default,
 )
 
 // Create test layer with mock filter-repo (for tests that don't need real filtering)
@@ -423,6 +425,7 @@ const TestLayerWithMockFilterRepo = Layer.mergeAll(
 	FormatterService.Default,
 	WorkbaseService.Default,
 	RepositoryService.Default,
+	EpicService.Default,
 )
 
 export async function runTestEffect<A, E>(

@@ -9,6 +9,7 @@ import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { repo, help as repoHelp } from "./src/commands/repo"
+import { epic, help as epicHelp } from "./src/commands/epic"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -22,6 +23,7 @@ import { FilterRepoService } from "./src/services/FilterRepoService"
 import { FormatterService } from "./src/services/FormatterService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
 import { RepositoryService } from "./src/services/RepositoryService"
+import { EpicService } from "./src/services/EpicService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -36,6 +38,7 @@ const CliLayer = Layer.mergeAll(
 	FormatterService.Default,
 	WorkbaseService.Default,
 	RepositoryService.Default,
+	EpicService.Default,
 )
 
 /**
@@ -102,6 +105,28 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: initHelp,
+	},
+	epic: {
+		name: "epic",
+		description: "Manage epics",
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(epicHelp)
+				return
+			}
+			await runCommand(
+				epic({
+					subcommand: args[0],
+					args: args.slice(1),
+					ticketUrl: options["ticket-url"],
+					repos: options.repo,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+		help: epicHelp,
 	},
 	pr: {
 		name: "pr",
@@ -248,6 +273,7 @@ Usage: agency <command> [options]
 
 Commands:
   init [path]            Initialize an Agency workbase
+  epic <subcommand>      Manage epics
   task [branch]          Initialize template files on a feature branch
   work                   Start working on TASK.md with OpenCode
   pr <subcommand>        Run gh pr with the emitted branch name
@@ -368,6 +394,13 @@ try {
 			},
 			json: {
 				type: "boolean",
+			},
+			"ticket-url": {
+				type: "string",
+			},
+			repo: {
+				type: "string",
+				multiple: true,
 			},
 			squash: {
 				type: "boolean",

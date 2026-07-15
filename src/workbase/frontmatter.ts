@@ -1,5 +1,5 @@
 import { Data, Effect } from "effect"
-import { parseDocument, visit } from "yaml"
+import { parseDocument, stringify, visit } from "yaml"
 
 class FrontmatterParseError extends Data.TaggedError("FrontmatterParseError")<{
 	readonly path: string
@@ -72,3 +72,6 @@ export const parseFrontmatter = (content: string, path: string) =>
 				cause,
 			}),
 	})
+
+export const formatMarkdownDocument = (data: object, body: string) =>
+	`---\n${stringify(data, { lineWidth: 0 }).trimEnd()}\n---\n\n${body.trim()}\n`
