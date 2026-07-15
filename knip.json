@@ -1,5 +1,18 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "cli.ts",
+    "index.ts",
+    "src/commands/{base,clean,completions,emitted,loop,merge,pull,push,rebase,save,source,switch,tasks,template,template-delete,template-list,template-view,use}.ts"
+  ],
+  "ignoreIssues": {
+    "src/commands/{emit,task}.ts": ["exports"],
+    "src/services/GitService.ts": ["exports"],
+    "src/types.ts": ["exports"],
+    "src/utils/effect.ts": ["exports"],
+    "src/utils/pr-branch.ts": ["types"],
+    "src/utils/task-parser.ts": ["files"]
+  },
   "ignoreDependencies": [],
   "ignore": [
     "src/test-utils.ts",

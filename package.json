@@ -1,6 +1,6 @@
 {
   "name": "@markjaquith/agency",
-  "version": "0.0.0-development",
+  "version": "2.0.0",
   "description": "Manages personal agents files",
   "keywords": [
     "agents",

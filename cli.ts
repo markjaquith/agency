@@ -2,28 +2,11 @@
 
 import { parseArgs } from "util"
 import { Effect, Layer } from "effect"
-import { clean, help as cleanHelp } from "./src/commands/clean"
 import { init, help as initHelp } from "./src/commands/init"
-import { task, taskEdit, help as taskHelp, editHelp } from "./src/commands/task"
-import { tasks, help as tasksHelp } from "./src/commands/tasks"
-import { emit, help as emitHelp } from "./src/commands/emit"
-import { emitted, help as emittedHelp } from "./src/commands/emitted"
+import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
-import { push, help as pushHelp } from "./src/commands/push"
-import { pull, help as pullHelp } from "./src/commands/pull"
-import { rebase, help as rebaseHelp } from "./src/commands/rebase"
-import { base, help as baseHelp } from "./src/commands/base"
-import { switchBranch, help as switchHelp } from "./src/commands/switch"
-import { source, help as sourceHelp } from "./src/commands/source"
-import { merge, help as mergeHelp } from "./src/commands/merge"
-import { template, help as templateHelp } from "./src/commands/template"
 import { work, help as workHelp } from "./src/commands/work"
-import { loop, help as loopHelp } from "./src/commands/loop"
 import { status, help as statusHelp } from "./src/commands/status"
-import {
-	completions,
-	help as completionsHelp,
-} from "./src/commands/completions"
 import type { Command } from "./src/types"
 import { setColorsEnabled } from "./src/utils/colors"
 import { GitService } from "./src/services/GitService"
@@ -114,40 +97,6 @@ const commands: Record<string, Command> = {
 		},
 		help: initHelp,
 	},
-	emit: {
-		name: "emit",
-		description: "Emit a branch without backpack files",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(emitHelp)
-				return
-			}
-			await runCommand(
-				emit({
-					baseBranch: args[0],
-					emit: options.emit || options.branch,
-					silent: options.silent,
-					force: options.verbose,
-					verbose: options.verbose,
-				}),
-			)
-		},
-		help: emitHelp,
-	},
-	emitted: {
-		name: "emitted",
-		description: "Get the name of the emitted branch",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(emittedHelp)
-				return
-			}
-			await runCommand(
-				emitted({ silent: options.silent, verbose: options.verbose }),
-			)
-		},
-		help: emittedHelp,
-	},
 	pr: {
 		name: "pr",
 		description: "Run gh pr with the emitted branch name",
@@ -176,154 +125,6 @@ const commands: Record<string, Command> = {
 		},
 		help: prHelp,
 	},
-	push: {
-		name: "push",
-		description: "Push the emitted branch or fall through to git push",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(pushHelp)
-				return
-			}
-			await runCommand(
-				push({
-					baseBranch: args[0],
-					gitArgs: args,
-					emit: options.emit || options.branch,
-					silent: options.silent,
-					force: options.force,
-					forceWithLease: options["force-with-lease"],
-					noVerify: options["no-verify"],
-					verbose: options.verbose,
-					pr: options.pr,
-				}),
-			)
-		},
-		help: pushHelp,
-	},
-	pull: {
-		name: "pull",
-		description: "Pull commits from remote emit branch to source",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(pullHelp)
-				return
-			}
-			await runCommand(
-				pull({
-					remote: options.remote,
-					silent: options.silent,
-					verbose: options.verbose,
-				}),
-			)
-		},
-		help: pullHelp,
-	},
-	rebase: {
-		name: "rebase",
-		description: "Rebase source branch onto base branch",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(rebaseHelp)
-				return
-			}
-			await runCommand(
-				rebase({
-					baseBranch: args[0],
-					emit: options.emit || options.branch,
-					silent: options.silent,
-					verbose: options.verbose,
-				}),
-			)
-		},
-		help: rebaseHelp,
-	},
-	template: {
-		name: "template",
-		description: "Template management commands",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(templateHelp)
-				return
-			}
-			await runCommand(
-				template({
-					subcommand: args[0],
-					args: args.slice(1),
-					silent: options.silent,
-					verbose: options.verbose,
-					template: options.template,
-				}),
-			)
-		},
-		help: templateHelp,
-	},
-	base: {
-		name: "base",
-		description: "Get or set the base branch",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(baseHelp)
-				return
-			}
-			await runCommand(
-				base({
-					subcommand: args[0],
-					args: args.slice(1),
-					repo: options.repo,
-					silent: options.silent,
-					verbose: options.verbose,
-				}),
-			)
-		},
-		help: baseHelp,
-	},
-	switch: {
-		name: "switch",
-		description: "Toggle between source and emitted branch",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(switchHelp)
-				return
-			}
-			await runCommand(
-				switchBranch({ silent: options.silent, verbose: options.verbose }),
-			)
-		},
-		help: switchHelp,
-	},
-	source: {
-		name: "source",
-		description: "Switch to source branch from emitted branch",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(sourceHelp)
-				return
-			}
-			await runCommand(
-				source({ silent: options.silent, verbose: options.verbose }),
-			)
-		},
-		help: sourceHelp,
-	},
-	merge: {
-		name: "merge",
-		description: "Merge emitted branch into base branch",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(mergeHelp)
-				return
-			}
-			await runCommand(
-				merge({
-					silent: options.silent,
-					verbose: options.verbose,
-					squash: options.squash,
-					push: options.push,
-				}),
-			)
-		},
-		help: mergeHelp,
-	},
 	task: {
 		name: "task",
 		description: "Task management commands",
@@ -348,41 +149,6 @@ const commands: Record<string, Command> = {
 			)
 		},
 		help: taskHelp,
-	},
-	tasks: {
-		name: "tasks",
-		description: "List all task branches",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(tasksHelp)
-				return
-			}
-			await runCommand(
-				tasks({
-					silent: options.silent,
-					verbose: options.verbose,
-					json: options.json,
-				}),
-			)
-		},
-		help: tasksHelp,
-	},
-	edit: {
-		name: "edit",
-		description: "Open TASK.md in system editor",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(editHelp)
-				return
-			}
-			await runCommand(
-				taskEdit({
-					silent: options.silent,
-					verbose: options.verbose,
-				}),
-			)
-		},
-		help: editHelp,
 	},
 	work: {
 		name: "work",
@@ -428,65 +194,6 @@ const commands: Record<string, Command> = {
 		},
 		help: statusHelp,
 	},
-	clean: {
-		name: "clean",
-		description: "Delete branches merged into a specified branch",
-		run: async (_args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(cleanHelp)
-				return
-			}
-			await runCommand(
-				clean({
-					silent: options.silent,
-					verbose: options.verbose,
-					dryRun: options["dry-run"],
-					mergedInto: options["merged-into"],
-				}),
-			)
-		},
-		help: cleanHelp,
-	},
-	loop: {
-		name: "loop",
-		description: "Run a Ralph Wiggum loop to complete all tasks",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(loopHelp)
-				return
-			}
-
-			// Extract extra args (anything after --)
-			// Note: parseArgs with strict:false and allowPositionals:true will put
-			// args after -- in the positionals array
-			const extraArgs = args.length > 0 ? args : undefined
-
-			await runCommand(
-				loop({
-					silent: options.silent,
-					verbose: options.verbose,
-					maxLoops: options["max-loops"],
-					minLoops: options["min-loops"],
-					opencode: options.opencode,
-					claude: options.claude,
-					extraArgs,
-				}),
-			)
-		},
-		help: loopHelp,
-	},
-	completions: {
-		name: "completions",
-		description: "Generate shell completion scripts",
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(completionsHelp)
-				return
-			}
-			await runCommand(completions(args[0]))
-		},
-		help: completionsHelp,
-	},
 }
 
 function showMainHelp() {
@@ -498,29 +205,9 @@ Usage: agency <command> [options]
 Commands:
   init                   Initialize agency with template selection (run first)
   task [branch]          Initialize template files on a feature branch
-  tasks                  List all task branches
-  edit                   Open TASK.md in system editor
   work                   Start working on TASK.md with OpenCode
-  template               Template management commands
-    use [template]         Set template for this repository
-    save <file|dir> ...    Save files/dirs to configured template
-    list                   List all files in configured template
-    view <file>            View contents of a file in template
-    delete <file> ...      Delete files from configured template
-  emit [base-branch]     Emit a branch with backpack files reverted
-  emitted                Get the name of the emitted branch
   pr <subcommand>        Run gh pr with the emitted branch name
-  push [arguments]       Push the emitted branch or fall through to git push
-  pull                   Pull commits from remote emit branch to source
-  rebase [base-branch]   Rebase source branch onto base branch
-  base                   Get or set the base branch
-    set <branch>           Set the base branch for the current feature branch
-    get                    Get the configured base branch
-  switch                 Toggle between source and emitted branch
-  source                 Switch to source branch from emitted branch
-  merge                  Merge emitted branch into base branch
   status                 Show agency status for this repository
-  completions <shell>    Generate bash or zsh completion scripts
 
 Global Options:
   -h, --help             Show help for a command
@@ -532,9 +219,7 @@ Global Options:
 Examples:
   agency init                         # Initialize with template (run first)
   agency task my-feature              # Create 'my-feature' branch from origin/main
-  agency task --from-current          # Initialize on current feature branch
-  agency emit                         # Emit a branch (prompts for base branch)
-  agency switch                       # Toggle between source and emitted branch
+  agency work                         # Start working with OpenCode
 
 For more information about a command, run:
   agency <command> --help
@@ -609,16 +294,6 @@ try {
 				type: "boolean",
 				short: "s",
 			},
-			force: {
-				type: "boolean",
-				short: "f",
-			},
-			"force-with-lease": {
-				type: "boolean",
-			},
-			"no-verify": {
-				type: "boolean",
-			},
 			verbose: {
 				type: "boolean",
 				short: "v",
@@ -648,26 +323,7 @@ try {
 			json: {
 				type: "boolean",
 			},
-			repo: {
-				type: "boolean",
-			},
-			pr: {
-				type: "boolean",
-			},
 			squash: {
-				type: "boolean",
-			},
-			push: {
-				type: "boolean",
-			},
-			remote: {
-				type: "string",
-				short: "r",
-			},
-			"merged-into": {
-				type: "string",
-			},
-			"dry-run": {
 				type: "boolean",
 			},
 			opencode: {
