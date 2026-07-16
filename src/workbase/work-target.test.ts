@@ -56,13 +56,13 @@ describe("work target choices", () => {
 		)
 
 		expect(choices.map((choice) => choice.label)).toEqual([
-			"epic  delivery - Ship the release",
-			"  task  multi",
-			"    phase  build",
-			"    phase  verify",
-			"    phase  unlisted",
-			"  task  single",
-			"task  standalone - Independent work",
+			"\x1b[35m\x1b[0m delivery\x1b[2m - Ship the release\x1b[0m",
+			"  \x1b[36m󰗡\x1b[0m multi",
+			"    \x1b[33m󰔚\x1b[0m build",
+			"    \x1b[33m󰔚\x1b[0m verify",
+			"    \x1b[33m󰔚\x1b[0m unlisted",
+			"  \x1b[36m󰗡\x1b[0m single",
+			"\x1b[36m󰗡\x1b[0m standalone\x1b[2m - Independent work\x1b[0m",
 		])
 		expect(choices.map((choice) => choice.target.kind)).toEqual([
 			"epic",

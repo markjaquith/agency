@@ -247,7 +247,7 @@ describe("work command", () => {
 			)
 		})
 
-		expect(logs).toEqual(["epic  delivery"])
+		expect(logs).toEqual(["\x1b[35m\x1b[0m delivery"])
 		expect(harness.launches).toEqual([])
 	})
 
