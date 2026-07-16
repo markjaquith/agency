@@ -237,12 +237,12 @@ describe("task and phase services", () => {
 		const task = await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
-					service.setStatus("single-status", "done", root),
+					service.setStatus("single-status", "delegated", root),
 				),
 			),
 		)
-		expect(task.data.status).toBe("done")
-		expect(task.content).toContain("status: done")
+		expect(task.data.status).toBe("delegated")
+		expect(task.content).toContain("status: delegated")
 		expect(task.content).toContain("Describe the task outcome.")
 
 		await runTestEffect(

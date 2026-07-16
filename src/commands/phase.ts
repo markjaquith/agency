@@ -125,7 +125,7 @@ Subcommands:
   list <task>           List task phases
   show <task> <phase>   Show a phase
   status <task> <phase> <status>
-                        Set open, working, done, or dropped
+                        Set open, working, delegated, done, or dropped
 
 Create options:
   --description <text>  Short description of the phase

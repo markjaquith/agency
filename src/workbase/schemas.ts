@@ -15,7 +15,13 @@ export const RepositoryReference = Schema.Struct({
 	ref: NonEmptyString,
 })
 
-export const WorkStatus = Schema.Literal("open", "working", "done", "dropped")
+export const WorkStatus = Schema.Literal(
+	"open",
+	"working",
+	"delegated",
+	"done",
+	"dropped",
+)
 
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 
@@ -26,6 +32,11 @@ const GitHubPullRequestUrl = NonEmptyString.pipe(
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
+})
+
+export const WorkbaseRegistry = Schema.Struct({
+	version: Schema.Literal(1),
+	workbases: Schema.Array(NonEmptyString),
 })
 
 export const Dependency = Schema.Struct({
@@ -74,6 +85,7 @@ export const PhaseFrontmatter = Schema.Struct({
 })
 
 export type WorkbaseConfig = Schema.Schema.Type<typeof WorkbaseConfig>
+export type WorkbaseRegistry = Schema.Schema.Type<typeof WorkbaseRegistry>
 export type Dependency = Schema.Schema.Type<typeof Dependency>
 export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>

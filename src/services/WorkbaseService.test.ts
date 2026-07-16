@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
-import { mkdir } from "node:fs/promises"
+import { mkdir, realpath } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { managedWorkbaseAgents } from "../workbase/agents-file"
@@ -54,6 +54,38 @@ describe("WorkbaseService", () => {
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
 			managedWorkbaseOpencode,
 		)
+	})
+
+	test("registers canonical workbase paths without duplicates", async () => {
+		const workbaseRoot = join(root, "workbase")
+		const nested = join(workbaseRoot, "nested")
+		const configDirectory = join(root, "config")
+		await write(workbaseRoot, "agency.json", '{"version":2}\n')
+		await mkdir(nested, { recursive: true })
+
+		const first = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) => service.register(nested, configDirectory)),
+			),
+		)
+		await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					service.register(workbaseRoot, configDirectory),
+				),
+			),
+		)
+		const registered = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) => service.listRegistered(configDirectory)),
+			),
+		)
+
+		expect(first).toBe(await realpath(workbaseRoot))
+		expect(registered).toEqual([first])
+		expect(
+			await Bun.file(join(configDirectory, "agency/workbases.json")).json(),
+		).toEqual({ version: 1, workbases: [first] })
 	})
 
 	test("preserves an unmanaged workbase OpenCode config", async () => {

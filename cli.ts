@@ -12,6 +12,7 @@ import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
 import { archive, help as archiveHelp } from "./src/commands/archive"
+import { workbase, help as workbaseHelp } from "./src/commands/workbase"
 import type { Command } from "./src/types"
 import { FileSystemService } from "./src/services/FileSystemService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
@@ -173,6 +174,23 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	workbase: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(workbaseHelp)
+				return
+			}
+			await runCommand(
+				workbase({
+					subcommand: args[0],
+					args: args.slice(1),
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 	repo: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -251,13 +269,14 @@ const commands: Record<string, Command> = {
 		},
 	},
 	validate: {
-		run: async (_args: string[], options: Record<string, any>) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(validateHelp)
 				return
 			}
 			await runCommand(
 				validate({
+					path: args[0],
 					silent: options.silent,
 					verbose: options.verbose,
 					json: options.json,
@@ -275,6 +294,7 @@ Usage: agency <command> [options]
 
 Commands:
   init [path]            Initialize an Agency workbase
+  workbase <subcommand>  Manage registered workbases
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
   archive <type>         Archive a work item
@@ -283,7 +303,7 @@ Commands:
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
-  validate               Validate the current workbase
+  validate [path]        Validate a workbase
 
 Global Options:
   -h, --help             Show help for a command

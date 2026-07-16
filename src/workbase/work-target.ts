@@ -58,6 +58,7 @@ export interface WorkTargetChoice {
 const statusIcons: Record<WorkStatus, string> = {
 	open: "\x1b[2m○\x1b[0m",
 	working: "\x1b[34m◐\x1b[0m",
+	delegated: "\x1b[35m↗\x1b[0m",
 	done: "\x1b[32m✓\x1b[0m",
 	dropped: "\x1b[31m⊘\x1b[0m",
 }

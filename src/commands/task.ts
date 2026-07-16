@@ -237,7 +237,7 @@ Subcommands:
   create <id>           Create a task; omitted metadata uses defaults
   list                  List tasks
   show <id>             Show a task
-  status <id> <status>  Set open, working, done, or dropped
+  status <id> <status>  Set open, working, delegated, done, or dropped
 
 Create options:
   --ticket-url <url>    External ticket URL (optional)

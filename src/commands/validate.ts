@@ -2,8 +2,14 @@ import { Data, Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorkbaseService } from "../services/WorkbaseService"
 import { createLoggers } from "../utils/effect"
+import {
+	pickWorkbase,
+	resolveWorkbase,
+	type PickWorkbase,
+} from "../workbase/workbase-choice"
 
 interface ValidateOptions extends BaseCommandOptions {
+	readonly path?: string
 	readonly json?: boolean
 }
 
@@ -11,11 +17,19 @@ class ValidationFailedError extends Data.TaggedError("ValidationFailedError")<{
 	readonly message: string
 }> {}
 
-export const validate = (options: ValidateOptions = {}) =>
+export const validate = (
+	options: ValidateOptions = {},
+	pick: PickWorkbase = pickWorkbase,
+) =>
 	Effect.gen(function* () {
 		const workbase = yield* WorkbaseService
 		const { log } = createLoggers(options)
-		const report = yield* workbase.validate(options.cwd ?? process.cwd())
+		const startPath = options.path ?? options.cwd ?? process.cwd()
+		const root = options.path
+			? yield* workbase.discover(startPath)
+			: yield* resolveWorkbase(startPath, log, pick)
+		if (!root) return
+		const report = yield* workbase.validate(root)
 
 		if (options.json) {
 			log(JSON.stringify(report, null, 2))
@@ -40,10 +54,10 @@ export const validate = (options: ValidateOptions = {}) =>
 	})
 
 export const help = `
-Usage: agency validate [options]
+Usage: agency validate [path] [options]
 
-Validate the current workbase configuration, frontmatter, references, and
-dependency graphs.
+Validate a workbase's configuration, frontmatter, references, and dependency
+graphs. The current or selected registered workbase is used when path is omitted.
 
 Options:
   --json              Output the validation report as JSON

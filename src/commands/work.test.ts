@@ -9,6 +9,7 @@ import { WorktreeService } from "../services/WorktreeService"
 import { captureLogs } from "../test-utils"
 import { work } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
+import type { PickWorkbase } from "../workbase/workbase-choice"
 import type { Progress } from "../utils/progress"
 
 type ExecutionWorkspace = Effect.Effect.Success<
@@ -43,6 +44,8 @@ interface HarnessOptions {
 	readonly epicRecords?: readonly any[]
 	readonly taskRecords?: readonly any[]
 	readonly phaseRecords?: readonly any[]
+	readonly outsideWorkbase?: boolean
+	readonly registeredWorkbases?: readonly string[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -73,7 +76,14 @@ const createHarness = (options: HarnessOptions = {}) => {
 		},
 	}
 	const workbase = {
-		discover: () => Effect.succeed("/workbase"),
+		discover: (path: string) =>
+			options.outsideWorkbase && path === "/outside"
+				? Effect.fail({
+						_tag: "WorkbaseNotFoundError" as const,
+						message: "No Agency workbase found from /outside",
+					})
+				: Effect.succeed("/workbase"),
+		listRegistered: () => Effect.succeed(options.registeredWorkbases ?? []),
 	}
 	const epics = {
 		show: (id: string) =>
@@ -130,6 +140,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		launches.push({ cli, args, cwd })
 	}
 	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
+	const defaultPickWorkbase: PickWorkbase = () => Effect.succeed(null)
 	const progress: Progress = {
 		start: (message) => progressUpdates.push(`start:${message}`),
 		succeed: (message) => progressUpdates.push(`succeed:${message}`),
@@ -138,9 +149,10 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const run = (
 		commandOptions: Parameters<typeof work>[0],
 		pick: PickWorkTarget = defaultPick,
+		pickBase: PickWorkbase = defaultPickWorkbase,
 	) =>
 		Effect.runPromise(
-			work(commandOptions, launch, pick, progress).pipe(
+			work(commandOptions, launch, pick, progress, pickBase).pipe(
 				Effect.provideService(WorktreeService, worktrees as never),
 				Effect.provideService(FileSystemService, fs as never),
 				Effect.provideService(WorkbaseService, workbase as never),
@@ -253,6 +265,41 @@ describe("work command", () => {
 		expect(harness.launches[0]?.cwd).toBe(
 			"/workbase/tasks/delivery/phases/build",
 		)
+	})
+
+	test("selects a registered workbase when local discovery fails", async () => {
+		const harness = createHarness({
+			outsideWorkbase: true,
+			registeredWorkbases: ["/first", "/workbase"],
+		})
+		const selections: string[][] = []
+		const pickBase: PickWorkbase = (workbases) => {
+			selections.push([...workbases])
+			return Effect.succeed("/workbase")
+		}
+
+		await harness.run(
+			{ cwd: "/outside", taskId: "example", opencode: true },
+			undefined,
+			pickBase,
+		)
+
+		expect(selections).toEqual([["/first", "/workbase"]])
+		expect(harness.events).toEqual([
+			"probe:fzf",
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
+	})
+
+	test("explains how to register a workbase when none are known", async () => {
+		const harness = createHarness({ outsideWorkbase: true })
+
+		await expect(harness.run({ cwd: "/outside" })).rejects.toThrow(
+			"agency workbase add <path>",
+		)
+		expect(harness.events).toEqual([])
 	})
 
 	test("prints the target tree when fzf is unavailable", async () => {

@@ -58,6 +58,13 @@ If no workbase is found, do not initialize one without user intent. When asked:
 agency init [path]
 ```
 
+Register known workbases so `agency work` can select one when run elsewhere:
+
+```bash
+agency workbase add <path>
+agency workbase list
+```
+
 ## Repository Aliases
 
 Add a remote as an Agency-managed bare repository:
@@ -195,8 +202,8 @@ output, including mutations, entity inspection, status, validation, and PR creat
 - Multi-phase task frontmatter owns the phase dependency graph.
 - Epic frontmatter owns the child-task dependency graph.
 - `pr` is either a GitHub PR URL string or `null`.
-- Execution-unit `status` is `open`, `working`, `done`, or `dropped`. New work
-  starts open, and `agency work` marks it working before agent launch.
+- Execution-unit `status` is `open`, `working`, `delegated`, `done`, or `dropped`.
+  New work starts open, and `agency work` marks it working before agent launch.
 - Keep directory IDs stable; encode sequencing with `dependsOn`, not numeric
   directory prefixes.
 - Do not use YAML duplicate keys, anchors, aliases, or custom tags.
@@ -207,8 +214,8 @@ prose, preserve backlinks and run validation immediately afterward.
 Update execution status with:
 
 ```bash
-agency task status <task-id> <open|working|done|dropped>
-agency phase status <task-id> <phase-id> <open|working|done|dropped>
+agency task status <task-id> <open|working|delegated|done|dropped>
+agency phase status <task-id> <phase-id> <open|working|delegated|done|dropped>
 ```
 
 ## Archive Completed Work
@@ -226,13 +233,14 @@ branches. It refuses dirty worktrees and active sibling dependencies.
 ## Validate Every Structural Change
 
 ```bash
-agency validate
+agency validate [path]
 ```
 
 Use `--json` when diagnostics will be consumed programmatically. Resolve all
 validation errors before materializing worktrees or creating PRs. Validation
 checks schemas, aliases, backlinks, phase directories, duplicate references,
 duplicate writable branch ownership, unknown dependencies, and dependency cycles.
+Outside a workbase, omitting path opens the registered-workbase picker.
 
 ## Worktrees And Agent Launch
 
@@ -247,6 +255,7 @@ repositories for execution targets, creates or reuses their worktrees, and
 replaces the current process with the selected agent. It infers the nearest
 epic, task, or phase from the current directory; otherwise it opens an `fzf`
 picker containing the workbase hierarchy.
+Outside a workbase, it first opens a picker containing registered workbases.
 
 Epic and multi-phase task targets are orchestration sessions launched beside
 their documents. Single-phase tasks and phases are execution sessions launched

@@ -240,11 +240,15 @@ agency pr create refresh-copy
 
 ```text
 agency init [path] [--json]
+agency workbase add <path> [--json]
+agency workbase list [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
 agency repo list [--json]
 ```
 
+Registered workbases are stored in
+`$XDG_CONFIG_HOME/agency/workbases.json` (or `~/.config/agency/workbases.json`).
 `repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
 repository. Alias names are then used by all documents and commands.
 
@@ -294,7 +298,7 @@ Inspect tasks:
 ```text
 agency task list [--json]
 agency task show <id> [--json]
-agency task status <id> <open|working|done|dropped> [--json]
+agency task status <id> <open|working|delegated|done|dropped> [--json]
 ```
 
 To add a phase to an existing single-phase task, name the phase that will own
@@ -321,14 +325,14 @@ agency phase create <task-id> <phase-id>
 
 agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|working|done|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|working|delegated|done|dropped> [--json]
 ```
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Use the status subcommands to mark work `done`, `dropped`, or open
-it again. The interactive work selector displays status markers before execution
-units.
+before launch. Use the status subcommands to mark work `delegated`, `done`,
+`dropped`, or open it again. The interactive work selector displays status
+markers before execution units.
 
 ### Archive
 
@@ -351,8 +355,10 @@ agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
 `agency work` infers an epic, task, or phase from the current directory. From
-elsewhere in the workbase, it presents the full hierarchy in `fzf`. If `fzf` is
-not installed, Agency prints the hierarchy and asks for an explicit target.
+elsewhere in the workbase, it presents the full hierarchy in `fzf`. Outside a
+workbase, it first presents the registered workbases, then the selected
+workbase's hierarchy. If `fzf` is not installed, Agency prints the available
+choices and asks for an explicit target.
 
 Epic and multi-phase task targets launch orchestration agents beside their
 documents. Single-phase tasks and phases fetch repositories, create or reuse
@@ -380,13 +386,14 @@ the owning `TASK.md` or `PHASE.md`.
 
 ```text
 agency status [--json]
-agency validate [--json]
+agency validate [path] [--json]
 ```
 
 Validation checks JSON and YAML parsing, Effect Schema conformance, repository
 aliases, parent/child backlinks, phase directories, duplicate references,
 unknown dependencies, and dependency cycles. YAML duplicate keys, anchors,
-aliases, and custom tags are rejected.
+aliases, and custom tags are rejected. When path is omitted outside a workbase,
+Agency prompts for a registered workbase.
 
 ## Agent Skill
 

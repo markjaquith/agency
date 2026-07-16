@@ -5,7 +5,9 @@ import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
 	TaskFrontmatter,
+	WorkStatus,
 	WorkbaseConfig,
+	WorkbaseRegistry,
 } from "./schemas"
 
 describe("body-of-work descriptions", () => {
@@ -76,6 +78,14 @@ describe("body-of-work descriptions", () => {
 })
 
 describe("work status", () => {
+	const supportedStatuses: Record<WorkStatus, true> = {
+		open: true,
+		working: true,
+		delegated: true,
+		done: true,
+		dropped: true,
+	}
+
 	test("defaults execution units to open", () => {
 		const task = Schema.decodeUnknownSync(TaskFrontmatter)({
 			ticketUrl: "https://example.com/task",
@@ -95,22 +105,76 @@ describe("work status", () => {
 		expect(phase.status).toBe("open")
 	})
 
-	test("accepts supported statuses and rejects other values", () => {
-		const phase = Schema.decodeUnknownSync(PhaseFrontmatter)({
-			repo: "agency",
-			branch: "task/done",
-			base: "main",
-			pr: null,
-			status: "done",
-		})
-		expect(phase.status).toBe("done")
+	test("accepts every supported status on tasks and phases", () => {
+		for (const status of Object.keys(supportedStatuses) as WorkStatus[]) {
+			expect(Schema.decodeUnknownSync(WorkStatus)(status)).toBe(status)
+
+			const task = Schema.decodeUnknownSync(TaskFrontmatter)({
+				ticketUrl: null,
+				repo: "agency",
+				branch: `task/${status}`,
+				base: "main",
+				pr: null,
+				status,
+			})
+			const phase = Schema.decodeUnknownSync(PhaseFrontmatter)({
+				repo: "agency",
+				branch: `phase/${status}`,
+				base: "main",
+				pr: null,
+				status,
+			})
+
+			expect("status" in task && task.status).toBe(status)
+			expect(phase.status).toBe(status)
+		}
+	})
+
+	test("rejects unsupported statuses on tasks and phases", () => {
+		expect(() => Schema.decodeUnknownSync(WorkStatus)("blocked")).toThrow()
 		expect(() =>
-			Schema.decodeUnknownSync(PhaseFrontmatter)({
+			Schema.decodeUnknownSync(TaskFrontmatter)({
+				ticketUrl: null,
 				repo: "agency",
 				branch: "task/invalid",
 				base: "main",
 				pr: null,
 				status: "blocked",
+			}),
+		).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(PhaseFrontmatter)({
+				repo: "agency",
+				branch: "phase/invalid",
+				base: "main",
+				pr: null,
+				status: "blocked",
+			}),
+		).toThrow()
+	})
+})
+
+describe("workbase registry", () => {
+	test("accepts registered paths", () => {
+		expect(
+			Schema.decodeUnknownSync(WorkbaseRegistry)({
+				version: 1,
+				workbases: ["/work/one", "/work/two"],
+			}),
+		).toEqual({ version: 1, workbases: ["/work/one", "/work/two"] })
+	})
+
+	test("rejects invalid versions and empty paths", () => {
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseRegistry)({
+				version: 2,
+				workbases: [],
+			}),
+		).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseRegistry)({
+				version: 1,
+				workbases: [""],
 			}),
 		).toThrow()
 	})

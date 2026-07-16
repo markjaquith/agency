@@ -1,6 +1,7 @@
 import { Schema } from "@effect/schema"
 import { TreeFormatter } from "@effect/schema"
 import { Data, Effect, Either } from "effect"
+import { homedir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { parseFrontmatter } from "../workbase/frontmatter"
@@ -9,6 +10,7 @@ import {
 	PhaseFrontmatter,
 	TaskFrontmatter,
 	WorkbaseConfig,
+	WorkbaseRegistry,
 	type Dependency,
 	type EpicFrontmatter as EpicData,
 	type PhaseFrontmatter as PhaseData,
@@ -29,6 +31,12 @@ class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 }> {}
 
 class WorkbaseConfigError extends Data.TaggedError("WorkbaseConfigError")<{
+	readonly message: string
+	readonly path: string
+	readonly cause?: unknown
+}> {}
+
+class WorkbaseRegistryError extends Data.TaggedError("WorkbaseRegistryError")<{
 	readonly message: string
 	readonly path: string
 	readonly cause?: unknown
@@ -71,6 +79,45 @@ const decode = <S extends Schema.Schema.AnyNoContext>(
 		? { success: false, error: TreeFormatter.formatErrorSync(result.left) }
 		: { success: true, value: result.right }
 }
+
+const registryPath = (configDirectory?: string) =>
+	join(
+		configDirectory ||
+			process.env.XDG_CONFIG_HOME ||
+			join(homedir(), ".config"),
+		"agency",
+		"workbases.json",
+	)
+
+const readRegistry = (configDirectory?: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const path = registryPath(configDirectory)
+		if (!(yield* fs.exists(path))) {
+			return { path, registry: { version: 1, workbases: [] } as const }
+		}
+
+		const content = yield* fs.readFile(path)
+		let input: unknown
+		try {
+			input = JSON.parse(content)
+		} catch (cause) {
+			return yield* new WorkbaseRegistryError({
+				path,
+				message: `Invalid JSON in workbase registry ${path}`,
+				cause,
+			})
+		}
+
+		const decoded = decode(WorkbaseRegistry, input)
+		if (!decoded.success) {
+			return yield* new WorkbaseRegistryError({
+				path,
+				message: `Invalid workbase registry in ${path}:\n${decoded.error}`,
+			})
+		}
+		return { path, registry: decoded.value }
+	})
 
 const ensureWorkbaseAgents = (root: string) =>
 	Effect.gen(function* () {
@@ -292,6 +339,28 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					}
 					return { root, config: decoded.value }
 				}),
+
+			register: (startPath: string, configDirectory?: string) =>
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const fs = yield* FileSystemService
+					const discovered = yield* service.discover(startPath)
+					const root = yield* fs.realPath(discovered)
+					const { path, registry } = yield* readRegistry(configDirectory)
+					if (registry.workbases.includes(root)) return root
+
+					yield* fs.createDirectory(dirname(path))
+					yield* fs.writeJSON(path, {
+						version: 1,
+						workbases: [...registry.workbases, root],
+					})
+					return root
+				}),
+
+			listRegistered: (configDirectory?: string) =>
+				readRegistry(configDirectory).pipe(
+					Effect.map(({ registry }) => registry.workbases),
+				),
 
 			validate: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {

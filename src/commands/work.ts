@@ -16,6 +16,11 @@ import {
 	type PickWorkTarget,
 	type WorkTarget,
 } from "../workbase/work-target"
+import {
+	pickWorkbase,
+	resolveWorkbase,
+	type PickWorkbase,
+} from "../workbase/workbase-choice"
 
 interface WorkOptions extends BaseCommandOptions {
 	readonly taskId?: string
@@ -37,6 +42,7 @@ export const work = (
 	launch: LaunchAgent = launchAgent,
 	pick: PickWorkTarget = pickWorkTarget,
 	progress: Progress = createProgress(options),
+	pickBase: PickWorkbase = pickWorkbase,
 ) =>
 	Effect.gen(function* () {
 		if (options.opencode && options.claude) {
@@ -58,7 +64,8 @@ export const work = (
 		const phases = yield* PhaseService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const root = yield* workbase.discover(cwd)
+		const root = yield* resolveWorkbase(cwd, log, pickBase)
+		if (!root) return
 
 		let target: WorkTarget | null = null
 		if (options.epicId) {
@@ -201,7 +208,8 @@ export const help = `
 Usage: agency work [<task-id> [phase-id] | --epic <epic-id>]
 
 Launch an agent for the current epic, task, or phase. Outside an entity
-directory, select one with fzf.
+directory, select one with fzf. Outside a workbase, select a registered
+workbase first.
 
 Options:
   --epic <id>         Work on an epic
