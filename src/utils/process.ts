@@ -15,9 +15,27 @@ interface ProcessResult {
 interface SpawnOptions {
 	readonly cwd?: string
 	readonly stdin?: "pipe" | "inherit"
-	readonly stdout?: "pipe" | "inherit"
-	readonly stderr?: "pipe" | "inherit"
+	readonly stdout?: "pipe" | "inherit" | "tee"
+	readonly stderr?: "pipe" | "inherit" | "tee"
 	readonly env?: Record<string, string>
+}
+
+const readOutput = async (
+	stream: ReadableStream<Uint8Array> | null | undefined,
+	target?: { write(chunk: Uint8Array): unknown },
+) => {
+	if (!stream) return ""
+
+	const reader = stream.getReader()
+	const decoder = new TextDecoder()
+	let output = ""
+	while (true) {
+		const { done, value } = await reader.read()
+		if (done) break
+		target?.write(value)
+		output += decoder.decode(value, { stream: true })
+	}
+	return output + decoder.decode()
 }
 
 /**
@@ -50,8 +68,8 @@ export const spawnProcess = (
 			const proc = Bun.spawn([...args], {
 				cwd: options?.cwd ?? process.cwd(),
 				stdin: options?.stdin ?? "pipe",
-				stdout: options?.stdout ?? "pipe",
-				stderr: options?.stderr ?? "pipe",
+				stdout: options?.stdout === "inherit" ? "inherit" : "pipe",
+				stderr: options?.stderr === "inherit" ? "inherit" : "pipe",
 				env: options?.env ? { ...process.env, ...options.env } : process.env,
 			})
 			// Start draining stdout/stderr immediately so verbose subprocesses
@@ -59,11 +77,17 @@ export const spawnProcess = (
 			const stdoutPromise =
 				options?.stdout === "inherit"
 					? Promise.resolve("")
-					: new Response(proc.stdout ?? "").text()
+					: readOutput(
+							proc.stdout,
+							options?.stdout === "tee" ? process.stdout : undefined,
+						)
 			const stderrPromise =
 				options?.stderr === "inherit"
 					? Promise.resolve("")
-					: new Response(proc.stderr ?? "").text()
+					: readOutput(
+							proc.stderr,
+							options?.stderr === "tee" ? process.stderr : undefined,
+						)
 
 			const [exitCode, stdout, stderr] = await Promise.all([
 				proc.exited,

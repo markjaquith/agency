@@ -2,6 +2,7 @@ import { Data, Effect } from "effect"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
+import type { BaseCommandOptions } from "../utils/command"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
 import {
@@ -59,6 +60,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 				phaseId?: string,
 				draft = false,
 				startPath: string = process.cwd(),
+				options: BaseCommandOptions = {},
 			) =>
 				Effect.gen(function* () {
 					const service = yield* PullRequestService
@@ -70,6 +72,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						taskId,
 						phaseId,
 						startPath,
+						options,
 					)
 					const task = yield* tasks.show(taskId, workspace.root)
 					const execution =

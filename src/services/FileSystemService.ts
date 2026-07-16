@@ -180,6 +180,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 				options?: {
 					readonly cwd?: string
 					readonly captureOutput?: boolean
+					readonly forwardOutput?: boolean
 					readonly env?: Record<string, string>
 				},
 			) =>
@@ -187,8 +188,12 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					spawnProcess(args, {
 						cwd: options?.cwd,
 						stdin: "pipe",
-						stdout: options?.captureOutput ? "pipe" : "inherit",
-						stderr: "pipe",
+						stdout: options?.forwardOutput
+							? "tee"
+							: options?.captureOutput
+								? "pipe"
+								: "inherit",
+						stderr: options?.forwardOutput ? "tee" : "pipe",
 						env: options?.env,
 					}),
 					Effect.mapError(

@@ -9,6 +9,8 @@ import {
 	worktreeCommandEnvironment,
 } from "../workbase/worktree-command"
 import type { RepositoryReference } from "../workbase/schemas"
+import type { BaseCommandOptions } from "../utils/command"
+import { createLoggers } from "../utils/effect"
 
 class WorktreeError extends Data.TaggedError("WorktreeError")<{
 	readonly message: string
@@ -49,6 +51,15 @@ const parseWorktreeList = (output: string): readonly GitWorktree[] => {
 	return worktrees
 }
 
+const formatCommand = (args: readonly string[]) =>
+	args
+		.map((argument) =>
+			/^[A-Za-z0-9_./:=+@%-]+$/.test(argument)
+				? argument
+				: `'${argument.replaceAll("'", `'\\''`)}'`,
+		)
+		.join(" ")
+
 export class WorktreeService extends Effect.Service<WorktreeService>()(
 	"WorktreeService",
 	{
@@ -57,12 +68,16 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 				taskId: string,
 				phaseId?: string,
 				startPath: string = process.cwd(),
+				options: BaseCommandOptions = {},
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
+					const { verboseLog } = createLoggers(options)
+					const forwardCommandOutput =
+						options.verbose === true && !options.silent && !options.json
 					const { root, config } = yield* workbase.loadConfig(startPath)
 					const report = yield* workbase.validate(root)
 					const ownershipIssue = report.issues.find((issue) =>
@@ -258,9 +273,14 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								]
 							}
 
+							if (config.worktreeCreateCommand) {
+								verboseLog(`Running worktree command: ${formatCommand(args)}`)
+							}
 							const result = yield* fs.runCommand(args, {
 								cwd: repositoryPath,
 								captureOutput: true,
+								forwardOutput:
+									config.worktreeCreateCommand && forwardCommandOutput,
 								env,
 							})
 							if (result.exitCode !== 0) {
