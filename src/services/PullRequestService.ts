@@ -81,6 +81,11 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						["git", "-C", workspace.writablePath, "status", "--porcelain"],
 						{ captureOutput: true },
 					)
+					if (status.exitCode !== 0) {
+						return yield* new PullRequestError({
+							message: `Failed to inspect worktree status: ${status.stderr}`,
+						})
+					}
 					if (status.stdout) {
 						return yield* new PullRequestError({
 							message: "Cannot create a PR with a dirty worktree",

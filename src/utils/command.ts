@@ -10,9 +10,4 @@ export interface BaseCommandOptions {
 	 * Primarily used for testing to enable concurrent test execution.
 	 */
 	readonly cwd?: string
-	/**
-	 * Agency config directory to use instead of AGENCY_CONFIG_DIR env var.
-	 * Primarily used for testing to enable concurrent test execution.
-	 */
-	readonly configDir?: string
 }

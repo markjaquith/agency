@@ -12,7 +12,17 @@ interface WorkOptions extends BaseCommandOptions {
 	readonly claude?: boolean
 }
 
-export const work = (options: WorkOptions = {}) =>
+type LaunchAgent = (cli: string, args: readonly string[], cwd: string) => void
+
+const launchAgent: LaunchAgent = (cli, args, cwd) => {
+	process.chdir(cwd)
+	execvp(cli, [...args])
+}
+
+export const work = (
+	options: WorkOptions = {},
+	launch: LaunchAgent = launchAgent,
+) =>
 	Effect.gen(function* () {
 		if (!options.taskId) {
 			return yield* Effect.fail(new Error("Task ID is required"))
@@ -49,9 +59,8 @@ export const work = (options: WorkOptions = {}) =>
 		}
 
 		verboseLog(`Launching ${cli} in ${workspace.writablePath}`)
-		process.chdir(workspace.writablePath)
 		const args = cli === "opencode" ? ["--prompt", prompt] : [prompt]
-		execvp(cli, [cli, ...args])
+		launch(cli, [cli, ...args], workspace.writablePath)
 	})
 
 export const help = `

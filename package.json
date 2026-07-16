@@ -40,9 +40,7 @@
     "tag": "latest"
   },
   "scripts": {
-    "test": "find src -name '*.test.ts' ! -name '*.integration.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
-    "test:integration": "find src -name '*.integration.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
-    "test:all": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
+    "test": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "knip": "knip --production",
@@ -57,16 +55,14 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.6",
-    "knip": "^5.82.1",
-    "oxfmt": "^0.27.0"
+    "knip": "^6.27.0",
+    "oxfmt": "^0.27.0",
+    "typescript": "^7.0.2"
   },
   "peerDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "engines": {
     "bun": ">=1.0.0"
-  },
-  "trustedDependencies": [
-    "@triggi/native-exec"
-  ]
+  }
 }

@@ -19,7 +19,7 @@ class PhaseError extends Data.TaggedError("PhaseError")<{
 	readonly message: string
 }> {}
 
-export interface PhaseRecord {
+interface PhaseRecord {
 	readonly taskId: string
 	readonly id: string
 	readonly path: string

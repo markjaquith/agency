@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { parseArgs } from "util"
-import { Effect, Layer } from "effect"
+import { Effect, Either, Layer } from "effect"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
@@ -12,7 +12,6 @@ import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
 import type { Command } from "./src/types"
-import { setColorsEnabled } from "./src/utils/colors"
 import { FileSystemService } from "./src/services/FileSystemService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
 import { RepositoryService } from "./src/services/RepositoryService"
@@ -46,31 +45,28 @@ async function runCommand<E>(
 		never
 	>
 
-	// Catch typed errors and convert to standard Error objects
-	const programWithErrorHandling = Effect.catchAll(providedEffect, (error) => {
-		// Convert typed errors to standard Error objects with clear messages
+	const toError = (error: unknown) => {
 		if (error instanceof Error) {
-			return Effect.fail(error)
+			return error
 		}
-		// Handle objects with message property (common pattern for tagged errors)
 		if (
 			typeof error === "object" &&
 			error !== null &&
 			"message" in error &&
 			typeof error.message === "string"
 		) {
-			return Effect.fail(new Error(error.message))
+			return new Error(error.message)
 		}
-		// Fallback: convert to string
-		return Effect.fail(new Error(String(error)))
-	})
+		return new Error(String(error))
+	}
 
-	// Catch defects (unexpected crashes) and convert to errors
-	const program = Effect.catchAllDefect(programWithErrorHandling, (defect) =>
-		Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
+	const result = await Effect.runPromise(
+		providedEffect.pipe(
+			Effect.catchAllDefect((defect) => Effect.fail(toError(defect))),
+			Effect.either,
+		),
 	)
-
-	await Effect.runPromise(program)
+	if (Either.isLeft(result)) throw toError(result.left)
 }
 
 // Read version from package.json
@@ -82,8 +78,6 @@ const VERSION = packageJson.version
 // Define commands
 const commands: Record<string, Command> = {
 	init: {
-		name: "init",
-		description: "Initialize an Agency workbase",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(initHelp)
@@ -98,11 +92,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: initHelp,
 	},
 	epic: {
-		name: "epic",
-		description: "Manage epics",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(epicHelp)
@@ -121,11 +112,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: epicHelp,
 	},
 	pr: {
-		name: "pr",
-		description: "Create a pull request for an execution unit",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(prHelp)
@@ -143,11 +131,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: prHelp,
 	},
 	phase: {
-		name: "phase",
-		description: "Manage task phases",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(phaseHelp)
 			await runCommand(
@@ -167,11 +152,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: phaseHelp,
 	},
 	repo: {
-		name: "repo",
-		description: "Manage workbase repositories",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(repoHelp)
@@ -187,11 +169,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: repoHelp,
 	},
 	task: {
-		name: "task",
-		description: "Task management commands",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(taskHelp)
@@ -215,11 +194,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: taskHelp,
 	},
 	work: {
-		name: "work",
-		description: "Start working on TASK.md with OpenCode",
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(workHelp)
@@ -237,11 +213,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: workHelp,
 	},
 	status: {
-		name: "status",
-		description: "Show status for the current workbase",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(statusHelp)
@@ -255,11 +228,8 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: statusHelp,
 	},
 	validate: {
-		name: "validate",
-		description: "Validate the current workbase",
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(validateHelp)
@@ -273,7 +243,6 @@ const commands: Record<string, Command> = {
 				}),
 			)
 		},
-		help: validateHelp,
 	},
 }
 
@@ -297,7 +266,6 @@ Commands:
 Global Options:
   -h, --help             Show help for a command
   -V, --version          Show version number
-  --no-color             Disable color output
   -s, --silent           Suppress output messages
   -v, --verbose          Show verbose output including detailed debugging info
 
@@ -311,10 +279,10 @@ For more information about a command, run:
 	`)
 }
 
-// Parse global arguments
 try {
+	const args = process.argv.slice(2)
 	const { values, positionals } = parseArgs({
-		args: process.argv.slice(2),
+		args,
 		options: {
 			help: {
 				type: "boolean",
@@ -324,18 +292,18 @@ try {
 				type: "boolean",
 				short: "V",
 			},
-			"no-color": {
+			silent: {
 				type: "boolean",
+				short: "s",
+			},
+			verbose: {
+				type: "boolean",
+				short: "v",
 			},
 		},
 		strict: false,
 		allowPositionals: true,
 	})
-
-	// Handle --no-color flag
-	if (values["no-color"]) {
-		setColorsEnabled(false)
-	}
 
 	// Handle global flags
 	if (values.version) {
@@ -360,8 +328,11 @@ try {
 		process.exit(1)
 	}
 
-	// Parse command-specific arguments
-	const commandArgs = process.argv.slice(3)
+	const commandIndex = args.indexOf(commandName)
+	const commandArgs = [
+		...args.slice(0, commandIndex),
+		...args.slice(commandIndex + 1),
+	]
 	const { values: cmdValues, positionals: cmdPositionals } = parseArgs({
 		args: commandArgs,
 		options: {
@@ -414,8 +385,7 @@ try {
 		allowPositionals: true,
 	})
 
-	// Run the command, passing raw args for commands that need them (like pr)
-	await command.run(cmdPositionals, cmdValues, commandArgs)
+	await command.run(cmdPositionals, cmdValues)
 } catch (error) {
 	if (error instanceof Error) {
 		let message = error.message

@@ -224,4 +224,223 @@ pr: null
 				"Writable branch 'task/shared' for repository 'agency' is also owned by tasks/first/TASK.md",
 		})
 	})
+
+	test("reports high-risk structural validation failures", async () => {
+		const fixtures: readonly {
+			name: string
+			files: Readonly<Record<string, string>>
+			directories?: readonly string[]
+			expected: readonly string[]
+		}[] = [
+			{
+				name: "missing-documents",
+				files: {},
+				directories: [
+					"epics/missing-epic",
+					"tasks/missing-task",
+					"tasks/missing-task/phases/missing-phase",
+				],
+				expected: [
+					"epics/missing-epic/EPIC.md: Required document is missing",
+					"tasks/missing-task/TASK.md: Required document is missing",
+					"tasks/missing-task/phases/missing-phase/PHASE.md: Required document is missing",
+				],
+			},
+			{
+				name: "duplicates",
+				files: {
+					"epics/duplicate/EPIC.md": `---
+ticketUrl: https://example.com/epics/duplicate
+repos:
+  - repo: agency
+    ref: main
+  - repo: agency
+    ref: release
+tasks:
+  - id: child
+  - id: child
+---
+`,
+					"tasks/child/TASK.md": `---
+ticketUrl: https://example.com/tasks/child
+epic: duplicate
+phases:
+  - id: implementation
+  - id: implementation
+---
+`,
+					"tasks/child/phases/implementation/PHASE.md": `---
+repo: agency
+branch: task/duplicate
+base: main
+pr: null
+---
+`,
+				},
+				expected: [
+					"Repository references must be unique",
+					"Epic task IDs must be unique",
+					"Task phase IDs must be unique",
+				],
+			},
+			{
+				name: "backlinks",
+				files: {
+					"epics/parent/EPIC.md": `---
+ticketUrl: https://example.com/epics/parent
+repos:
+  - repo: agency
+    ref: main
+tasks:
+  - id: missing-backlink
+---
+`,
+					"tasks/missing-backlink/TASK.md": `---
+ticketUrl: https://example.com/tasks/missing-backlink
+repo: agency
+branch: task/missing-backlink
+base: main
+pr: null
+---
+`,
+					"tasks/unlisted/TASK.md": `---
+ticketUrl: https://example.com/tasks/unlisted
+epic: parent
+repo: agency
+branch: task/unlisted
+base: main
+pr: null
+---
+`,
+				},
+				expected: [
+					"Task must reference parent epic 'parent'",
+					"Epic does not list child task 'unlisted'",
+				],
+			},
+			{
+				name: "dependency-cycles",
+				files: {
+					"epics/cycles/EPIC.md": `---
+ticketUrl: https://example.com/epics/cycles
+repos:
+  - repo: agency
+    ref: main
+tasks:
+  - id: first
+    dependsOn: [second]
+  - id: second
+    dependsOn: [first]
+---
+`,
+					"tasks/first/TASK.md": `---
+ticketUrl: https://example.com/tasks/first
+epic: cycles
+phases:
+  - id: contract
+    dependsOn: [delivery]
+  - id: delivery
+    dependsOn: [contract]
+---
+`,
+					"tasks/first/phases/contract/PHASE.md": `---
+repo: agency
+branch: task/contract
+base: main
+pr: null
+---
+`,
+					"tasks/first/phases/delivery/PHASE.md": `---
+repo: agency
+branch: task/delivery
+base: main
+pr: null
+---
+`,
+					"tasks/second/TASK.md": `---
+ticketUrl: https://example.com/tasks/second
+epic: cycles
+repo: agency
+branch: task/second
+base: main
+pr: null
+---
+`,
+				},
+				expected: [
+					"Task dependency cycle includes 'first'",
+					"Phase dependency cycle includes 'contract'",
+				],
+			},
+			{
+				name: "phase-layout",
+				files: {
+					"tasks/multi/TASK.md": `---
+ticketUrl: https://example.com/tasks/multi
+phases:
+  - id: listed
+---
+`,
+					"tasks/multi/phases/listed/PHASE.md": `---
+repo: agency
+branch: task/listed
+base: main
+pr: null
+---
+`,
+					"tasks/multi/phases/unlisted/PHASE.md": `---
+repo: agency
+branch: task/unlisted
+base: main
+pr: null
+---
+`,
+					"tasks/single/TASK.md": `---
+ticketUrl: https://example.com/tasks/single
+repo: agency
+branch: task/single
+base: main
+pr: null
+---
+`,
+					"tasks/single/phases/unexpected/PHASE.md": `---
+repo: agency
+branch: task/unexpected
+base: main
+pr: null
+---
+`,
+				},
+				expected: [
+					"Unlisted phase 'unlisted'",
+					"Single-phase task cannot contain phase directories",
+				],
+			},
+		]
+
+		for (const fixture of fixtures) {
+			const fixtureRoot = join(root, fixture.name)
+			await write(fixtureRoot, "agency.json", '{"version":2}\n')
+			await mkdir(join(fixtureRoot, "repos/agency"), { recursive: true })
+			for (const directory of fixture.directories ?? []) {
+				await mkdir(join(fixtureRoot, directory), { recursive: true })
+			}
+			for (const [path, content] of Object.entries(fixture.files)) {
+				await write(fixtureRoot, path, content)
+			}
+
+			const report = await runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.validate(fixtureRoot)),
+				),
+			)
+			const messages = report.issues
+				.map((issue) => `${issue.path}: ${issue.message}`)
+				.join("\n")
+			expect(report.valid, fixture.name).toBe(false)
+			for (const expected of fixture.expected) {
+				expect(messages, fixture.name).toContain(expected)
+			}
+		}
+	})
 })

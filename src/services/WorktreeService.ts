@@ -14,7 +14,7 @@ class WorktreeError extends Data.TaggedError("WorktreeError")<{
 	readonly message: string
 }> {}
 
-export interface ExecutionWorkspace {
+interface ExecutionWorkspace {
 	readonly root: string
 	readonly taskPath: string
 	readonly phasePath: string | null

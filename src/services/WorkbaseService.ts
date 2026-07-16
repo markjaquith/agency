@@ -26,12 +26,12 @@ class WorkbaseConfigError extends Data.TaggedError("WorkbaseConfigError")<{
 	readonly cause?: unknown
 }> {}
 
-export interface ValidationIssue {
+interface ValidationIssue {
 	readonly path: string
 	readonly message: string
 }
 
-export interface ValidationReport {
+interface ValidationReport {
 	readonly root: string
 	readonly issues: readonly ValidationIssue[]
 	readonly epicCount: number

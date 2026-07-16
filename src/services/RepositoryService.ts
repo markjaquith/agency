@@ -10,7 +10,7 @@ class RepositoryError extends Data.TaggedError("RepositoryError")<{
 	readonly cause?: unknown
 }> {}
 
-export interface RepositoryInfo {
+interface RepositoryInfo {
 	readonly alias: string
 	readonly path: string
 	readonly kind: "bare" | "repository" | "symlink"

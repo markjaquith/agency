@@ -127,6 +127,170 @@ describe("WorktreeService", () => {
 		).toBe("example\n")
 	})
 
+	test("selects phases and rejects missing or unexpected phase IDs", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "multi",
+							ticketUrl: "https://example.com/task",
+							multiPhase: true,
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "multi",
+							id: "selected",
+							repo: "agency",
+							branch: "task/selected",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("multi", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("phase ID is required")
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("multi", "missing", root),
+					),
+				),
+			),
+		).rejects.toThrow("Phase 'missing' does not exist on task 'multi'")
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("multi", "selected", root),
+				),
+			),
+		)
+		expect(workspace.phasePath).toBe(
+			join(root, "tasks/multi/phases/selected/PHASE.md"),
+		)
+		expect(workspace.writablePath).toBe(
+			join(root, "tasks/multi/phases/selected/code/agency"),
+		)
+
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "single",
+							ticketUrl: "https://example.com/task",
+							repo: "effect",
+							branch: "task/single",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("single", "unexpected", root),
+					),
+				),
+			),
+		).rejects.toThrow("does not accept a phase ID")
+	})
+
+	test("reports meaningful worktree creation failures", async () => {
+		const cases = [
+			{
+				id: "missing-repo",
+				repo: "missing",
+				base: "main",
+				config: { version: 2 },
+				expected: "Repository alias 'missing' does not exist",
+			},
+			{
+				id: "bad-base",
+				repo: "agency",
+				base: "absent-base",
+				config: { version: 2 },
+				expected: "Failed to create branch 'task/bad-base'",
+			},
+			{
+				id: "failed-command",
+				repo: "agency",
+				base: "main",
+				config: {
+					version: 2,
+					worktreeCreateCommand: [
+						"sh",
+						"-c",
+						"echo command-failed >&2; exit 7",
+						"{repo}",
+						"{worktree}",
+					],
+				},
+				expected: "Failed to create worktree for 'agency': command-failed",
+			},
+			{
+				id: "missing-destination",
+				repo: "agency",
+				base: "main",
+				config: {
+					version: 2,
+					worktreeCreateCommand: ["sh", "-c", "exit 0", "{repo}", "{worktree}"],
+				},
+				expected: "Worktree command did not create",
+			},
+		] as const
+
+		for (const fixture of cases) {
+			await Bun.write(join(root, "agency.json"), JSON.stringify(fixture.config))
+			const taskDirectory = join(root, "tasks", fixture.id)
+			await mkdir(taskDirectory, { recursive: true })
+			await Bun.write(
+				join(taskDirectory, "TASK.md"),
+				`---
+ticketUrl: https://example.com/tasks/${fixture.id}
+repo: ${fixture.repo}
+branch: task/${fixture.id}
+base: ${fixture.base}
+pr: null
+---
+`,
+			)
+
+			await expect(
+				runTestEffect(
+					WorktreeService.pipe(
+						Effect.flatMap((service) =>
+							service.materialize(fixture.id, undefined, root),
+						),
+					),
+				),
+			).rejects.toThrow(fixture.expected)
+		}
+	})
+
 	test("moves and repairs an existing worktree when converting a task", async () => {
 		await runTestEffect(
 			TaskService.pipe(
