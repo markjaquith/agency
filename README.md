@@ -43,6 +43,8 @@ frontmatter; prose below it supplies human and agent context.
 ```text
 workbase/
   AGENTS.md                # managed workbase instructions
+  .opencode/
+    opencode.jsonc         # managed task and epic references
   agency.json
   repos/
     frontend/              # bare Git repository or symlink
@@ -69,10 +71,11 @@ workbase/
             backend/
 ```
 
-Agency creates `AGENTS.md` during initialization and ensures it exists whenever
-the workbase is discovered. A checksum in the generated file lets newer Agency
-versions refresh unmodified instructions while preserving custom or edited
-files.
+Agency creates `AGENTS.md` and `.opencode/opencode.jsonc` during initialization
+and ensures they exist whenever the workbase is discovered. The OpenCode config
+grants external-directory access to task and epic references. Checksums in the
+generated files let newer Agency versions refresh unmodified content while
+preserving custom or edited files.
 
 Repository metadata comes directly from Git under `repos/{alias}`. Workbase
 configuration may provide a custom writable-worktree creation command.
@@ -177,6 +180,7 @@ repos:
 branch: task/refresh-copy
 base: main
 pr: null
+status: open
 ---
 ```
 
@@ -207,6 +211,7 @@ repos:
 branch: task/checkout-ui
 base: task/checkout-api
 pr: null
+status: open
 ---
 ```
 
@@ -222,13 +227,7 @@ cd ~/work
 agency repo add frontend git@github.com:example/frontend.git
 agency repo link backend ~/Dev/backend
 
-agency task create refresh-copy \
-  --ticket-url https://example.com/tickets/refresh-copy \
-  --description "Refresh user-facing checkout copy" \
-  --repo frontend \
-  --reference backend:main \
-  --branch task/refresh-copy \
-  --base main
+agency task new
 
 agency validate
 agency work refresh-copy
@@ -266,19 +265,28 @@ back-reference.
 
 ### Tasks
 
+Create a task interactively. Text prompts identify optional values, and known
+choices use fzf:
+
+```text
+agency task new [id]
+```
+
 Create a single-phase task:
 
 ```text
-agency task create <id> --ticket-url <url> --repo <alias>
-  --branch <name> --base <name>
-  [--description <text>] [--epic <id>] [--reference <alias>:<ref>...] [--json]
+agency task create <id> --repo <alias>
+  [--ticket-url <url>] [--description <text>] [--epic <id>]
+  [--reference <alias>:<ref>...] [--branch <name>] [--base <name>] [--json]
 ```
+
+The branch defaults to `task/<id>` and the base defaults to `main`.
 
 Create a multi-phase task container:
 
 ```text
-agency task create <id> --ticket-url <url> --multi-phase
-  [--description <text>] [--epic <id>] [--json]
+agency task create <id> --multi-phase
+  [--ticket-url <url>] [--description <text>] [--epic <id>] [--json]
 ```
 
 Inspect tasks:
@@ -286,6 +294,7 @@ Inspect tasks:
 ```text
 agency task list [--json]
 agency task show <id> [--json]
+agency task status <id> <open|working|done|dropped> [--json]
 ```
 
 To add a phase to an existing single-phase task, name the phase that will own
@@ -312,7 +321,27 @@ agency phase create <task-id> <phase-id>
 
 agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]
+agency phase status <task-id> <phase-id> <open|working|done|dropped> [--json]
 ```
+
+Single-phase tasks and phases store status in YAML. New execution units start
+`open`, and `agency work` marks the selected execution unit `working` immediately
+before launch. Use the status subcommands to mark work `done`, `dropped`, or open
+it again. The interactive work selector displays status markers before execution
+units.
+
+### Archive
+
+```text
+agency archive epic <epic-id> [--json]
+agency archive task <task-id> [--json]
+agency archive phase <task-id> <phase-id> [--json]
+```
+
+Archived work keeps its hierarchy under `archive/`. Epic archiving includes its
+listed tasks. Task and phase archiving update the active parent document and
+reject items that active siblings depend on. Agency removes registered worktrees
+before moving files, refuses dirty worktrees, and preserves branches.
 
 ### Work and Pull Requests
 

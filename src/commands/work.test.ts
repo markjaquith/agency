@@ -9,6 +9,7 @@ import { WorktreeService } from "../services/WorktreeService"
 import { captureLogs } from "../test-utils"
 import { work } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
+import type { Progress } from "../utils/progress"
 
 type ExecutionWorkspace = Effect.Effect.Success<
 	ReturnType<WorktreeService["materialize"]>
@@ -47,6 +48,8 @@ interface HarnessOptions {
 const createHarness = (options: HarnessOptions = {}) => {
 	const events: string[] = []
 	const probes: string[] = []
+	const statusUpdates: string[] = []
+	const progressUpdates: string[] = []
 	const launches: Array<{
 		cli: string
 		args: readonly string[]
@@ -91,6 +94,10 @@ const createHarness = (options: HarnessOptions = {}) => {
 					: { repo: "agency", branch: `task/${id}`, base: "main" },
 			}),
 		list: () => Effect.succeed(options.taskRecords ?? []),
+		setStatus: (id: string, status: string) => {
+			statusUpdates.push(`task:${id}:${status}`)
+			return Effect.void
+		},
 	}
 	const phases = {
 		show: (taskId: string, id: string) =>
@@ -101,6 +108,10 @@ const createHarness = (options: HarnessOptions = {}) => {
 				data: { repo: "agency", branch: `task/${id}`, base: "main" },
 			}),
 		list: () => Effect.succeed(options.phaseRecords ?? []),
+		setStatus: (taskId: string, id: string, status: string) => {
+			statusUpdates.push(`phase:${taskId}:${id}:${status}`)
+			return Effect.void
+		},
 	}
 	const fs = {
 		runCommand: (args: readonly string[]) => {
@@ -119,12 +130,17 @@ const createHarness = (options: HarnessOptions = {}) => {
 		launches.push({ cli, args, cwd })
 	}
 	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
+	const progress: Progress = {
+		start: (message) => progressUpdates.push(`start:${message}`),
+		succeed: (message) => progressUpdates.push(`succeed:${message}`),
+		fail: (message) => progressUpdates.push(`fail:${message}`),
+	}
 	const run = (
 		commandOptions: Parameters<typeof work>[0],
 		pick: PickWorkTarget = defaultPick,
 	) =>
 		Effect.runPromise(
-			work(commandOptions, launch, pick).pipe(
+			work(commandOptions, launch, pick, progress).pipe(
 				Effect.provideService(WorktreeService, worktrees as never),
 				Effect.provideService(FileSystemService, fs as never),
 				Effect.provideService(WorkbaseService, workbase as never),
@@ -134,7 +150,15 @@ const createHarness = (options: HarnessOptions = {}) => {
 			) as Effect.Effect<void, unknown, never>,
 		)
 
-	return { events, probes, launches, materializeOptions, run }
+	return {
+		events,
+		probes,
+		launches,
+		materializeOptions,
+		statusUpdates,
+		progressUpdates,
+		run,
+	}
 }
 
 describe("work command", () => {
@@ -146,11 +170,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
-			args: [
-				"opencode",
-				"--prompt",
-				"Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
-			],
+			args: ["opencode", "--continue"],
 			cwd: "/workbase/epics/delivery",
 		})
 	})
@@ -163,11 +183,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
-			args: [
-				"opencode",
-				"--prompt",
-				"Work on the task. Read /workbase/tasks/delivery/TASK.md.",
-			],
+			args: ["opencode", "--continue"],
 			cwd: "/workbase/tasks/delivery",
 		})
 	})
@@ -185,9 +201,10 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.args).toContain(
-			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
-		)
+		expect(harness.launches[0]?.args).toEqual(["opencode", "--continue"])
+		expect(harness.statusUpdates).toEqual([
+			"phase:example:implementation:working",
+		])
 	})
 
 	test("infers a single-phase task from a nested checkout directory", async () => {
@@ -199,7 +216,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.events[0]).toBe("materialize")
-		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example/code/agency")
+		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example")
 	})
 
 	test("selects a target with fzf outside an entity directory", async () => {
@@ -234,7 +251,7 @@ describe("work command", () => {
 			"launch:opencode",
 		])
 		expect(harness.launches[0]?.cwd).toBe(
-			"/workbase/tasks/example/phases/implementation/code/agency",
+			"/workbase/tasks/delivery/phases/build",
 		)
 	})
 
@@ -278,7 +295,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("launches OpenCode in the writable checkout with the single-phase prompt", async () => {
+	test("launches OpenCode in the task directory and continues its session", async () => {
 		const harness = createHarness()
 
 		await harness.run({ taskId: "example", opencode: true })
@@ -291,17 +308,18 @@ describe("work command", () => {
 		expect(harness.launches).toEqual([
 			{
 				cli: "opencode",
-				args: [
-					"opencode",
-					"--prompt",
-					"Start the task. Read /workbase/tasks/example/TASK.md.",
-				],
-				cwd: "/workbase/tasks/example/code/agency",
+				args: ["opencode", "--continue"],
+				cwd: "/workbase/tasks/example",
 			},
+		])
+		expect(harness.statusUpdates).toEqual(["task:example:working"])
+		expect(harness.progressUpdates).toEqual([
+			"start:Preparing workspace...",
+			"succeed:Workspace ready",
 		])
 	})
 
-	test("includes absolute task and phase paths in a multi-phase prompt", async () => {
+	test("continues OpenCode for a multi-phase task", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 
 		await harness.run({
@@ -310,11 +328,7 @@ describe("work command", () => {
 			opencode: true,
 		})
 
-		expect(harness.launches[0]?.args).toEqual([
-			"opencode",
-			"--prompt",
-			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
-		])
+		expect(harness.launches[0]?.args).toEqual(["opencode", "--continue"])
 	})
 
 	test("automatically falls back to Claude", async () => {
@@ -326,7 +340,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: "/workbase/tasks/example/code/agency",
+			cwd: "/workbase/tasks/example",
 		})
 	})
 
@@ -338,6 +352,7 @@ describe("work command", () => {
 		).rejects.toThrow("opencode CLI tool not found")
 		expect(harness.probes).toEqual(["opencode"])
 		expect(harness.launches).toEqual([])
+		expect(harness.statusUpdates).toEqual([])
 	})
 
 	test("launches explicitly requested Claude", async () => {
@@ -349,7 +364,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: "/workbase/tasks/example/code/agency",
+			cwd: "/workbase/tasks/example",
 		})
 	})
 
@@ -374,6 +389,10 @@ describe("work command", () => {
 			"materialization failed",
 		)
 		expect(harness.events).toEqual(["materialize"])
+		expect(harness.progressUpdates).toEqual([
+			"start:Preparing workspace...",
+			"fail:Workspace preparation failed",
+		])
 	})
 
 	test("respects silent and verbose logging options", async () => {
@@ -382,7 +401,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching opencode in /workbase/tasks/example/code/agency",
+			"Launching opencode in /workbase/tasks/example",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureLogs,
@@ -598,6 +598,155 @@ pr: null
 				),
 			),
 		).rejects.toThrow("is attached to branch 'main'")
+	})
+
+	test("removes worktrees without deleting branches", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "removable",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/removable",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("removable", undefined, root),
+				),
+			),
+		)
+
+		const removed = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("removable", undefined, root),
+				),
+			),
+		)
+
+		expect(removed.sort()).toEqual(
+			[
+				join(workspace.codePath, "agency"),
+				join(workspace.codePath, "effect"),
+			].sort(),
+		)
+		expect(await Bun.file(workspace.codePath).exists()).toBe(false)
+		const branch = Bun.spawnSync([
+			"git",
+			"-C",
+			join(root, "repos/agency"),
+			"show-ref",
+			"--verify",
+			"refs/heads/task/removable",
+		])
+		expect(branch.exitCode).toBe(0)
+	})
+
+	test("refuses to remove a worktree with uncommitted changes", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "dirty",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/dirty",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("dirty", undefined, root),
+				),
+			),
+		)
+		await Bun.write(
+			join(workspace.writablePath, "uncommitted.txt"),
+			"keep me\n",
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) => service.remove("dirty", undefined, root)),
+				),
+			),
+		).rejects.toThrow("Failed to remove worktree for 'agency'")
+		expect(
+			await Bun.file(join(workspace.writablePath, "uncommitted.txt")).text(),
+		).toBe("keep me\n")
+	})
+
+	test("handles a missing checkout without deleting its branch", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "stale",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/stale",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("stale", undefined, root),
+				),
+			),
+		)
+		await rm(workspace.codePath, { recursive: true })
+
+		const removed = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) => service.remove("stale", undefined, root)),
+			),
+		)
+
+		expect(removed).toEqual([])
+		const worktrees = Bun.spawnSync([
+			"git",
+			"-C",
+			join(root, "repos/agency"),
+			"worktree",
+			"list",
+			"--porcelain",
+		])
+		expect(new TextDecoder().decode(worktrees.stdout)).not.toContain(
+			workspace.writablePath,
+		)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/stale",
+			]).exitCode,
+		).toBe(0)
 	})
 
 	test("supports Worktrunk as the configured command", async () => {

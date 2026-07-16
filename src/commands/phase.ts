@@ -90,9 +90,29 @@ export const phase = (options: PhaseOptions) =>
 				)
 				return
 			}
+			case "status": {
+				const status = options.args[2]
+				if (!taskId || !phaseId || !status) {
+					return yield* Effect.fail(
+						new Error(
+							"Usage: agency phase status <task-id> <phase-id> <status>",
+						),
+					)
+				}
+				const record = yield* phases.setStatus(taskId, phaseId, status, cwd)
+				const { content: _, ...output } = record
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Marked phase '${phaseId}' as ${record.data.status}`,
+				)
+				return
+			}
 			default:
 				return yield* Effect.fail(
-					new Error("Subcommand is required. Available: create, list, show"),
+					new Error(
+						"Subcommand is required. Available: create, list, show, status",
+					),
 				)
 		}
 	})
@@ -104,6 +124,8 @@ Subcommands:
   create <task> <phase> Create a phase
   list <task>           List task phases
   show <task> <phase>   Show a phase
+  status <task> <phase> <status>
+                        Set open, working, done, or dropped
 
 Create options:
   --description <text>  Short description of the phase

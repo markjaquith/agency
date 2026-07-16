@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { managedWorkbaseAgents } from "../workbase/agents-file"
+import { managedWorkbaseOpencode } from "../workbase/opencode-file"
 import { WorkbaseService } from "./WorkbaseService"
 
 const write = async (root: string, path: string, content: string) => {
@@ -16,6 +17,11 @@ const write = async (root: string, path: string, content: string) => {
 const managedAgents = (body: string) => {
 	const checksum = createHash("sha256").update(body).digest("hex")
 	return `<!-- agency-managed: sha256=${checksum} -->\n\n${body}`
+}
+
+const managedOpencode = (body: string) => {
+	const checksum = createHash("sha256").update(body).digest("hex")
+	return `// agency-managed: sha256=${checksum}\n\n${body}`
 }
 
 describe("WorkbaseService", () => {
@@ -44,6 +50,66 @@ describe("WorkbaseService", () => {
 		expect(discovered).toBe(root)
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			managedWorkbaseAgents,
+		)
+		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
+			managedWorkbaseOpencode,
+		)
+	})
+
+	test("preserves an unmanaged workbase OpenCode config", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(root, ".opencode/opencode.jsonc", '{"model":"test/model"}\n')
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
+			'{"model":"test/model"}\n',
+		)
+	})
+
+	test("does not override an existing JSON OpenCode config", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(root, ".opencode/opencode.json", '{"model":"test/model"}\n')
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(
+			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
+		).toBe(false)
+	})
+
+	test("updates an unmodified managed workbase OpenCode config", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(
+			root,
+			".opencode/opencode.jsonc",
+			managedOpencode('{"references":{}}\n'),
+		)
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
+			managedWorkbaseOpencode,
+		)
+	})
+
+	test("preserves a modified managed workbase OpenCode config", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		const content = `${managedOpencode('{"references":{}}\n')}\n// User edit\n`
+		await write(root, ".opencode/opencode.jsonc", content)
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
+			content,
 		)
 	})
 

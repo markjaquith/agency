@@ -19,6 +19,10 @@ import {
 	canUpdateManagedWorkbaseAgents,
 	managedWorkbaseAgents,
 } from "../workbase/agents-file"
+import {
+	canUpdateManagedWorkbaseOpencode,
+	managedWorkbaseOpencode,
+} from "../workbase/opencode-file"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -84,6 +88,32 @@ const ensureWorkbaseAgents = (root: string) =>
 		) {
 			yield* fs.writeFile(path, managedWorkbaseAgents)
 		}
+	})
+
+const ensureWorkbaseOpencode = (root: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const directory = join(root, ".opencode")
+		const path = join(directory, "opencode.jsonc")
+		if (!(yield* fs.exists(path))) {
+			if (yield* fs.exists(join(directory, "opencode.json"))) return
+			yield* fs.createDirectory(directory)
+			yield* fs.writeFile(path, managedWorkbaseOpencode)
+			return
+		}
+
+		const content = yield* fs.readFile(path)
+		if (
+			content !== managedWorkbaseOpencode &&
+			canUpdateManagedWorkbaseOpencode(content)
+		) {
+			yield* fs.writeFile(path, managedWorkbaseOpencode)
+		}
+	})
+
+const ensureWorkbaseAgentFiles = (root: string) =>
+	Effect.all([ensureWorkbaseAgents(root), ensureWorkbaseOpencode(root)], {
+		concurrency: "unbounded",
 	})
 
 const findCycles = (nodes: readonly Dependency[]): readonly string[] => {
@@ -164,7 +194,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							`${existing}${prefix}${missing.join("\n")}\n`,
 						)
 					}
-					yield* ensureWorkbaseAgents(root)
+					yield* ensureWorkbaseAgentFiles(root)
 
 					return root
 				}),
@@ -221,7 +251,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 										})
 									}
 								}
-								yield* ensureWorkbaseAgents(current)
+								yield* ensureWorkbaseAgentFiles(current)
 								return current
 							}
 						}

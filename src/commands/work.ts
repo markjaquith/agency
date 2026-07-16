@@ -9,6 +9,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
+import { createProgress, type Progress } from "../utils/progress"
 import {
 	buildWorkTargetChoices,
 	pickWorkTarget,
@@ -35,6 +36,7 @@ export const work = (
 	options: WorkOptions = {},
 	launch: LaunchAgent = launchAgent,
 	pick: PickWorkTarget = pickWorkTarget,
+	progress: Progress = createProgress(options),
 ) =>
 	Effect.gen(function* () {
 		if (options.opencode && options.claude) {
@@ -155,16 +157,21 @@ export const work = (
 		} else {
 			const taskId = target.taskId
 			const phaseId = target.kind === "phase" ? target.phaseId : undefined
-			const workspace = yield* worktrees.materialize(
-				taskId,
-				phaseId,
-				root,
-				options,
-			)
+			progress.start("Preparing workspace...")
+			const workspace = yield* worktrees
+				.materialize(taskId, phaseId, root, options)
+				.pipe(
+					Effect.tap(() =>
+						Effect.sync(() => progress.succeed("Workspace ready")),
+					),
+					Effect.tapError(() =>
+						Effect.sync(() => progress.fail("Workspace preparation failed")),
+					),
+				)
 			prompt = workspace.phasePath
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
-			launchPath = workspace.writablePath
+			launchPath = dirname(target.path)
 		}
 
 		const requested = options.claude ? "claude" : "opencode"
@@ -179,9 +186,14 @@ export const work = (
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
+		if (target.kind === "phase") {
+			yield* phases.setStatus(target.taskId, target.phaseId, "working", root)
+		} else if (target.kind === "task" && !target.multiPhase) {
+			yield* tasks.setStatus(target.taskId, "working", root)
+		}
 
 		verboseLog(`Launching ${cli} in ${launchPath}`)
-		const args = cli === "opencode" ? ["--prompt", prompt] : [prompt]
+		const args = cli === "opencode" ? ["--continue"] : [prompt]
 		launch(cli, [cli, ...args], launchPath)
 	})
 

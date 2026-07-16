@@ -9,6 +9,7 @@ import {
 	PhaseFrontmatter,
 	type PhaseFrontmatter as PhaseData,
 	type RepositoryReference,
+	WorkStatus,
 } from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
@@ -54,6 +55,15 @@ const decodePhase = (input: unknown) => {
 	return Either.isLeft(result)
 		? Effect.fail(
 				new PhaseError({ message: TreeFormatter.formatErrorSync(result.left) }),
+			)
+		: Effect.succeed(result.right)
+}
+
+const decodeStatus = (status: string) => {
+	const result = Schema.decodeUnknownEither(WorkStatus)(status)
+	return Either.isLeft(result)
+		? Effect.fail(
+				new PhaseError({ message: `Invalid work status '${status}'` }),
 			)
 		: Effect.succeed(result.right)
 }
@@ -317,6 +327,24 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						})
 					}
 					return record
+				}),
+
+			setStatus: (
+				taskId: string,
+				id: string,
+				status: string,
+				startPath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const service = yield* PhaseService
+					const validStatus = yield* decodeStatus(status)
+					const record = yield* service.show(taskId, id, startPath)
+					const parsed = yield* parseFrontmatter(record.content, record.path)
+					const data = { ...record.data, status: validStatus }
+					const content = formatMarkdownDocument(data, parsed.body)
+					yield* fs.writeFile(record.path, content)
+					return { ...record, content, data } satisfies PhaseRecord
 				}),
 		}),
 	},

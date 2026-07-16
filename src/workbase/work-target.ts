@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import type { WorkStatus } from "./schemas"
 
 export type WorkTarget =
 	| {
@@ -36,14 +37,17 @@ interface TaskRecord {
 				readonly description?: string
 				readonly phases: readonly { readonly id: string }[]
 		  }
-		| { readonly description?: string }
+		| { readonly description?: string; readonly status?: WorkStatus }
 }
 
 interface PhaseRecord {
 	readonly taskId: string
 	readonly id: string
 	readonly path: string
-	readonly data: { readonly description?: string }
+	readonly data: {
+		readonly description?: string
+		readonly status?: WorkStatus
+	}
 }
 
 export interface WorkTargetChoice {
@@ -51,13 +55,21 @@ export interface WorkTargetChoice {
 	readonly target: WorkTarget
 }
 
+const statusIcons: Record<WorkStatus, string> = {
+	open: "\x1b[2m○\x1b[0m",
+	working: "\x1b[34m◐\x1b[0m",
+	done: "\x1b[32m✓\x1b[0m",
+	dropped: "\x1b[31m⊘\x1b[0m",
+}
+
 const label = (
 	indent: string,
 	kind: WorkTarget["kind"],
 	id: string,
 	description?: string,
+	status?: WorkStatus,
 ) =>
-	`${indent}${
+	`${indent}${status === undefined ? "" : `${statusIcons[status]} `}${
 		{
 			epic: "\x1b[35m\x1b[0m",
 			task: "\x1b[36m󰗡\x1b[0m",
@@ -73,7 +85,13 @@ const taskChoices = (
 	const multiPhase = "phases" in task.data
 	const choices: WorkTargetChoice[] = [
 		{
-			label: label(indent, "task", task.id, task.data.description),
+			label: label(
+				indent,
+				"task",
+				task.id,
+				task.data.description,
+				multiPhase ? undefined : (task.data.status ?? "open"),
+			),
 			target: {
 				kind: "task",
 				taskId: task.id,
@@ -91,7 +109,13 @@ const taskChoices = (
 		if (!record) continue
 		renderedPhases.add(record.id)
 		choices.push({
-			label: label(`${indent}  `, "phase", record.id, record.data.description),
+			label: label(
+				`${indent}  `,
+				"phase",
+				record.id,
+				record.data.description,
+				record.data.status ?? "open",
+			),
 			target: {
 				kind: "phase",
 				taskId: task.id,
@@ -103,7 +127,13 @@ const taskChoices = (
 	for (const record of phaseRecords) {
 		if (renderedPhases.has(record.id)) continue
 		choices.push({
-			label: label(`${indent}  `, "phase", record.id, record.data.description),
+			label: label(
+				`${indent}  `,
+				"phase",
+				record.id,
+				record.data.description,
+				record.data.status ?? "open",
+			),
 			target: {
 				kind: "phase",
 				taskId: task.id,

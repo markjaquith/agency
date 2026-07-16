@@ -1,5 +1,5 @@
 import { Data, Effect } from "effect"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { TaskService } from "./TaskService"
@@ -371,6 +371,128 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						repo: execution.repo,
 						repos: execution.repos ?? [],
 					} satisfies ExecutionWorkspace
+				}),
+
+			remove: (
+				taskId: string,
+				phaseId?: string,
+				startPath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const tasks = yield* TaskService
+					const phases = yield* PhaseService
+					const root = yield* workbase.discover(startPath)
+					const task = yield* tasks.show(taskId, root)
+
+					let execution: {
+						repo: string
+						repos?: readonly RepositoryReference[]
+					}
+					let codePath: string
+					if ("phases" in task.data) {
+						if (!phaseId) {
+							return yield* new WorktreeError({
+								message: `Task '${taskId}' has multiple phases; phase ID is required`,
+							})
+						}
+						const phase = yield* phases.show(taskId, phaseId, root)
+						execution = phase.data
+						codePath = join(dirname(phase.path), "code")
+					} else {
+						if (phaseId) {
+							return yield* new WorktreeError({
+								message: `Task '${taskId}' is single-phase and does not accept a phase ID`,
+							})
+						}
+						execution = task.data
+						codePath = join(dirname(task.path), "code")
+					}
+
+					const codeDirectoryExists = yield* fs.isDirectory(codePath)
+					const removed: string[] = []
+					for (const alias of [
+						execution.repo,
+						...(execution.repos ?? []).map((reference) => reference.repo),
+					]) {
+						const repositoryPath = join(root, "repos", alias)
+						const checkoutPath = join(codePath, alias)
+						const listed = yield* fs.runCommand(
+							[
+								"git",
+								"-C",
+								repositoryPath,
+								"worktree",
+								"list",
+								"--porcelain",
+								"-z",
+							],
+							{ captureOutput: true },
+						)
+						if (listed.exitCode !== 0) {
+							return yield* new WorktreeError({
+								message: `Failed to inspect worktrees for '${alias}': ${listed.stderr}`,
+							})
+						}
+
+						const checkoutExists = yield* fs.isDirectory(checkoutPath)
+						const canonicalCheckoutPath = checkoutExists
+							? yield* fs.realPath(checkoutPath)
+							: join(
+									yield* fs.realPath(dirname(codePath)),
+									basename(codePath),
+									alias,
+								)
+						let registeredPath: string | undefined
+						for (const worktree of parseWorktreeList(listed.stdout)) {
+							const worktreePath = (yield* fs.exists(worktree.path))
+								? yield* fs.realPath(worktree.path)
+								: resolve(worktree.path)
+							if (worktreePath === canonicalCheckoutPath) {
+								registeredPath = worktreePath
+								break
+							}
+						}
+						if (!registeredPath) {
+							if (checkoutExists) {
+								return yield* new WorktreeError({
+									message: `Existing checkout ${checkoutPath} is not registered as a Git worktree`,
+								})
+							}
+							continue
+						}
+
+						const result = yield* fs.runCommand(
+							[
+								"git",
+								"-C",
+								repositoryPath,
+								"worktree",
+								"remove",
+								...(!checkoutExists ? ["--force"] : []),
+								checkoutExists ? checkoutPath : registeredPath,
+							],
+							{ captureOutput: true },
+						)
+						if (result.exitCode !== 0) {
+							return yield* new WorktreeError({
+								message: `Failed to remove worktree for '${alias}': ${result.stderr}`,
+							})
+						}
+						if (checkoutExists) removed.push(checkoutPath)
+					}
+
+					if (codeDirectoryExists && (yield* fs.isDirectory(codePath))) {
+						const remaining = yield* fs.readDirectory(codePath)
+						if (remaining.length > 0) {
+							return yield* new WorktreeError({
+								message: `Cannot remove ${codePath}; it contains unmanaged entries: ${remaining.map((entry) => entry.name).join(", ")}`,
+							})
+						}
+						yield* fs.deleteDirectory(codePath)
+					}
+					return removed
 				}),
 		}),
 	},

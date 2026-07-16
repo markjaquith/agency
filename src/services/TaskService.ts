@@ -9,6 +9,7 @@ import {
 	TaskFrontmatter,
 	type RepositoryReference,
 	type TaskFrontmatter as TaskData,
+	WorkStatus,
 } from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
@@ -28,7 +29,7 @@ interface TaskRecord {
 
 export interface CreateTaskInput {
 	readonly id: string
-	readonly ticketUrl: string
+	readonly ticketUrl: string | null
 	readonly description?: string
 	readonly epic?: string
 	readonly multiPhase?: boolean
@@ -54,6 +55,13 @@ const decodeId = (id: string) => {
 	const result = Schema.decodeUnknownEither(EntityId)(id)
 	return Either.isLeft(result)
 		? Effect.fail(new TaskError({ message: `Invalid task ID '${id}'` }))
+		: Effect.succeed(result.right)
+}
+
+const decodeStatus = (status: string) => {
+	const result = Schema.decodeUnknownEither(WorkStatus)(status)
+	return Either.isLeft(result)
+		? Effect.fail(new TaskError({ message: `Invalid work status '${status}'` }))
 		: Effect.succeed(result.right)
 }
 
@@ -187,6 +195,28 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					})
 				}
 				return record
+			}),
+
+		setStatus: (
+			id: string,
+			status: string,
+			startPath: string = process.cwd(),
+		) =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystemService
+				const service = yield* TaskService
+				const validStatus = yield* decodeStatus(status)
+				const record = yield* service.show(id, startPath)
+				if ("phases" in record.data) {
+					return yield* new TaskError({
+						message: `Task '${id}' has multiple phases; set status on a phase instead`,
+					})
+				}
+				const parsed = yield* parseFrontmatter(record.content, record.path)
+				const data = { ...record.data, status: validStatus }
+				const content = formatMarkdownDocument(data, parsed.body)
+				yield* fs.writeFile(record.path, content)
+				return { ...record, content, data } satisfies TaskRecord
 			}),
 	}),
 }) {}
