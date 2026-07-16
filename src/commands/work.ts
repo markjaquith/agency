@@ -32,6 +32,15 @@ interface WorkOptions extends BaseCommandOptions {
 
 type LaunchAgent = (cli: string, args: readonly string[], cwd: string) => void
 
+const formatCommand = (args: readonly string[]) =>
+	args
+		.map((argument) =>
+			/^[A-Za-z0-9_./:=+@%-]+$/.test(argument)
+				? argument
+				: `'${argument.replaceAll("'", `'\\''`)}'`,
+		)
+		.join(" ")
+
 const launchAgent: LaunchAgent = (cli, args, cwd) => {
 	process.chdir(cwd)
 	execvp(cli, [...args])
@@ -199,8 +208,10 @@ export const work = (
 			yield* tasks.setStatus(target.taskId, "working", root)
 		}
 
-		verboseLog(`Launching ${cli} in ${launchPath}`)
 		const args = cli === "opencode" ? ["--continue"] : [prompt]
+		verboseLog(
+			`Launching command: ${formatCommand([cli, ...args])} (cwd: ${launchPath})`,
+		)
 		launch(cli, [cli, ...args], launchPath)
 	})
 

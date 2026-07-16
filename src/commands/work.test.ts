@@ -448,7 +448,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching opencode in /workbase/tasks/example",
+			"Launching command: opencode --continue (cwd: /workbase/tasks/example)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
