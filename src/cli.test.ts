@@ -43,7 +43,7 @@ describe("CLI", () => {
 		const version = await runCli(["--version"])
 		expect(version).toEqual({
 			exitCode: 0,
-			stdout: "v2.0.0\n",
+			stdout: "v0.0.0-development\n",
 			stderr: "",
 		})
 

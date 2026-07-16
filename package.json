@@ -1,6 +1,6 @@
 {
   "name": "@markjaquith/agency",
-  "version": "2.0.0",
+  "version": "0.0.0-development",
   "description": "Manage agentic work across repositories with durable workbases",
   "keywords": [
     "agents",
