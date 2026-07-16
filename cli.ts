@@ -240,7 +240,9 @@ const commands: Record<string, Command> = {
 				return
 			}
 			if (args.length > 1) {
-				throw new Error("Usage: agency work [<directory> | --epic <epic-id>]")
+				throw new Error(
+					"Usage: agency work [<directory-or-task-id> | --epic <epic-id>]",
+				)
 			}
 
 			await runCommand(
@@ -301,7 +303,7 @@ Commands:
   phase <subcommand>     Manage task phases
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
-  work [directory]       Work on an epic, task, or phase
+  work [directory|task]  Work on an epic, task, or phase
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase

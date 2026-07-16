@@ -46,12 +46,14 @@ interface HarnessOptions {
 	readonly phaseRecords?: readonly any[]
 	readonly outsideWorkbase?: boolean
 	readonly registeredWorkbases?: readonly string[]
+	readonly existingDirectories?: readonly string[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
 	const events: string[] = []
 	const probes: string[] = []
 	const statusUpdates: string[] = []
+	const shownTasks: string[] = []
 	const progressUpdates: string[] = []
 	const launches: Array<{
 		cli: string
@@ -95,14 +97,16 @@ const createHarness = (options: HarnessOptions = {}) => {
 		list: () => Effect.succeed(options.epicRecords ?? []),
 	}
 	const tasks = {
-		show: (id: string) =>
-			Effect.succeed({
+		show: (id: string) => {
+			shownTasks.push(id)
+			return Effect.succeed({
 				id,
 				path: `/workbase/tasks/${id}/TASK.md`,
 				data: options.multiPhaseTasks?.includes(id)
 					? { phases: [] }
 					: { repo: "agency", branch: `task/${id}`, base: "main" },
-			}),
+			})
+		},
 		list: () => Effect.succeed(options.taskRecords ?? []),
 		setStatus: (id: string, status: string) => {
 			statusUpdates.push(`task:${id}:${status}`)
@@ -124,7 +128,8 @@ const createHarness = (options: HarnessOptions = {}) => {
 		},
 	}
 	const fs = {
-		isDirectory: () => Effect.succeed(true),
+		isDirectory: (path: string) =>
+			Effect.succeed(options.existingDirectories?.includes(path) ?? true),
 		runCommand: (args: readonly string[]) => {
 			const cli = args[1] as "opencode" | "claude"
 			events.push(`probe:${cli}`)
@@ -169,6 +174,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		launches,
 		materializeOptions,
 		statusUpdates,
+		shownTasks,
 		progressUpdates,
 		run,
 	}
@@ -190,6 +196,34 @@ describe("work command", () => {
 			args: ["opencode", "--continue"],
 			cwd: "/workbase/epics/delivery",
 		})
+	})
+
+	test("resolves an existing positional path before treating it as a task ID", async () => {
+		const harness = createHarness({
+			existingDirectories: ["/workbase/tasks/delivery"],
+		})
+
+		await harness.run({
+			cwd: "/workbase/tasks/delivery",
+			directory: ".",
+			opencode: true,
+		})
+
+		expect(harness.shownTasks).toEqual(["delivery"])
+		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/delivery")
+	})
+
+	test("treats a positional value as a task ID when it is not a directory", async () => {
+		const harness = createHarness({ existingDirectories: [] })
+
+		await harness.run({
+			cwd: "/workbase",
+			directory: "delivery",
+			opencode: true,
+		})
+
+		expect(harness.shownTasks).toEqual(["delivery"])
+		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/delivery")
 	})
 
 	test("launches a multi-phase task agent without materializing", async () => {
