@@ -230,7 +230,7 @@ agency repo link backend ~/Dev/backend
 agency task new
 
 agency validate
-agency work refresh-copy
+agency work tasks/refresh-copy
 agency pr create refresh-copy
 ```
 
@@ -350,21 +350,21 @@ before moving files, refuses dirty worktrees, and preserves branches.
 ### Work and Pull Requests
 
 ```text
-agency work [<task-id> [phase-id] | --epic <epic-id>] [--opencode | --claude]
+agency work [<directory> | --epic <epic-id>] [--opencode | --claude]
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
-`agency work` infers an epic, task, or phase from the current directory. From
-elsewhere in the workbase, it presents the full hierarchy in `fzf`. Outside a
-workbase, it first presents the registered workbases, then the selected
+`agency work` presents the full hierarchy in `fzf`. Pass a directory, including
+`.` for the current directory, to infer its epic, task, or phase. Outside a
+workbase, Agency first presents the registered workbases, then the selected
 workbase's hierarchy. If `fzf` is not installed, Agency prints the available
-choices and asks for an explicit target.
+choices and asks for an explicit directory.
 
 Epic and multi-phase task targets launch orchestration agents beside their
 documents. Single-phase tasks and phases fetch repositories, create or reuse
 worktrees under `code/`, and launch an execution agent in the writable checkout
-with absolute context paths. Explicit task, phase, and `--epic` targets override
-current-directory inference.
+with absolute context paths. An explicit directory or `--epic` target bypasses
+the hierarchy chooser.
 
 Each writable `(repo, branch)` pair may belong to only one task or phase. Agency
 validation reports duplicate ownership, and `agency work` checks Git's worktree

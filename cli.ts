@@ -239,11 +239,13 @@ const commands: Record<string, Command> = {
 				console.log(workHelp)
 				return
 			}
+			if (args.length > 1) {
+				throw new Error("Usage: agency work [<directory> | --epic <epic-id>]")
+			}
 
 			await runCommand(
 				work({
-					taskId: args[0],
-					phaseId: args[1],
+					directory: args[0],
 					epicId: options.epic,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -299,7 +301,7 @@ Commands:
   phase <subcommand>     Manage task phases
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
-  work [task] [phase]    Work on an epic, task, or phase
+  work [directory]       Work on an epic, task, or phase
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
@@ -314,7 +316,7 @@ Global Options:
 Examples:
   agency init                         # Initialize the current directory
   agency task list                    # List tasks
-  agency work refresh-cli-copy        # Start working on a task
+  agency work tasks/refresh-cli-copy  # Start working on a task
 
 For more information about a command, run:
   agency <command> --help
