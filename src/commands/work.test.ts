@@ -9,6 +9,7 @@ import { WorktreeService } from "../services/WorktreeService"
 import { captureLogs } from "../test-utils"
 import { work } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
+import type { Progress } from "../utils/progress"
 
 type ExecutionWorkspace = Effect.Effect.Success<
 	ReturnType<WorktreeService["materialize"]>
@@ -48,6 +49,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const events: string[] = []
 	const probes: string[] = []
 	const statusUpdates: string[] = []
+	const progressUpdates: string[] = []
 	const launches: Array<{
 		cli: string
 		args: readonly string[]
@@ -128,12 +130,17 @@ const createHarness = (options: HarnessOptions = {}) => {
 		launches.push({ cli, args, cwd })
 	}
 	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
+	const progress: Progress = {
+		start: (message) => progressUpdates.push(`start:${message}`),
+		succeed: (message) => progressUpdates.push(`succeed:${message}`),
+		fail: (message) => progressUpdates.push(`fail:${message}`),
+	}
 	const run = (
 		commandOptions: Parameters<typeof work>[0],
 		pick: PickWorkTarget = defaultPick,
 	) =>
 		Effect.runPromise(
-			work(commandOptions, launch, pick).pipe(
+			work(commandOptions, launch, pick, progress).pipe(
 				Effect.provideService(WorktreeService, worktrees as never),
 				Effect.provideService(FileSystemService, fs as never),
 				Effect.provideService(WorkbaseService, workbase as never),
@@ -149,6 +156,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		launches,
 		materializeOptions,
 		statusUpdates,
+		progressUpdates,
 		run,
 	}
 }
@@ -305,6 +313,10 @@ describe("work command", () => {
 			},
 		])
 		expect(harness.statusUpdates).toEqual(["task:example:working"])
+		expect(harness.progressUpdates).toEqual([
+			"start:Preparing workspace...",
+			"succeed:Workspace ready",
+		])
 	})
 
 	test("continues OpenCode for a multi-phase task", async () => {
@@ -377,6 +389,10 @@ describe("work command", () => {
 			"materialization failed",
 		)
 		expect(harness.events).toEqual(["materialize"])
+		expect(harness.progressUpdates).toEqual([
+			"start:Preparing workspace...",
+			"fail:Workspace preparation failed",
+		])
 	})
 
 	test("respects silent and verbose logging options", async () => {

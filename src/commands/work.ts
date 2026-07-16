@@ -9,6 +9,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
+import { createProgress, type Progress } from "../utils/progress"
 import {
 	buildWorkTargetChoices,
 	pickWorkTarget,
@@ -35,6 +36,7 @@ export const work = (
 	options: WorkOptions = {},
 	launch: LaunchAgent = launchAgent,
 	pick: PickWorkTarget = pickWorkTarget,
+	progress: Progress = createProgress(options),
 ) =>
 	Effect.gen(function* () {
 		if (options.opencode && options.claude) {
@@ -155,12 +157,17 @@ export const work = (
 		} else {
 			const taskId = target.taskId
 			const phaseId = target.kind === "phase" ? target.phaseId : undefined
-			const workspace = yield* worktrees.materialize(
-				taskId,
-				phaseId,
-				root,
-				options,
-			)
+			progress.start("Preparing workspace...")
+			const workspace = yield* worktrees
+				.materialize(taskId, phaseId, root, options)
+				.pipe(
+					Effect.tap(() =>
+						Effect.sync(() => progress.succeed("Workspace ready")),
+					),
+					Effect.tapError(() =>
+						Effect.sync(() => progress.fail("Workspace preparation failed")),
+					),
+				)
 			prompt = workspace.phasePath
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
