@@ -85,6 +85,51 @@ describe("WorktreeService", () => {
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
 	})
 
+	test("does not fetch origins for existing worktrees", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "existing",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/existing",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("existing", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", join(root, "missing")],
+			join(root, "repos/agency"),
+		)
+		await git(
+			["remote", "set-url", "origin", join(root, "missing")],
+			join(root, "repos/effect"),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("existing", undefined, root),
+					),
+				),
+			),
+		).resolves.toMatchObject({ repo: "agency" })
+	})
+
 	test("uses a configured worktree creation command", async () => {
 		await Bun.write(
 			join(root, "agency.json"),
