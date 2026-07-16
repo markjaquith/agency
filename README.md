@@ -240,11 +240,15 @@ agency pr create refresh-copy
 
 ```text
 agency init [path] [--json]
+agency workbase add <path> [--json]
+agency workbase list [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
 agency repo list [--json]
 ```
 
+Registered workbases are stored in
+`$XDG_CONFIG_HOME/agency/workbases.json` (or `~/.config/agency/workbases.json`).
 `repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
 repository. Alias names are then used by all documents and commands.
 
@@ -351,8 +355,10 @@ agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
 `agency work` infers an epic, task, or phase from the current directory. From
-elsewhere in the workbase, it presents the full hierarchy in `fzf`. If `fzf` is
-not installed, Agency prints the hierarchy and asks for an explicit target.
+elsewhere in the workbase, it presents the full hierarchy in `fzf`. Outside a
+workbase, it first presents the registered workbases, then the selected
+workbase's hierarchy. If `fzf` is not installed, Agency prints the available
+choices and asks for an explicit target.
 
 Epic and multi-phase task targets launch orchestration agents beside their
 documents. Single-phase tasks and phases fetch repositories, create or reuse

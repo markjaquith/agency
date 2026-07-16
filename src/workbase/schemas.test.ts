@@ -7,6 +7,7 @@ import {
 	TaskFrontmatter,
 	WorkStatus,
 	WorkbaseConfig,
+	WorkbaseRegistry,
 } from "./schemas"
 
 describe("body-of-work descriptions", () => {
@@ -148,6 +149,32 @@ describe("work status", () => {
 				base: "main",
 				pr: null,
 				status: "blocked",
+			}),
+		).toThrow()
+	})
+})
+
+describe("workbase registry", () => {
+	test("accepts registered paths", () => {
+		expect(
+			Schema.decodeUnknownSync(WorkbaseRegistry)({
+				version: 1,
+				workbases: ["/work/one", "/work/two"],
+			}),
+		).toEqual({ version: 1, workbases: ["/work/one", "/work/two"] })
+	})
+
+	test("rejects invalid versions and empty paths", () => {
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseRegistry)({
+				version: 2,
+				workbases: [],
+			}),
+		).toThrow()
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseRegistry)({
+				version: 1,
+				workbases: [""],
 			}),
 		).toThrow()
 	})

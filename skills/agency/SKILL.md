@@ -58,6 +58,13 @@ If no workbase is found, do not initialize one without user intent. When asked:
 agency init [path]
 ```
 
+Register known workbases so `agency work` can select one when run elsewhere:
+
+```bash
+agency workbase add <path>
+agency workbase list
+```
+
 ## Repository Aliases
 
 Add a remote as an Agency-managed bare repository:
@@ -247,6 +254,7 @@ repositories for execution targets, creates or reuses their worktrees, and
 replaces the current process with the selected agent. It infers the nearest
 epic, task, or phase from the current directory; otherwise it opens an `fzf`
 picker containing the workbase hierarchy.
+Outside a workbase, it first opens a picker containing registered workbases.
 
 Epic and multi-phase task targets are orchestration sessions launched beside
 their documents. Single-phase tasks and phases are execution sessions launched

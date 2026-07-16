@@ -12,9 +12,14 @@ interface CliResult {
 	stderr: string
 }
 
-async function runCli(args: string[], cwd = projectRoot): Promise<CliResult> {
+async function runCli(
+	args: string[],
+	cwd = projectRoot,
+	env?: Record<string, string>,
+): Promise<CliResult> {
 	const subprocess = Bun.spawn([process.execPath, cliPath, ...args], {
 		cwd,
+		env: env ? { ...process.env, ...env } : undefined,
 		stdout: "pipe",
 		stderr: "pipe",
 	})
@@ -76,6 +81,7 @@ describe("CLI", () => {
 	test("routes command help and global options on either side of commands", async () => {
 		for (const [command, usage] of [
 			["init", "Usage: agency init"],
+			["workbase", "Usage: agency workbase"],
 			["repo", "Usage: agency repo"],
 			["epic", "Usage: agency epic"],
 			["task", "Usage: agency task"],
@@ -104,6 +110,25 @@ describe("CLI", () => {
 
 		const after = await runCli(["status", "--silent"], root)
 		expect(after).toEqual({ exitCode: 0, stdout: "", stderr: "" })
+	})
+
+	test("registers and lists workbases", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const root = join(parent, "workbase")
+		const env = { XDG_CONFIG_HOME: join(parent, "config") }
+
+		expect(
+			parseJson(await runCli(["init", root, "--json"], parent, env)),
+		).toEqual({
+			root,
+		})
+		expect(
+			parseJson(await runCli(["workbase", "add", root, "--json"], parent, env)),
+		).toEqual({ path: await realpath(root) })
+		expect(
+			parseJson(await runCli(["workbase", "list", "--json"], parent, env)),
+		).toEqual([await realpath(root)])
 	})
 
 	test("runs a multi-phase domain workflow through subprocesses", async () => {

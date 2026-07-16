@@ -16,6 +16,7 @@ import {
 	type PickWorkTarget,
 	type WorkTarget,
 } from "../workbase/work-target"
+import { pickWorkbase, type PickWorkbase } from "../workbase/workbase-choice"
 
 interface WorkOptions extends BaseCommandOptions {
 	readonly taskId?: string
@@ -37,6 +38,7 @@ export const work = (
 	launch: LaunchAgent = launchAgent,
 	pick: PickWorkTarget = pickWorkTarget,
 	progress: Progress = createProgress(options),
+	pickBase: PickWorkbase = pickWorkbase,
 ) =>
 	Effect.gen(function* () {
 		if (options.opencode && options.claude) {
@@ -58,7 +60,36 @@ export const work = (
 		const phases = yield* PhaseService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const root = yield* workbase.discover(cwd)
+		const root = yield* workbase.discover(cwd).pipe(
+			Effect.catchTag("WorkbaseNotFoundError", () =>
+				Effect.gen(function* () {
+					const registered = yield* workbase.listRegistered()
+					if (registered.length === 0) {
+						return yield* Effect.fail(
+							new Error(
+								`No Agency workbase found from ${resolve(cwd)}. Register one with 'agency workbase add <path>'.`,
+							),
+						)
+					}
+
+					const fzf = yield* fs.runCommand(["which", "fzf"], {
+						captureOutput: true,
+					})
+					if (fzf.exitCode !== 0) {
+						for (const path of registered) log(path)
+						return yield* Effect.fail(
+							new Error(
+								"fzf is required to select a workbase; install fzf or run Agency from a registered workbase",
+							),
+						)
+					}
+
+					const selected = yield* pickBase(registered)
+					return selected ? yield* workbase.discover(selected) : null
+				}),
+			),
+		)
+		if (!root) return
 
 		let target: WorkTarget | null = null
 		if (options.epicId) {
@@ -201,7 +232,8 @@ export const help = `
 Usage: agency work [<task-id> [phase-id] | --epic <epic-id>]
 
 Launch an agent for the current epic, task, or phase. Outside an entity
-directory, select one with fzf.
+directory, select one with fzf. Outside a workbase, select a registered
+workbase first.
 
 Options:
   --epic <id>         Work on an epic
