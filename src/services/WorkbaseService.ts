@@ -142,19 +142,17 @@ const ensureWorkbaseOpencode = (root: string) =>
 		const fs = yield* FileSystemService
 		const directory = join(root, ".opencode")
 		const path = join(directory, "opencode.jsonc")
+		const managed = managedWorkbaseOpencode(root)
 		if (!(yield* fs.exists(path))) {
 			if (yield* fs.exists(join(directory, "opencode.json"))) return
 			yield* fs.createDirectory(directory)
-			yield* fs.writeFile(path, managedWorkbaseOpencode)
+			yield* fs.writeFile(path, managed)
 			return
 		}
 
 		const content = yield* fs.readFile(path)
-		if (
-			content !== managedWorkbaseOpencode &&
-			canUpdateManagedWorkbaseOpencode(content)
-		) {
-			yield* fs.writeFile(path, managedWorkbaseOpencode)
+		if (content !== managed && canUpdateManagedWorkbaseOpencode(content)) {
+			yield* fs.writeFile(path, managed)
 		}
 	})
 
