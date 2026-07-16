@@ -15,6 +15,10 @@ import {
 	type TaskFrontmatter as TaskData,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
+import {
+	canUpdateManagedWorkbaseAgents,
+	managedWorkbaseAgents,
+} from "../workbase/agents-file"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -63,6 +67,24 @@ const decode = <S extends Schema.Schema.AnyNoContext>(
 		? { success: false, error: TreeFormatter.formatErrorSync(result.left) }
 		: { success: true, value: result.right }
 }
+
+const ensureWorkbaseAgents = (root: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const path = join(root, "AGENTS.md")
+		if (!(yield* fs.exists(path))) {
+			yield* fs.writeFile(path, managedWorkbaseAgents)
+			return
+		}
+
+		const content = yield* fs.readFile(path)
+		if (
+			content !== managedWorkbaseAgents &&
+			canUpdateManagedWorkbaseAgents(content)
+		) {
+			yield* fs.writeFile(path, managedWorkbaseAgents)
+		}
+	})
 
 const findCycles = (nodes: readonly Dependency[]): readonly string[] => {
 	const dependencies = new Map(
@@ -142,6 +164,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							`${existing}${prefix}${missing.join("\n")}\n`,
 						)
 					}
+					yield* ensureWorkbaseAgents(root)
 
 					return root
 				}),
@@ -198,6 +221,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 										})
 									}
 								}
+								yield* ensureWorkbaseAgents(current)
 								return current
 							}
 						}
