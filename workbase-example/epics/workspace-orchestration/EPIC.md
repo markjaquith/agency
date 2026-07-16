@@ -1,0 +1,27 @@
+---
+ticketUrl: https://example.com/tickets/workspace-orchestration
+description: Coordinate the first pass at workbase-aware task orchestration.
+repos:
+  - repo: agency
+    ref: main
+  - repo: effect
+    ref: main
+tasks:
+  - id: define-workbase-config
+  - id: discover-task-documents
+    dependsOn:
+      - define-workbase-config
+  - id: track-task-phases
+    dependsOn:
+      - discover-task-documents
+---
+
+# Workspace orchestration
+
+Coordinate the first pass at workbase-aware task orchestration.
+
+## Tasks
+
+- Define the workbase config.
+- Discover task documents.
+- Track task phases.

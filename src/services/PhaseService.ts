@@ -1,0 +1,323 @@
+import { Schema, TreeFormatter } from "@effect/schema"
+import { Data, Effect, Either } from "effect"
+import { join } from "node:path"
+import { FileSystemService } from "./FileSystemService"
+import { WorkbaseService } from "./WorkbaseService"
+import { TaskService } from "./TaskService"
+import {
+	EntityId,
+	PhaseFrontmatter,
+	type PhaseFrontmatter as PhaseData,
+	type RepositoryReference,
+} from "../workbase/schemas"
+import {
+	formatMarkdownDocument,
+	parseFrontmatter,
+} from "../workbase/frontmatter"
+
+class PhaseError extends Data.TaggedError("PhaseError")<{
+	readonly message: string
+}> {}
+
+interface PhaseRecord {
+	readonly taskId: string
+	readonly id: string
+	readonly path: string
+	readonly content: string
+	readonly data: PhaseData
+}
+
+export interface CreatePhaseInput {
+	readonly taskId: string
+	readonly id: string
+	readonly description?: string
+	readonly repo: string
+	readonly repos?: readonly RepositoryReference[]
+	readonly branch: string
+	readonly base: string
+	readonly dependsOn?: readonly string[]
+	readonly firstPhase?: string
+}
+
+const decodeId = (id: string, label: string) => {
+	const result = Schema.decodeUnknownEither(EntityId)(id)
+	return Either.isLeft(result)
+		? Effect.fail(new PhaseError({ message: `Invalid ${label} ID '${id}'` }))
+		: Effect.succeed(result.right)
+}
+
+const decodePhase = (input: unknown) => {
+	const result = Schema.decodeUnknownEither(PhaseFrontmatter, {
+		errors: "all",
+		onExcessProperty: "error",
+	})(input)
+	return Either.isLeft(result)
+		? Effect.fail(
+				new PhaseError({ message: TreeFormatter.formatErrorSync(result.left) }),
+			)
+		: Effect.succeed(result.right)
+}
+
+export class PhaseService extends Effect.Service<PhaseService>()(
+	"PhaseService",
+	{
+		sync: () => ({
+			create: (input: CreatePhaseInput, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const tasks = yield* TaskService
+					const root = yield* workbase.discover(startPath)
+					const taskId = yield* decodeId(input.taskId, "task")
+					const id = yield* decodeId(input.id, "phase")
+					const task = yield* tasks.show(taskId, root)
+					const isMultiPhase = "phases" in task.data
+					let firstPhaseId: string | undefined
+					if (!isMultiPhase) {
+						if (!input.firstPhase) {
+							return yield* new PhaseError({
+								message:
+									"Converting a single-phase task requires --first-phase <id>",
+							})
+						}
+						firstPhaseId = yield* decodeId(input.firstPhase, "first phase")
+						if (firstPhaseId === id) {
+							return yield* new PhaseError({
+								message: "The existing and new phase IDs must be different",
+							})
+						}
+					} else if (input.firstPhase) {
+						return yield* new PhaseError({
+							message:
+								"--first-phase is only valid when converting a single-phase task",
+						})
+					}
+
+					if (
+						isMultiPhase &&
+						task.data.phases.some((phase) => phase.id === id)
+					) {
+						return yield* new PhaseError({
+							message: `Phase '${id}' already exists on task '${taskId}'`,
+						})
+					}
+					const knownPhases = new Set(
+						isMultiPhase
+							? task.data.phases.map((phase) => phase.id)
+							: [firstPhaseId!],
+					)
+					for (const dependency of input.dependsOn ?? []) {
+						if (!knownPhases.has(dependency)) {
+							return yield* new PhaseError({
+								message: `Unknown phase dependency '${dependency}'`,
+							})
+						}
+					}
+
+					const data = yield* decodePhase({
+						...(input.description !== undefined
+							? { description: input.description }
+							: {}),
+						repo: input.repo,
+						...(input.repos?.length ? { repos: input.repos } : {}),
+						branch: input.branch,
+						base: input.base,
+						pr: null,
+					})
+					const existingExecution = isMultiPhase ? undefined : task.data
+					const aliases = new Set([
+						data.repo,
+						...(data.repos ?? []).map((reference) => reference.repo),
+						...(existingExecution
+							? [
+									existingExecution.repo,
+									...(existingExecution.repos ?? []).map(
+										(reference) => reference.repo,
+									),
+								]
+							: []),
+					])
+					for (const alias of aliases) {
+						if (!(yield* fs.exists(join(root, "repos", alias)))) {
+							return yield* new PhaseError({
+								message: `Unknown repository alias '${alias}'`,
+							})
+						}
+					}
+
+					const directory = join(root, "tasks", taskId, "phases", id)
+					const path = join(directory, "PHASE.md")
+					if (yield* fs.exists(directory)) {
+						return yield* new PhaseError({
+							message: `Phase directory already exists: ${id}`,
+						})
+					}
+
+					const parsedTask = yield* parseFrontmatter(task.content, task.path)
+					const title = id
+						.split("-")
+						.map((part) => part[0]?.toUpperCase() + part.slice(1))
+						.join(" ")
+					const content = formatMarkdownDocument(
+						data,
+						`# ${title}\n\nDescribe the phase outcome.`,
+					)
+
+					if (!isMultiPhase) {
+						const firstDirectory = join(
+							root,
+							"tasks",
+							taskId,
+							"phases",
+							firstPhaseId!,
+						)
+						if (yield* fs.exists(firstDirectory)) {
+							return yield* new PhaseError({
+								message: `Phase directory already exists: ${firstPhaseId}`,
+							})
+						}
+						const firstData = yield* decodePhase({
+							repo: task.data.repo,
+							...(task.data.repos?.length ? { repos: task.data.repos } : {}),
+							branch: task.data.branch,
+							base: task.data.base,
+							pr: task.data.pr,
+						})
+						const firstTitle = firstPhaseId!
+							.split("-")
+							.map((part) => part[0]?.toUpperCase() + part.slice(1))
+							.join(" ")
+
+						yield* fs.createDirectory(firstDirectory)
+						yield* fs.createDirectory(directory)
+						yield* fs.writeFile(
+							join(firstDirectory, "PHASE.md"),
+							formatMarkdownDocument(
+								firstData,
+								`# ${firstTitle}\n\nDescribe the phase outcome.`,
+							),
+						)
+						yield* fs.writeFile(path, content)
+
+						const oldCodePath = join(root, "tasks", taskId, "code")
+						if (yield* fs.isDirectory(oldCodePath)) {
+							const firstCodePath = join(firstDirectory, "code")
+							yield* fs.moveDirectory(oldCodePath, firstCodePath)
+							for (const alias of [
+								firstData.repo,
+								...(firstData.repos ?? []).map((reference) => reference.repo),
+							]) {
+								const checkoutPath = join(firstCodePath, alias)
+								if (!(yield* fs.isDirectory(checkoutPath))) continue
+								const repair = yield* fs.runCommand(
+									[
+										"git",
+										"-C",
+										join(root, "repos", alias),
+										"worktree",
+										"repair",
+										checkoutPath,
+									],
+									{ captureOutput: true },
+								)
+								if (repair.exitCode !== 0) {
+									return yield* new PhaseError({
+										message: `Failed to repair moved worktree for '${alias}': ${repair.stderr}`,
+									})
+								}
+							}
+						}
+
+						const convertedTaskData = {
+							ticketUrl: task.data.ticketUrl,
+							...(task.data.description
+								? { description: task.data.description }
+								: {}),
+							...(task.data.epic ? { epic: task.data.epic } : {}),
+							phases: [
+								{ id: firstPhaseId! },
+								{
+									id,
+									...(input.dependsOn?.length
+										? { dependsOn: input.dependsOn }
+										: {}),
+								},
+							],
+						}
+						yield* fs.writeFile(
+							task.path,
+							formatMarkdownDocument(convertedTaskData, parsedTask.body),
+						)
+						return { taskId, id, path, content, data } satisfies PhaseRecord
+					}
+
+					yield* fs.createDirectory(directory)
+					yield* fs.writeFile(path, content)
+					const updatedTaskData = {
+						...task.data,
+						phases: [
+							...task.data.phases,
+							{
+								id,
+								...(input.dependsOn?.length
+									? { dependsOn: input.dependsOn }
+									: {}),
+							},
+						],
+					}
+					yield* fs.writeFile(
+						task.path,
+						formatMarkdownDocument(updatedTaskData, parsedTask.body),
+					)
+
+					return { taskId, id, path, content, data } satisfies PhaseRecord
+				}),
+
+			list: (taskId: string, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const tasks = yield* TaskService
+					const root = yield* workbase.discover(startPath)
+					const validTaskId = yield* decodeId(taskId, "task")
+					yield* tasks.show(validTaskId, root)
+					const directory = join(root, "tasks", validTaskId, "phases")
+					if (!(yield* fs.isDirectory(directory))) return [] as PhaseRecord[]
+					const entries = (yield* fs.readDirectory(directory))
+						.filter((entry) => entry.isDirectory)
+						.sort((a, b) => a.name.localeCompare(b.name))
+					const records: PhaseRecord[] = []
+					for (const entry of entries) {
+						const path = join(directory, entry.name, "PHASE.md")
+						if (!(yield* fs.exists(path))) continue
+						const content = yield* fs.readFile(path)
+						const parsed = yield* parseFrontmatter(content, path)
+						const data = yield* decodePhase(parsed.data)
+						records.push({
+							taskId: validTaskId,
+							id: entry.name,
+							path,
+							content,
+							data,
+						})
+					}
+					return records
+				}),
+
+			show: (taskId: string, id: string, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const service = yield* PhaseService
+					const validId = yield* decodeId(id, "phase")
+					const record = (yield* service.list(taskId, startPath)).find(
+						(phase) => phase.id === validId,
+					)
+					if (!record) {
+						return yield* new PhaseError({
+							message: `Phase '${validId}' does not exist on task '${taskId}'`,
+						})
+					}
+					return record
+				}),
+		}),
+	},
+) {}

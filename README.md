@@ -1,6 +1,16 @@
 # @markjaquith/agency
 
-Smuggle project-level LLM instruction into any Git repo. Plan your tasks. Commit your plans. Execute your plans using Opencode. Filter those plans out out your PRs.
+Agency manages durable agentic work across repositories. Epics, tasks, and
+phases live as Markdown documents in a filesystem-backed workbase. Repository
+aliases and Git worktrees provide each execution unit with the code it may read
+or write.
+
+## Requirements
+
+- [Bun](https://bun.sh) 1.0 or newer
+- Git
+- [GitHub CLI](https://cli.github.com/) for `agency pr create`
+- OpenCode or Claude Code for `agency work`
 
 ## Installation
 
@@ -8,170 +18,349 @@ Smuggle project-level LLM instruction into any Git repo. Plan your tasks. Commit
 bun install -g @markjaquith/agency
 ```
 
-## Primary Commands
+For development, run `bun link` from this repository.
 
-### `agency task <branch-name>`
+## Core Model
 
-Create a new feature branch from the latest `origin/main` and initialize `AGENTS.md` and `TASK.md` files using the template you've set for this repo. Commits smuggled files and lands you on that branch.
+- A **workbase** is the root containing durable documents and local repository
+  state.
+- An **epic** orchestrates tasks, may inspect repositories, and never writes
+  code.
+- A **task** describes one durable outcome and may stand alone or belong to an
+  epic.
+- A **phase** belongs to a multi-phase task and represents one PR or intended
+  PR.
+- An **execution unit** is either a single-phase task or a phase. It has exactly
+  one writable `repo`, optional read-only `repos`, a branch, a base, and a
+  `string | null` PR URL.
 
-**Options:**
+Entity IDs come from directory names. Structured metadata lives in YAML 1.2
+frontmatter; prose below it supplies human and agent context.
 
-- `--from <branch>` - Branch from a specific branch instead of `origin/main`
-- `--from-current` - Initialize on current branch instead of creating a new one
-- `--continue` - Continue a task by copying agency files to a new branch (after PR merge)
+## Workbase Layout
 
-**Examples:**
-
-```bash
-agency task my-feature              # Create 'my-feature' from latest origin/main
-agency task my-feature --from dev   # Create 'my-feature' from 'dev' branch
-agency task --from-current          # Initialize on current branch (no new branch)
-agency task --continue my-feature-v2 # Continue task on new branch after PR merge
+```text
+workbase/
+  agency.json
+  repos/
+    frontend/              # bare Git repository or symlink
+    backend/
+  epics/
+    checkout/
+      EPIC.md
+  tasks/
+    refresh-copy/          # single-phase task
+      TASK.md
+      code/                # created by agency work
+        frontend/
+    build-checkout/        # multi-phase task
+      TASK.md
+      phases/
+        backend-api/
+          PHASE.md
+          code/
+            backend/
+        frontend-ui/
+          PHASE.md
+          code/
+            frontend/
+            backend/
 ```
 
-### `agency edit`
+Repository metadata comes directly from Git under `repos/{alias}`. Workbase
+configuration may provide a custom writable-worktree creation command.
 
-Open `TASK.md` in the system editor for editing. Nice if you have to paste in large amounts of context.
+### Custom Worktree Command
 
-### `agency work`
+By default, Agency creates worktrees with Git. Set `worktreeCreateCommand` to an
+argv template when another tool should create writable worktrees:
 
-Launch Opencode to work on the current task defined in `TASK.md`. All your context will be loaded.
-
-### `agency loop`
-
-Run a Ralph Wiggum loop over the current `TASK.md`.
-The command repeatedly invokes `opencode run` in isolated iterations, committing progress after each loop, until all tasks are complete or a maximum loop count is reached.
-
-When all work is finished, the loop terminates and outputs `<promise>COMPLETE</promise>`.
-
-**Options:**
-
-- `--min-loops <n>` - Run at least `n` iterations, even if tasks complete earlier
-- `--max-loops <n>` - Stop after `n` iterations even if tasks remain
-
-**Example:**
-
-```bash
-agency loop --max-loops 10
+```json
+{
+	"version": 2,
+	"worktreeCreateCommand": [
+		"my-worktree-tool",
+		"--repo",
+		"{repo}",
+		"--destination",
+		"{worktree}",
+		"--branch",
+		"{branch}"
+	]
+}
 ```
 
-### `agency emit [base-branch]`
+Available placeholders are:
 
-Create an emit branch with smuggled files reverted to their merge-base state (removes additions/modifications to those files made on feature branch). Default branch name is current branch with `--PR` suffix.
+- `{repo}`: absolute repository alias path under `repos/`
+- `{worktree}`: absolute checkout path Agency requires
+- `{branch}`: execution branch the custom command must create or check out
+- `{base}`: configured execution base
 
-### `agency push [base-branch]`
+`{repo}` and `{worktree}` are required. Agency invokes the command directly
+without a shell, sets matching `AGENCY_REPO`, `AGENCY_WORKTREE`,
+`AGENCY_BRANCH`, and `AGENCY_BASE` environment variables, and verifies that the
+requested destination exists afterward.
 
-Runs `agency emit`, pushes the branch, and then switches back to the source branch.
+Worktrunk can be configured per workbase without changing the user's Worktrunk
+path settings:
 
-**Options:**
-
-- `--pr` - Open GitHub PR in browser after pushing (requires `gh` CLI)
-- `--force` - Force push to remote if branch has diverged
-- `--branch <name>` - Custom name for emit branch
-
-### `agency merge`
-
-Runs `agency emit`, and then merges the PR back into the base branch locally.
-
-**Options:**
-
-- `--squash` - Use squash merge instead of regular merge (stages changes, requires manual commit)
-- `--push` - Push the base branch to origin after merging
-
-## Other Commands
-
-### `agency template use [template]`
-
-Set which template to use for this repository. Shows interactive selection if no template name provided. Saves to `.git/config`.
-
-### `agency template save <files...>`
-
-Save the specified files back to the configured template directory (so they will be used for future `agency task` commands).
-
-### `agency base get`
-
-Get the base branch for the current feature branch.
-
-### `agency base set <branch>`
-
-Set the base branch for the current feature branch.
-
-### `agency switch`
-
-Toggle between source branch and emit branch. If on an emit branch (e.g., `foo--PR`), switches to source branch (e.g., `foo`). If on source branch and emit branch exists, switches to emit branch.
-
-### `agency source`
-
-Switch to the source branch for the current emit branch.
-
-### `agency completions <bash|zsh>`
-
-Generate shell completion scripts. The generated scripts are static, so shell startup and tab completion do not call `agency`.
-
-**zsh:**
-
-```bash
-mkdir -p ~/.zsh/completions
-agency completions zsh > ~/.zsh/completions/_agency
+```json
+{
+	"version": 2,
+	"worktreeCreateCommand": [
+		"wt",
+		"-C",
+		"{repo}",
+		"-y",
+		"--config-set",
+		"worktree-path=\"{worktree}\"",
+		"switch",
+		"--create",
+		"--base",
+		"{base}",
+		"{branch}",
+		"--no-cd",
+		"--format",
+		"json"
+	]
+}
 ```
 
-Then add this to `~/.zshrc` before `compinit`:
+Custom commands own writable branch creation. Agency checks for conflicting
+worktrees first, invokes the command only when the branch is not checked out,
+and verifies that `{worktree}` exists afterward.
 
-```bash
-fpath=(~/.zsh/completions $fpath)
-autoload -Uz compinit && compinit
+The configured command applies only to the writable checkout. Supplemental
+read-only repositories remain detached Git worktrees at their declared refs so
+they do not acquire writable branches.
+
+## Frontmatter
+
+### Epic
+
+```yaml
+---
+ticketUrl: https://example.com/tickets/checkout
+description: Coordinate the checkout experience across frontend and backend.
+repos:
+  - repo: frontend
+    ref: main
+  - repo: backend
+    ref: main
+tasks:
+  - id: backend-api
+  - id: frontend-ui
+    dependsOn:
+      - backend-api
+---
 ```
 
-**bash:**
+### Single-Phase Task
 
-```bash
-mkdir -p ~/.local/share/bash-completion/completions
-agency completions bash > ~/.local/share/bash-completion/completions/agency
+```yaml
+---
+ticketUrl: https://example.com/tickets/refresh-copy
+description: Refresh user-facing checkout copy.
+epic: checkout
+repo: frontend
+repos:
+  - repo: backend
+    ref: main
+branch: task/refresh-copy
+base: main
+pr: null
+---
 ```
 
-## Requirements
+### Multi-Phase Task
 
-- [Bun](https://bun.sh) >= 1.0.0 (recommended)
-- TypeScript ^5
+```yaml
+---
+ticketUrl: https://example.com/tickets/build-checkout
+description: Deliver checkout through sequenced backend and frontend changes.
+epic: checkout
+phases:
+  - id: backend-api
+  - id: frontend-ui
+    dependsOn:
+      - backend-api
+---
+```
+
+Each listed phase has a `phases/{id}/PHASE.md` containing its execution fields:
+
+```yaml
+---
+description: Build the checkout interface against the new backend API.
+repo: frontend
+repos:
+  - repo: backend
+    ref: main
+branch: task/checkout-ui
+base: task/checkout-api
+pr: null
+---
+```
+
+Epic task dependencies belong in `EPIC.md`. Phase dependencies belong in the
+owning `TASK.md`. Stable IDs do not encode ordering in directory names.
+
+## Quick Start
+
+```bash
+agency init ~/work
+cd ~/work
+
+agency repo add frontend git@github.com:example/frontend.git
+agency repo link backend ~/Dev/backend
+
+agency task create refresh-copy \
+  --ticket-url https://example.com/tickets/refresh-copy \
+  --description "Refresh user-facing checkout copy" \
+  --repo frontend \
+  --reference backend:main \
+  --branch task/refresh-copy \
+  --base main
+
+agency validate
+agency work refresh-copy
+agency pr create refresh-copy
+```
+
+## Commands
+
+### Workbase and Repositories
+
+```text
+agency init [path] [--json]
+agency repo add <alias> <remote> [--json]
+agency repo link <alias> <path> [--json]
+agency repo list [--json]
+```
+
+`repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
+repository. Alias names are then used by all documents and commands.
+
+Commands that print Agency-owned results accept `--json`, including initialization,
+repository mutations, entity creation/list/show, status, validation, and PR creation.
+
+### Epics
+
+```text
+agency epic create <id> --ticket-url <url> [--description <text>] [--json]
+  --repo <alias>:<ref> [--repo <alias>:<ref>...]
+agency epic list [--json]
+agency epic show <id> [--json]
+```
+
+Creating a task with `--epic <id>` adds the task to the epic and writes the task
+back-reference.
+
+### Tasks
+
+Create a single-phase task:
+
+```text
+agency task create <id> --ticket-url <url> --repo <alias>
+  --branch <name> --base <name>
+  [--description <text>] [--epic <id>] [--reference <alias>:<ref>...] [--json]
+```
+
+Create a multi-phase task container:
+
+```text
+agency task create <id> --ticket-url <url> --multi-phase
+  [--description <text>] [--epic <id>] [--json]
+```
+
+Inspect tasks:
+
+```text
+agency task list [--json]
+agency task show <id> [--json]
+```
+
+To add a phase to an existing single-phase task, name the phase that will own
+the task's current execution fields with `--first-phase`:
+
+```text
+agency phase create refresh-copy verification
+  --first-phase implementation
+  --repo frontend --branch task/refresh-copy-verification --base main
+  --depends-on implementation
+```
+
+Agency converts `TASK.md` to the multi-phase shape, creates both phase documents,
+and moves existing worktrees from the task's `code/` directory into the first
+phase. Dependencies remain explicit through `--depends-on`.
+
+### Phases
+
+```text
+agency phase create <task-id> <phase-id>
+  --repo <alias> --branch <name> --base <name>
+  [--description <text>] [--reference <alias>:<ref>...]
+  [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
+
+agency phase list <task-id> [--json]
+agency phase show <task-id> <phase-id> [--json]
+```
+
+### Work and Pull Requests
+
+```text
+agency work <task-id> [phase-id] [--opencode | --claude]
+agency pr create <task-id> [phase-id] [--draft] [--json]
+```
+
+`agency work` fetches repositories, creates or reuses worktrees under `code/`,
+and launches an agent in the writable checkout with absolute task and phase
+context paths.
+
+Each writable `(repo, branch)` pair may belong to only one task or phase. Agency
+validation reports duplicate ownership, and `agency work` checks Git's worktree
+registry before creating or reusing a checkout. It reuses only an exact
+path/branch match; if the branch is checked out elsewhere or the target path has
+the wrong branch, the command fails with the conflicting path instead of forcing
+another checkout.
+
+Read-only references use `<alias>:<ref>` on the CLI and `{ repo, ref }` in YAML.
+Agency resolves the ref to a commit and creates a detached worktree. Existing
+reference worktrees are reused only while their commit still matches the declared
+ref; use a commit SHA as `ref` when reproducibility matters.
+
+`agency pr create` requires a clean writable worktree. It pushes the branch,
+runs `gh pr create --fill`, and writes the returned GitHub PR URL into `pr` in
+the owning `TASK.md` or `PHASE.md`.
+
+### Status and Validation
+
+```text
+agency status [--json]
+agency validate [--json]
+```
+
+Validation checks JSON and YAML parsing, Effect Schema conformance, repository
+aliases, parent/child backlinks, phase directories, duplicate references,
+unknown dependencies, and dependency cycles. YAML duplicate keys, anchors,
+aliases, and custom tags are rejected.
+
+## Agent Skill
+
+`skills/agency/SKILL.md` contains an agent-oriented operating guide for Agency.
+Install or link that directory into your agent's skill location when you want
+Agency workflows to be discovered automatically.
 
 ## Development
 
-To install dependencies:
-
 ```bash
 bun install
+bun link
+bun run build
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-### Git Hooks
-
-This project uses [hk](https://github.com/jdx/hk) for git hook management. The configuration is in `hk.pkl`.
-
-To install the git hooks:
-
-```bash
-hk install
-```
-
-**Pre-commit hook runs:**
-
-- Prettier formatting
-- Knip (unused code detection)
-- TypeScript type checking
-
-**Commit-msg hook validates:**
-
-- Conventional commits format
-- Commit message history
-
-**Pre-push hook runs the same checks as pre-commit.**
-
-Note: Tests are intentionally excluded from git hooks as they are slow. Run them manually with `bun test`.
+Run focused tests with `bun test <test-file>`. Run formatting with `bun format`.
 
 ## License
 

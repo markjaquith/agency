@@ -1,10 +1,13 @@
 import { Effect, Data, pipe } from "effect"
 import {
 	mkdir,
-	copyFile as fsCopyFile,
-	unlink,
 	lstat,
 	readlink,
+	readdir,
+	realpath,
+	rename,
+	stat,
+	symlink,
 } from "node:fs/promises"
 import { spawnProcess } from "../utils/process"
 
@@ -26,8 +29,20 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 			exists: (path: string) =>
 				Effect.tryPromise({
 					try: async () => {
-						const file = Bun.file(path)
-						return await file.exists()
+						try {
+							await lstat(path)
+							return true
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								error.code === "ENOENT"
+							) {
+								return false
+							}
+							throw error
+						}
 					},
 					catch: () =>
 						new FileSystemError({
@@ -38,20 +53,33 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 			isDirectory: (path: string) =>
 				Effect.tryPromise({
 					try: async () => {
-						const file = Bun.file(path)
-						const exists = await file.exists()
-						if (!exists) {
-							return false
+						try {
+							return (await stat(path)).isDirectory()
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								error.code === "ENOENT"
+							) {
+								return false
+							}
+							throw error
 						}
-						// Use stat to check if it's a directory
-						const stat = await import("node:fs/promises").then((fs) =>
-							fs.stat(path),
-						)
-						return stat.isDirectory()
 					},
 					catch: () =>
 						new FileSystemError({
 							message: `Failed to check if path is directory: ${path}`,
+						}),
+				}),
+
+			realPath: (path: string) =>
+				Effect.tryPromise({
+					try: () => realpath(path),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to resolve path: ${path}`,
+							cause: error,
 						}),
 				}),
 
@@ -78,19 +106,6 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 						}),
 				}),
 
-			readJSON: <T = unknown>(path: string) =>
-				Effect.tryPromise({
-					try: async (): Promise<T> => {
-						const file = Bun.file(path)
-						const exists = await file.exists()
-						if (!exists) {
-							throw new Error(`File not found: ${path}`)
-						}
-						return await file.json()
-					},
-					catch: () => new FileNotFoundError({ path }),
-				}),
-
 			writeJSON: <T = unknown>(path: string, data: T) =>
 				Effect.tryPromise({
 					try: () => Bun.write(path, JSON.stringify(data, null, 2) + "\n"),
@@ -111,22 +126,29 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 						}),
 				}),
 
-			deleteFile: (path: string) =>
+			moveDirectory: (from: string, to: string) =>
 				Effect.tryPromise({
-					try: () => unlink(path),
+					try: () => rename(from, to),
 					catch: (error) =>
 						new FileSystemError({
-							message: `Failed to delete file: ${path}`,
+							message: `Failed to move directory from ${from} to ${to}`,
 							cause: error,
 						}),
 				}),
 
-			copyFile: (from: string, to: string) =>
+			readDirectory: (path: string) =>
 				Effect.tryPromise({
-					try: () => fsCopyFile(from, to),
+					try: async () => {
+						const entries = await readdir(path, { withFileTypes: true })
+						return entries.map((entry) => ({
+							name: entry.name,
+							isDirectory: entry.isDirectory(),
+							isSymlink: entry.isSymbolicLink(),
+						}))
+					},
 					catch: (error) =>
 						new FileSystemError({
-							message: `Failed to copy file from ${from} to ${to}`,
+							message: `Failed to read directory: ${path}`,
 							cause: error,
 						}),
 				}),
@@ -158,15 +180,16 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 				options?: {
 					readonly cwd?: string
 					readonly captureOutput?: boolean
-					readonly interactive?: boolean
+					readonly env?: Record<string, string>
 				},
 			) =>
 				pipe(
 					spawnProcess(args, {
 						cwd: options?.cwd,
-						stdin: options?.interactive ? "inherit" : "pipe",
+						stdin: "pipe",
 						stdout: options?.captureOutput ? "pipe" : "inherit",
-						stderr: options?.interactive ? "inherit" : "pipe",
+						stderr: "pipe",
+						env: options?.env,
 					}),
 					Effect.mapError(
 						(processError) =>
@@ -177,69 +200,15 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					),
 				),
 
-			/**
-			 * Recursively collect all files in a directory.
-			 * Returns paths relative to the directory (or relativeTo if specified).
-			 */
-			collectFiles: (
-				dirPath: string,
-				options?: {
-					readonly relativeTo?: string
-					readonly exclude?: readonly string[]
-					readonly sort?: boolean
-				},
-			) =>
+			createSymlink: (target: string, path: string) =>
 				Effect.tryPromise({
-					try: async () => {
-						const { relativeTo, exclude = [], sort = false } = options ?? {}
-						const basePath = relativeTo ?? dirPath
-
-						// Build find command with exclusions
-						const findArgs = ["find", dirPath, "-type", "f"]
-						for (const pattern of exclude) {
-							findArgs.push("!", "-name", pattern)
-						}
-
-						const result = Bun.spawnSync(findArgs, {
-							stdout: "pipe",
-							stderr: "ignore",
-						})
-
-						const output = new TextDecoder().decode(result.stdout)
-						if (!output) {
-							return []
-						}
-
-						const files = output
-							.trim()
-							.split("\n")
-							.filter((f: string) => f.length > 0)
-							.map((file) => file.replace(basePath + "/", ""))
-							.filter((f) => f.length > 0)
-
-						return sort ? files.sort() : files
-					},
+					try: () => symlink(target, path, "dir"),
 					catch: (error) =>
 						new FileSystemError({
-							message: `Failed to collect files from ${dirPath}`,
+							message: `Failed to create symlink ${path} -> ${target}`,
 							cause: error,
 						}),
 				}),
-
-			/**
-			 * Check if a path is a symbolic link.
-			 * Returns false if the file doesn't exist or if it's not a symlink.
-			 */
-			isSymlink: (path: string) =>
-				Effect.tryPromise({
-					try: async () => {
-						const stats = await lstat(path)
-						return stats.isSymbolicLink()
-					},
-					catch: () =>
-						// If we can't lstat, it's not a symlink (or doesn't exist)
-						false,
-				}).pipe(Effect.catchAll(() => Effect.succeed(false))),
 
 			/**
 			 * Read the target of a symbolic link.

@@ -18,11 +18,6 @@ interface SpawnOptions {
 	readonly stdout?: "pipe" | "inherit"
 	readonly stderr?: "pipe" | "inherit"
 	readonly env?: Record<string, string>
-	readonly onProgress?: (progress: {
-		readonly elapsedMs: number
-		readonly pid?: number
-	}) => void
-	readonly progressIntervalMs?: number
 }
 
 /**
@@ -59,18 +54,6 @@ export const spawnProcess = (
 				stderr: options?.stderr ?? "pipe",
 				env: options?.env ? { ...process.env, ...options.env } : process.env,
 			})
-			const startedAt = Date.now()
-			const progressInterval = options?.onProgress
-				? setInterval(
-						() =>
-							options.onProgress?.({
-								elapsedMs: Date.now() - startedAt,
-								pid: proc.pid,
-							}),
-						options.progressIntervalMs ?? 10_000,
-					)
-				: null
-
 			// Start draining stdout/stderr immediately so verbose subprocesses
 			// cannot block on filled pipe buffers before they exit.
 			const stdoutPromise =
@@ -86,11 +69,7 @@ export const spawnProcess = (
 				proc.exited,
 				stdoutPromise,
 				stderrPromise,
-			]).finally(() => {
-				if (progressInterval) {
-					clearInterval(progressInterval)
-				}
-			})
+			])
 
 			return {
 				stdout: stdout.trim(),
@@ -106,41 +85,3 @@ export const spawnProcess = (
 				stderr: error instanceof Error ? error.message : String(error),
 			}),
 	})
-
-/**
- * Helper to check exit code and return stdout on success
- */
-export const checkExitCodeAndReturnStdout =
-	<E>(errorMapper: (result: ProcessResult) => E) =>
-	(result: ProcessResult): Effect.Effect<string, E> =>
-		result.exitCode === 0
-			? Effect.succeed(result.stdout)
-			: Effect.fail(errorMapper(result))
-
-/**
- * Helper to check exit code and return void on success
- */
-export const checkExitCodeAndReturnVoid =
-	<E>(errorMapper: (result: ProcessResult) => E) =>
-	(result: ProcessResult): Effect.Effect<void, E> =>
-		result.exitCode === 0 ? Effect.void : Effect.fail(errorMapper(result))
-
-/**
- * Helper to create an error mapper function for a specific error type
- * This is useful for wrapping spawnProcess with domain-specific error types
- */
-export const createErrorMapper =
-	<E extends { command: string; exitCode: number; stderr: string }>(
-		ErrorConstructor: new (args: {
-			command: string
-			exitCode: number
-			stderr: string
-		}) => E,
-	) =>
-	(args: readonly string[]) =>
-	(result: ProcessResult): E =>
-		new ErrorConstructor({
-			command: args.join(" "),
-			exitCode: result.exitCode,
-			stderr: result.stderr,
-		})

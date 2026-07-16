@@ -1,462 +1,215 @@
-import { test, expect, describe, beforeEach, afterEach } from "bun:test"
-import { join } from "path"
+import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { FileSystemService } from "../services/FileSystemService"
+import { WorktreeService } from "../services/WorktreeService"
+import { captureLogs } from "../test-utils"
 import { work } from "./work"
-import {
-	createTempDir,
-	cleanupTempDir,
-	initGitRepo,
-	initAgency,
-	runTestEffect,
-	createCommit,
-} from "../test-utils"
-import { writeFileSync } from "node:fs"
 
-/**
- * Helper to mock CLI tool detection and execution for work command tests.
- * Returns restore function to clean up mocks.
- *
- * @param options Configuration for the mock
- * @param options.hasOpencode Whether 'which opencode' should succeed (default: true)
- * @param options.hasClaude Whether 'which claude' should succeed (default: false)
- * @param options.onSpawn Callback when Bun.spawn is called (non-git commands)
- * @returns Restore function to clean up mocks
- */
-function mockCliTools(
-	options: {
-		hasOpencode?: boolean
-		hasClaude?: boolean
-		onSpawn?: (args: string[], options: any) => any
-	} = {},
-) {
-	const { hasOpencode = true, hasClaude = false, onSpawn } = options
+type ExecutionWorkspace = Effect.Effect.Success<
+	ReturnType<WorktreeService["materialize"]>
+>
 
-	const originalSpawn = Bun.spawn
-	const originalSpawnSync = Bun.spawnSync
+const singlePhaseWorkspace: ExecutionWorkspace = {
+	root: "/workbase",
+	taskPath: "/workbase/tasks/example/TASK.md",
+	phasePath: null,
+	codePath: "/workbase/tasks/example/code",
+	writablePath: "/workbase/tasks/example/code/agency",
+	repo: "agency",
+	repos: [],
+}
 
-	// @ts-ignore - mocking for test
-	Bun.spawnSync = (args: any, options: any) => {
-		// Mock which command to return success/failure based on config
-		if (Array.isArray(args) && args[0] === "which") {
-			if (args[1] === "opencode") {
-				return { exitCode: hasOpencode ? 0 : 1 }
-			}
-			if (args[1] === "claude") {
-				return { exitCode: hasClaude ? 0 : 1 }
-			}
-		}
-		return originalSpawnSync(args, options)
+const multiPhaseWorkspace: ExecutionWorkspace = {
+	root: "/workbase",
+	taskPath: "/workbase/tasks/example/TASK.md",
+	phasePath: "/workbase/tasks/example/phases/implementation/PHASE.md",
+	codePath: "/workbase/tasks/example/phases/implementation/code",
+	writablePath: "/workbase/tasks/example/phases/implementation/code/agency",
+	repo: "agency",
+	repos: [],
+}
+
+interface HarnessOptions {
+	readonly workspace?: ExecutionWorkspace
+	readonly materializeError?: Error
+	readonly available?: Partial<Record<"opencode" | "claude", boolean>>
+}
+
+const createHarness = (options: HarnessOptions = {}) => {
+	const events: string[] = []
+	const probes: string[] = []
+	const launches: Array<{
+		cli: string
+		args: readonly string[]
+		cwd: string
+	}> = []
+	const worktrees = {
+		materialize: () => {
+			events.push("materialize")
+			return options.materializeError
+				? Effect.fail(options.materializeError)
+				: Effect.succeed(options.workspace ?? singlePhaseWorkspace)
+		},
 	}
-
-	// @ts-ignore - mocking for test
-	Bun.spawn = (args: any, options: any) => {
-		// Allow git commands to pass through
-		if (Array.isArray(args) && args[0] === "git") {
-			return originalSpawn(args, options)
-		}
-
-		// Call custom handler if provided
-		if (onSpawn) {
-			return onSpawn(args, options)
-		}
-
-		// Default mock response
-		return {
-			exited: Promise.resolve(0),
-			exitCode: 0,
-			stdout: new ReadableStream(),
-			stderr: new ReadableStream(),
-		}
+	const fs = {
+		runCommand: (args: readonly string[]) => {
+			const cli = args[1] as "opencode" | "claude"
+			events.push(`probe:${cli}`)
+			probes.push(cli)
+			return Effect.succeed({
+				exitCode: options.available?.[cli] === false ? 1 : 0,
+				stdout: "",
+				stderr: "",
+			})
+		},
 	}
-
-	// Return restore function
-	return () => {
-		// @ts-ignore - restore
-		Bun.spawn = originalSpawn
-		// @ts-ignore - restore
-		Bun.spawnSync = originalSpawnSync
+	const launch = (cli: string, args: readonly string[], cwd: string) => {
+		events.push(`launch:${cli}`)
+		launches.push({ cli, args, cwd })
 	}
+	const run = (commandOptions: Parameters<typeof work>[0]) =>
+		Effect.runPromise(
+			work(commandOptions, launch).pipe(
+				Effect.provideService(WorktreeService, worktrees as never),
+				Effect.provideService(FileSystemService, fs as never),
+			) as Effect.Effect<void, unknown, never>,
+		)
+
+	return { events, probes, launches, run }
 }
 
 describe("work command", () => {
-	let tempDir: string
-	let originalCwd: string
+	test("requires a task ID before materialization", async () => {
+		const harness = createHarness()
 
-	beforeEach(async () => {
-		tempDir = await createTempDir()
-		originalCwd = process.cwd()
-		process.chdir(tempDir)
-
-		// Initialize git repo
-		await initGitRepo(tempDir)
-		await createCommit(tempDir, "Initial commit")
+		await expect(harness.run({})).rejects.toThrow("Task ID is required")
+		expect(harness.events).toEqual([])
 	})
 
-	afterEach(async () => {
-		process.chdir(originalCwd)
-		await cleanupTempDir(tempDir)
+	test("rejects conflicting agent flags before materialization", async () => {
+		const harness = createHarness()
+
+		await expect(
+			harness.run({ taskId: "example", opencode: true, claude: true }),
+		).rejects.toThrow("Cannot use both --opencode and --claude")
+		expect(harness.events).toEqual([])
 	})
 
-	describe("error handling", () => {
-		test("throws error when TASK.md doesn't exist", async () => {
-			expect(
-				runTestEffect(work({ silent: true, _noExec: true })),
-			).rejects.toThrow(
-				"TASK.md not found. Run 'agency task' first to create it.",
-			)
-		})
+	test("launches OpenCode in the writable checkout with the single-phase prompt", async () => {
+		const harness = createHarness()
 
-		test("throws error when not in a git repository", async () => {
-			const nonGitDir = await createTempDir()
-			process.chdir(nonGitDir)
+		await harness.run({ taskId: "example", opencode: true })
 
-			expect(
-				runTestEffect(work({ silent: true, _noExec: true })),
-			).rejects.toThrow("Not in a git repository")
-
-			await cleanupTempDir(nonGitDir)
-		})
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
+		expect(harness.launches).toEqual([
+			{
+				cli: "opencode",
+				args: [
+					"opencode",
+					"--prompt",
+					"Start the task. Read /workbase/tasks/example/TASK.md.",
+				],
+				cwd: "/workbase/tasks/example/code/agency",
+			},
+		])
 	})
 
-	describe("TASK.md validation", () => {
-		test("finds TASK.md in git root", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+	test("includes absolute task and phase paths in a multi-phase prompt", async () => {
+		const harness = createHarness({ workspace: multiPhaseWorkspace })
 
-			let spawnCalled = false
-			let spawnArgs: any[] = []
-
-			const restore = mockCliTools({
-				onSpawn: (args) => {
-					spawnCalled = true
-					spawnArgs = args
-					return {
-						exited: Promise.resolve(0),
-					}
-				},
-			})
-
-			await runTestEffect(work({ silent: true, _noExec: true }))
-
-			restore()
-
-			expect(spawnCalled).toBe(true)
-			expect(spawnArgs).toEqual(["opencode", "--prompt", "Start the task"])
+		await harness.run({
+			taskId: "example",
+			phaseId: "implementation",
+			opencode: true,
 		})
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode",
+			"--prompt",
+			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+		])
 	})
 
-	describe("opencode execution", () => {
-		test("passes correct arguments to opencode", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+	test("automatically falls back to Claude", async () => {
+		const harness = createHarness({ available: { opencode: false } })
 
-			let capturedArgs: string[] = []
-			let capturedOptions: any = null
+		await harness.run({ taskId: "example" })
 
-			const restore = mockCliTools({
-				onSpawn: (args, options) => {
-					capturedArgs = args
-					capturedOptions = options
-					return {
-						exited: Promise.resolve(0),
-						exitCode: 0,
-						stdout: new ReadableStream(),
-						stderr: new ReadableStream(),
-					}
-				},
-			})
-
-			await runTestEffect(work({ silent: true, _noExec: true }))
-
-			restore()
-
-			expect(capturedArgs).toEqual(["opencode", "--prompt", "Start the task"])
-			// On macOS, temp directories can have /private prefix
-			expect(
-				capturedOptions.cwd === tempDir ||
-					capturedOptions.cwd === `/private${tempDir}`,
-			).toBe(true)
-			expect(capturedOptions.stdout).toEqual("inherit")
-			expect(capturedOptions.stderr).toEqual("inherit")
-		})
-
-		test("throws error when opencode exits with non-zero code", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			const restore = mockCliTools({
-				onSpawn: () => ({
-					exited: Promise.resolve(1),
-					exitCode: 1,
-					stdout: new ReadableStream(),
-					stderr: new ReadableStream(),
-				}),
-			})
-
-			expect(
-				runTestEffect(work({ silent: true, _noExec: true })),
-			).rejects.toThrow("opencode exited with code 1")
-
-			restore()
+		expect(harness.probes).toEqual(["opencode", "claude"])
+		expect(harness.launches[0]).toEqual({
+			cli: "claude",
+			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
+			cwd: "/workbase/tasks/example/code/agency",
 		})
 	})
 
-	describe("silent mode", () => {
-		test("verbose mode logs debug information", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+	test("does not fall back when OpenCode is explicitly required", async () => {
+		const harness = createHarness({ available: { opencode: false } })
 
-			const restore = mockCliTools()
+		await expect(
+			harness.run({ taskId: "example", opencode: true }),
+		).rejects.toThrow("opencode CLI tool not found")
+		expect(harness.probes).toEqual(["opencode"])
+		expect(harness.launches).toEqual([])
+	})
 
-			// Capture console.log
-			const originalLog = console.log
-			let logMessages: string[] = []
-			console.log = (msg: string) => {
-				logMessages.push(msg)
-			}
+	test("launches explicitly requested Claude", async () => {
+		const harness = createHarness()
 
-			await runTestEffect(work({ silent: false, verbose: true, _noExec: true }))
+		await harness.run({ taskId: "example", claude: true })
 
-			console.log = originalLog
-			restore()
-
-			expect(logMessages.some((msg) => msg.includes("Found TASK.md"))).toBe(
-				true,
-			)
-			expect(logMessages.some((msg) => msg.includes("Running opencode"))).toBe(
-				true,
-			)
-		})
-
-		test("silent flag suppresses verbose output", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			const restore = mockCliTools()
-
-			// Capture console.log
-			const originalLog = console.log
-			let logCalled = false
-			console.log = () => {
-				logCalled = true
-			}
-
-			await work({ silent: true, verbose: true, _noExec: true })
-
-			console.log = originalLog
-			restore()
-
-			expect(logCalled).toBe(false)
+		expect(harness.probes).toEqual(["claude"])
+		expect(harness.launches[0]).toEqual({
+			cli: "claude",
+			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
+			cwd: "/workbase/tasks/example/code/agency",
 		})
 	})
 
-	describe("CLI selection flags", () => {
-		test("--opencode flag forces use of OpenCode", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			let capturedArgs: string[] = []
-
-			const restore = mockCliTools({
-				onSpawn: (args) => {
-					capturedArgs = args
-					return {
-						exited: Promise.resolve(0),
-						exitCode: 0,
-						stdout: new ReadableStream(),
-						stderr: new ReadableStream(),
-					}
-				},
-			})
-
-			await runTestEffect(work({ silent: true, _noExec: true, opencode: true }))
-
-			restore()
-
-			expect(capturedArgs).toEqual(["opencode", "--prompt", "Start the task"])
+	test("fails when neither agent tool is available", async () => {
+		const harness = createHarness({
+			available: { opencode: false, claude: false },
 		})
 
-		test("--claude flag forces use of Claude Code", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			let capturedArgs: string[] = []
-
-			const restore = mockCliTools({
-				hasClaude: true,
-				onSpawn: (args) => {
-					capturedArgs = args
-					return {
-						exited: Promise.resolve(0),
-						exitCode: 0,
-						stdout: new ReadableStream(),
-						stderr: new ReadableStream(),
-					}
-				},
-			})
-
-			await runTestEffect(work({ silent: true, _noExec: true, claude: true }))
-
-			restore()
-
-			expect(capturedArgs).toEqual(["claude", "Start the task"])
-		})
-
-		test("throws error when both --opencode and --claude flags are used", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			expect(
-				runTestEffect(
-					work({ silent: true, _noExec: true, opencode: true, claude: true }),
-				),
-			).rejects.toThrow(
-				"Cannot use both --opencode and --claude flags together. Choose one.",
-			)
-		})
-
-		test("throws error when --opencode is used but opencode is not installed", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			const restore = mockCliTools({ hasOpencode: false })
-
-			expect(
-				runTestEffect(work({ silent: true, _noExec: true, opencode: true })),
-			).rejects.toThrow(
-				"opencode CLI tool not found. Please install OpenCode or remove the --opencode flag.",
-			)
-
-			restore()
-		})
-
-		test("throws error when --claude is used but claude is not installed", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			const restore = mockCliTools({ hasClaude: false })
-
-			expect(
-				runTestEffect(work({ silent: true, _noExec: true, claude: true })),
-			).rejects.toThrow(
-				"claude CLI tool not found. Please install Claude Code or remove the --claude flag.",
-			)
-
-			restore()
-		})
+		await expect(harness.run({ taskId: "example" })).rejects.toThrow(
+			"claude CLI tool not found",
+		)
+		expect(harness.probes).toEqual(["opencode", "claude"])
+		expect(harness.launches).toEqual([])
 	})
 
-	describe("extra arguments", () => {
-		test("passes extra args to opencode", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			let capturedArgs: string[] = []
-
-			const restore = mockCliTools({
-				onSpawn: (args) => {
-					capturedArgs = args
-					return {
-						exited: Promise.resolve(0),
-						exitCode: 0,
-						stdout: new ReadableStream(),
-						stderr: new ReadableStream(),
-					}
-				},
-			})
-
-			await runTestEffect(
-				work({
-					silent: true,
-					_noExec: true,
-					extraArgs: ["--model", "claude-sonnet-4-20250514"],
-				}),
-			)
-
-			restore()
-
-			expect(capturedArgs).toEqual([
-				"opencode",
-				"--prompt",
-				"Start the task",
-				"--model",
-				"claude-sonnet-4-20250514",
-			])
+	test("does not probe or launch when materialization fails", async () => {
+		const harness = createHarness({
+			materializeError: new Error("materialization failed"),
 		})
 
-		test("passes extra args to claude", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
+		await expect(harness.run({ taskId: "example" })).rejects.toThrow(
+			"materialization failed",
+		)
+		expect(harness.events).toEqual(["materialize"])
+	})
 
-			let capturedArgs: string[] = []
+	test("respects silent and verbose logging options", async () => {
+		const verboseHarness = createHarness()
+		const verboseLogs = await captureLogs(() =>
+			verboseHarness.run({ taskId: "example", verbose: true }),
+		)
+		expect(verboseLogs).toEqual([
+			"Launching opencode in /workbase/tasks/example/code/agency",
+		])
 
-			const restore = mockCliTools({
-				hasClaude: true,
-				onSpawn: (args) => {
-					capturedArgs = args
-					return {
-						exited: Promise.resolve(0),
-						exitCode: 0,
-						stdout: new ReadableStream(),
-						stderr: new ReadableStream(),
-					}
-				},
-			})
-
-			await runTestEffect(
-				work({
-					silent: true,
-					_noExec: true,
-					claude: true,
-					extraArgs: ["--arbitrary", "switches"],
-				}),
-			)
-
-			restore()
-
-			expect(capturedArgs).toEqual([
-				"claude",
-				"Start the task",
-				"--arbitrary",
-				"switches",
-			])
-		})
-
-		test("works without extra args", async () => {
-			// Create TASK.md
-			const taskPath = join(tempDir, "TASK.md")
-			writeFileSync(taskPath, "# Test Task\n\nSome task content")
-
-			let capturedArgs: string[] = []
-
-			const restore = mockCliTools({
-				onSpawn: (args) => {
-					capturedArgs = args
-					return {
-						exited: Promise.resolve(0),
-						exitCode: 0,
-						stdout: new ReadableStream(),
-						stderr: new ReadableStream(),
-					}
-				},
-			})
-
-			await runTestEffect(work({ silent: true, _noExec: true }))
-
-			restore()
-
-			expect(capturedArgs).toEqual(["opencode", "--prompt", "Start the task"])
-		})
+		const silentHarness = createHarness()
+		const silentLogs = await captureLogs(() =>
+			silentHarness.run({
+				taskId: "example",
+				verbose: true,
+				silent: true,
+			}),
+		)
+		expect(silentLogs).toEqual([])
 	})
 })
