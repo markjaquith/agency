@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import {
@@ -7,6 +8,9 @@ import {
 	createTempDir,
 	runTestEffect,
 } from "../test-utils"
+import { FileSystemService } from "../services/FileSystemService"
+import { WorkbaseService } from "../services/WorkbaseService"
+import type { PickWorkbase } from "../workbase/workbase-choice"
 import { validate } from "./validate"
 
 describe("validate command", () => {
@@ -41,6 +45,67 @@ pr: null
 		await expect(
 			runTestEffect(validate({ cwd: root, silent: true })),
 		).resolves.toBeUndefined()
+	})
+
+	test("validates an explicit workbase path", async () => {
+		await Bun.write(
+			join(root, "tasks/example/TASK.md"),
+			`---
+ticketUrl: null
+repo: agency
+branch: task/example
+base: main
+pr: null
+---
+`,
+		)
+
+		await expect(
+			runTestEffect(
+				validate({ path: root, cwd: join(root, "outside"), silent: true }),
+			),
+		).resolves.toBeUndefined()
+	})
+
+	test("selects a registered workbase when local discovery fails", async () => {
+		const discovered: string[] = []
+		const workbase = {
+			discover: (path: string) => {
+				discovered.push(path)
+				return path === "/outside"
+					? Effect.fail({
+							_tag: "WorkbaseNotFoundError" as const,
+							message: "No Agency workbase found from /outside",
+						})
+					: Effect.succeed(path)
+			},
+			listRegistered: () => Effect.succeed(["/first", "/selected"]),
+			validate: (path: string) =>
+				Effect.succeed({
+					root: path,
+					issues: [],
+					epicCount: 0,
+					taskCount: 0,
+					phaseCount: 0,
+					valid: true,
+				}),
+		}
+		const fs = {
+			runCommand: () => Effect.succeed({ exitCode: 0, stdout: "", stderr: "" }),
+		}
+		const pick: PickWorkbase = (workbases) => {
+			expect(workbases).toEqual(["/first", "/selected"])
+			return Effect.succeed("/selected")
+		}
+
+		await Effect.runPromise(
+			validate({ cwd: "/outside", silent: true }, pick).pipe(
+				Effect.provideService(WorkbaseService, workbase as never),
+				Effect.provideService(FileSystemService, fs as never),
+			) as Effect.Effect<void, unknown, never>,
+		)
+
+		expect(discovered).toEqual(["/outside", "/selected"])
 	})
 
 	test("outputs the validation report as JSON", async () => {

@@ -233,13 +233,14 @@ branches. It refuses dirty worktrees and active sibling dependencies.
 ## Validate Every Structural Change
 
 ```bash
-agency validate
+agency validate [path]
 ```
 
 Use `--json` when diagnostics will be consumed programmatically. Resolve all
 validation errors before materializing worktrees or creating PRs. Validation
 checks schemas, aliases, backlinks, phase directories, duplicate references,
 duplicate writable branch ownership, unknown dependencies, and dependency cycles.
+Outside a workbase, omitting path opens the registered-workbase picker.
 
 ## Worktrees And Agent Launch
 

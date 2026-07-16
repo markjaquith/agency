@@ -269,13 +269,14 @@ const commands: Record<string, Command> = {
 		},
 	},
 	validate: {
-		run: async (_args: string[], options: Record<string, any>) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(validateHelp)
 				return
 			}
 			await runCommand(
 				validate({
+					path: args[0],
 					silent: options.silent,
 					verbose: options.verbose,
 					json: options.json,
@@ -302,7 +303,7 @@ Commands:
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
-  validate               Validate the current workbase
+  validate [path]        Validate a workbase
 
 Global Options:
   -h, --help             Show help for a command

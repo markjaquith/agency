@@ -16,7 +16,11 @@ import {
 	type PickWorkTarget,
 	type WorkTarget,
 } from "../workbase/work-target"
-import { pickWorkbase, type PickWorkbase } from "../workbase/workbase-choice"
+import {
+	pickWorkbase,
+	resolveWorkbase,
+	type PickWorkbase,
+} from "../workbase/workbase-choice"
 
 interface WorkOptions extends BaseCommandOptions {
 	readonly taskId?: string
@@ -60,35 +64,7 @@ export const work = (
 		const phases = yield* PhaseService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const root = yield* workbase.discover(cwd).pipe(
-			Effect.catchTag("WorkbaseNotFoundError", () =>
-				Effect.gen(function* () {
-					const registered = yield* workbase.listRegistered()
-					if (registered.length === 0) {
-						return yield* Effect.fail(
-							new Error(
-								`No Agency workbase found from ${resolve(cwd)}. Register one with 'agency workbase add <path>'.`,
-							),
-						)
-					}
-
-					const fzf = yield* fs.runCommand(["which", "fzf"], {
-						captureOutput: true,
-					})
-					if (fzf.exitCode !== 0) {
-						for (const path of registered) log(path)
-						return yield* Effect.fail(
-							new Error(
-								"fzf is required to select a workbase; install fzf or run Agency from a registered workbase",
-							),
-						)
-					}
-
-					const selected = yield* pickBase(registered)
-					return selected ? yield* workbase.discover(selected) : null
-				}),
-			),
-		)
+		const root = yield* resolveWorkbase(cwd, log, pickBase)
 		if (!root) return
 
 		let target: WorkTarget | null = null

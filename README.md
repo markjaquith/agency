@@ -386,13 +386,14 @@ the owning `TASK.md` or `PHASE.md`.
 
 ```text
 agency status [--json]
-agency validate [--json]
+agency validate [path] [--json]
 ```
 
 Validation checks JSON and YAML parsing, Effect Schema conformance, repository
 aliases, parent/child backlinks, phase directories, duplicate references,
 unknown dependencies, and dependency cycles. YAML duplicate keys, anchors,
-aliases, and custom tags are rejected.
+aliases, and custom tags are rejected. When path is omitted outside a workbase,
+Agency prompts for a registered workbase.
 
 ## Agent Skill
 

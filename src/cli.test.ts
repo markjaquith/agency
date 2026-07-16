@@ -303,9 +303,11 @@ describe("CLI", () => {
 			issues: [],
 		})
 
-		const validation = parseJson(await runCli(["validate", "--json"], root))
+		const validation = parseJson(
+			await runCli(["validate", root, "--json"], parent),
+		)
 		expect(validation).toEqual({
-			root: workbaseRoot,
+			root,
 			issues: [],
 			epicCount: 1,
 			taskCount: 1,
