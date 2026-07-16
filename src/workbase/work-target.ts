@@ -57,7 +57,13 @@ const label = (
 	id: string,
 	description?: string,
 ) =>
-	`${indent}${kind}  ${id}${description === undefined ? "" : ` - ${description}`}`
+	`${indent}${
+		{
+			epic: "\x1b[35m\x1b[0m",
+			task: "\x1b[36m󰗡\x1b[0m",
+			phase: "\x1b[33m󰔚\x1b[0m",
+		}[kind]
+	} ${id}${description === undefined ? "" : `\x1b[2m - ${description}\x1b[0m`}`
 
 const taskChoices = (
 	task: TaskRecord,
@@ -164,7 +170,13 @@ export const pickWorkTarget: PickWorkTarget = (choices) =>
 				.map((choice, index) => `${index}\t${choice.label}`)
 				.join("\n")
 			const process = Bun.spawn(
-				["fzf", "--delimiter=\t", "--with-nth=2..", "--prompt=Work on> "],
+				[
+					"fzf",
+					"--ansi",
+					"--delimiter=\t",
+					"--with-nth=2..",
+					"--prompt=Work on> ",
+				],
 				{ stdin: new Blob([input]), stdout: "pipe", stderr: "inherit" },
 			)
 			const [exitCode, output] = await Promise.all([
