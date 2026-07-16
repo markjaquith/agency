@@ -179,6 +179,11 @@ export const work = (
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
+		if (target.kind === "phase") {
+			yield* phases.setStatus(target.taskId, target.phaseId, "working", root)
+		} else if (target.kind === "task" && !target.multiPhase) {
+			yield* tasks.setStatus(target.taskId, "working", root)
+		}
 
 		verboseLog(`Launching ${cli} in ${launchPath}`)
 		const args = cli === "opencode" ? ["--prompt", prompt] : [prompt]

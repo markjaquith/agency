@@ -212,6 +212,85 @@ describe("task and phase services", () => {
 			branch: "task/single",
 			base: "main",
 			pr: "https://github.com/example/agency/pull/42",
+			status: "open",
 		})
+	})
+
+	test("updates status on execution units", async () => {
+		const createdTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "single-status",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/single-status",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		expect(createdTask.content).toContain("status: open")
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "done", root),
+				),
+			),
+		)
+		expect(task.data.status).toBe("done")
+		expect(task.content).toContain("status: done")
+		expect(task.content).toContain("Describe the task outcome.")
+
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "multi-status",
+							ticketUrl: "https://example.com/task",
+							multiPhase: true,
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "multi-status",
+							id: "implementation",
+							repo: "agency",
+							branch: "task/multi-status",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const phase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("multi-status", "implementation", "dropped", root),
+				),
+			),
+		)
+		expect(phase.data.status).toBe("dropped")
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("multi-status", "done", root),
+					),
+				),
+			),
+		).rejects.toThrow("set status on a phase instead")
 	})
 })

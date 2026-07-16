@@ -81,9 +81,27 @@ export const task = (options: TaskOptions) =>
 				)
 				return
 			}
+			case "status": {
+				const [id, status] = options.args
+				if (!id || !status) {
+					return yield* Effect.fail(
+						new Error("Usage: agency task status <id> <status>"),
+					)
+				}
+				const record = yield* tasks.setStatus(id, status, cwd)
+				const { content: _, ...output } = record
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Marked task '${id}' as ${record.data.status}`,
+				)
+				return
+			}
 			default:
 				return yield* Effect.fail(
-					new Error("Subcommand is required. Available: create, list, show"),
+					new Error(
+						"Subcommand is required. Available: create, list, show, status",
+					),
 				)
 		}
 	})
@@ -95,6 +113,7 @@ Subcommands:
   create <id>           Create a task
   list                  List tasks
   show <id>             Show a task
+  status <id> <status>  Set open, working, done, or dropped
 
 Create options:
   --ticket-url <url>    External ticket URL

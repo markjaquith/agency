@@ -66,6 +66,47 @@ describe("body-of-work descriptions", () => {
 	})
 })
 
+describe("work status", () => {
+	test("defaults execution units to open", () => {
+		const task = Schema.decodeUnknownSync(TaskFrontmatter)({
+			ticketUrl: "https://example.com/task",
+			repo: "agency",
+			branch: "task/default-status",
+			base: "main",
+			pr: null,
+		})
+		const phase = Schema.decodeUnknownSync(PhaseFrontmatter)({
+			repo: "agency",
+			branch: "task/default-phase-status",
+			base: "main",
+			pr: null,
+		})
+
+		expect("status" in task && task.status).toBe("open")
+		expect(phase.status).toBe("open")
+	})
+
+	test("accepts supported statuses and rejects other values", () => {
+		const phase = Schema.decodeUnknownSync(PhaseFrontmatter)({
+			repo: "agency",
+			branch: "task/done",
+			base: "main",
+			pr: null,
+			status: "done",
+		})
+		expect(phase.status).toBe("done")
+		expect(() =>
+			Schema.decodeUnknownSync(PhaseFrontmatter)({
+				repo: "agency",
+				branch: "task/invalid",
+				base: "main",
+				pr: null,
+				status: "blocked",
+			}),
+		).toThrow()
+	})
+})
+
 describe("schema boundaries", () => {
 	const rejects = <S extends Schema.Schema.AnyNoContext>(
 		schema: S,

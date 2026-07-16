@@ -95,6 +95,7 @@ describe("task and phase command JSON output", () => {
 					branch: "task/first",
 					base: "main",
 					pr: null,
+					status: "open",
 				},
 			},
 		])
@@ -118,6 +119,7 @@ describe("task and phase command JSON output", () => {
 				branch: "task/first",
 				base: "main",
 				pr: null,
+				status: "open",
 			},
 		})
 	})
@@ -156,8 +158,51 @@ describe("task and phase command JSON output", () => {
 		expect(JSON.parse(phaseLogs[0]!)).toMatchObject({
 			taskId: "another",
 			id: "first",
-			data: { repo: "agency", branch: "task/another-first", base: "main" },
+			data: {
+				repo: "agency",
+				branch: "task/another-first",
+				base: "main",
+				status: "open",
+			},
 		})
+	})
+
+	test("sets task and phase status", async () => {
+		const phaseLogs = await captureLogs(() =>
+			runTestEffect(
+				phase({
+					subcommand: "status",
+					args: ["multi", "first", "done"],
+					cwd: root,
+					json: true,
+				}),
+			),
+		)
+		expect(JSON.parse(phaseLogs[0]!).data.status).toBe("done")
+
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["single-status"],
+				ticketUrl: "https://example.com/task",
+				repo: "agency",
+				branch: "task/single-status",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const taskLogs = await captureLogs(() =>
+			runTestEffect(
+				task({
+					subcommand: "status",
+					args: ["single-status", "dropped"],
+					cwd: root,
+					json: true,
+				}),
+			),
+		)
+		expect(JSON.parse(taskLogs[0]!).data.status).toBe("dropped")
 	})
 
 	test("converts a single-phase task with an explicit first phase ID", async () => {

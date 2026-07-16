@@ -15,6 +15,8 @@ export const RepositoryReference = Schema.Struct({
 	ref: NonEmptyString,
 })
 
+export const WorkStatus = Schema.Literal("open", "working", "done", "dropped")
+
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 
 const GitHubPullRequestUrl = NonEmptyString.pipe(
@@ -37,6 +39,7 @@ const ExecutionUnit = {
 	branch: NonEmptyString,
 	base: NonEmptyString,
 	pr: Schema.NullOr(GitHubPullRequestUrl),
+	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
 }
 
 export const EpicFrontmatter = Schema.Struct({
@@ -73,6 +76,7 @@ export const PhaseFrontmatter = Schema.Struct({
 export type WorkbaseConfig = Schema.Schema.Type<typeof WorkbaseConfig>
 export type Dependency = Schema.Schema.Type<typeof Dependency>
 export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
+export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

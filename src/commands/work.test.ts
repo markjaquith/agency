@@ -47,6 +47,7 @@ interface HarnessOptions {
 const createHarness = (options: HarnessOptions = {}) => {
 	const events: string[] = []
 	const probes: string[] = []
+	const statusUpdates: string[] = []
 	const launches: Array<{
 		cli: string
 		args: readonly string[]
@@ -91,6 +92,10 @@ const createHarness = (options: HarnessOptions = {}) => {
 					: { repo: "agency", branch: `task/${id}`, base: "main" },
 			}),
 		list: () => Effect.succeed(options.taskRecords ?? []),
+		setStatus: (id: string, status: string) => {
+			statusUpdates.push(`task:${id}:${status}`)
+			return Effect.void
+		},
 	}
 	const phases = {
 		show: (taskId: string, id: string) =>
@@ -101,6 +106,10 @@ const createHarness = (options: HarnessOptions = {}) => {
 				data: { repo: "agency", branch: `task/${id}`, base: "main" },
 			}),
 		list: () => Effect.succeed(options.phaseRecords ?? []),
+		setStatus: (taskId: string, id: string, status: string) => {
+			statusUpdates.push(`phase:${taskId}:${id}:${status}`)
+			return Effect.void
+		},
 	}
 	const fs = {
 		runCommand: (args: readonly string[]) => {
@@ -134,7 +143,14 @@ const createHarness = (options: HarnessOptions = {}) => {
 			) as Effect.Effect<void, unknown, never>,
 		)
 
-	return { events, probes, launches, materializeOptions, run }
+	return {
+		events,
+		probes,
+		launches,
+		materializeOptions,
+		statusUpdates,
+		run,
+	}
 }
 
 describe("work command", () => {
@@ -188,6 +204,9 @@ describe("work command", () => {
 		expect(harness.launches[0]?.args).toContain(
 			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 		)
+		expect(harness.statusUpdates).toEqual([
+			"phase:example:implementation:working",
+		])
 	})
 
 	test("infers a single-phase task from a nested checkout directory", async () => {
@@ -299,6 +318,7 @@ describe("work command", () => {
 				cwd: "/workbase/tasks/example",
 			},
 		])
+		expect(harness.statusUpdates).toEqual(["task:example:working"])
 	})
 
 	test("includes absolute task and phase paths in a multi-phase prompt", async () => {
@@ -338,6 +358,7 @@ describe("work command", () => {
 		).rejects.toThrow("opencode CLI tool not found")
 		expect(harness.probes).toEqual(["opencode"])
 		expect(harness.launches).toEqual([])
+		expect(harness.statusUpdates).toEqual([])
 	})
 
 	test("launches explicitly requested Claude", async () => {

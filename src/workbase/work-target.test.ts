@@ -25,7 +25,7 @@ describe("work target choices", () => {
 				{
 					id: "single",
 					path: "/workbase/tasks/single/TASK.md",
-					data: {},
+					data: { status: "done" },
 				},
 				{
 					id: "standalone",
@@ -38,19 +38,19 @@ describe("work target choices", () => {
 					taskId: "multi",
 					id: "verify",
 					path: "/workbase/tasks/multi/phases/verify/PHASE.md",
-					data: {},
+					data: { status: "done" },
 				},
 				{
 					taskId: "multi",
 					id: "build",
 					path: "/workbase/tasks/multi/phases/build/PHASE.md",
-					data: {},
+					data: { status: "working" },
 				},
 				{
 					taskId: "multi",
 					id: "unlisted",
 					path: "/workbase/tasks/multi/phases/unlisted/PHASE.md",
-					data: {},
+					data: { status: "dropped" },
 				},
 			],
 		)
@@ -58,11 +58,11 @@ describe("work target choices", () => {
 		expect(choices.map((choice) => choice.label)).toEqual([
 			"\x1b[35m\x1b[0m delivery\x1b[2m - Ship the release\x1b[0m",
 			"  \x1b[36m󰗡\x1b[0m multi",
-			"    \x1b[33m󰔚\x1b[0m build",
-			"    \x1b[33m󰔚\x1b[0m verify",
-			"    \x1b[33m󰔚\x1b[0m unlisted",
-			"  \x1b[36m󰗡\x1b[0m single",
-			"\x1b[36m󰗡\x1b[0m standalone\x1b[2m - Independent work\x1b[0m",
+			"    \x1b[34m◐\x1b[0m \x1b[33m󰔚\x1b[0m build",
+			"    \x1b[32m✓\x1b[0m \x1b[33m󰔚\x1b[0m verify",
+			"    \x1b[31m⊘\x1b[0m \x1b[33m󰔚\x1b[0m unlisted",
+			"  \x1b[32m✓\x1b[0m \x1b[36m󰗡\x1b[0m single",
+			"\x1b[2m○\x1b[0m \x1b[36m󰗡\x1b[0m standalone\x1b[2m - Independent work\x1b[0m",
 		])
 		expect(choices.map((choice) => choice.target.kind)).toEqual([
 			"epic",
