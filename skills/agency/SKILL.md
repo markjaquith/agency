@@ -246,15 +246,15 @@ Outside a workbase, omitting path opens the registered-workbase picker.
 
 ```bash
 agency work
-agency work <task-id> [phase-id]
+agency work <directory>
 agency work --epic <epic-id>
 ```
 
 Use `--opencode` or `--claude` to require a specific agent. This command fetches
 repositories for execution targets, creates or reuses their worktrees, and
-replaces the current process with the selected agent. It infers the nearest
-epic, task, or phase from the current directory; otherwise it opens an `fzf`
-picker containing the workbase hierarchy.
+replaces the current process with the selected agent. With no directory it opens
+an `fzf` picker containing the workbase hierarchy. Pass `.`, or another
+directory, to infer the nearest epic, task, or phase.
 Outside a workbase, it first opens a picker containing registered workbases.
 
 Epic and multi-phase task targets are orchestration sessions launched beside

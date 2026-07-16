@@ -39,6 +39,9 @@ describe("init command", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/opencode.jsonc")).text(),
 		).toContain('"path": "../tasks"')
+		expect(
+			await Bun.file(join(root, ".opencode/opencode.jsonc")).text(),
+		).toContain(`"${join(root, "tasks")}/*": "allow"`)
 	})
 
 	test("preserves existing gitignore entries", async () => {

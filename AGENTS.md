@@ -111,7 +111,7 @@ export const command = (options) =>
 - `agency task new|create|list|show|status`: Manage tasks.
 - `agency phase create|list|show|status`: Manage task phases.
 - `agency archive epic|task|phase`: Archive work items after removing worktrees.
-- `agency work [<task> [phase] | --epic <epic>]`: Launch an orchestration or execution agent.
+- `agency work [<directory> | --epic <epic>]`: Launch an orchestration or execution agent.
 - `agency status`: Show workbase status.
 - `agency validate`: Validate workbase documents and relationships.
 - `agency pr create <task> [phase]`: Create and record a GitHub PR.

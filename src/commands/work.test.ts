@@ -124,6 +124,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		},
 	}
 	const fs = {
+		isDirectory: () => Effect.succeed(true),
 		runCommand: (args: readonly string[]) => {
 			const cli = args[1] as "opencode" | "claude"
 			events.push(`probe:${cli}`)
@@ -177,7 +178,11 @@ describe("work command", () => {
 	test("launches an epic agent from an epic directory", async () => {
 		const harness = createHarness()
 
-		await harness.run({ cwd: "/workbase/epics/delivery", opencode: true })
+		await harness.run({
+			cwd: "/workbase/epics/delivery",
+			directory: ".",
+			opencode: true,
+		})
 
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
@@ -190,7 +195,11 @@ describe("work command", () => {
 	test("launches a multi-phase task agent without materializing", async () => {
 		const harness = createHarness({ multiPhaseTasks: ["delivery"] })
 
-		await harness.run({ cwd: "/workbase/tasks/delivery", opencode: true })
+		await harness.run({
+			cwd: "/workbase/tasks/delivery",
+			directory: ".",
+			opencode: true,
+		})
 
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
@@ -205,6 +214,7 @@ describe("work command", () => {
 
 		await harness.run({
 			cwd: "/workbase/tasks/example/phases/implementation/code/agency/src",
+			directory: ".",
 			opencode: true,
 		})
 
@@ -224,6 +234,7 @@ describe("work command", () => {
 
 		await harness.run({
 			cwd: "/workbase/tasks/example/code/agency/src",
+			directory: ".",
 			opencode: true,
 		})
 
@@ -231,7 +242,7 @@ describe("work command", () => {
 		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example")
 	})
 
-	test("selects a target with fzf outside an entity directory", async () => {
+	test("selects a target with fzf when no directory is provided", async () => {
 		const phase = {
 			taskId: "delivery",
 			id: "build",
@@ -254,7 +265,7 @@ describe("work command", () => {
 				choices.find((choice) => choice.label.includes("build"))!.target,
 			)
 
-		await harness.run({ cwd: "/workbase", opencode: true }, pick)
+		await harness.run({ cwd: "/workbase/tasks/example", opencode: true }, pick)
 
 		expect(harness.events).toEqual([
 			"probe:fzf",
@@ -448,7 +459,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching opencode in /workbase/tasks/example",
+			"Launching command: opencode --continue (cwd: /workbase/tasks/example)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 

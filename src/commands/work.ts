@@ -23,6 +23,7 @@ import {
 } from "../workbase/workbase-choice"
 
 interface WorkOptions extends BaseCommandOptions {
+	readonly directory?: string
 	readonly taskId?: string
 	readonly phaseId?: string
 	readonly epicId?: string
@@ -31,6 +32,15 @@ interface WorkOptions extends BaseCommandOptions {
 }
 
 type LaunchAgent = (cli: string, args: readonly string[], cwd: string) => void
+
+const formatCommand = (args: readonly string[]) =>
+	args
+		.map((argument) =>
+			/^[A-Za-z0-9_./:=+@%-]+$/.test(argument)
+				? argument
+				: `'${argument.replaceAll("'", `'\\''`)}'`,
+		)
+		.join(" ")
 
 const launchAgent: LaunchAgent = (cli, args, cwd) => {
 	process.chdir(cwd)
@@ -50,9 +60,12 @@ export const work = (
 				new Error("Cannot use both --opencode and --claude"),
 			)
 		}
-		if (options.epicId && (options.taskId || options.phaseId)) {
+		if (
+			options.epicId &&
+			(options.directory || options.taskId || options.phaseId)
+		) {
 			return yield* Effect.fail(
-				new Error("Cannot combine --epic with a task or phase ID"),
+				new Error("Cannot combine --epic with a directory, task, or phase ID"),
 			)
 		}
 
@@ -64,7 +77,13 @@ export const work = (
 		const phases = yield* PhaseService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const root = yield* resolveWorkbase(cwd, log, pickBase)
+		const startPath = options.directory ? resolve(cwd, options.directory) : cwd
+		if (options.directory && !(yield* fs.isDirectory(startPath))) {
+			return yield* Effect.fail(
+				new Error(`Work directory does not exist: ${startPath}`),
+			)
+		}
+		const root = yield* resolveWorkbase(startPath, log, pickBase)
 		if (!root) return
 
 		let target: WorkTarget | null = null
@@ -89,8 +108,8 @@ export const work = (
 					multiPhase: "phases" in task.data,
 				}
 			}
-		} else {
-			const path = relative(root, resolve(cwd))
+		} else if (options.directory) {
+			const path = relative(root, startPath)
 			const parts =
 				!path || isAbsolute(path) || path.startsWith(`..${sep}`)
 					? []
@@ -145,7 +164,7 @@ export const work = (
 				for (const choice of choices) log(choice.label)
 				return yield* Effect.fail(
 					new Error(
-						"fzf is required to select a work target; install fzf or provide a target explicitly",
+						"fzf is required to select a work target; install fzf or provide a directory explicitly",
 					),
 				)
 			}
@@ -199,17 +218,19 @@ export const work = (
 			yield* tasks.setStatus(target.taskId, "working", root)
 		}
 
-		verboseLog(`Launching ${cli} in ${launchPath}`)
 		const args = cli === "opencode" ? ["--continue"] : [prompt]
+		verboseLog(
+			`Launching command: ${formatCommand([cli, ...args])} (cwd: ${launchPath})`,
+		)
 		launch(cli, [cli, ...args], launchPath)
 	})
 
 export const help = `
-Usage: agency work [<task-id> [phase-id] | --epic <epic-id>]
+Usage: agency work [<directory> | --epic <epic-id>]
 
-Launch an agent for the current epic, task, or phase. Outside an entity
-directory, select one with fzf. Outside a workbase, select a registered
-workbase first.
+Launch an agent for an epic, task, or phase. With no directory, select one
+with fzf. Use '.' for the current directory. Outside a workbase, select a
+registered workbase first.
 
 Options:
   --epic <id>         Work on an epic

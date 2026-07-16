@@ -52,7 +52,7 @@ describe("WorkbaseService", () => {
 			managedWorkbaseAgents,
 		)
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
-			managedWorkbaseOpencode,
+			managedWorkbaseOpencode(root),
 		)
 	})
 
@@ -127,7 +127,7 @@ describe("WorkbaseService", () => {
 		)
 
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
-			managedWorkbaseOpencode,
+			managedWorkbaseOpencode(root),
 		)
 	})
 

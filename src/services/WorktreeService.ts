@@ -136,11 +136,13 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							})
 						}
 
-						const remote = yield* fs.runCommand(
-							["git", "-C", repositoryPath, "remote", "get-url", "origin"],
-							{ captureOutput: true },
-						)
-						if (remote.exitCode === 0) {
+						const fetchOrigin = Effect.gen(function* () {
+							const remote = yield* fs.runCommand(
+								["git", "-C", repositoryPath, "remote", "get-url", "origin"],
+								{ captureOutput: true },
+							)
+							if (remote.exitCode !== 0) return
+
 							const fetch = yield* fs.runCommand(
 								["git", "-C", repositoryPath, "fetch", "origin"],
 								{ captureOutput: true },
@@ -150,7 +152,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Failed to fetch '${alias}': ${fetch.stderr}`,
 								})
 							}
-						}
+						})
 
 						const listed = yield* fs.runCommand(
 							[
@@ -208,6 +210,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Worktree registry contains a missing checkout at ${checkoutPath}`,
 								})
 							}
+							yield* fetchOrigin
 
 							let args: string[]
 							let env: Record<string, string> | undefined
@@ -341,6 +344,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Worktree registry contains a missing checkout at ${checkoutPath}`,
 								})
 							}
+							yield* fetchOrigin
 							const result = yield* fs.runCommand(
 								[
 									"git",
