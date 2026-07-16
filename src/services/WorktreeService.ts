@@ -1,5 +1,5 @@
 import { Data, Effect } from "effect"
-import { dirname, join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { TaskService } from "./TaskService"
@@ -439,18 +439,22 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						const checkoutExists = yield* fs.isDirectory(checkoutPath)
 						const canonicalCheckoutPath = checkoutExists
 							? yield* fs.realPath(checkoutPath)
-							: resolve(checkoutPath)
-						let registered = false
+							: join(
+									yield* fs.realPath(dirname(codePath)),
+									basename(codePath),
+									alias,
+								)
+						let registeredPath: string | undefined
 						for (const worktree of parseWorktreeList(listed.stdout)) {
 							const worktreePath = (yield* fs.exists(worktree.path))
 								? yield* fs.realPath(worktree.path)
 								: resolve(worktree.path)
 							if (worktreePath === canonicalCheckoutPath) {
-								registered = true
+								registeredPath = worktreePath
 								break
 							}
 						}
-						if (!registered) {
+						if (!registeredPath) {
 							if (checkoutExists) {
 								return yield* new WorktreeError({
 									message: `Existing checkout ${checkoutPath} is not registered as a Git worktree`,
@@ -467,7 +471,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								"worktree",
 								"remove",
 								...(!checkoutExists ? ["--force"] : []),
-								checkoutPath,
+								checkoutExists ? checkoutPath : registeredPath,
 							],
 							{ captureOutput: true },
 						)
@@ -476,7 +480,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								message: `Failed to remove worktree for '${alias}': ${result.stderr}`,
 							})
 						}
-						removed.push(checkoutPath)
+						if (checkoutExists) removed.push(checkoutPath)
 					}
 
 					if (codeDirectoryExists && (yield* fs.isDirectory(codePath))) {

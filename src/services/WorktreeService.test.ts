@@ -726,6 +726,17 @@ pr: null
 		)
 
 		expect(removed).toEqual([])
+		const worktrees = Bun.spawnSync([
+			"git",
+			"-C",
+			join(root, "repos/agency"),
+			"worktree",
+			"list",
+			"--porcelain",
+		])
+		expect(new TextDecoder().decode(worktrees.stdout)).not.toContain(
+			workspace.writablePath,
+		)
 		expect(
 			Bun.spawnSync([
 				"git",
