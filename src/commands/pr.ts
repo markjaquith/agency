@@ -24,6 +24,7 @@ export const pr = (options: PrOptions) =>
 			options.phaseId,
 			options.draft,
 			options.cwd ?? process.cwd(),
+			options,
 		)
 		log(options.json ? JSON.stringify({ url }, null, 2) : url)
 	})

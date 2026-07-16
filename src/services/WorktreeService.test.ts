@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
 import { WorktreeService } from "./WorktreeService"
@@ -125,6 +130,60 @@ describe("WorktreeService", () => {
 		expect(
 			await Bun.file(join(workspace.writablePath, "README.md")).text(),
 		).toBe("example\n")
+	})
+
+	test("logs the expanded configured command in verbose mode", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: [
+					"sh",
+					"-c",
+					'git -C "$1" worktree add -b "$3" "$2" "$4" >/dev/null 2>&1',
+					"agency-worktree",
+					"{repo}",
+					"{worktree}",
+					"{branch}",
+					"{base}",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "verbose-command",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/verbose-command",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("verbose-command", undefined, root, {
+							verbose: true,
+						}),
+					),
+				),
+			),
+		)
+
+		expect(logs).toHaveLength(1)
+		expect(logs[0]).toStartWith("Running worktree command: sh -c ")
+		expect(logs[0]).toContain(join(root, "repos", "agency"))
+		expect(logs[0]).toContain(
+			join(root, "tasks", "verbose-command", "code", "agency"),
+		)
 	})
 
 	test("selects phases and rejects missing or unexpected phase IDs", async () => {

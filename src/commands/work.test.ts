@@ -52,9 +52,18 @@ const createHarness = (options: HarnessOptions = {}) => {
 		args: readonly string[]
 		cwd: string
 	}> = []
+	const materializeOptions: Array<
+		Parameters<WorktreeService["materialize"]>[3]
+	> = []
 	const worktrees = {
-		materialize: () => {
+		materialize: (
+			_taskId: string,
+			_phaseId?: string,
+			_root?: string,
+			commandOptions?: Parameters<WorktreeService["materialize"]>[3],
+		) => {
 			events.push("materialize")
+			materializeOptions.push(commandOptions)
 			return options.materializeError
 				? Effect.fail(options.materializeError)
 				: Effect.succeed(options.workspace ?? singlePhaseWorkspace)
@@ -125,7 +134,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 			) as Effect.Effect<void, unknown, never>,
 		)
 
-	return { events, probes, launches, run }
+	return { events, probes, launches, materializeOptions, run }
 }
 
 describe("work command", () => {
@@ -375,6 +384,7 @@ describe("work command", () => {
 		expect(verboseLogs).toEqual([
 			"Launching opencode in /workbase/tasks/example/code/agency",
 		])
+		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
 		const silentHarness = createHarness()
 		const silentLogs = await captureLogs(() =>

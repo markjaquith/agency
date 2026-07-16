@@ -155,7 +155,12 @@ export const work = (
 		} else {
 			const taskId = target.taskId
 			const phaseId = target.kind === "phase" ? target.phaseId : undefined
-			const workspace = yield* worktrees.materialize(taskId, phaseId, root)
+			const workspace = yield* worktrees.materialize(
+				taskId,
+				phaseId,
+				root,
+				options,
+			)
 			prompt = workspace.phasePath
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
