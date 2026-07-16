@@ -7,7 +7,7 @@ description: >
   coordinate work across repositories; materialize task worktrees; or create a
   PR through Agency.
 license: MIT
-compatibility: Requires the agency CLI, Git, and optionally gh plus OpenCode or Claude Code.
+compatibility: Requires the agency CLI and Git, plus OpenCode or Claude Code. Interactive work selection uses fzf; PR creation uses gh.
 ---
 
 # Agency
@@ -210,12 +210,20 @@ duplicate writable branch ownership, unknown dependencies, and dependency cycles
 ## Worktrees And Agent Launch
 
 ```bash
+agency work
 agency work <task-id> [phase-id]
+agency work --epic <epic-id>
 ```
 
 Use `--opencode` or `--claude` to require a specific agent. This command fetches
-repositories, creates or reuses the execution worktrees, changes into the
-writable checkout, and replaces the current process with the selected agent.
+repositories for execution targets, creates or reuses their worktrees, and
+replaces the current process with the selected agent. It infers the nearest
+epic, task, or phase from the current directory; otherwise it opens an `fzf`
+picker containing the workbase hierarchy.
+
+Epic and multi-phase task targets are orchestration sessions launched beside
+their documents. Single-phase tasks and phases are execution sessions launched
+in their writable checkout.
 
 The workbase may delegate writable checkout creation through
 `worktreeCreateCommand` in `agency.json`. Do not bypass that command or create a

@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { FileSystemService } from "../services/FileSystemService"
+import { WorkbaseService } from "../services/WorkbaseService"
+import { EpicService } from "../services/EpicService"
+import { TaskService } from "../services/TaskService"
+import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
 import { captureLogs } from "../test-utils"
 import { work } from "./work"
+import type { PickWorkTarget } from "../workbase/work-target"
 
 type ExecutionWorkspace = Effect.Effect.Success<
 	ReturnType<WorktreeService["materialize"]>
@@ -32,7 +37,11 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
-	readonly available?: Partial<Record<"opencode" | "claude", boolean>>
+	readonly available?: Partial<Record<"opencode" | "claude" | "fzf", boolean>>
+	readonly multiPhaseTasks?: readonly string[]
+	readonly epicRecords?: readonly any[]
+	readonly taskRecords?: readonly any[]
+	readonly phaseRecords?: readonly any[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -51,6 +60,39 @@ const createHarness = (options: HarnessOptions = {}) => {
 				: Effect.succeed(options.workspace ?? singlePhaseWorkspace)
 		},
 	}
+	const workbase = {
+		discover: () => Effect.succeed("/workbase"),
+	}
+	const epics = {
+		show: (id: string) =>
+			Effect.succeed({
+				id,
+				path: `/workbase/epics/${id}/EPIC.md`,
+				data: { tasks: [] },
+			}),
+		list: () => Effect.succeed(options.epicRecords ?? []),
+	}
+	const tasks = {
+		show: (id: string) =>
+			Effect.succeed({
+				id,
+				path: `/workbase/tasks/${id}/TASK.md`,
+				data: options.multiPhaseTasks?.includes(id)
+					? { phases: [] }
+					: { repo: "agency", branch: `task/${id}`, base: "main" },
+			}),
+		list: () => Effect.succeed(options.taskRecords ?? []),
+	}
+	const phases = {
+		show: (taskId: string, id: string) =>
+			Effect.succeed({
+				taskId,
+				id,
+				path: `/workbase/tasks/${taskId}/phases/${id}/PHASE.md`,
+				data: { repo: "agency", branch: `task/${id}`, base: "main" },
+			}),
+		list: () => Effect.succeed(options.phaseRecords ?? []),
+	}
 	const fs = {
 		runCommand: (args: readonly string[]) => {
 			const cli = args[1] as "opencode" | "claude"
@@ -67,11 +109,19 @@ const createHarness = (options: HarnessOptions = {}) => {
 		events.push(`launch:${cli}`)
 		launches.push({ cli, args, cwd })
 	}
-	const run = (commandOptions: Parameters<typeof work>[0]) =>
+	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
+	const run = (
+		commandOptions: Parameters<typeof work>[0],
+		pick: PickWorkTarget = defaultPick,
+	) =>
 		Effect.runPromise(
-			work(commandOptions, launch).pipe(
+			work(commandOptions, launch, pick).pipe(
 				Effect.provideService(WorktreeService, worktrees as never),
 				Effect.provideService(FileSystemService, fs as never),
+				Effect.provideService(WorkbaseService, workbase as never),
+				Effect.provideService(EpicService, epics as never),
+				Effect.provideService(TaskService, tasks as never),
+				Effect.provideService(PhaseService, phases as never),
 			) as Effect.Effect<void, unknown, never>,
 		)
 
@@ -79,11 +129,126 @@ const createHarness = (options: HarnessOptions = {}) => {
 }
 
 describe("work command", () => {
-	test("requires a task ID before materialization", async () => {
+	test("launches an epic agent from an epic directory", async () => {
 		const harness = createHarness()
 
-		await expect(harness.run({})).rejects.toThrow("Task ID is required")
-		expect(harness.events).toEqual([])
+		await harness.run({ cwd: "/workbase/epics/delivery", opencode: true })
+
+		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: [
+				"opencode",
+				"--prompt",
+				"Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
+			],
+			cwd: "/workbase/epics/delivery",
+		})
+	})
+
+	test("launches a multi-phase task agent without materializing", async () => {
+		const harness = createHarness({ multiPhaseTasks: ["delivery"] })
+
+		await harness.run({ cwd: "/workbase/tasks/delivery", opencode: true })
+
+		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: [
+				"opencode",
+				"--prompt",
+				"Work on the task. Read /workbase/tasks/delivery/TASK.md.",
+			],
+			cwd: "/workbase/tasks/delivery",
+		})
+	})
+
+	test("infers a phase from a nested checkout directory", async () => {
+		const harness = createHarness({ workspace: multiPhaseWorkspace })
+
+		await harness.run({
+			cwd: "/workbase/tasks/example/phases/implementation/code/agency/src",
+			opencode: true,
+		})
+
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
+		expect(harness.launches[0]?.args).toContain(
+			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+		)
+	})
+
+	test("infers a single-phase task from a nested checkout directory", async () => {
+		const harness = createHarness()
+
+		await harness.run({
+			cwd: "/workbase/tasks/example/code/agency/src",
+			opencode: true,
+		})
+
+		expect(harness.events[0]).toBe("materialize")
+		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example/code/agency")
+	})
+
+	test("selects a target with fzf outside an entity directory", async () => {
+		const phase = {
+			taskId: "delivery",
+			id: "build",
+			path: "/workbase/tasks/delivery/phases/build/PHASE.md",
+			data: {},
+		}
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			taskRecords: [
+				{
+					id: "delivery",
+					path: "/workbase/tasks/delivery/TASK.md",
+					data: { phases: [{ id: "build" }] },
+				},
+			],
+			phaseRecords: [phase],
+		})
+		const pick: PickWorkTarget = (choices) =>
+			Effect.succeed(
+				choices.find((choice) => choice.label.includes("build"))!.target,
+			)
+
+		await harness.run({ cwd: "/workbase", opencode: true }, pick)
+
+		expect(harness.events).toEqual([
+			"probe:fzf",
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
+		expect(harness.launches[0]?.cwd).toBe(
+			"/workbase/tasks/example/phases/implementation/code/agency",
+		)
+	})
+
+	test("prints the target tree when fzf is unavailable", async () => {
+		const harness = createHarness({
+			available: { fzf: false },
+			epicRecords: [
+				{
+					id: "delivery",
+					path: "/workbase/epics/delivery/EPIC.md",
+					data: { tasks: [] },
+				},
+			],
+		})
+
+		const logs = await captureLogs(async () => {
+			await expect(harness.run({ cwd: "/workbase" })).rejects.toThrow(
+				"fzf is required",
+			)
+		})
+
+		expect(logs).toEqual(["epic  delivery"])
+		expect(harness.launches).toEqual([])
 	})
 
 	test("rejects conflicting agent flags before materialization", async () => {
@@ -92,6 +257,15 @@ describe("work command", () => {
 		await expect(
 			harness.run({ taskId: "example", opencode: true, claude: true }),
 		).rejects.toThrow("Cannot use both --opencode and --claude")
+		expect(harness.events).toEqual([])
+	})
+
+	test("rejects combining explicit epic and task targets", async () => {
+		const harness = createHarness()
+
+		await expect(
+			harness.run({ epicId: "delivery", taskId: "example" }),
+		).rejects.toThrow("Cannot combine --epic")
 		expect(harness.events).toEqual([])
 	})
 
