@@ -11,6 +11,7 @@ or write.
 - Git
 - [GitHub CLI](https://cli.github.com/) for `agency pr create`
 - OpenCode or Claude Code for `agency work`
+- [fzf](https://github.com/junegunn/fzf) for interactive work target selection
 
 ## Installation
 
@@ -310,13 +311,19 @@ agency phase show <task-id> <phase-id> [--json]
 ### Work and Pull Requests
 
 ```text
-agency work <task-id> [phase-id] [--opencode | --claude]
+agency work [<task-id> [phase-id] | --epic <epic-id>] [--opencode | --claude]
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
-`agency work` fetches repositories, creates or reuses worktrees under `code/`,
-and launches an agent in the writable checkout with absolute task and phase
-context paths.
+`agency work` infers an epic, task, or phase from the current directory. From
+elsewhere in the workbase, it presents the full hierarchy in `fzf`. If `fzf` is
+not installed, Agency prints the hierarchy and asks for an explicit target.
+
+Epic and multi-phase task targets launch orchestration agents beside their
+documents. Single-phase tasks and phases fetch repositories, create or reuse
+worktrees under `code/`, and launch an execution agent in the writable checkout
+with absolute context paths. Explicit task, phase, and `--epic` targets override
+current-directory inference.
 
 Each writable `(repo, branch)` pair may belong to only one task or phase. Agency
 validation reports duplicate ownership, and `agency work` checks Git's worktree

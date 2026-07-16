@@ -206,6 +206,7 @@ const commands: Record<string, Command> = {
 				work({
 					taskId: args[0],
 					phaseId: args[1],
+					epicId: options.epic,
 					silent: options.silent,
 					verbose: options.verbose,
 					opencode: options.opencode,
@@ -257,7 +258,7 @@ Commands:
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
   task <subcommand>      Manage tasks
-  work <task> [phase]    Materialize worktrees and launch an agent
+  work [task] [phase]    Work on an epic, task, or phase
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
