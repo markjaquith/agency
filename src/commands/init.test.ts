@@ -33,6 +33,9 @@ describe("init command", () => {
 		expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 			"/repos/\n/tasks/*/code/\n/tasks/*/phases/*/code/\n",
 		)
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toContain(
+			"# Agency Workbase",
+		)
 	})
 
 	test("preserves existing gitignore entries", async () => {

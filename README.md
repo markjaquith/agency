@@ -42,6 +42,7 @@ frontmatter; prose below it supplies human and agent context.
 
 ```text
 workbase/
+  AGENTS.md                # managed workbase instructions
   agency.json
   repos/
     frontend/              # bare Git repository or symlink
@@ -67,6 +68,11 @@ workbase/
             frontend/
             backend/
 ```
+
+Agency creates `AGENTS.md` during initialization and ensures it exists whenever
+the workbase is discovered. A checksum in the generated file lets newer Agency
+versions refresh unmodified instructions while preserving custom or edited
+files.
 
 Repository metadata comes directly from Git under `repos/{alias}`. Workbase
 configuration may provide a custom writable-worktree creation command.

@@ -1,14 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { createHash } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import { managedWorkbaseAgents } from "../workbase/agents-file"
 import { WorkbaseService } from "./WorkbaseService"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
 	await mkdir(dirname(fullPath), { recursive: true })
 	await Bun.write(fullPath, content)
+}
+
+const managedAgents = (body: string) => {
+	const checksum = createHash("sha256").update(body).digest("hex")
+	return `<!-- agency-managed: sha256=${checksum} -->\n\n${body}`
 }
 
 describe("WorkbaseService", () => {
@@ -35,6 +42,51 @@ describe("WorkbaseService", () => {
 		)
 
 		expect(discovered).toBe(root)
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
+			managedWorkbaseAgents,
+		)
+	})
+
+	test("preserves an unmanaged workbase AGENTS.md", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(root, "AGENTS.md", "# Custom instructions\n")
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
+			"# Custom instructions\n",
+		)
+	})
+
+	test("updates an unmodified managed workbase AGENTS.md", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(
+			root,
+			"AGENTS.md",
+			managedAgents("# Previous Agency instructions\n"),
+		)
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
+			managedWorkbaseAgents,
+		)
+	})
+
+	test("preserves a modified managed workbase AGENTS.md", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		const content = `${managedAgents("# Previous Agency instructions\n")}\nUser edit\n`
+		await write(root, "AGENTS.md", content)
+
+		await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.discover(root))),
+		)
+
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(content)
 	})
 
 	test("rejects an invalid worktree command template", async () => {
