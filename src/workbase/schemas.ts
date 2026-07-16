@@ -50,14 +50,14 @@ export const EpicFrontmatter = Schema.Struct({
 })
 
 const SinglePhaseTaskFrontmatter = Schema.Struct({
-	ticketUrl: Url,
+	ticketUrl: Schema.NullOr(Url),
 	description: Description,
 	epic: Schema.optional(EntityId),
 	...ExecutionUnit,
 })
 
 const MultiPhaseTaskFrontmatter = Schema.Struct({
-	ticketUrl: Url,
+	ticketUrl: Schema.NullOr(Url),
 	description: Description,
 	epic: Schema.optional(EntityId),
 	phases: Schema.Array(Dependency),

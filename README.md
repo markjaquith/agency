@@ -224,13 +224,7 @@ cd ~/work
 agency repo add frontend git@github.com:example/frontend.git
 agency repo link backend ~/Dev/backend
 
-agency task create refresh-copy \
-  --ticket-url https://example.com/tickets/refresh-copy \
-  --description "Refresh user-facing checkout copy" \
-  --repo frontend \
-  --reference backend:main \
-  --branch task/refresh-copy \
-  --base main
+agency task new
 
 agency validate
 agency work refresh-copy
@@ -268,19 +262,28 @@ back-reference.
 
 ### Tasks
 
+Create a task interactively. Text prompts identify optional values, and known
+choices use fzf:
+
+```text
+agency task new [id]
+```
+
 Create a single-phase task:
 
 ```text
-agency task create <id> --ticket-url <url> --repo <alias>
-  --branch <name> --base <name>
-  [--description <text>] [--epic <id>] [--reference <alias>:<ref>...] [--json]
+agency task create <id> --repo <alias>
+  [--ticket-url <url>] [--description <text>] [--epic <id>]
+  [--reference <alias>:<ref>...] [--branch <name>] [--base <name>] [--json]
 ```
+
+The branch defaults to `task/<id>` and the base defaults to `main`.
 
 Create a multi-phase task container:
 
 ```text
-agency task create <id> --ticket-url <url> --multi-phase
-  [--description <text>] [--epic <id>] [--json]
+agency task create <id> --multi-phase
+  [--ticket-url <url>] [--description <text>] [--epic <id>] [--json]
 ```
 
 Inspect tasks:

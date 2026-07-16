@@ -100,16 +100,21 @@ Epic task ordering and dependencies live in `EPIC.md`. Creating a task with
 
 ## Create Single-Phase Tasks
 
+For guided creation, run `agency task new`. It prompts for text input, uses fzf
+for known choices, and allows optional inputs to be skipped.
+
 ```bash
 agency task create <id> \
-  --ticket-url <url> \
+  [--ticket-url <url>] \
   [--description <text>] \
   [--epic <epic-id>] \
   --repo <writable-alias> \
   [--reference <read-only-alias>:<ref>] \
-  --branch <branch> \
-  --base <base>
+  [--branch <branch>] \
+  [--base <base>]
 ```
+
+The branch defaults to `task/<id>` and the base defaults to `main`.
 
 The task itself is the execution unit. Its worktrees live under
 `tasks/{id}/code/{alias}`.
@@ -120,7 +125,7 @@ Create the task container:
 
 ```bash
 agency task create <id> \
-  --ticket-url <url> \
+  [--ticket-url <url>] \
   [--description <text>] \
   [--epic <epic-id>] \
   --multi-phase

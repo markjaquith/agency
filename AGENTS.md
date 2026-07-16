@@ -108,7 +108,7 @@ export const command = (options) =>
 - `agency init [path]`: Initialize a workbase.
 - `agency repo add|link|list`: Manage repository aliases.
 - `agency epic create|list|show`: Manage epics.
-- `agency task create|list|show|status`: Manage tasks.
+- `agency task new|create|list|show|status`: Manage tasks.
 - `agency phase create|list|show|status`: Manage task phases.
 - `agency archive epic|task|phase`: Archive work items after removing worktrees.
 - `agency work [<task> [phase] | --epic <epic>]`: Launch an orchestration or execution agent.

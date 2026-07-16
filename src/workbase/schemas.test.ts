@@ -53,6 +53,15 @@ describe("body-of-work descriptions", () => {
 		expect(epic.description).toBeUndefined()
 	})
 
+	test("allows tasks without an external ticket", () => {
+		const task = Schema.decodeUnknownSync(TaskFrontmatter)({
+			ticketUrl: null,
+			phases: [],
+		})
+
+		expect(task.ticketUrl).toBeNull()
+	})
+
 	test("rejects an empty description when present", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(PhaseFrontmatter)({

@@ -29,7 +29,7 @@ interface TaskRecord {
 
 export interface CreateTaskInput {
 	readonly id: string
-	readonly ticketUrl: string
+	readonly ticketUrl: string | null
 	readonly description?: string
 	readonly epic?: string
 	readonly multiPhase?: boolean
