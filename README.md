@@ -43,6 +43,8 @@ frontmatter; prose below it supplies human and agent context.
 ```text
 workbase/
   AGENTS.md                # managed workbase instructions
+  .opencode/
+    opencode.jsonc         # managed task and epic references
   agency.json
   repos/
     frontend/              # bare Git repository or symlink
@@ -69,10 +71,11 @@ workbase/
             backend/
 ```
 
-Agency creates `AGENTS.md` during initialization and ensures it exists whenever
-the workbase is discovered. A checksum in the generated file lets newer Agency
-versions refresh unmodified instructions while preserving custom or edited
-files.
+Agency creates `AGENTS.md` and `.opencode/opencode.jsonc` during initialization
+and ensures they exist whenever the workbase is discovered. The OpenCode config
+grants external-directory access to task and epic references. Checksums in the
+generated files let newer Agency versions refresh unmodified content while
+preserving custom or edited files.
 
 Repository metadata comes directly from Git under `repos/{alias}`. Workbase
 configuration may provide a custom writable-worktree creation command.

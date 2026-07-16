@@ -36,6 +36,9 @@ describe("init command", () => {
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toContain(
 			"# Agency Workbase",
 		)
+		expect(
+			await Bun.file(join(root, ".opencode/opencode.jsonc")).text(),
+		).toContain('"path": "../tasks"')
 	})
 
 	test("preserves existing gitignore entries", async () => {
