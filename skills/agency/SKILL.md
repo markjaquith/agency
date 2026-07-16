@@ -195,8 +195,8 @@ output, including mutations, entity inspection, status, validation, and PR creat
 - Multi-phase task frontmatter owns the phase dependency graph.
 - Epic frontmatter owns the child-task dependency graph.
 - `pr` is either a GitHub PR URL string or `null`.
-- Execution-unit `status` is `open`, `working`, `done`, or `dropped`. New work
-  starts open, and `agency work` marks it working before agent launch.
+- Execution-unit `status` is `open`, `working`, `delegated`, `done`, or `dropped`.
+  New work starts open, and `agency work` marks it working before agent launch.
 - Keep directory IDs stable; encode sequencing with `dependsOn`, not numeric
   directory prefixes.
 - Do not use YAML duplicate keys, anchors, aliases, or custom tags.
@@ -207,8 +207,8 @@ prose, preserve backlinks and run validation immediately afterward.
 Update execution status with:
 
 ```bash
-agency task status <task-id> <open|working|done|dropped>
-agency phase status <task-id> <phase-id> <open|working|done|dropped>
+agency task status <task-id> <open|working|delegated|done|dropped>
+agency phase status <task-id> <phase-id> <open|working|delegated|done|dropped>
 ```
 
 ## Archive Completed Work

@@ -15,7 +15,13 @@ export const RepositoryReference = Schema.Struct({
 	ref: NonEmptyString,
 })
 
-export const WorkStatus = Schema.Literal("open", "working", "done", "dropped")
+export const WorkStatus = Schema.Literal(
+	"open",
+	"working",
+	"delegated",
+	"done",
+	"dropped",
+)
 
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 

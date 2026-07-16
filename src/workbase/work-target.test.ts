@@ -32,6 +32,11 @@ describe("work target choices", () => {
 					path: "/workbase/tasks/standalone/TASK.md",
 					data: { description: "Independent work" },
 				},
+				{
+					id: "delegated",
+					path: "/workbase/tasks/delegated/TASK.md",
+					data: { status: "delegated" },
+				},
 			],
 			[
 				{
@@ -63,6 +68,7 @@ describe("work target choices", () => {
 			"    \x1b[31m⊘\x1b[0m \x1b[33m󰔚\x1b[0m unlisted",
 			"  \x1b[32m✓\x1b[0m \x1b[36m󰗡\x1b[0m single",
 			"\x1b[2m○\x1b[0m \x1b[36m󰗡\x1b[0m standalone\x1b[2m - Independent work\x1b[0m",
+			"\x1b[35m↗\x1b[0m \x1b[36m󰗡\x1b[0m delegated",
 		])
 		expect(choices.map((choice) => choice.target.kind)).toEqual([
 			"epic",
@@ -70,6 +76,7 @@ describe("work target choices", () => {
 			"phase",
 			"phase",
 			"phase",
+			"task",
 			"task",
 			"task",
 		])

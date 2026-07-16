@@ -294,7 +294,7 @@ Inspect tasks:
 ```text
 agency task list [--json]
 agency task show <id> [--json]
-agency task status <id> <open|working|done|dropped> [--json]
+agency task status <id> <open|working|delegated|done|dropped> [--json]
 ```
 
 To add a phase to an existing single-phase task, name the phase that will own
@@ -321,14 +321,14 @@ agency phase create <task-id> <phase-id>
 
 agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|working|done|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|working|delegated|done|dropped> [--json]
 ```
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Use the status subcommands to mark work `done`, `dropped`, or open
-it again. The interactive work selector displays status markers before execution
-units.
+before launch. Use the status subcommands to mark work `delegated`, `done`,
+`dropped`, or open it again. The interactive work selector displays status
+markers before execution units.
 
 ### Archive
 
