@@ -11,6 +11,7 @@ import { validate, help as validateHelp } from "./src/commands/validate"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
+import { archive, help as archiveHelp } from "./src/commands/archive"
 import type { Command } from "./src/types"
 import { FileSystemService } from "./src/services/FileSystemService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
@@ -20,6 +21,7 @@ import { TaskService } from "./src/services/TaskService"
 import { PhaseService } from "./src/services/PhaseService"
 import { WorktreeService } from "./src/services/WorktreeService"
 import { PullRequestService } from "./src/services/PullRequestService"
+import { ArchiveService } from "./src/services/ArchiveService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -31,6 +33,7 @@ const CliLayer = Layer.mergeAll(
 	PhaseService.Default,
 	WorktreeService.Default,
 	PullRequestService.Default,
+	ArchiveService.Default,
 )
 
 /**
@@ -153,6 +156,23 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	archive: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(archiveHelp)
+				return
+			}
+			await runCommand(
+				archive({
+					type: args[0],
+					args: args.slice(1),
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 	repo: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -257,6 +277,7 @@ Commands:
   init [path]            Initialize an Agency workbase
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
+  archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [task] [phase]    Work on an epic, task, or phase
   pr create              Create a pull request for an execution unit

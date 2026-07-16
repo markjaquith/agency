@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureLogs,
@@ -691,6 +691,51 @@ pr: null
 		expect(
 			await Bun.file(join(workspace.writablePath, "uncommitted.txt")).text(),
 		).toBe("keep me\n")
+	})
+
+	test("handles a missing checkout without deleting its branch", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "stale",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/stale",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("stale", undefined, root),
+				),
+			),
+		)
+		await rm(workspace.codePath, { recursive: true })
+
+		const removed = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) => service.remove("stale", undefined, root)),
+			),
+		)
+
+		expect(removed).toEqual([])
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/stale",
+			]).exitCode,
+		).toBe(0)
 	})
 
 	test("supports Worktrunk as the configured command", async () => {

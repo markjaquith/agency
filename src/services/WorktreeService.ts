@@ -410,8 +410,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						codePath = join(dirname(task.path), "code")
 					}
 
-					if (!(yield* fs.isDirectory(codePath))) return [] as string[]
-
+					const codeDirectoryExists = yield* fs.isDirectory(codePath)
 					const removed: string[] = []
 					for (const alias of [
 						execution.repo,
@@ -480,13 +479,15 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						removed.push(checkoutPath)
 					}
 
-					const remaining = yield* fs.readDirectory(codePath)
-					if (remaining.length > 0) {
-						return yield* new WorktreeError({
-							message: `Cannot remove ${codePath}; it contains unmanaged entries: ${remaining.map((entry) => entry.name).join(", ")}`,
-						})
+					if (codeDirectoryExists && (yield* fs.isDirectory(codePath))) {
+						const remaining = yield* fs.readDirectory(codePath)
+						if (remaining.length > 0) {
+							return yield* new WorktreeError({
+								message: `Cannot remove ${codePath}; it contains unmanaged entries: ${remaining.map((entry) => entry.name).join(", ")}`,
+							})
+						}
+						yield* fs.deleteDirectory(codePath)
 					}
-					yield* fs.deleteDirectory(codePath)
 					return removed
 				}),
 		}),

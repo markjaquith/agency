@@ -80,6 +80,7 @@ describe("CLI", () => {
 			["epic", "Usage: agency epic"],
 			["task", "Usage: agency task"],
 			["phase", "Usage: agency phase"],
+			["archive", "Usage: agency archive"],
 			["work", "Usage: agency work"],
 			["pr", "Usage: agency pr"],
 			["status", "Usage: agency status"],

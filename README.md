@@ -314,6 +314,19 @@ agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]
 ```
 
+### Archive
+
+```text
+agency archive epic <epic-id> [--json]
+agency archive task <task-id> [--json]
+agency archive phase <task-id> <phase-id> [--json]
+```
+
+Archived work keeps its hierarchy under `archive/`. Epic archiving includes its
+listed tasks. Task and phase archiving update the active parent document and
+reject items that active siblings depend on. Agency removes registered worktrees
+before moving files, refuses dirty worktrees, and preserves branches.
+
 ### Work and Pull Requests
 
 ```text

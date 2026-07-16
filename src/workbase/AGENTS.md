@@ -25,6 +25,7 @@ field. Repositories listed in plural `repos` are read-only references.
 - Keep task-level decisions in `TASK.md` and phase-specific delivery context in
   `PHASE.md`.
 - Do not manually create, move, or remove worktrees under `code/`.
+- Use `agency archive`, rather than moving work item folders manually.
 - Do not edit bare repositories or repository symlinks under `repos/`.
 - Do not run `agency work` from an active agent session unless the user
   explicitly asks to launch another agent.

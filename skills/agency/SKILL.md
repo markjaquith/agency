@@ -196,6 +196,18 @@ output, including mutations, entity inspection, status, validation, and PR creat
 Prefer Agency commands for creation. When manually editing dependencies or
 prose, preserve backlinks and run validation immediately afterward.
 
+## Archive Completed Work
+
+```bash
+agency archive epic <epic-id>
+agency archive task <task-id>
+agency archive phase <task-id> <phase-id>
+```
+
+Use these commands instead of moving work item folders manually. Agency mirrors
+their hierarchy under `archive/`, removes registered worktrees first, and keeps
+branches. It refuses dirty worktrees and active sibling dependencies.
+
 ## Validate Every Structural Change
 
 ```bash
