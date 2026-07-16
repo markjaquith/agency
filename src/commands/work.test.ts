@@ -199,7 +199,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.events[0]).toBe("materialize")
-		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example/code/agency")
+		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example")
 	})
 
 	test("selects a target with fzf outside an entity directory", async () => {
@@ -234,7 +234,7 @@ describe("work command", () => {
 			"launch:opencode",
 		])
 		expect(harness.launches[0]?.cwd).toBe(
-			"/workbase/tasks/example/phases/implementation/code/agency",
+			"/workbase/tasks/delivery/phases/build",
 		)
 	})
 
@@ -278,7 +278,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("launches OpenCode in the writable checkout with the single-phase prompt", async () => {
+	test("launches OpenCode in the task directory with the single-phase prompt", async () => {
 		const harness = createHarness()
 
 		await harness.run({ taskId: "example", opencode: true })
@@ -296,7 +296,7 @@ describe("work command", () => {
 					"--prompt",
 					"Start the task. Read /workbase/tasks/example/TASK.md.",
 				],
-				cwd: "/workbase/tasks/example/code/agency",
+				cwd: "/workbase/tasks/example",
 			},
 		])
 	})
@@ -326,7 +326,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: "/workbase/tasks/example/code/agency",
+			cwd: "/workbase/tasks/example",
 		})
 	})
 
@@ -349,7 +349,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: "/workbase/tasks/example/code/agency",
+			cwd: "/workbase/tasks/example",
 		})
 	})
 
@@ -382,7 +382,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching opencode in /workbase/tasks/example/code/agency",
+			"Launching opencode in /workbase/tasks/example",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
