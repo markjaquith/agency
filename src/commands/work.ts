@@ -186,7 +186,7 @@ export const work = (
 		}
 
 		verboseLog(`Launching ${cli} in ${launchPath}`)
-		const args = cli === "opencode" ? ["--prompt", prompt] : [prompt]
+		const args = cli === "opencode" ? ["--continue"] : [prompt]
 		launch(cli, [cli, ...args], launchPath)
 	})
 

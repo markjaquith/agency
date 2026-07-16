@@ -162,11 +162,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
-			args: [
-				"opencode",
-				"--prompt",
-				"Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
-			],
+			args: ["opencode", "--continue"],
 			cwd: "/workbase/epics/delivery",
 		})
 	})
@@ -179,11 +175,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
-			args: [
-				"opencode",
-				"--prompt",
-				"Work on the task. Read /workbase/tasks/delivery/TASK.md.",
-			],
+			args: ["opencode", "--continue"],
 			cwd: "/workbase/tasks/delivery",
 		})
 	})
@@ -201,9 +193,7 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.args).toContain(
-			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
-		)
+		expect(harness.launches[0]?.args).toEqual(["opencode", "--continue"])
 		expect(harness.statusUpdates).toEqual([
 			"phase:example:implementation:working",
 		])
@@ -297,7 +287,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("launches OpenCode in the task directory with the single-phase prompt", async () => {
+	test("launches OpenCode in the task directory and continues its session", async () => {
 		const harness = createHarness()
 
 		await harness.run({ taskId: "example", opencode: true })
@@ -310,18 +300,14 @@ describe("work command", () => {
 		expect(harness.launches).toEqual([
 			{
 				cli: "opencode",
-				args: [
-					"opencode",
-					"--prompt",
-					"Start the task. Read /workbase/tasks/example/TASK.md.",
-				],
+				args: ["opencode", "--continue"],
 				cwd: "/workbase/tasks/example",
 			},
 		])
 		expect(harness.statusUpdates).toEqual(["task:example:working"])
 	})
 
-	test("includes absolute task and phase paths in a multi-phase prompt", async () => {
+	test("continues OpenCode for a multi-phase task", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 
 		await harness.run({
@@ -330,11 +316,7 @@ describe("work command", () => {
 			opencode: true,
 		})
 
-		expect(harness.launches[0]?.args).toEqual([
-			"opencode",
-			"--prompt",
-			"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
-		])
+		expect(harness.launches[0]?.args).toEqual(["opencode", "--continue"])
 	})
 
 	test("automatically falls back to Claude", async () => {
