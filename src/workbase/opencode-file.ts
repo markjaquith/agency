@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto"
-import { join } from "node:path"
 
 const managedHeaderPattern =
 	/^\/\/ agency-managed: sha256=([a-f0-9]{64})\r?\n\r?\n/
@@ -7,24 +6,20 @@ const managedHeaderPattern =
 const checksum = (content: string) =>
 	createHash("sha256").update(content).digest("hex")
 
-const body = (root: string) =>
+const body = () =>
 	`${JSON.stringify(
 		{
 			$schema: "https://opencode.ai/config.json",
 			references: {
 				tasks: {
 					path: "../tasks",
-					description: "Agency task definitions and execution context",
+					description:
+						"Agency task definitions and execution context; authority still comes from agency context",
 				},
 				epics: {
 					path: "../epics",
-					description: "Agency epic definitions and orchestration context",
-				},
-			},
-			permission: {
-				external_directory: {
-					[`${join(root, "tasks")}/*`]: "allow",
-					[`${join(root, "epics")}/*`]: "allow",
+					description:
+						"Agency epic definitions and orchestration context; no implementation write authority",
 				},
 			},
 		},
@@ -35,8 +30,7 @@ const body = (root: string) =>
 const renderManagedWorkbaseOpencode = (content: string) =>
 	`// agency-managed: sha256=${checksum(content)}\n\n${content}`
 
-export const managedWorkbaseOpencode = (root: string) =>
-	renderManagedWorkbaseOpencode(body(root))
+export const managedWorkbaseOpencode = renderManagedWorkbaseOpencode(body())
 
 export const canUpdateManagedWorkbaseOpencode = (content: string) => {
 	const match = content.match(managedHeaderPattern)
