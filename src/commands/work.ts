@@ -77,12 +77,13 @@ export const work = (
 		const phases = yield* PhaseService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const startPath = options.directory ? resolve(cwd, options.directory) : cwd
-		if (options.directory && !(yield* fs.isDirectory(startPath))) {
-			return yield* Effect.fail(
-				new Error(`Work directory does not exist: ${startPath}`),
-			)
-		}
+		const directoryPath = options.directory
+			? resolve(cwd, options.directory)
+			: undefined
+		const isDirectory = directoryPath
+			? yield* fs.isDirectory(directoryPath)
+			: false
+		const startPath = isDirectory && directoryPath ? directoryPath : cwd
 		const root = yield* resolveWorkbase(startPath, log, pickBase)
 		if (!root) return
 
@@ -108,7 +109,15 @@ export const work = (
 					multiPhase: "phases" in task.data,
 				}
 			}
-		} else if (options.directory) {
+		} else if (options.directory && !isDirectory) {
+			const task = yield* tasks.show(options.directory, root)
+			target = {
+				kind: "task",
+				taskId: task.id,
+				path: task.path,
+				multiPhase: "phases" in task.data,
+			}
+		} else if (directoryPath) {
 			const path = relative(root, startPath)
 			const parts =
 				!path || isAbsolute(path) || path.startsWith(`..${sep}`)
@@ -226,11 +235,12 @@ export const work = (
 	})
 
 export const help = `
-Usage: agency work [<directory> | --epic <epic-id>]
+Usage: agency work [<directory-or-task-id> | --epic <epic-id>]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
-with fzf. Use '.' for the current directory. Outside a workbase, select a
-registered workbase first.
+with fzf. A positional argument resolves as a directory first, then as a task
+ID. Use '.' for the current directory. Outside a workbase, select a registered
+workbase first.
 
 Options:
   --epic <id>         Work on an epic
