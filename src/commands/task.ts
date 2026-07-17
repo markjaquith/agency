@@ -10,17 +10,24 @@ import { WorkbaseService } from "../services/WorkbaseService"
 import { choose } from "../utils/chooser"
 import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
+import { GraphMutationService } from "../services/GraphMutationService"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
 	readonly ticketUrl?: string
 	readonly description?: string
+	readonly clearDescription?: boolean
+	readonly clearTicket?: boolean
 	readonly epic?: string
 	readonly repo?: string
 	readonly references?: readonly string[]
 	readonly branch?: string
 	readonly base?: string
+	readonly clearReferences?: boolean
+	readonly prUrl?: string
+	readonly clearPr?: boolean
+	readonly noEpic?: boolean
 	readonly multiPhase?: boolean
 	readonly json?: boolean
 	readonly statuses?: readonly string[]
@@ -74,6 +81,7 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 		const epics = yield* EpicService
 		const repositories = yield* RepositoryService
 		const workbase = yield* WorkbaseService
+		const mutations = yield* GraphMutationService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 
@@ -291,10 +299,95 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 				)
 				return
 			}
+			case "update": {
+				const id = options.args[0]
+				if (!id) return yield* Effect.fail(new Error("Task ID is required"))
+				const output = yield* mutations.updateTask(
+					id,
+					{
+						description: options.clearDescription ? null : options.description,
+						ticketUrl: options.clearTicket ? null : options.ticketUrl,
+						repo: options.repo,
+						repos: options.clearReferences
+							? null
+							: options.references === undefined
+								? undefined
+								: parseRepositoryReferences(options.references),
+						branch: options.branch,
+						base: options.base,
+						pr: options.clearPr ? null : options.prUrl,
+					},
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Updated task '${id}'`,
+				)
+				return
+			}
+			case "rename": {
+				const [id, newId] = options.args
+				if (!id || !newId) {
+					return yield* Effect.fail(
+						new Error("Task ID and new ID are required"),
+					)
+				}
+				const output = yield* mutations.renameTask(id, newId, cwd)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Renamed task '${id}' to '${newId}'`,
+				)
+				return
+			}
+			case "move": {
+				const id = options.args[0]
+				if (!id) return yield* Effect.fail(new Error("Task ID is required"))
+				const output = yield* mutations.moveTask(
+					id,
+					options.noEpic ? null : (options.epic ?? null),
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: options.noEpic
+							? `Removed task '${id}' from its epic`
+							: `Moved task '${id}' to epic '${options.epic}'`,
+				)
+				return
+			}
+			case "dependency": {
+				const [operation, id, dependencyId] = options.args
+				if (
+					(operation !== "add" && operation !== "remove") ||
+					!id ||
+					!dependencyId
+				) {
+					return yield* Effect.fail(
+						new Error(
+							"Usage: agency task dependency <add|remove> <task-id> <dependency-id>",
+						),
+					)
+				}
+				const output = yield* mutations.mutateTaskDependency(
+					operation,
+					id,
+					dependencyId,
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `${operation === "add" ? "Added" : "Removed"} dependency '${dependencyId}' ${operation === "add" ? "to" : "from"} task '${id}'`,
+				)
+				return
+			}
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available: new, create, list, show, status",
+						"Subcommand is required. Available: new, create, list, show, status, update, rename, move, dependency",
 					),
 				)
 		}
@@ -309,6 +402,11 @@ Subcommands:
   list                  List tasks
   show <id>             Show a task
   status <id> <status>  Set open, done, or dropped
+  update <id>           Update task metadata
+  rename <id> <new-id>  Rename a task and update graph references
+  move <id>             Move a task with --epic or --no-epic
+  dependency <operation> <task> <dependency>
+                        Add or remove a task dependency
 
 Create options:
   --ticket-url <url>    External ticket URL (optional)
@@ -320,6 +418,15 @@ Create options:
   --branch <name>       Working branch (default: task/<id>)
   --base <name>         Base branch (default: main)
   --multi-phase         Create a task container for phases
+
+Update options:
+  --ticket-url <url> / --clear-ticket
+  --description <text> / --clear-description
+  --repo <alias>        Replace the writable repository
+  --reference <alias>:<ref> / --clear-references
+  --branch <name>       Replace the working branch
+  --base <name>         Replace the base branch
+  --pr-url <url> / --clear-pr
 
 Task creation is noninteractive. Single-phase tasks require --repo; use
 --multi-phase instead for a task container. Guided input is available only

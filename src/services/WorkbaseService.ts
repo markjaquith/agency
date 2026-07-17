@@ -13,7 +13,6 @@ import {
 	TaskFrontmatter,
 	WorkbaseConfig,
 	WorkbaseRegistry,
-	type Dependency,
 	type EpicFrontmatter as EpicData,
 	type PhaseFrontmatter as PhaseData,
 	type TaskFrontmatter as TaskData,
@@ -21,6 +20,7 @@ import {
 	type WorkbaseRegistration,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
+import { findDependencyCycles } from "../workbase/dependency-graph"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -143,40 +143,6 @@ const writeRegistry = (
 		yield* fs.createDirectory(dirname(path))
 		yield* fs.writeJSON(path, registry)
 	})
-
-const findCycles = (nodes: readonly Dependency[]): readonly string[] => {
-	const dependencies = new Map(
-		nodes.map((node) => [node.id, [...(node.dependsOn ?? [])]]),
-	)
-	const visiting = new Set<string>()
-	const visited = new Set<string>()
-	const cycles = new Set<string>()
-
-	const visit = (id: string) => {
-		if (visiting.has(id)) {
-			cycles.add(id)
-			return
-		}
-		if (visited.has(id)) {
-			return
-		}
-
-		visiting.add(id)
-		for (const dependency of dependencies.get(id) ?? []) {
-			if (dependencies.has(dependency)) {
-				visit(dependency)
-			}
-		}
-		visiting.delete(id)
-		visited.add(id)
-	}
-
-	for (const id of dependencies.keys()) {
-		visit(id)
-	}
-
-	return [...cycles].sort()
-}
 
 export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 	"WorkbaseService",
@@ -681,7 +647,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								}
 							}
 						}
-						for (const cycle of findCycles(epic.data.tasks)) {
+						for (const cycle of findDependencyCycles(epic.data.tasks)) {
 							issue(epic.path, `Task dependency cycle includes '${cycle}'`)
 						}
 					}
@@ -727,7 +693,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 									issue(task.path, `Unlisted phase '${phaseId}'`)
 								}
 							}
-							for (const cycle of findCycles(task.data.phases)) {
+							for (const cycle of findDependencyCycles(task.data.phases)) {
 								issue(task.path, `Phase dependency cycle includes '${cycle}'`)
 							}
 						} else if (actualPhaseIds.length > 0) {

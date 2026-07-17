@@ -5,12 +5,14 @@ import { createLoggers } from "../utils/effect"
 import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
+import { GraphMutationService } from "../services/GraphMutationService"
 
 interface EpicOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
 	readonly ticketUrl?: string
 	readonly description?: string
+	readonly clearDescription?: boolean
 	readonly repos?: readonly string[]
 	readonly json?: boolean
 	readonly statuses?: readonly string[]
@@ -23,6 +25,7 @@ interface EpicOptions extends BaseCommandOptions {
 export const epic = (options: EpicOptions) =>
 	Effect.gen(function* () {
 		const epics = yield* EpicService
+		const mutations = yield* GraphMutationService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 
@@ -105,10 +108,49 @@ export const epic = (options: EpicOptions) =>
 				return
 			}
 
+			case "update": {
+				const id = options.args[0]
+				if (!id) return yield* Effect.fail(new Error("Epic ID is required"))
+				const output = yield* mutations.updateEpic(
+					id,
+					{
+						description: options.clearDescription ? null : options.description,
+						ticketUrl: options.ticketUrl,
+						repos:
+							options.repos === undefined
+								? undefined
+								: parseRepositoryReferences(options.repos),
+					},
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Updated epic '${id}'`,
+				)
+				return
+			}
+
+			case "rename": {
+				const [id, newId] = options.args
+				if (!id || !newId) {
+					return yield* Effect.fail(
+						new Error("Epic ID and new ID are required"),
+					)
+				}
+				const output = yield* mutations.renameEpic(id, newId, cwd)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Renamed epic '${id}' to '${newId}'`,
+				)
+				return
+			}
+
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available subcommands: create, list, show",
+						"Subcommand is required. Available subcommands: create, list, show, update, rename",
 					),
 				)
 		}
@@ -121,11 +163,19 @@ Subcommands:
   create <id>           Create an epic
   list                  List epics
   show <id>             Show an epic
+  update <id>           Update epic metadata
+  rename <id> <new-id>  Rename an epic and update task references
 
 Create options:
   --ticket-url <url>    External ticket URL
   --description <text>  Short description of the epic
   --repo <alias>:<ref>  Read-only repository reference; repeatable
+
+Update options:
+  --ticket-url <url>    Replace the external ticket URL
+  --description <text>  Replace the description
+  --clear-description   Remove the description
+  --repo <alias>:<ref>  Replace repository references; repeatable
 
 Options:
   --json                Output results as JSON
