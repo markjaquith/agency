@@ -40,9 +40,24 @@ from directory names or stale prose.
 - Run `agency validate` before worktree or pull-request operations.
 - Create a pull request only with explicit user intent, using
   `agency pr create <task> [phase]` so the URL is recorded durably.
-- Mark work done only when its completion condition is true. A created PR is not
-  completion when merge is required. Finish an active claim with the current
-  revision via `agency finish`; otherwise use the task or phase status command.
+
+## Closeout
+
+An execution unit is `working` while implementation or requested delivery work
+remains. It becomes `done` when both are complete, even if its PR remains open
+for review or merge. Do not leave a task or phase `working` solely because its PR
+is open; if merge was requested, merge remains delivery work.
+
+At each closeout trigger (creating or updating a PR, marking it ready, completing
+a refinement loop, or pausing or handing off completed implementation work):
+
+- Use `agency task status` or `agency phase status` to set the execution unit's
+  current status. Finish an active claim with the current revision via
+  `agency finish`.
+- Refresh durable delivery context in `TASK.md` or `PHASE.md`, including recorded
+  PR state, current head, diff summary, and verification results after later
+  pushes when those details are maintained there.
+- Run `agency validate` before reporting completion.
 
 ## Managed Integration
 
