@@ -91,4 +91,47 @@ describe("task creation input", () => {
 		expect(content).toContain("branch: task/scripted-task")
 		expect(content).toContain("base: main")
 	})
+
+	test("never prompts when scripted creation is incomplete", async () => {
+		const interaction: TaskInteraction = {
+			text: () => Effect.fail(new Error("unexpected text prompt")),
+			select: () => Effect.fail(new Error("unexpected selection prompt")),
+		}
+
+		await expect(
+			runTestEffect(
+				task(
+					{
+						subcommand: "create",
+						args: ["scripted-task"],
+						cwd: root,
+						silent: true,
+					},
+					interaction,
+				),
+			),
+		).rejects.toThrow("Writable repository is required")
+	})
+
+	test("refuses guided creation when input is disabled", async () => {
+		const interaction: TaskInteraction = {
+			text: () => Effect.fail(new Error("unexpected text prompt")),
+			select: () => Effect.fail(new Error("unexpected selection prompt")),
+		}
+
+		await expect(
+			runTestEffect(
+				task(
+					{
+						subcommand: "new",
+						args: [],
+						cwd: root,
+						silent: true,
+						inputAllowed: false,
+					},
+					interaction,
+				),
+			),
+		).rejects.toThrow("task new requires interactive input")
+	})
 })

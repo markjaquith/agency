@@ -34,6 +34,7 @@ export const resolveWorkbase = (
 	startPath: string,
 	log: (message: string) => void,
 	pick: PickWorkbase = pickWorkbase,
+	inputAllowed = true,
 ) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
@@ -47,6 +48,13 @@ export const resolveWorkbase = (
 						return yield* Effect.fail(
 							new Error(
 								`No Agency workbase found from ${resolve(startPath)}. Register one with 'agency workbase add <path>'.`,
+							),
+						)
+					}
+					if (!inputAllowed) {
+						return yield* Effect.fail(
+							new Error(
+								"Workbase selection requires interactive input; provide an explicit path or run Agency from a workbase",
 							),
 						)
 					}

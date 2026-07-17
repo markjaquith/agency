@@ -270,7 +270,7 @@ back-reference.
 ### Tasks
 
 Create a task interactively. Text prompts identify optional values, and known
-choices use fzf:
+choices use fzf. This command requires a TTY and fails with `--no-input`:
 
 ```text
 agency task new [id]
@@ -285,6 +285,8 @@ agency task create <id> --repo <alias>
 ```
 
 The branch defaults to `task/<id>` and the base defaults to `main`.
+`task create` is always noninteractive and requires `--repo` for a single-phase
+task. Use it instead of `task new` in scripts and agent workflows.
 
 Create a multi-phase task container:
 
@@ -292,6 +294,13 @@ Create a multi-phase task container:
 agency task create <id> --multi-phase
   [--ticket-url <url>] [--description <text>] [--epic <id>] [--json]
 ```
+
+### Noninteractive Use
+
+Agency never prompts when `--no-input` is set or stdin/stderr are not TTYs.
+Commands with explicit inputs continue normally. `task new` fails immediately;
+`work` requires an explicit directory, task ID, or `--epic` and must run from a
+workbase; `validate` requires an explicit path or must run from a workbase.
 
 Inspect tasks:
 
