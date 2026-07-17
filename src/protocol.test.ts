@@ -108,5 +108,24 @@ describe("machine protocol", () => {
 				},
 			},
 		})
+		expect(
+			errorEnvelope({
+				_tag: "RevisionConflictError",
+				message: "revision conflict",
+				path: "tasks/example/TASK.md",
+				expectedRevision: "a".repeat(64),
+				currentRevision: "b".repeat(64),
+			}),
+		).toMatchObject({
+			error: {
+				code: "REVISION_CONFLICT",
+				retryable: true,
+				fields: {
+					path: "tasks/example/TASK.md",
+					expectedRevision: "a".repeat(64),
+					currentRevision: "b".repeat(64),
+				},
+			},
+		})
 	})
 })

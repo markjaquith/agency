@@ -400,6 +400,8 @@ repository. Alias names are then used by all documents and commands.
 Commands that print Agency-owned results accept `--json`, including initialization,
 integration inspection/sync, repository mutations, entity creation/list/show,
 status, validation, graph export, reconciliation, and PR creation.
+Entity create, list, and show results include a stable SHA-256 `revision` of the
+complete Markdown document.
 
 ### Epics
 
@@ -514,6 +516,13 @@ unknown IDs, self-dependencies, and cycles. Rename operations update structured
 references as one rollback-capable mutation and refuse when a materialized
 worktree would make the directory move unsafe. Mutation JSON includes changed
 paths and the focused validation scope.
+
+Epic, task, and phase update, rename, move, and dependency mutations accept
+`--if-revision <hash>`. The option is optional for interactive human use. When
+provided, Agency fails with a structured `REVISION_CONFLICT` containing the
+expected and current revisions if the target changed. Multi-document mutations
+also recheck every affected document after taking the mutation lock and before
+writing anything.
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately

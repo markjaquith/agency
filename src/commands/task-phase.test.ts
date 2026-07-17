@@ -48,10 +48,13 @@ describe("task and phase command JSON output", () => {
 				task({ subcommand: "list", args: [], cwd: root, json: true }),
 			),
 		)
-		expect(JSON.parse(listLogs[0]!)).toEqual([
+		const listed = JSON.parse(listLogs[0]!)
+		expect(listed[0].revision).toMatch(/^[a-f0-9]{64}$/)
+		expect(listed).toEqual([
 			{
 				id: "multi",
 				path: join(root, "tasks/multi/TASK.md"),
+				revision: listed[0].revision,
 				data: {
 					ticketUrl: "https://example.com/task",
 					phases: [{ id: "first" }],
@@ -69,9 +72,12 @@ describe("task and phase command JSON output", () => {
 				}),
 			),
 		)
-		expect(JSON.parse(showLogs[0]!)).toEqual({
+		const shown = JSON.parse(showLogs[0]!)
+		expect(shown.revision).toBe(listed[0].revision)
+		expect(shown).toEqual({
 			id: "multi",
 			path: join(root, "tasks/multi/TASK.md"),
+			revision: shown.revision,
 			data: {
 				ticketUrl: "https://example.com/task",
 				phases: [{ id: "first" }],
@@ -85,11 +91,14 @@ describe("task and phase command JSON output", () => {
 				phase({ subcommand: "list", args: ["multi"], cwd: root, json: true }),
 			),
 		)
-		expect(JSON.parse(listLogs[0]!)).toEqual([
+		const listed = JSON.parse(listLogs[0]!)
+		expect(listed[0].revision).toMatch(/^[a-f0-9]{64}$/)
+		expect(listed).toEqual([
 			{
 				taskId: "multi",
 				id: "first",
 				path: join(root, "tasks/multi/phases/first/PHASE.md"),
+				revision: listed[0].revision,
 				data: {
 					repo: "agency",
 					branch: "task/first",
@@ -110,10 +119,13 @@ describe("task and phase command JSON output", () => {
 				}),
 			),
 		)
-		expect(JSON.parse(showLogs[0]!)).toEqual({
+		const shown = JSON.parse(showLogs[0]!)
+		expect(shown.revision).toBe(listed[0].revision)
+		expect(shown).toEqual({
 			taskId: "multi",
 			id: "first",
 			path: join(root, "tasks/multi/phases/first/PHASE.md"),
+			revision: shown.revision,
 			data: {
 				repo: "agency",
 				branch: "task/first",

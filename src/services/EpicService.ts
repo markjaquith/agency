@@ -12,6 +12,7 @@ import {
 	formatMarkdownDocument,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
+import { documentRevision } from "../workbase/document-revision"
 
 class EpicError extends Data.TaggedError("EpicError")<{
 	readonly message: string
@@ -21,6 +22,7 @@ export interface EpicRecord {
 	readonly id: string
 	readonly path: string
 	readonly content: string
+	readonly revision: string
 	readonly data: Schema.Schema.Type<typeof EpicFrontmatter>
 }
 
@@ -90,7 +92,13 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 					`# ${title}\n\nDescribe the epic outcome.`,
 				)
 				yield* fs.writeFile(path, content)
-				return { id: validId, path, content, data } satisfies EpicRecord
+				return {
+					id: validId,
+					path,
+					content,
+					revision: documentRevision(content),
+					data,
+				} satisfies EpicRecord
 			}),
 
 		list: (startPath: string = process.cwd()) =>
@@ -113,7 +121,13 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 					const content = yield* fs.readFile(path)
 					const parsed = yield* parseFrontmatter(content, path)
 					const data = yield* decodeEpic(parsed.data)
-					records.push({ id: entry.name, path, content, data })
+					records.push({
+						id: entry.name,
+						path,
+						content,
+						revision: documentRevision(content),
+						data,
+					})
 				}
 				return records
 			}),

@@ -23,6 +23,7 @@ export interface WorkViewRow {
 	readonly kind: "epic" | "task" | "phase"
 	readonly id: string
 	readonly key: string
+	readonly revision: string
 	readonly parent: string
 	readonly status: WorkStatus
 	readonly readiness: "ready" | "blocked" | "waiting" | "terminal"
@@ -91,6 +92,7 @@ const rowFor = (
 		kind: node.kind,
 		id,
 		key: node.key,
+		revision: node.data.sha256,
 		parent,
 		status: node.status,
 		readiness: readinessLabel(node),

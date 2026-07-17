@@ -7,6 +7,7 @@ import { normalizePullRequestRecord } from "../workbase/delivery-command"
 import { RepositoryService } from "./RepositoryService"
 import { aggregateProgress, readinessState } from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
+import { documentRevision } from "../workbase/document-revision"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
@@ -77,9 +78,6 @@ const decode = <S extends Schema.Schema.AnyNoContext>(
 		? { ok: false as const, error: TreeFormatter.formatErrorSync(result.left) }
 		: { ok: true as const, value: result.right }
 }
-
-const hash = (content: string) =>
-	new Bun.CryptoHasher("sha256").update(content).digest("hex")
 
 const isWithin = (root: string, path: string) => {
 	const child = relative(root, path)
@@ -205,7 +203,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							return {
 								id,
 								path,
-								sha256: hash(content),
+								sha256: documentRevision(content),
 								data: decoded.value,
 								body: parsed.body,
 							} satisfies Document<Schema.Schema.Type<S>>
@@ -279,7 +277,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							taskDocuments.set(entry.name, {
 								id: entry.name,
 								path,
-								sha256: hash(content),
+								sha256: documentRevision(content),
 								data: decoded.value,
 								body: parsed.right.body,
 							})
@@ -303,7 +301,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 								phaseDocuments.set(`${entry.name}/${phaseEntry.name}`, {
 									id: phaseEntry.name,
 									path: phasePath,
-									sha256: hash(phaseContent),
+									sha256: documentRevision(phaseContent),
 									data: phaseDecoded.value,
 									body: phaseParsed.right.body,
 								})

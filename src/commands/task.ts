@@ -27,6 +27,7 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly clearReferences?: boolean
 	readonly prUrl?: string
 	readonly clearPr?: boolean
+	readonly ifRevision?: string
 	readonly noEpic?: boolean
 	readonly multiPhase?: boolean
 	readonly json?: boolean
@@ -318,6 +319,7 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 						pr: options.clearPr ? null : options.prUrl,
 					},
 					cwd,
+					options.ifRevision,
 				)
 				log(
 					options.json
@@ -333,7 +335,12 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 						new Error("Task ID and new ID are required"),
 					)
 				}
-				const output = yield* mutations.renameTask(id, newId, cwd)
+				const output = yield* mutations.renameTask(
+					id,
+					newId,
+					cwd,
+					options.ifRevision,
+				)
 				log(
 					options.json
 						? JSON.stringify(output, null, 2)
@@ -348,6 +355,7 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 					id,
 					options.noEpic ? null : (options.epic ?? null),
 					cwd,
+					options.ifRevision,
 				)
 				log(
 					options.json
@@ -376,6 +384,7 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 					id,
 					dependencyId,
 					cwd,
+					options.ifRevision,
 				)
 				log(
 					options.json
@@ -407,6 +416,9 @@ Subcommands:
   move <id>             Move a task with --epic or --no-epic
   dependency <operation> <task> <dependency>
                         Add or remove a task dependency
+
+Mutation option:
+  --if-revision <hash>  Require the target's current revision
 
 Create options:
   --ticket-url <url>    External ticket URL (optional)

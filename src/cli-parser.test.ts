@@ -296,6 +296,31 @@ describe("strict CLI parsing", () => {
 		).toThrow("must be 'done' or 'dropped'")
 	})
 
+	test("accepts valid mutation revisions and rejects malformed hashes", () => {
+		const revision = "a".repeat(64)
+		expect(
+			parseCli([
+				"task",
+				"move",
+				"example",
+				"--no-epic",
+				"--if-revision",
+				revision,
+			]),
+		).toMatchObject({ values: { "if-revision": revision } })
+		expect(() =>
+			parseCli([
+				"phase",
+				"rename",
+				"task",
+				"phase",
+				"renamed",
+				"--if-revision",
+				"stale",
+			]),
+		).toThrow("64-character SHA-256 hash")
+	})
+
 	test("accepts context projections and keeps compact command-local", () => {
 		expect(parseCli(["context", ".", "--json", "--compact"])).toMatchObject({
 			commandName: "context",

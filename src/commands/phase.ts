@@ -19,6 +19,7 @@ interface PhaseOptions extends BaseCommandOptions {
 	readonly clearReferences?: boolean
 	readonly prUrl?: string
 	readonly clearPr?: boolean
+	readonly ifRevision?: string
 	readonly dependsOn?: readonly string[]
 	readonly firstPhase?: string
 	readonly json?: boolean
@@ -181,6 +182,7 @@ export const phase = (options: PhaseOptions) =>
 						pr: options.clearPr ? null : options.prUrl,
 					},
 					cwd,
+					options.ifRevision,
 				)
 				log(
 					options.json
@@ -196,7 +198,13 @@ export const phase = (options: PhaseOptions) =>
 						new Error("Task ID, phase ID, and new ID are required"),
 					)
 				}
-				const output = yield* mutations.renamePhase(taskId, phaseId, newId, cwd)
+				const output = yield* mutations.renamePhase(
+					taskId,
+					phaseId,
+					newId,
+					cwd,
+					options.ifRevision,
+				)
 				log(
 					options.json
 						? JSON.stringify(output, null, 2)
@@ -225,6 +233,7 @@ export const phase = (options: PhaseOptions) =>
 					dependencyPhaseId,
 					dependencyId,
 					cwd,
+					options.ifRevision,
 				)
 				log(
 					options.json
@@ -256,6 +265,9 @@ Subcommands:
                         Rename a phase and update dependencies
   dependency <operation> <task> <phase> <dependency>
                         Add or remove a phase dependency
+
+Mutation option:
+  --if-revision <hash>  Require the target's current revision
 
 Create options:
   --description <text>  Short description of the phase
