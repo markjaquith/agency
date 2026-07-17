@@ -301,6 +301,76 @@ status: open
 		})
 	})
 
+	test("prepares a workspace and reports a non-mutating dry-run", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const root = join(parent, "workbase")
+		const source = join(parent, "source")
+		expect(
+			Bun.spawnSync(["git", "init", "--initial-branch=main", source]).exitCode,
+		).toBe(0)
+		await Bun.write(join(source, "README.md"), "example\n")
+		for (const args of [
+			["config", "user.email", "test@example.com"],
+			["config", "user.name", "Test"],
+			["add", "README.md"],
+			["-c", "commit.gpgsign=false", "commit", "-m", "initial"],
+		]) {
+			expect(Bun.spawnSync(["git", "-C", source, ...args]).exitCode).toBe(0)
+		}
+
+		parseJson(await runCli(["init", root, "--json"], parent))
+		parseJson(await runCli(["repo", "link", "agency", source, "--json"], root))
+		parseJson(
+			await runCli(
+				[
+					"task",
+					"create",
+					"example",
+					"--repo",
+					"agency",
+					"--branch",
+					"feat/example",
+					"--base",
+					"main",
+					"--json",
+				],
+				root,
+			),
+		)
+
+		const planned = parseJson(
+			await runCli(["work", "prepare", "example", "--dry-run", "--json"], root),
+		)
+		const workbaseRoot = await realpath(root)
+		expect(planned).toMatchObject({
+			dryRun: true,
+			taskPath: join(workbaseRoot, "tasks/example/TASK.md"),
+			phasePath: null,
+			checkouts: [
+				{
+					repo: "agency",
+					kind: "writable",
+					action: "created",
+					resolvedCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+				},
+			],
+		})
+		await expect(access(join(root, "tasks/example/code"))).rejects.toThrow()
+
+		const prepared = parseJson(
+			await runCli(["work", "prepare", "example", "--json"], root),
+		)
+		expect(prepared).toMatchObject({
+			dryRun: false,
+			checkouts: [{ action: "created", kind: "writable" }],
+		})
+		const task = parseJson(
+			await runCli(["task", "show", "example", "--json"], root),
+		)
+		expect(task.data.status).toBe("open")
+	})
+
 	test("envelopes help and version output in machine mode", async () => {
 		const help = await runCli(["status", "--help", "--json"])
 		expect(parseJson(help)).toContain("Usage: agency status")

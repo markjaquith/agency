@@ -113,15 +113,17 @@ describe("WorktreeService", () => {
 			["remote", "set-url", "origin", join(root, "missing")],
 			join(root, "repos/agency"),
 		)
-		await expect(
-			runTestEffect(
-				WorktreeService.pipe(
-					Effect.flatMap((service) =>
-						service.materialize("existing", undefined, root),
-					),
+		const reused = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("existing", undefined, root),
 				),
 			),
-		).resolves.toMatchObject({ repo: "agency" })
+		)
+		expect(reused.checkouts).toEqual([
+			expect.objectContaining({ repo: "agency", action: "reused" }),
+		])
+		expect(reused.operations).toEqual([])
 	})
 
 	test("reuses an immutable reference checkout without fetching", async () => {
@@ -771,6 +773,79 @@ pr: null
 			"refs/heads/task/removable",
 		])
 		expect(branch.exitCode).toBe(0)
+		expect(workspace.checkouts).toEqual([
+			expect.objectContaining({
+				repo: "agency",
+				kind: "writable",
+				action: "created",
+				resolvedCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+			}),
+			expect.objectContaining({
+				repo: "effect",
+				kind: "reference",
+				action: "created",
+				resolvedCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+			}),
+		])
+	})
+
+	test("reports dry-run fetch and worktree changes without mutating", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "planned",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/planned",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("planned", undefined, root, { dryRun: true }),
+				),
+			),
+		)
+
+		expect(workspace.dryRun).toBe(true)
+		expect(
+			workspace.checkouts.every(({ resolvedCommit }) => resolvedCommit),
+		).toBe(true)
+		expect(
+			workspace.checkouts.map(({ repo, action }) => ({ repo, action })),
+		).toEqual([
+			{ repo: "agency", action: "created" },
+			{ repo: "effect", action: "created" },
+		])
+		expect(workspace.operations).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ action: "fetch", status: "planned" }),
+				expect.objectContaining({
+					action: "create-worktree",
+					status: "planned",
+				}),
+			]),
+		)
+		expect(await Bun.file(workspace.codePath).exists()).toBe(false)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/planned",
+			]).exitCode,
+		).not.toBe(0)
 	})
 
 	test("refuses to remove a worktree with uncommitted changes", async () => {

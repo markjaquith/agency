@@ -7,7 +7,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
 import { captureErrors, captureLogs } from "../test-utils"
-import { work } from "./work"
+import { work, workPrepare } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
 import type { PickWorkbase } from "../workbase/workbase-choice"
 import type { Progress } from "../utils/progress"
@@ -24,6 +24,9 @@ const singlePhaseWorkspace: ExecutionWorkspace = {
 	writablePath: "/workbase/tasks/example/code/agency",
 	repo: "agency",
 	repos: [],
+	dryRun: false,
+	checkouts: [],
+	operations: [],
 }
 
 const multiPhaseWorkspace: ExecutionWorkspace = {
@@ -34,6 +37,9 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 	writablePath: "/workbase/tasks/example/phases/implementation/code/agency",
 	repo: "agency",
 	repos: [],
+	dryRun: false,
+	checkouts: [],
+	operations: [],
 }
 
 interface HarnessOptions {
@@ -167,6 +173,16 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(PhaseService, phases as never),
 			) as Effect.Effect<void, unknown, never>,
 		)
+	const runPrepare = (commandOptions: Parameters<typeof workPrepare>[0]) =>
+		Effect.runPromise(
+			workPrepare(commandOptions).pipe(
+				Effect.provideService(WorktreeService, worktrees as never),
+				Effect.provideService(FileSystemService, fs as never),
+				Effect.provideService(WorkbaseService, workbase as never),
+				Effect.provideService(TaskService, tasks as never),
+				Effect.provideService(PhaseService, phases as never),
+			) as Effect.Effect<void, unknown, never>,
+		)
 
 	return {
 		events,
@@ -177,10 +193,32 @@ const createHarness = (options: HarnessOptions = {}) => {
 		shownTasks,
 		progressUpdates,
 		run,
+		runPrepare,
 	}
 }
 
 describe("work command", () => {
+	test("prepares without launching or changing lifecycle status", async () => {
+		const harness = createHarness({ existingDirectories: [] })
+
+		await captureLogs(() =>
+			harness.runPrepare({
+				cwd: "/workbase",
+				directory: "example",
+				json: true,
+				dryRun: true,
+			}),
+		)
+
+		expect(harness.events).toEqual(["materialize"])
+		expect(harness.launches).toEqual([])
+		expect(harness.statusUpdates).toEqual([])
+		expect(harness.materializeOptions[0]).toMatchObject({
+			json: true,
+			dryRun: true,
+		})
+	})
+
 	test("launches an epic agent from an epic directory", async () => {
 		const harness = createHarness()
 
