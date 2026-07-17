@@ -87,6 +87,23 @@ interface FinishInput extends OwnedClaimInput {
 	readonly outcome: "done" | "dropped"
 }
 
+interface ExpireClaimInput {
+	readonly taskId: string
+	readonly phaseId?: string
+	readonly revision: string
+	readonly now?: Date
+}
+
+interface ReconcileInput {
+	readonly taskId: string
+	readonly phaseId?: string
+	readonly revision: string
+	readonly pr?: string
+	readonly status?: "done"
+}
+
+const PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/
+
 type SingleTaskData = Extract<TaskData, { readonly repo: string }>
 type ExecutionData = SingleTaskData | PhaseData
 
@@ -284,6 +301,83 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 						revision: documentRevision(content),
 						data: decodeExecution(target, parsed.data),
 					}
+				}),
+
+			expire: (input: ExpireClaimInput, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const service = yield* ClaimService
+					const inspected = yield* service.inspect(
+						input.taskId,
+						input.phaseId,
+						startPath,
+					)
+					return yield* operation(() =>
+						updateAtomically(
+							inspected.target,
+							input.revision,
+							(data, now) => {
+								if (
+									data.claim?.state !== "active" ||
+									data.claim.expiresAt === undefined ||
+									Date.parse(data.claim.expiresAt) > now.getTime() ||
+									(data.status !== "working" && data.status !== "delegated")
+								) {
+									throw new ClaimError({
+										target: inspected.target.label,
+										message: `${inspected.target.label} does not have an expired active claim`,
+									})
+								}
+								const claim: ClaimRecord = {
+									...data.claim,
+									state: "released",
+									releasedAt: now.toISOString(),
+								}
+								return { data: { ...data, status: "open", claim }, claim }
+							},
+							input.now ?? new Date(),
+						),
+					)
+				}),
+
+			reconcile: (input: ReconcileInput, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					if (input.pr !== undefined && !PR_URL.test(input.pr)) {
+						return yield* new ClaimError({
+							message: `Invalid GitHub pull request URL: ${input.pr}`,
+						})
+					}
+					const service = yield* ClaimService
+					const inspected = yield* service.inspect(
+						input.taskId,
+						input.phaseId,
+						startPath,
+					)
+					return yield* operation(() =>
+						updateAtomically(
+							inspected.target,
+							input.revision,
+							(data) => {
+								if (input.status === "done" && data.claim?.state === "active") {
+									throw new ClaimConflictError({
+										target: inspected.target.label,
+										currentRevision: input.revision,
+										claim: data.claim,
+										message: `${inspected.target.label} has an active claim`,
+									})
+								}
+								return {
+									data: {
+										...data,
+										...(input.pr !== undefined ? { pr: input.pr } : {}),
+										...(input.status !== undefined
+											? { status: input.status }
+											: {}),
+									},
+								}
+							},
+							new Date(),
+						),
+					)
 				}),
 
 			claim: (input: ClaimInput, startPath: string = process.cwd()) =>

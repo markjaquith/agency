@@ -10,6 +10,7 @@ import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
 import { graph, help as graphHelp } from "./src/commands/graph"
+import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
@@ -33,6 +34,7 @@ import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
 import { GraphService } from "./src/services/GraphService"
 import { ClaimService } from "./src/services/ClaimService"
+import { SyncService } from "./src/services/SyncService"
 import {
 	claimCommand,
 	claimHelp,
@@ -61,6 +63,7 @@ const CliLayer = Layer.mergeAll(
 	ContextService.Default,
 	GraphService.Default,
 	ClaimService.Default,
+	SyncService.Default,
 )
 
 /**
@@ -424,6 +427,23 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	sync: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(syncHelp)
+				return
+			}
+			await runCommand(
+				sync({
+					apply: options.apply,
+					dryRun: options["dry-run"],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 }
 
 function showMainHelp() {
@@ -450,6 +470,7 @@ Commands:
   validate [path]        Validate a workbase
   context [target]       Return complete target context
   graph                  Export the complete workbase graph
+  sync                   Reconcile declarations with external state
 
 Global Options:
   -h, --help             Show help for a command
