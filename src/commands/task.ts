@@ -8,6 +8,8 @@ import { createLoggers } from "../utils/effect"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 import { WorkbaseService } from "../services/WorkbaseService"
 import { choose } from "../utils/chooser"
+import { formatTable } from "../utils/table"
+import { getWorkViews } from "../work-view"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -21,6 +23,11 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly base?: string
 	readonly multiPhase?: boolean
 	readonly json?: boolean
+	readonly statuses?: readonly string[]
+	readonly repositories?: readonly string[]
+	readonly ready?: boolean
+	readonly blocked?: boolean
+	readonly pr?: boolean
 }
 
 export interface TaskInteraction {
@@ -208,16 +215,51 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 			}
 			case "list": {
 				const records = yield* tasks.list(cwd)
+				const { taskRows } = yield* getWorkViews({
+					cwd,
+					statuses: options.statuses,
+					repositories: options.repositories,
+					ready: options.ready,
+					blocked: options.blocked,
+					pr: options.pr,
+				})
+				const ordered = taskRows.flatMap((row) => {
+					const record = records.find((item) => item.id === row.key)
+					return record ? [record] : []
+				})
 				if (options.json) {
 					log(
 						JSON.stringify(
-							records.map(({ content: _, ...record }) => record),
+							ordered.map(({ content: _, ...record }) => record),
 							null,
 							2,
 						),
 					)
 				} else {
-					for (const record of records) log(record.id)
+					log(
+						formatTable(
+							[
+								"TASK",
+								"PARENT",
+								"STATUS",
+								"READINESS",
+								"REPOSITORIES",
+								"BRANCH",
+								"PR",
+								"WORKTREE",
+							],
+							taskRows.map((row) => [
+								row.id,
+								row.parent,
+								row.status,
+								row.readiness,
+								row.repositories,
+								row.branch,
+								row.pr,
+								row.worktree,
+							]),
+						),
+					)
 				}
 				return
 			}
@@ -286,4 +328,9 @@ through task new, which fails when --no-input is set or no TTY is available.
 Options:
   --json                Output results as JSON
   --no-input            Never open interactive task creation
+  --status <status>     Filter list by status; repeatable
+  --repository <alias>  Filter list by repository; repeatable
+  --ready               Include only ready tasks
+  --blocked             Include only blocked tasks
+  --pr / --no-pr        Filter by recorded PR presence
 `

@@ -40,6 +40,29 @@ const outputOptions = {
 	json: { type: "boolean" },
 } satisfies OptionConfig
 
+const viewOptions = {
+	status: { type: "string", multiple: true },
+	repository: { type: "string", multiple: true },
+	ready: { type: "boolean" },
+	blocked: { type: "boolean" },
+	pr: { type: "boolean" },
+	"no-pr": { type: "boolean" },
+} satisfies OptionConfig
+
+const viewOptionNames = [
+	"status",
+	"repository",
+	"ready",
+	"blocked",
+	"pr",
+	"no-pr",
+] as const
+
+const viewConflicts = [
+	["ready", "blocked"],
+	["pr", "no-pr"],
+] as const
+
 const createOptions = {
 	...outputOptions,
 	"ticket-url": { type: "string" },
@@ -178,7 +201,7 @@ const commands = {
 	},
 	epic: {
 		usage: "agency epic <create|list|show>",
-		options: { ...createOptions, epic: { type: "string" } },
+		options: { ...createOptions, ...viewOptions, epic: { type: "string" } },
 		subcommands: {
 			create: {
 				usage:
@@ -190,10 +213,12 @@ const commands = {
 				repeatable: ["repo"],
 			},
 			list: {
-				usage: "agency epic list [--json]",
+				usage: "agency epic list [filters] [--json]",
 				minArgs: 0,
 				maxArgs: 0,
-				options: ["json"],
+				options: ["json", ...viewOptionNames],
+				repeatable: ["status", "repository"],
+				conflicts: viewConflicts,
 			},
 			show: {
 				usage: "agency epic show <id> [--json]",
@@ -205,7 +230,7 @@ const commands = {
 	},
 	task: {
 		usage: "agency task <new|create|list|show|status>",
-		options: { ...taskCreateOptions, task: { type: "string" } },
+		options: { ...taskCreateOptions, ...viewOptions, task: { type: "string" } },
 		subcommands: {
 			new: {
 				usage: "agency task new [id] [options]",
@@ -243,10 +268,12 @@ const commands = {
 				repeatable: ["reference"],
 			},
 			list: {
-				usage: "agency task list [--json]",
+				usage: "agency task list [filters] [--json]",
 				minArgs: 0,
 				maxArgs: 0,
-				options: ["json"],
+				options: ["json", ...viewOptionNames],
+				repeatable: ["status", "repository"],
+				conflicts: viewConflicts,
 			},
 			show: {
 				usage: "agency task show <id> [--json]",
@@ -266,6 +293,7 @@ const commands = {
 		usage: "agency phase <create|list|show|status>",
 		options: {
 			...phaseCreateOptions,
+			...viewOptions,
 			task: { type: "string" },
 			phase: { type: "string" },
 		},
@@ -291,10 +319,12 @@ const commands = {
 				repeatable: ["reference", "depends-on"],
 			},
 			list: {
-				usage: "agency phase list <task-id> [--json]",
+				usage: "agency phase list <task-id> [filters] [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json", "task"],
+				options: ["json", "task", ...viewOptionNames],
+				repeatable: ["status", "repository"],
+				conflicts: viewConflicts,
 			},
 			show: {
 				usage: "agency phase show <task-id> <phase-id> [--json]",
@@ -473,13 +503,15 @@ const commands = {
 		},
 	},
 	status: {
-		usage: "agency status [--json]",
-		options: outputOptions,
+		usage: "agency status [filters] [--json]",
+		options: { ...outputOptions, ...viewOptions },
 		command: {
-			usage: "agency status [--json]",
+			usage: "agency status [filters] [--json]",
 			minArgs: 0,
 			maxArgs: 0,
-			options: ["json"],
+			options: ["json", ...viewOptionNames],
+			repeatable: ["status", "repository"],
+			conflicts: viewConflicts,
 		},
 	},
 	validate: {
@@ -772,6 +804,24 @@ function validateGraphOptions(values: ParsedCli["values"], spec: LeafCommand) {
 	}
 }
 
+function validateViewOptions(values: ParsedCli["values"], spec: LeafCommand) {
+	const supplied = values.status
+	const statuses = Array.isArray(supplied)
+		? supplied
+		: supplied === undefined
+			? []
+			: [supplied]
+	const accepted = new Set(["open", "working", "delegated", "done", "dropped"])
+	for (const status of statuses) {
+		if (typeof status !== "string" || !accepted.has(status)) {
+			throw usageError(
+				`Invalid '--status' value '${String(status)}'. Expected one of: ${[...accepted].join(", ")}.`,
+				spec.usage,
+			)
+		}
+	}
+}
+
 export function parseCli(args: readonly string[]): ParsedCli {
 	const commandIndex = findCommandIndex(args)
 	if (commandIndex === -1) {
@@ -923,6 +973,12 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	if (commandName === "graph") {
 		validateGraphOptions(parsed.values, spec)
+	}
+	if (
+		commandName === "status" ||
+		(["epic", "task", "phase"].includes(commandName) && subcommand === "list")
+	) {
+		validateViewOptions(parsed.values, spec)
 	}
 	if (
 		commandName === "finish" &&

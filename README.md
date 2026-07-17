@@ -371,7 +371,7 @@ status, validation, graph export, reconciliation, and PR creation.
 ```text
 agency epic create <id> --ticket-url <url> [--description <text>] [--json]
   --repo <alias>:<ref> [--repo <alias>:<ref>...]
-agency epic list [--json]
+agency epic list [filters] [--json]
 agency epic show <id> [--json]
 ```
 
@@ -425,7 +425,7 @@ fully independent of process cwd and prompts.
 Inspect tasks:
 
 ```text
-agency task list [--json]
+agency task list [filters] [--json]
 agency task show <id> [--json]
 agency task status <id> <open|done|dropped> [--json]
 ```
@@ -452,7 +452,7 @@ agency phase create <task-id> <phase-id>
   [--description <text>] [--reference <alias>:<ref>...]
   [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
 
-agency phase list <task-id> [--json]
+agency phase list <task-id> [filters] [--json]
 agency phase show <task-id> <phase-id> [--json]
 agency phase status <task-id> <phase-id> <open|done|dropped> [--json]
 ```
@@ -469,6 +469,13 @@ work before changing its outcome.
 `delegated` remains readable for existing workbases but cannot be newly assigned.
 Delegation is now explicit: the claimant identifies the orchestrator and the
 runner identifies the assigned agent.
+
+Human list output is a compact table with lifecycle, readiness, parent,
+repository, branch, recorded PR, and worktree state where applicable. List and
+status views accept composable `--status <status>` and `--repository <alias>`
+filters, plus `--ready`, `--blocked`, `--pr`, and `--no-pr`. Status and repository
+filters are repeatable. Rows follow task and phase declaration order; plain text
+labels remain complete without color or icon fonts.
 
 ### Claims
 
@@ -555,7 +562,7 @@ the owning `TASK.md` or `PHASE.md`.
 ### Status and Validation
 
 ```text
-agency status [--json]
+agency status [filters] [--json]
 agency validate [path] [--json]
 ```
 
