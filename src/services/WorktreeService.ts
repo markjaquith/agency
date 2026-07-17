@@ -60,6 +60,11 @@ const formatCommand = (args: readonly string[]) =>
 		)
 		.join(" ")
 
+const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
+
+const originRef = (ref: string) =>
+	ref.replace(/^refs\/remotes\/origin\//, "").replace(/^origin\//, "")
+
 export class WorktreeService extends Effect.Service<WorktreeService>()(
 	"WorktreeService",
 	{
@@ -80,12 +85,10 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						options.verbose === true && !options.silent && !options.json
 					const { root, config } = yield* workbase.loadConfig(startPath)
 					const report = yield* workbase.validate(root)
-					const ownershipIssue = report.issues.find((issue) =>
-						issue.message.startsWith("Writable branch "),
-					)
-					if (ownershipIssue) {
+					const validationIssue = report.issues[0]
+					if (validationIssue) {
 						return yield* new WorktreeError({
-							message: `${ownershipIssue.path}: ${ownershipIssue.message}`,
+							message: `${validationIssue.path}: ${validationIssue.message}`,
 						})
 					}
 					const task = yield* tasks.show(taskId, root)
@@ -136,23 +139,32 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							})
 						}
 
-						const fetchOrigin = Effect.gen(function* () {
-							const remote = yield* fs.runCommand(
-								["git", "-C", repositoryPath, "remote", "get-url", "origin"],
-								{ captureOutput: true },
-							)
-							if (remote.exitCode !== 0) return
+						const fetchOrigin = (ref?: string) =>
+							Effect.gen(function* () {
+								const remote = yield* fs.runCommand(
+									["git", "-C", repositoryPath, "remote", "get-url", "origin"],
+									{ captureOutput: true },
+								)
+								if (remote.exitCode !== 0) return false
 
-							const fetch = yield* fs.runCommand(
-								["git", "-C", repositoryPath, "fetch", "origin"],
-								{ captureOutput: true },
-							)
-							if (fetch.exitCode !== 0) {
-								return yield* new WorktreeError({
-									message: `Failed to fetch '${alias}': ${fetch.stderr}`,
-								})
-							}
-						})
+								const fetch = yield* fs.runCommand(
+									[
+										"git",
+										"-C",
+										repositoryPath,
+										"fetch",
+										"origin",
+										...(ref ? [ref] : []),
+									],
+									{ captureOutput: true },
+								)
+								if (fetch.exitCode !== 0) {
+									return yield* new WorktreeError({
+										message: `Failed to fetch '${alias}': ${fetch.stderr}`,
+									})
+								}
+								return true
+							})
 
 						const listed = yield* fs.runCommand(
 							[
@@ -210,7 +222,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Worktree registry contains a missing checkout at ${checkoutPath}`,
 								})
 							}
-							yield* fetchOrigin
+							yield* fetchOrigin()
 
 							let args: string[]
 							let env: Record<string, string> | undefined
@@ -297,6 +309,10 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								})
 							}
 						} else {
+							const fetched = isCommitId(checkout.ref)
+								? false
+								: yield* fetchOrigin(originRef(checkout.ref))
+							const resolvedRefName = fetched ? "FETCH_HEAD" : checkout.ref
 							const resolvedRef = yield* fs.runCommand(
 								[
 									"git",
@@ -304,7 +320,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									repositoryPath,
 									"rev-parse",
 									"--verify",
-									`${checkout.ref}^{commit}`,
+									`${resolvedRefName}^{commit}`,
 								],
 								{ captureOutput: true },
 							)
@@ -344,7 +360,6 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Worktree registry contains a missing checkout at ${checkoutPath}`,
 								})
 							}
-							yield* fetchOrigin
 							const result = yield* fs.runCommand(
 								[
 									"git",

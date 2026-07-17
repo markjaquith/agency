@@ -85,7 +85,7 @@ describe("WorktreeService", () => {
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
 	})
 
-	test("does not fetch origins for existing worktrees", async () => {
+	test("does not fetch the origin for an existing writable worktree", async () => {
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -94,7 +94,6 @@ describe("WorktreeService", () => {
 							id: "existing",
 							ticketUrl: "https://example.com/task",
 							repo: "agency",
-							repos: [{ repo: "effect", ref: "main" }],
 							branch: "task/existing",
 							base: "main",
 						},
@@ -114,11 +113,6 @@ describe("WorktreeService", () => {
 			["remote", "set-url", "origin", join(root, "missing")],
 			join(root, "repos/agency"),
 		)
-		await git(
-			["remote", "set-url", "origin", join(root, "missing")],
-			join(root, "repos/effect"),
-		)
-
 		await expect(
 			runTestEffect(
 				WorktreeService.pipe(
@@ -128,6 +122,88 @@ describe("WorktreeService", () => {
 				),
 			),
 		).resolves.toMatchObject({ repo: "agency" })
+	})
+
+	test("reuses an immutable reference checkout without fetching", async () => {
+		const commit = new TextDecoder()
+			.decode(
+				Bun.spawnSync(
+					["git", "-C", join(root, "repos/effect"), "rev-parse", "main"],
+					{ stdout: "pipe" },
+				).stdout,
+			)
+			.trim()
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "immutable-reference",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: commit }],
+							branch: "task/immutable-reference",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("immutable-reference", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", join(root, "missing")],
+			join(root, "repos/effect"),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("immutable-reference", undefined, root),
+					),
+				),
+			),
+		).resolves.toMatchObject({ repos: [{ repo: "effect", ref: commit }] })
+	})
+
+	test("stops before materializing when workbase validation fails", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "valid-target",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/valid-target",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await mkdir(join(root, "tasks", "missing-document"), { recursive: true })
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("valid-target", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("Required document is missing")
+		expect(
+			await Bun.file(join(root, "tasks", "valid-target", "code")).exists(),
+		).toBe(false)
 	})
 
 	test("uses a configured worktree creation command", async () => {
@@ -330,7 +406,7 @@ describe("WorktreeService", () => {
 				repo: "missing",
 				base: "main",
 				config: { version: 2 },
-				expected: "Repository alias 'missing' does not exist",
+				expected: "Unknown repository alias 'missing'",
 			},
 			{
 				id: "bad-base",
@@ -392,6 +468,7 @@ pr: null
 					),
 				),
 			).rejects.toThrow(fixture.expected)
+			await rm(taskDirectory, { recursive: true, force: true })
 		}
 	})
 
@@ -561,7 +638,7 @@ pr: null
 		).rejects.toThrow("is not registered to branch 'task/expected'")
 	})
 
-	test("rejects a reused reference checkout after its ref advances", async () => {
+	test("fetches a moving ref before checking a reused reference checkout", async () => {
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -570,7 +647,7 @@ pr: null
 							id: "pinned-reference",
 							ticketUrl: "https://example.com/task",
 							repo: "agency",
-							repos: [{ repo: "effect", ref: "main" }],
+							repos: [{ repo: "effect", ref: "origin/main" }],
 							branch: "task/pinned-reference",
 							base: "main",
 						},
@@ -590,7 +667,6 @@ pr: null
 		await Bun.write(join(source, "README.md"), "updated\n")
 		await git(["add", "README.md"], source)
 		await git(["-c", "commit.gpgsign=false", "commit", "-m", "update"], source)
-		await git(["push", join(root, "repos/effect"), "main"], source)
 
 		await expect(
 			runTestEffect(
@@ -600,7 +676,7 @@ pr: null
 					),
 				),
 			),
-		).rejects.toThrow("does not match reference 'main'")
+		).rejects.toThrow("does not match reference 'origin/main'")
 	})
 
 	test("rejects a reference checkout attached to a branch", async () => {

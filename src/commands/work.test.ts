@@ -193,7 +193,12 @@ describe("work command", () => {
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
-			args: ["opencode", "--continue"],
+			args: [
+				"opencode",
+				"--continue",
+				"--prompt",
+				"Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
+			],
 			cwd: "/workbase/epics/delivery",
 		})
 	})
@@ -210,7 +215,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.shownTasks).toEqual(["delivery"])
-		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/delivery")
+		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
 	})
 
 	test("treats a positional value as a task ID when it is not a directory", async () => {
@@ -223,7 +228,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.shownTasks).toEqual(["delivery"])
-		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/delivery")
+		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
 	})
 
 	test("launches a multi-phase task agent without materializing", async () => {
@@ -238,7 +243,12 @@ describe("work command", () => {
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
-			args: ["opencode", "--continue"],
+			args: [
+				"opencode",
+				"--continue",
+				"--prompt",
+				"Work on the task. Read /workbase/tasks/delivery/TASK.md.",
+			],
 			cwd: "/workbase/tasks/delivery",
 		})
 	})
@@ -257,7 +267,16 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.args).toEqual(["opencode", "--continue"])
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: [
+				"opencode",
+				"--continue",
+				"--prompt",
+				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+			],
+			cwd: multiPhaseWorkspace.writablePath,
+		})
 		expect(harness.statusUpdates).toEqual([
 			"phase:example:implementation:working",
 		])
@@ -273,7 +292,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.events[0]).toBe("materialize")
-		expect(harness.launches[0]?.cwd).toBe("/workbase/tasks/example")
+		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
 	})
 
 	test("selects a target with fzf when no directory is provided", async () => {
@@ -307,9 +326,7 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.cwd).toBe(
-			"/workbase/tasks/delivery/phases/build",
-		)
+		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath)
 	})
 
 	test("selects a registered workbase when local discovery fails", async () => {
@@ -387,7 +404,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("launches OpenCode in the task directory and continues its session", async () => {
+	test("launches OpenCode in the writable checkout with explicit context", async () => {
 		const harness = createHarness()
 
 		await harness.run({ taskId: "example", opencode: true })
@@ -400,8 +417,13 @@ describe("work command", () => {
 		expect(harness.launches).toEqual([
 			{
 				cli: "opencode",
-				args: ["opencode", "--continue"],
-				cwd: "/workbase/tasks/example",
+				args: [
+					"opencode",
+					"--continue",
+					"--prompt",
+					"Start the task. Read /workbase/tasks/example/TASK.md.",
+				],
+				cwd: singlePhaseWorkspace.writablePath,
 			},
 		])
 		expect(harness.statusUpdates).toEqual(["task:example:working"])
@@ -411,7 +433,7 @@ describe("work command", () => {
 		])
 	})
 
-	test("continues OpenCode for a multi-phase task", async () => {
+	test("continues OpenCode with explicit task and phase context", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 
 		await harness.run({
@@ -420,7 +442,16 @@ describe("work command", () => {
 			opencode: true,
 		})
 
-		expect(harness.launches[0]?.args).toEqual(["opencode", "--continue"])
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: [
+				"opencode",
+				"--continue",
+				"--prompt",
+				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+			],
+			cwd: multiPhaseWorkspace.writablePath,
+		})
 	})
 
 	test("automatically falls back to Claude", async () => {
@@ -432,7 +463,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: "/workbase/tasks/example",
+			cwd: singlePhaseWorkspace.writablePath,
 		})
 	})
 
@@ -456,7 +487,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: "/workbase/tasks/example",
+			cwd: singlePhaseWorkspace.writablePath,
 		})
 	})
 
@@ -493,7 +524,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching command: opencode --continue (cwd: /workbase/tasks/example)",
+			"Launching command: opencode --continue --prompt 'Start the task. Read /workbase/tasks/example/TASK.md.' (cwd: /workbase/tasks/example/code/agency)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
