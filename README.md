@@ -10,7 +10,7 @@ or write.
 - [Bun](https://bun.sh) 1.0 or newer
 - Git
 - [GitHub CLI](https://cli.github.com/) for `agency pr create`
-- OpenCode or Claude Code for `agency work`
+- OpenCode, Claude Code, or a configured runner for `agency work`
 
 ## Installation
 
@@ -144,6 +144,41 @@ and verifies that `{worktree}` exists afterward.
 The configured command applies only to the writable checkout. Supplemental
 read-only repositories remain detached Git worktrees at their declared refs so
 they do not acquire writable branches.
+
+### Agent Runners
+
+OpenCode and Claude Code are built-in runner presets. Select either preset or a
+configured runner with `agency work --runner <name>`. A launch is fresh unless
+`AGENCY_SESSION_ID` is already set; resumed launches use the runner's
+`resumeCommand` when configured. The built-in presets use `--continue` only for
+resumed launches.
+
+Custom runners are direct argv commands, never shell snippets:
+
+```json
+{
+	"version": 2,
+	"runners": {
+		"custom": {
+			"command": ["my-agent", "--prompt", "{prompt}"],
+			"resumeCommand": ["my-agent", "resume", "{sessionId}", "{prompt}"],
+			"environment": { "MY_AGENT_TARGET": "{target}" }
+		}
+	}
+}
+```
+
+Available placeholders are `{prompt}`, `{workbase}`, `{target}`, `{task}`,
+`{phase}`, `{claimant}`, `{sessionId}`, and `{claimRevision}`. Task and phase
+placeholders are empty when they do not apply. If `resumeCommand` is omitted,
+the fresh command is also used for resumed sessions.
+
+Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
+`AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
+`AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
+environment is added without overriding these normalized values.
+`--print-command` prints the exact cwd and argv plus non-secret environment keys
+without launching the runner.
 
 ### Custom Chooser Command
 
@@ -500,9 +535,9 @@ replaced with a revision-guarded claim.
 
 `agency work` claims an execution unit before launching its agent. Set
 `AGENCY_CLAIMANT`, `AGENCY_RUNNER`, or `AGENCY_SESSION_ID` to supply orchestrator
-identities; otherwise Agency derives them from the user, selected agent, and
-process. The launched agent receives `AGENCY_SESSION_ID` and
-`AGENCY_CLAIM_REVISION` for a later release or finish operation.
+identities; otherwise Agency derives them from the user and process. The selected
+runner name is recorded on the claim. The launched agent receives the normalized
+runner environment documented above for a later release or finish operation.
 
 ### Archive
 
@@ -520,7 +555,7 @@ before moving files, refuses dirty worktrees, and preserves branches.
 ### Work and Pull Requests
 
 ```text
-agency work [<directory> | --epic <epic-id>] [--opencode | --claude]
+agency work [<directory> | --epic <epic-id>] [--runner <name>] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
@@ -530,6 +565,10 @@ agency pr create <task-id> [phase-id] [--draft] [--json]
 workbase, Agency first presents the registered workbases, then the selected
 workbase's hierarchy. If `fzf` is not installed, Agency prints the available
 choices and asks for an explicit directory.
+
+OpenCode is the default runner, with automatic Claude fallback when neither is
+explicitly selected. `--opencode` and `--claude` remain aliases for requiring
+their built-in presets.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees without launching an agent or changing status.

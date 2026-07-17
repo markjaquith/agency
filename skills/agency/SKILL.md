@@ -279,7 +279,10 @@ agency work --epic <epic-id>
 agency work --task <task-id> [--phase <phase-id>] --workbase <selector>
 ```
 
-Use `--opencode` or `--claude` to require a specific agent. This command fetches
+Use `--runner <name>` to select a configured runner or the built-in `opencode`
+and `claude` presets. `--opencode` and `--claude` remain shorthand. Use
+`--print-command` to inspect the resolved cwd, argv, and non-secret environment
+without launching. This command fetches
 repositories for execution targets, creates or reuses their worktrees, and
 replaces the current process with the selected agent. With no directory it opens
 an `fzf` picker containing the workbase hierarchy. Pass `.`, or another

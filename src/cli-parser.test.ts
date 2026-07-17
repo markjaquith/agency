@@ -321,6 +321,22 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
+	test("accepts runner selection and command inspection for work", () => {
+		expect(
+			parseCli(["work", "example", "--runner", "custom", "--print-command"]),
+		).toMatchObject({
+			commandName: "work",
+			args: ["example"],
+			values: { runner: "custom", "print-command": true },
+		})
+		expect(() =>
+			parseCli(["work", "example", "--runner", "custom", "--claude"]),
+		).toThrow("cannot be combined")
+		expect(() => parseCli(["work", "prepare", "--print-command"])).toThrow(
+			"cannot be combined",
+		)
+	})
+
 	test("accepts repeatable graph filters and rejects output conflicts", () => {
 		expect(
 			parseCli([

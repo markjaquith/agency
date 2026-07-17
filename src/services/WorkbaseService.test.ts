@@ -235,6 +235,25 @@ describe("WorkbaseService", () => {
 		).rejects.toThrow("{worktree}")
 	})
 
+	test("rejects an unknown runner command placeholder", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				runners: { custom: { command: ["agent", "{unknown}"] } },
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.discover(root)),
+				),
+			),
+		).rejects.toThrow("{unknown}")
+	})
+
 	test("validates a workbase with an epic and multi-phase task", async () => {
 		await write(root, "agency.json", '{"version":2}\n')
 		await mkdir(join(root, "repos/agency"), { recursive: true })

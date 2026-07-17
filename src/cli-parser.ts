@@ -439,19 +439,21 @@ const commands = {
 	},
 	work: {
 		usage:
-			"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
+			"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] | agency work prepare [target] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
 			...entitySelectorOptions,
 			json: { type: "boolean" },
 			"dry-run": { type: "boolean" },
+			runner: { type: "string" },
+			"print-command": { type: "boolean" },
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
 			force: { type: "boolean" },
 		},
 		command: {
 			usage:
-				"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
+				"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] | agency work prepare [target] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: [
@@ -460,12 +462,16 @@ const commands = {
 				"epic",
 				"task",
 				"phase",
+				"runner",
+				"print-command",
 				"opencode",
 				"claude",
 				"force",
 			],
 			conflicts: [
 				["opencode", "claude"],
+				["runner", "opencode"],
+				["runner", "claude"],
 				["epic", "$positional"],
 			],
 		},
@@ -998,6 +1004,8 @@ export function parseCli(args: readonly string[]): ParsedCli {
 				(parsed.values.epic ||
 					parsed.values.opencode ||
 					parsed.values.claude ||
+					parsed.values.runner ||
+					parsed.values["print-command"] ||
 					parsed.values.force))
 		) {
 			throw usageError(

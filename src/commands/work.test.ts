@@ -47,8 +47,16 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
-	readonly available?: Partial<Record<"opencode" | "claude", boolean>>
+	readonly available?: Readonly<Record<string, boolean>>
 	readonly chooserCommand?: readonly string[]
+	readonly runners?: Record<
+		string,
+		{
+			command: readonly [string, ...string[]]
+			resumeCommand?: readonly [string, ...string[]]
+			environment?: Record<string, string>
+		}
+	>
 	readonly multiPhaseTasks?: readonly string[]
 	readonly epicRecords?: readonly any[]
 	readonly taskRecords?: readonly any[]
@@ -72,6 +80,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		args: readonly string[]
 		cwd: string
 	}> = []
+	const launchEnvironments: Array<Readonly<Record<string, string>>> = []
 	const materializeOptions: Array<
 		Parameters<WorktreeService["materialize"]>[3]
 	> = []
@@ -105,6 +114,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				config: {
 					version: 2 as const,
 					chooserCommand: options.chooserCommand,
+					runners: options.runners,
 				},
 			}),
 	}
@@ -204,7 +214,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		isDirectory: (path: string) =>
 			Effect.succeed(options.existingDirectories?.includes(path) ?? true),
 		runCommand: (args: readonly string[]) => {
-			const cli = args[1] as "opencode" | "claude"
+			const cli = args[1]!
 			events.push(`probe:${cli}`)
 			probes.push(cli)
 			return Effect.succeed({
@@ -214,9 +224,15 @@ const createHarness = (options: HarnessOptions = {}) => {
 			})
 		},
 	}
-	const launch = (cli: string, args: readonly string[], cwd: string) => {
+	const launch = (
+		cli: string,
+		args: readonly string[],
+		cwd: string,
+		environment: Readonly<Record<string, string>>,
+	) => {
 		events.push(`launch:${cli}`)
 		launches.push({ cli, args, cwd })
+		launchEnvironments.push(environment)
 	}
 	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
 	const defaultPickWorkbase: PickWorkbase = () => Effect.succeed(null)
@@ -257,6 +273,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		events,
 		probes,
 		launches,
+		launchEnvironments,
 		materializeOptions,
 		statusUpdates,
 		shownTasks,
@@ -353,7 +370,6 @@ describe("work command", () => {
 			cli: "opencode",
 			args: [
 				"opencode",
-				"--continue",
 				"--prompt",
 				"Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
 			],
@@ -403,7 +419,6 @@ describe("work command", () => {
 			cli: "opencode",
 			args: [
 				"opencode",
-				"--continue",
 				"--prompt",
 				"Work on the task. Read /workbase/tasks/delivery/TASK.md.",
 			],
@@ -429,7 +444,6 @@ describe("work command", () => {
 			cli: "opencode",
 			args: [
 				"opencode",
-				"--continue",
 				"--prompt",
 				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
@@ -596,7 +610,7 @@ describe("work command", () => {
 
 		await expect(
 			harness.run({ taskId: "example", opencode: true, claude: true }),
-		).rejects.toThrow("Cannot use both --opencode and --claude")
+		).rejects.toThrow("Cannot combine --runner, --opencode, and --claude")
 		expect(harness.events).toEqual([])
 	})
 
@@ -624,7 +638,6 @@ describe("work command", () => {
 				cli: "opencode",
 				args: [
 					"opencode",
-					"--continue",
 					"--prompt",
 					"Start the task. Read /workbase/tasks/example/TASK.md.",
 				],
@@ -638,14 +651,18 @@ describe("work command", () => {
 		])
 	})
 
-	test("continues OpenCode with explicit task and phase context", async () => {
+	test("resumes OpenCode deterministically when a session identity exists", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
-
-		await harness.run({
-			taskId: "example",
-			phaseId: "implementation",
-			opencode: true,
-		})
+		process.env.AGENCY_SESSION_ID = "existing-session"
+		try {
+			await harness.run({
+				taskId: "example",
+				phaseId: "implementation",
+				opencode: true,
+			})
+		} finally {
+			delete process.env.AGENCY_SESSION_ID
+		}
 
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
@@ -657,6 +674,78 @@ describe("work command", () => {
 			],
 			cwd: multiPhaseWorkspace.writablePath,
 		})
+	})
+
+	test("expands a named runner with shared context and claim identity", async () => {
+		const harness = createHarness({
+			available: { codex: true },
+			runners: {
+				custom: {
+					command: ["codex", "--task", "{task}", "{prompt}"],
+					environment: {
+						CUSTOM_TARGET: "{target}",
+						AGENCY_TARGET: "cannot-override",
+					},
+				},
+			},
+		})
+
+		await harness.run({ taskId: "example", runner: "custom" })
+
+		expect(harness.probes).toEqual(["codex"])
+		expect(harness.launches[0]).toEqual({
+			cli: "codex",
+			args: [
+				"codex",
+				"--task",
+				"example",
+				"Start the task. Read /workbase/tasks/example/TASK.md.",
+			],
+			cwd: singlePhaseWorkspace.writablePath,
+		})
+		expect(harness.launchEnvironments[0]).toMatchObject({
+			AGENCY_RUNNER: "custom",
+			AGENCY_CLAIMANT: process.env.USER ?? "agency",
+			AGENCY_WORKBASE: "/workbase",
+			AGENCY_TARGET: "execution-unit:task/example",
+			AGENCY_TASK_ID: "example",
+			AGENCY_PHASE_ID: "",
+			AGENCY_CLAIM_REVISION: "1".repeat(64),
+			CUSTOM_TARGET: "execution-unit:task/example",
+		})
+	})
+
+	test("prints the exact command contract without launching and omits secrets", async () => {
+		const harness = createHarness({
+			available: { agent: true },
+			runners: {
+				custom: {
+					command: ["agent", "{prompt}"],
+					environment: {
+						VISIBLE: "{task}",
+						API_TOKEN: "do-not-print",
+					},
+				},
+			},
+		})
+
+		const output = await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				runner: "custom",
+				printCommand: true,
+			}),
+		)
+		const printed = JSON.parse(output.join("\n"))
+
+		expect(harness.launches).toEqual([])
+		expect(printed.cwd).toBe(singlePhaseWorkspace.writablePath)
+		expect(printed.argv).toEqual([
+			"agent",
+			"Start the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(printed.environment.VISIBLE).toBe("example")
+		expect(printed.environment.API_TOKEN).toBeUndefined()
 	})
 
 	test("automatically falls back to Claude", async () => {
@@ -729,7 +818,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching command: opencode --continue --prompt 'Start the task. Read /workbase/tasks/example/TASK.md.' (cwd: /workbase/tasks/example/code/agency)",
+			"Launching command: opencode --prompt 'Start the task. Read /workbase/tasks/example/TASK.md.' (cwd: /workbase/tasks/example/code/agency)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
