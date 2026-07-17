@@ -297,9 +297,13 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		const isDirectory = yield* fs.isDirectory(targetPath)
 		const root = yield* workbase.discover(isDirectory ? targetPath : cwd)
 
-		let taskId: string | undefined
-		let phaseId: string | undefined
-		if (options.directory && !isDirectory) {
+		let taskId = options.taskId
+		let phaseId = options.phaseId
+		if (taskId) {
+			const task = yield* tasks.show(taskId, root)
+			taskId = task.id
+			if (phaseId) phaseId = (yield* phases.show(task.id, phaseId, root)).id
+		} else if (options.directory && !isDirectory) {
 			const task = yield* tasks.show(options.directory, root)
 			taskId = task.id
 		} else {
@@ -353,12 +357,16 @@ launching an agent or changing lifecycle status. --dry-run reports planned Git
 changes without fetching, creating branches, or creating worktrees.
 
 Options:
-  --epic <id>         Work on an epic
+  --epic <id>          Work on an epic
+  --task <id>          Work on a task
+  --phase <id>         Work on a phase selected with --task
+  --workbase <target>  Select a workbase by ID, name, or path
+  --cwd <path>         Resolve context from a specific directory
   --opencode           Require OpenCode
   --claude             Require Claude Code
   --force              Override readiness and terminal-state guards
-  --no-input          Never open an interactive selector
+  --no-input           Never open an interactive selector
 
-Without interactive input, provide a directory, task ID, or --epic and run the
-command from a workbase. Workbase and target selection otherwise fail.
+Without interactive input, provide an explicit workbase or cwd and an entity
+selector. Workbase and target selection otherwise fail.
 `

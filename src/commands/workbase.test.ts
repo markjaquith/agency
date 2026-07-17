@@ -31,7 +31,7 @@ describe("workbase command", () => {
 				}),
 			),
 		)
-		const path = JSON.parse(added[0]!).path
+		const registration = JSON.parse(added[0]!)
 
 		const listed = await captureLogs(() =>
 			runTestEffect(
@@ -44,7 +44,68 @@ describe("workbase command", () => {
 			),
 		)
 
-		expect(JSON.parse(listed[0]!)).toEqual([path])
+		expect(JSON.parse(listed[0]!)).toEqual({
+			workbases: [registration],
+		})
+	})
+
+	test("sets, clears, and removes the default workbase", async () => {
+		const added = await captureLogs(() =>
+			runTestEffect(
+				workbase({
+					subcommand: "add",
+					args: [root],
+					name: "primary",
+					configDirectory,
+					json: true,
+				}),
+			),
+		)
+		const registration = JSON.parse(added[0]!)
+
+		await runTestEffect(
+			workbase({
+				subcommand: "default",
+				args: ["primary"],
+				configDirectory,
+				silent: true,
+			}),
+		)
+		const listed = await captureLogs(() =>
+			runTestEffect(
+				workbase({
+					subcommand: "list",
+					args: [],
+					configDirectory,
+					json: true,
+				}),
+			),
+		)
+		expect(JSON.parse(listed[0]!).defaultId).toBe(registration.id)
+		await runTestEffect(
+			workbase({
+				subcommand: "default",
+				args: [],
+				clear: true,
+				configDirectory,
+				silent: true,
+			}),
+		)
+		expect(
+			await Bun.file(join(configDirectory, "agency/workbases.json")).json(),
+		).toEqual({ version: 2, workbases: [registration] })
+
+		await runTestEffect(
+			workbase({
+				subcommand: "remove",
+				args: [registration.id],
+				configDirectory,
+				silent: true,
+			}),
+		)
+		expect(
+			await Bun.file(join(configDirectory, "agency/workbases.json")).json(),
+		).toEqual({ version: 2, workbases: [] })
 	})
 
 	test("requires an add path", async () => {

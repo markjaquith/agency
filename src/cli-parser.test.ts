@@ -384,6 +384,80 @@ describe("strict CLI parsing", () => {
 		).toBe(true)
 	})
 
+	test("normalizes explicit entity selectors into command targets", () => {
+		expect(
+			parseCli([
+				"phase",
+				"status",
+				"done",
+				"--task",
+				"ship",
+				"--phase",
+				"release",
+			]),
+		).toMatchObject({
+			commandName: "phase",
+			args: ["status", "ship", "release", "done"],
+		})
+		expect(
+			parseCli([
+				"claim",
+				"--task",
+				"ship",
+				"--phase",
+				"release",
+				"--claimant",
+				"agent",
+				"--runner",
+				"opencode",
+				"--session-id",
+				"session",
+				"--revision",
+				"0".repeat(64),
+			]),
+		).toMatchObject({ args: ["ship", "release"] })
+		expect(parseCli(["context", "--epic", "delivery"]).values.epic).toBe(
+			"delivery",
+		)
+	})
+
+	test("enforces explicit selector precedence and exclusions", () => {
+		expect(() =>
+			parseCli(["task", "show", "positional", "--task", "explicit"]),
+		).toThrow("cannot be combined with positional target IDs")
+		expect(() => parseCli(["context", "--phase", "release"])).toThrow(
+			"--phase' requires '--task",
+		)
+		expect(() =>
+			parseCli(["work", "--epic", "delivery", "--task", "ship"]),
+		).toThrow("cannot be combined with '--task'")
+		expect(() =>
+			parseCli(["status", "--workbase", "primary", "--cwd", "/tmp"]),
+		).toThrow("--workbase' and '--cwd' cannot be combined")
+	})
+
+	test("accepts explicit workbase context before or after commands", () => {
+		expect(
+			parseCli(["--workbase", "primary", "task", "list", "--no-input"]).values
+				.workbase,
+		).toBe("primary")
+		expect(parseCli(["status", "--cwd", "/tmp"]).values.cwd).toBe("/tmp")
+		expect(
+			parseCli(["--workbase=primary", "task", "list"]).values.workbase,
+		).toBe("primary")
+		expect(parseCli(["--cwd=/tmp", "status"]).values.cwd).toBe("/tmp")
+	})
+
+	test("rejects empty selectors", () => {
+		for (const args of [
+			["status", "--workbase="],
+			["status", "--cwd="],
+			["context", "--task="],
+		]) {
+			expect(() => parseCli(args)).toThrow("requires a non-empty value")
+		}
+	})
+
 	test("accepts grouped global short options before a command", () => {
 		const parsed = parseCli(["-sh", "task"])
 		expect(parsed.values).toMatchObject({ silent: true, help: true })

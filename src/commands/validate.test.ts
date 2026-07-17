@@ -80,6 +80,7 @@ pr: null
 					: Effect.succeed(path)
 			},
 			listRegistered: () => Effect.succeed(["/first", "/selected"]),
+			getDefault: () => Effect.succeed(undefined),
 			validate: (path: string) =>
 				Effect.succeed({
 					root: path,
@@ -116,6 +117,7 @@ pr: null
 					message: "No Agency workbase found from /outside",
 				}),
 			listRegistered: () => Effect.succeed(["/selected"]),
+			getDefault: () => Effect.succeed(undefined),
 		}
 		const fs = {
 			runCommand: () => Effect.fail(new Error("unexpected fzf probe")),

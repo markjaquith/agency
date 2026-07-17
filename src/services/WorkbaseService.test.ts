@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, realpath } from "node:fs/promises"
+import { mkdir, realpath, rm, symlink } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { WorkbaseService } from "./WorkbaseService"
@@ -66,11 +66,154 @@ describe("WorkbaseService", () => {
 			),
 		)
 
-		expect(first).toBe(await realpath(workbaseRoot))
-		expect(registered).toEqual([first])
+		expect(first.path).toBe(await realpath(workbaseRoot))
+		expect(registered).toEqual([first.path])
 		expect(
 			await Bun.file(join(configDirectory, "agency/workbases.json")).json(),
-		).toEqual({ version: 1, workbases: [first] })
+		).toEqual({ version: 2, workbases: [first] })
+	})
+
+	test("resolves names and stable IDs and manages the default", async () => {
+		const workbaseRoot = join(root, "workbase")
+		const configDirectory = join(root, "config")
+		await write(workbaseRoot, "agency.json", '{"version":2}\n')
+
+		const registered = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					service.register(workbaseRoot, configDirectory, "primary"),
+				),
+			),
+		)
+		const result = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					Effect.gen(function* () {
+						yield* service.setDefault("primary", configDirectory)
+						return {
+							byName: yield* service.resolveRegistered(
+								"primary",
+								configDirectory,
+							),
+							byId: yield* service.resolveRegistered(
+								registered.id,
+								configDirectory,
+							),
+							defaultWorkbase: yield* service.getDefault(configDirectory),
+						}
+					}),
+				),
+			),
+		)
+
+		expect(result.byName).toBe(registered.path)
+		expect(result.byId).toBe(registered.path)
+		expect(result.defaultWorkbase).toEqual(registered)
+	})
+
+	test("rejects names that collide with stable IDs", async () => {
+		const firstRoot = join(root, "first")
+		const secondRoot = join(root, "second")
+		const configDirectory = join(root, "config")
+		await write(firstRoot, "agency.json", '{"version":2}\n')
+		await write(secondRoot, "agency.json", '{"version":2}\n')
+		const first = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					service.register(firstRoot, configDirectory),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) =>
+						service.register(secondRoot, configDirectory, first.id),
+					),
+				),
+			),
+		).rejects.toThrow("already registered")
+	})
+
+	test("rejects invalid workbase names before writing the registry", async () => {
+		const workbaseRoot = join(root, "workbase")
+		const configDirectory = join(root, "config")
+		await write(workbaseRoot, "agency.json", '{"version":2}\n')
+
+		for (const name of ["bad/name", ""]) {
+			await expect(
+				runTestEffect(
+					WorkbaseService.pipe(
+						Effect.flatMap((service) =>
+							service.register(workbaseRoot, configDirectory, name),
+						),
+					),
+				),
+			).rejects.toThrow("Invalid workbase name")
+		}
+		expect(
+			await Bun.file(join(configDirectory, "agency/workbases.json")).exists(),
+		).toBe(false)
+	})
+
+	test("removes a registration by an equivalent symlink path", async () => {
+		const workbaseRoot = join(root, "workbase")
+		const linkedRoot = join(root, "linked")
+		const configDirectory = join(root, "config")
+		await write(workbaseRoot, "agency.json", '{"version":2}\n')
+		await symlink(workbaseRoot, linkedRoot)
+		await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					service.register(workbaseRoot, configDirectory),
+				),
+			),
+		)
+
+		const removed = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					service.removeRegistered(linkedRoot, configDirectory),
+				),
+			),
+		)
+		expect(removed.path).toBe(await realpath(workbaseRoot))
+	})
+
+	test("migrates legacy registrations and prunes stale paths", async () => {
+		const workbaseRoot = join(root, "workbase")
+		const staleRoot = join(root, "stale")
+		const configDirectory = join(root, "config")
+		const registryPath = join(configDirectory, "agency/workbases.json")
+		await write(workbaseRoot, "agency.json", '{"version":2}\n')
+		await write(staleRoot, "agency.json", '{"version":2}\n')
+		await write(
+			configDirectory,
+			"agency/workbases.json",
+			JSON.stringify({ version: 1, workbases: [workbaseRoot, staleRoot] }),
+		)
+		await rm(staleRoot, { recursive: true })
+
+		const result = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					Effect.gen(function* () {
+						const before = yield* service.listRegistrations(configDirectory)
+						const removed = yield* service.pruneRegistered(configDirectory)
+						return { before, removed }
+					}),
+				),
+			),
+		)
+
+		expect(result.before.workbases).toHaveLength(2)
+		expect(result.before.workbases[0]?.id).toStartWith("wb-")
+		expect(result.removed.map((entry) => entry.path)).toEqual([staleRoot])
+		expect(await Bun.file(registryPath).json()).toEqual({
+			version: 2,
+			workbases: [result.before.workbases[0]],
+		})
 	})
 
 	test("rejects an invalid worktree command template", async () => {

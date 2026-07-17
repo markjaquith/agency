@@ -185,23 +185,34 @@ describe("workbase registry", () => {
 	test("accepts registered paths", () => {
 		expect(
 			Schema.decodeUnknownSync(WorkbaseRegistry)({
-				version: 1,
-				workbases: ["/work/one", "/work/two"],
+				version: 2,
+				workbases: [
+					{ id: "wb-one", name: "one", path: "/work/one" },
+					{ id: "wb-two", path: "/work/two" },
+				],
+				defaultId: "wb-one",
 			}),
-		).toEqual({ version: 1, workbases: ["/work/one", "/work/two"] })
+		).toEqual({
+			version: 2,
+			workbases: [
+				{ id: "wb-one", name: "one", path: "/work/one" },
+				{ id: "wb-two", path: "/work/two" },
+			],
+			defaultId: "wb-one",
+		})
 	})
 
 	test("rejects invalid versions and empty paths", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(WorkbaseRegistry)({
-				version: 2,
+				version: 3,
 				workbases: [],
 			}),
 		).toThrow()
 		expect(() =>
 			Schema.decodeUnknownSync(WorkbaseRegistry)({
-				version: 1,
-				workbases: [""],
+				version: 2,
+				workbases: [{ id: "wb-one", path: "" }],
 			}),
 		).toThrow()
 	})

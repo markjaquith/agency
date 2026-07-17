@@ -30,6 +30,8 @@ export const resolveWorkbase = (
 		return yield* workbase.discover(startPath).pipe(
 			Effect.catchTag("WorkbaseNotFoundError", () =>
 				Effect.gen(function* () {
+					const defaultWorkbase = yield* workbase.getDefault()
+					if (defaultWorkbase) return defaultWorkbase.path
 					const registered = yield* workbase.listRegistered()
 					if (registered.length === 0) {
 						return yield* Effect.fail(
