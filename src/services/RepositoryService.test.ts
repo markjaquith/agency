@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { RepositoryService } from "./RepositoryService"
 
@@ -14,6 +14,12 @@ const runGit = async (args: string[]) => {
 	if (process.exitCode !== 0) {
 		throw new Error(await new Response(process.stderr).text())
 	}
+}
+
+const write = async (root: string, path: string, content: string) => {
+	const fullPath = join(root, path)
+	await mkdir(dirname(fullPath), { recursive: true })
+	await Bun.write(fullPath, content)
 }
 
 describe("RepositoryService", () => {
@@ -102,5 +108,127 @@ describe("RepositoryService", () => {
 				),
 			),
 		).rejects.toThrow("already exists")
+	})
+
+	test("shows, fetches, updates, and verifies a repository", async () => {
+		const source = join(root, "source")
+		const replacement = join(root, "replacement.git")
+		await runGit(["init", "--initial-branch=main", source])
+		await Bun.write(join(source, "README.md"), "# Source\n")
+		await runGit(["-C", source, "add", "README.md"])
+		await runGit([
+			"-C",
+			source,
+			"-c",
+			"user.name=Agency Tests",
+			"-c",
+			"user.email=agency@example.com",
+			"commit",
+			"-m",
+			"Initial commit",
+		])
+		await runGit(["init", "--bare", "--initial-branch=main", replacement])
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.add("agency", source, root)),
+			),
+		)
+
+		const result = await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) =>
+					Effect.gen(function* () {
+						const shown = yield* service.show("agency", root)
+						yield* service.fetch("agency", root)
+						const updated = yield* service.remote("agency", replacement, root)
+						const verified = yield* service.verify("agency", root)
+						return { shown, updated, verified }
+					}),
+				),
+			),
+		)
+
+		expect(result.shown.remote).toBe(source)
+		expect(result.updated.remote).toBe(replacement)
+		expect(result.verified.valid).toBe(true)
+		expect(result.verified.issues).toEqual([])
+	})
+
+	test("renames and removes an unused repository", async () => {
+		const source = join(root, "source.git")
+		await runGit(["init", "--bare", "--initial-branch=main", source])
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.add("old", source, root)),
+			),
+		)
+
+		const removed = await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) =>
+					Effect.gen(function* () {
+						const renamed = yield* service.rename("old", "new", root)
+						expect(renamed.alias).toBe("new")
+						return yield* service.remove("new", root)
+					}),
+				),
+			),
+		)
+
+		expect(removed.alias).toBe("new")
+		expect(await Bun.file(join(root, "repos/new/HEAD")).exists()).toBe(false)
+	})
+
+	test("unlinks a symlink without deleting its target", async () => {
+		const target = join(root, "linked-repository")
+		await mkdir(target, { recursive: true })
+		await runGit(["init", "--initial-branch=main", target])
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.link("linked", target, root)),
+			),
+		)
+
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.unlink("linked", root)),
+			),
+		)
+
+		expect(await Bun.file(join(target, ".git/HEAD")).exists()).toBe(true)
+		expect(await Bun.file(join(root, "repos/linked/.git/HEAD")).exists()).toBe(
+			false,
+		)
+	})
+
+	test("reports active references and refuses unsafe removal", async () => {
+		const source = join(root, "source.git")
+		await runGit(["init", "--bare", "--initial-branch=main", source])
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.add("agency", source, root)),
+			),
+		)
+		await write(
+			root,
+			"tasks/active/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: task/active
+base: main
+pr: null
+---
+`,
+		)
+
+		await expect(
+			runTestEffect(
+				RepositoryService.pipe(
+					Effect.flatMap((service) => service.remove("agency", root)),
+				),
+			),
+		).rejects.toThrow("active reference execution-unit:task/active")
+		expect(await Bun.file(join(root, "repos/agency/HEAD")).exists()).toBe(true)
 	})
 })

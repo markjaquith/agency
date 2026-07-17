@@ -107,7 +107,7 @@ export const command = (options) =>
 
 - `agency init [path]`: Initialize a workbase.
 - `agency integration status|sync`: Inspect or synchronize managed agent files.
-- `agency repo add|link|list`: Manage repository aliases.
+- `agency repo add|link|list|show|fetch|remove|unlink|rename|remote|verify`: Manage repository aliases.
 - `agency epic create|list|show`: Manage epics.
 - `agency task new|create|list|show|status`: Manage tasks.
 - `agency phase create|list|show|status`: Manage task phases.

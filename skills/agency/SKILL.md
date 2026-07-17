@@ -65,7 +65,9 @@ Register and name known workbases so commands can select one from anywhere:
 ```bash
 agency workbase add <path> [--name <name>]
 agency workbase list
-agency workbase default [<id|name> | --clear]
+agency workbase show <id|name|path>
+agency workbase name <id|name|path> <name> | --clear
+agency workbase default [<id|name|path> | --clear]
 agency workbase remove <id|name|path>
 agency workbase prune
 ```
@@ -85,6 +87,13 @@ Link an existing local Git repository:
 
 ```bash
 agency repo link <alias> <path>
+agency repo show <alias>
+agency repo fetch <alias>
+agency repo remove <alias>
+agency repo unlink <alias>
+agency repo rename <alias> <new-alias>
+agency repo remote <alias> [remote]
+agency repo verify <alias>
 ```
 
 Use aliases, never absolute paths or Git URLs, in epic/task/phase frontmatter.

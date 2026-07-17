@@ -127,7 +127,7 @@ const commands = {
 		},
 	},
 	workbase: {
-		usage: "agency workbase <add|list|remove|prune|default>",
+		usage: "agency workbase <add|list|show|name|remove|prune|default>",
 		options: {
 			...outputOptions,
 			name: { type: "string" },
@@ -145,6 +145,18 @@ const commands = {
 				minArgs: 0,
 				maxArgs: 0,
 				options: ["json"],
+			},
+			show: {
+				usage: "agency workbase show <selector> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["json"],
+			},
+			name: {
+				usage: "agency workbase name <selector> <name> | --clear [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["json", "clear"],
 			},
 			remove: {
 				usage: "agency workbase remove <selector> [--json]",
@@ -186,7 +198,8 @@ const commands = {
 		},
 	},
 	repo: {
-		usage: "agency repo <add|link|list>",
+		usage:
+			"agency repo <add|link|list|show|fetch|remove|unlink|rename|remote|verify>",
 		options: outputOptions,
 		subcommands: {
 			add: {
@@ -205,6 +218,48 @@ const commands = {
 				usage: "agency repo list [--json]",
 				minArgs: 0,
 				maxArgs: 0,
+				options: ["json"],
+			},
+			show: {
+				usage: "agency repo show <alias> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["json"],
+			},
+			fetch: {
+				usage: "agency repo fetch <alias> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["json"],
+			},
+			remove: {
+				usage: "agency repo remove <alias> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["json"],
+			},
+			unlink: {
+				usage: "agency repo unlink <alias> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["json"],
+			},
+			rename: {
+				usage: "agency repo rename <alias> <new-alias> [--json]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: ["json"],
+			},
+			remote: {
+				usage: "agency repo remote <alias> [remote] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["json"],
+			},
+			verify: {
+				usage: "agency repo verify <alias> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
 				options: ["json"],
 			},
 		},

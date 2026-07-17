@@ -146,6 +146,31 @@ const writeRegistry = (
 		yield* fs.writeJSON(path, registry)
 	})
 
+const findRegistration = (
+	selector: string,
+	configDirectory?: string,
+	basePath: string = process.cwd(),
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const { path, registry } = yield* readRegistry(configDirectory)
+		const candidatePath = resolve(basePath, selector)
+		const canonicalCandidate = (yield* fs.exists(candidatePath))
+			? yield* fs.realPath(candidatePath)
+			: candidatePath
+		const entry =
+			registry.workbases.find((item) => item.id === selector) ??
+			registry.workbases.find((item) => item.name === selector) ??
+			registry.workbases.find((item) => item.path === canonicalCandidate)
+		if (!entry) {
+			return yield* new WorkbaseRegistryError({
+				path,
+				message: `Unknown workbase selector '${selector}'`,
+			})
+		}
+		return { path, registry, entry }
+	})
+
 export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 	"WorkbaseService",
 	{
@@ -401,22 +426,11 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 				basePath: string = process.cwd(),
 			) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
-					const { path, registry } = yield* readRegistry(configDirectory)
-					const candidatePath = resolve(basePath, selector)
-					const canonicalCandidate = (yield* fs.exists(candidatePath))
-						? yield* fs.realPath(candidatePath)
-						: candidatePath
-					const entry =
-						registry.workbases.find((item) => item.id === selector) ??
-						registry.workbases.find((item) => item.name === selector) ??
-						registry.workbases.find((item) => item.path === canonicalCandidate)
-					if (!entry) {
-						return yield* new WorkbaseRegistryError({
-							path,
-							message: `Unknown workbase selector '${selector}'`,
-						})
-					}
+					const { path, registry, entry } = yield* findRegistration(
+						selector,
+						configDirectory,
+						basePath,
+					)
 					const workbases = registry.workbases.filter(
 						(item) => item.id !== entry.id,
 					)
@@ -429,6 +443,61 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					}
 					yield* writeRegistry(path, next)
 					return entry
+				}),
+
+			showRegistered: (
+				selector: string,
+				configDirectory?: string,
+				basePath: string = process.cwd(),
+			) =>
+				findRegistration(selector, configDirectory, basePath).pipe(
+					Effect.map(({ entry }) => entry),
+				),
+
+			nameRegistered: (
+				selector: string,
+				name: string | null,
+				configDirectory?: string,
+				basePath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const { path, registry, entry } = yield* findRegistration(
+						selector,
+						configDirectory,
+						basePath,
+					)
+					if (name !== null) {
+						const decodedName = decode(EntityId, name)
+						if (!decodedName.success) {
+							return yield* new WorkbaseRegistryError({
+								path,
+								message: `Invalid workbase name '${name}': names must contain only letters, numbers, dots, underscores, and hyphens`,
+							})
+						}
+						const collision = registry.workbases.find(
+							(item) =>
+								item.id !== entry.id &&
+								(item.id === name || item.name === name),
+						)
+						if (collision) {
+							return yield* new WorkbaseRegistryError({
+								path,
+								message: `Workbase name '${name}' is already registered for ${collision.path}`,
+							})
+						}
+					}
+					const updated = {
+						id: entry.id,
+						...(name === null ? {} : { name }),
+						path: entry.path,
+					}
+					yield* writeRegistry(path, {
+						...registry,
+						workbases: registry.workbases.map((item) =>
+							item.id === entry.id ? updated : item,
+						),
+					})
+					return updated
 				}),
 
 			pruneRegistered: (configDirectory?: string) =>
@@ -455,7 +524,11 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					return removed
 				}),
 
-			setDefault: (selector: string | null, configDirectory?: string) =>
+			setDefault: (
+				selector: string | null,
+				configDirectory?: string,
+				basePath: string = process.cwd(),
+			) =>
 				Effect.gen(function* () {
 					const { path, registry } = yield* readRegistry(configDirectory)
 					if (selector === null) {
@@ -465,15 +538,11 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						})
 						return null
 					}
-					const entry = registry.workbases.find(
-						(item) => item.id === selector || item.name === selector,
+					const { entry } = yield* findRegistration(
+						selector,
+						configDirectory,
+						basePath,
 					)
-					if (!entry) {
-						return yield* new WorkbaseRegistryError({
-							path,
-							message: `Unknown registered workbase selector '${selector}'`,
-						})
-					}
 					yield* writeRegistry(path, {
 						version: 2,
 						workbases: registry.workbases,
