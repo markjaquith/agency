@@ -71,7 +71,7 @@ describe("IntegrationService", () => {
 		])
 	})
 
-	test("generates a context-first safety and completion bootstrap", () => {
+	test("generates context-first safety and execution closeout guidance", () => {
 		const body = managedBody(managedWorkbaseAgents)
 
 		expect(body).toContain("agency context . --json")
@@ -79,9 +79,17 @@ describe("IntegrationService", () => {
 		expect(body).toContain("Do not begin execution without a claim")
 		expect(body).toContain("Run `agency validate`")
 		expect(body).toContain("only with explicit user intent")
-		expect(body).toContain(
-			"Mark work done only when its completion condition is true",
-		)
+		expect(body).toContain("An execution unit is `working`")
+		expect(body).toContain("It becomes `done`")
+		expect(body).toContain("solely because its PR")
+		expect(body).toContain("creating or updating a PR")
+		expect(body).toContain("marking it ready")
+		expect(body).toMatch(/completing\s+a refinement loop/)
+		expect(body).toContain("pausing or handing off")
+		expect(body).toContain("`agency task status` or `agency phase status`")
+		expect(body).toContain("`TASK.md` or `PHASE.md`")
+		expect(body).toContain("PR state, current head, diff summary")
+		expect(body).toContain("Run `agency validate` before reporting completion")
 		expect(body).toContain("agency integration status")
 	})
 
