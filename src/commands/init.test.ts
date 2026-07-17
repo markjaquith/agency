@@ -33,15 +33,10 @@ describe("init command", () => {
 		expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 			"/repos/\n/tasks/*/code/\n/tasks/*/phases/*/code/\n",
 		)
-		expect(await Bun.file(join(root, "AGENTS.md")).text()).toContain(
-			"# Agency Workbase",
-		)
+		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(
-			await Bun.file(join(root, ".opencode/opencode.jsonc")).text(),
-		).toContain('"path": "../tasks"')
-		expect(
-			await Bun.file(join(root, ".opencode/opencode.jsonc")).text(),
-		).toContain(`"${join(root, "tasks")}/*": "allow"`)
+			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
+		).toBe(false)
 	})
 
 	test("preserves existing gitignore entries", async () => {

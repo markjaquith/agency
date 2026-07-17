@@ -106,6 +106,7 @@ describe("CLI", () => {
 		for (const [command, usage] of [
 			["init", "Usage: agency init"],
 			["workbase", "Usage: agency workbase"],
+			["integration", "Usage: agency integration"],
 			["repo", "Usage: agency repo"],
 			["epic", "Usage: agency epic"],
 			["task", "Usage: agency task"],
@@ -134,6 +135,28 @@ describe("CLI", () => {
 
 		const after = await runCli(["status", "--silent"], root)
 		expect(after).toEqual({ exitCode: 0, stdout: "", stderr: "" })
+	})
+
+	test("reports and synchronizes managed integration files", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		expect((await runCli(["init", root])).exitCode).toBe(0)
+
+		const before = parseJson(
+			await runCli(["integration", "status", "--json"], root),
+		)
+		expect(before.files).toMatchObject([
+			{ name: "agents", state: "missing" },
+			{ name: "opencode", state: "missing" },
+		])
+
+		const synced = parseJson(
+			await runCli(["integration", "sync", "--json"], root),
+		)
+		expect(synced.files).toMatchObject([
+			{ name: "agents", state: "managed", changed: true },
+			{ name: "opencode", state: "managed", changed: true },
+		])
 	})
 
 	test("registers and lists workbases", async () => {

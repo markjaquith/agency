@@ -22,6 +22,8 @@ field. Repositories listed in plural `repos` are read-only references.
 
 ## Safety
 
+- Discovery and observational commands are read-only; use
+  `agency integration sync` to update managed agent files explicitly.
 - Keep task-level decisions in `TASK.md` and phase-specific delivery context in
   `PHASE.md`.
 - Keep execution-unit `status` current with `agency task status` or

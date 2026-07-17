@@ -71,11 +71,12 @@ workbase/
             backend/
 ```
 
-Agency creates `AGENTS.md` and `.opencode/opencode.jsonc` during initialization
-and ensures they exist whenever the workbase is discovered. The OpenCode config
-grants external-directory access to task and epic references. Checksums in the
-generated files let newer Agency versions refresh unmodified content while
-preserving custom or edited files.
+Agency keeps discovery and other observational commands read-only. Run
+`agency integration status` to inspect `AGENTS.md` and
+`.opencode/opencode.jsonc`, then `agency integration sync` to create missing
+files or refresh checksum-safe managed files. The OpenCode config grants
+external-directory access to task and epic references. Customized files are
+reported but never overwritten.
 
 Repository metadata comes directly from Git under `repos/{alias}`. Workbase
 configuration may provide a custom writable-worktree creation command.
@@ -242,6 +243,8 @@ agency pr create refresh-copy
 agency init [path] [--json]
 agency workbase add <path> [--json]
 agency workbase list [--json]
+agency integration status [--json]
+agency integration sync [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
 agency repo list [--json]
@@ -253,7 +256,8 @@ Registered workbases are stored in
 repository. Alias names are then used by all documents and commands.
 
 Commands that print Agency-owned results accept `--json`, including initialization,
-repository mutations, entity creation/list/show, status, validation, and PR creation.
+integration inspection/sync, repository mutations, entity creation/list/show,
+status, validation, and PR creation.
 
 ### Epics
 

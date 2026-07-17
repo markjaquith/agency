@@ -39,6 +39,7 @@ From anywhere beneath a workbase, run:
 ```bash
 agency status --json
 agency validate --json
+agency integration status --json
 agency repo list --json
 agency epic list --json
 agency task list --json
@@ -56,6 +57,7 @@ If no workbase is found, do not initialize one without user intent. When asked:
 
 ```bash
 agency init [path]
+agency integration sync
 ```
 
 Register known workbases so `agency work` can select one when run elsewhere:

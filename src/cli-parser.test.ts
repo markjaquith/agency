@@ -82,6 +82,8 @@ describe("strict CLI parsing", () => {
 			[["init", "one", "two"], "agency init"],
 			[["workbase", "add", "one", "two"], "agency workbase add"],
 			[["workbase", "list", "extra"], "agency workbase list"],
+			[["integration", "status", "extra"], "agency integration status"],
+			[["integration", "sync", "extra"], "agency integration sync"],
 			[["repo", "add", "a", "b", "extra"], "agency repo add"],
 			[["repo", "link", "a", "b", "extra"], "agency repo link"],
 			[["repo", "list", "extra"], "agency repo list"],
