@@ -73,9 +73,14 @@ workbase/
 Agency keeps discovery and other observational commands read-only. Run
 `agency integration status` to inspect `AGENTS.md` and
 `.opencode/opencode.jsonc`, then `agency integration sync` to create missing
-files or refresh checksum-safe managed files. The OpenCode config grants
-external-directory access to task and epic references. Customized files are
-reported but never overwritten.
+files or refresh checksum-safe managed files. Customized files are reported but
+never overwritten.
+
+The OpenCode config advertises only the task and epic directories as documented
+references. OpenCode automatically grants those references scoped
+external-directory access, so Agency does not add blanket permission rules that
+could hide missing tool permissions. References provide context and never expand
+the write authority reported by `agency context`.
 
 Repository metadata comes directly from Git under `repos/{alias}`. Workbase
 configuration may provide a custom writable-worktree creation command.

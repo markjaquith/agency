@@ -75,7 +75,7 @@ const inspect = (root: string) =>
 					"opencode",
 					opencodePath,
 					yield* fs.readFile(opencodePath),
-					managedWorkbaseOpencode(root),
+					managedWorkbaseOpencode,
 					canUpdateManagedWorkbaseOpencode,
 				),
 			)
@@ -119,7 +119,7 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 								yield* fs.writeFile(status.path, managedWorkbaseAgents)
 							} else {
 								yield* fs.createDirectory(join(root, ".opencode"))
-								yield* fs.writeFile(status.path, managedWorkbaseOpencode(root))
+								yield* fs.writeFile(status.path, managedWorkbaseOpencode)
 							}
 						}
 						files.push({

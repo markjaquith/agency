@@ -19,6 +19,9 @@ const managed = (prefix: string, body: string, suffix = "") => {
 	return `${prefix}${checksum}${suffix}\n\n${body}`
 }
 
+const managedBody = (content: string) =>
+	content.slice(content.indexOf("\n\n") + 2)
+
 const status = (root: string) =>
 	runTestEffect(
 		IntegrationService.pipe(Effect.flatMap((service) => service.status(root))),
@@ -47,7 +50,7 @@ describe("IntegrationService", () => {
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 
 		await write(root, "AGENTS.md", managedWorkbaseAgents)
-		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode(root))
+		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"managed",
 			"managed",
@@ -66,6 +69,38 @@ describe("IntegrationService", () => {
 			"customized",
 			"drifted",
 		])
+	})
+
+	test("generates a context-first safety and completion bootstrap", () => {
+		const body = managedBody(managedWorkbaseAgents)
+
+		expect(body).toContain("agency context . --json")
+		expect(body).toContain("authority.writable.checkoutPath")
+		expect(body).toContain("Do not begin execution without a claim")
+		expect(body).toContain("Run `agency validate`")
+		expect(body).toContain("only with explicit user intent")
+		expect(body).toContain(
+			"Mark work done only when its completion condition is true",
+		)
+		expect(body).toContain("agency integration status")
+	})
+
+	test("scopes and documents OpenCode references without blanket permissions", () => {
+		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
+
+		expect(config.references).toEqual({
+			tasks: {
+				path: "../tasks",
+				description:
+					"Agency task definitions and execution context; authority still comes from agency context",
+			},
+			epics: {
+				path: "../epics",
+				description:
+					"Agency epic definitions and orchestration context; no implementation write authority",
+			},
+		})
+		expect(config.permission).toBeUndefined()
 	})
 
 	test("treats an existing JSON OpenCode config as customized", async () => {
@@ -95,7 +130,7 @@ describe("IntegrationService", () => {
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(customAgents)
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
-			managedWorkbaseOpencode(root),
+			managedWorkbaseOpencode,
 		)
 
 		await unlink(join(root, "AGENTS.md"))
