@@ -302,6 +302,7 @@ agency task create <id> --multi-phase
 ### Noninteractive Use
 
 Agency never prompts when `--no-input` is set or stdin/stderr are not TTYs.
+`--json` also disables prompts and selectors, even when a TTY is available.
 Commands with explicit inputs continue normally. `task new` fails immediately;
 `work` requires an explicit directory, task ID, or `--epic` and must run from a
 workbase; `validate` requires an explicit path or must run from a workbase.
@@ -407,6 +408,66 @@ aliases, parent/child backlinks, phase directories, duplicate references,
 unknown dependencies, and dependency cycles. YAML duplicate keys, anchors,
 aliases, and custom tags are rejected. When path is omitted outside a workbase,
 Agency prompts for a registered workbase.
+
+## Machine Protocol
+
+`--json` emits exactly one JSON value on stdout for success or failure. It takes
+precedence over `--silent`; progress, warnings, and verbose diagnostics remain on
+stderr. Version 1 success responses have this shape:
+
+```json
+{ "version": 1, "ok": true, "result": { "root": "/work/agency" } }
+```
+
+Failures exit nonzero and use the same versioned envelope:
+
+```json
+{
+	"version": 1,
+	"ok": false,
+	"error": {
+		"code": "CLI_USAGE",
+		"message": "Unknown command 'unknown'.\n\nUsage: agency <command> [options]",
+		"fields": {
+			"detail": "Unknown command 'unknown'.",
+			"usage": "agency <command> [options]"
+		},
+		"retryable": false,
+		"remediation": "Correct the arguments using the usage value in error.fields."
+	}
+}
+```
+
+Every error contains a stable `code`, human-readable `message`, structured
+`fields`, and `retryable`. `remediation` is included when Agency knows a specific
+recovery action. Version 1 defines these codes:
+
+| Code                      | Meaning                                                  |
+| ------------------------- | -------------------------------------------------------- |
+| `CLI_USAGE`               | Invalid command, option, argument, or option combination |
+| `WORKBASE_NOT_FOUND`      | No workbase could be resolved                            |
+| `WORKBASE_CONFIG_INVALID` | Invalid workbase configuration                           |
+| `WORKBASE_REGISTRY_ERROR` | Invalid or inaccessible workbase registry                |
+| `FILE_NOT_FOUND`          | A required path does not exist                           |
+| `FILESYSTEM_ERROR`        | A filesystem operation failed                            |
+| `FRONTMATTER_INVALID`     | A durable document has invalid frontmatter               |
+| `VALIDATION_FAILED`       | Workbase validation reported issues                      |
+| `REPOSITORY_ERROR`        | Repository operation failed                              |
+| `EPIC_ERROR`              | Epic operation failed                                    |
+| `TASK_ERROR`              | Task operation failed                                    |
+| `PHASE_ERROR`             | Phase operation failed                                   |
+| `ARCHIVE_ERROR`           | Archive operation failed                                 |
+| `WORKTREE_ERROR`          | Worktree operation failed                                |
+| `PULL_REQUEST_ERROR`      | Pull request operation failed                            |
+| `PROCESS_ERROR`           | A child process failed and may be retried                |
+| `PROTOCOL_OUTPUT_ERROR`   | A command violated the machine output contract           |
+| `COMMAND_FAILED`          | An otherwise unclassified command failure                |
+
+The Effect schemas are exported from `@markjaquith/agency` and
+`@markjaquith/agency/protocol`. The distributable JSON Schema is exported as
+`@markjaquith/agency/schemas/agency-envelope-v1.json`. Representative payloads
+are exported as `@markjaquith/agency/fixtures/protocol/success.json` and
+`@markjaquith/agency/fixtures/protocol/error.json`.
 
 ## Agent Skill
 

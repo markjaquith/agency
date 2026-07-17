@@ -363,8 +363,20 @@ export interface ParsedCli {
 	>
 }
 
+class CliUsageError extends Error {
+	readonly _tag = "CliUsageError"
+
+	constructor(
+		readonly detail: string,
+		readonly usage: string,
+	) {
+		super(`${detail}\n\nUsage: ${usage}`)
+		this.name = "CliUsageError"
+	}
+}
+
 const usageError = (message: string, usage: string) =>
-	new Error(`${message}\n\nUsage: ${usage}`)
+	new CliUsageError(message, usage)
 
 const optionLabel = (name: string) => `--${name}`
 

@@ -6,7 +6,7 @@ import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
-import { captureLogs } from "../test-utils"
+import { captureErrors, captureLogs } from "../test-utils"
 import { work } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
 import type { PickWorkbase } from "../workbase/workbase-choice"
@@ -568,7 +568,7 @@ describe("work command", () => {
 
 	test("respects silent and verbose logging options", async () => {
 		const verboseHarness = createHarness()
-		const verboseLogs = await captureLogs(() =>
+		const verboseLogs = await captureErrors(() =>
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
@@ -577,7 +577,7 @@ describe("work command", () => {
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
 		const silentHarness = createHarness()
-		const silentLogs = await captureLogs(() =>
+		const silentLogs = await captureErrors(() =>
 			silentHarness.run({
 				taskId: "example",
 				verbose: true,

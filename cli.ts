@@ -28,6 +28,12 @@ import { WorktreeService } from "./src/services/WorktreeService"
 import { PullRequestService } from "./src/services/PullRequestService"
 import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
+import {
+	collectCommandResult,
+	errorEnvelope,
+	successEnvelope,
+	writeEnvelope,
+} from "./src/protocol"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -76,7 +82,7 @@ async function runCommand<E>(
 			Effect.either,
 		),
 	)
-	if (Either.isLeft(result)) throw toError(result.left)
+	if (Either.isLeft(result)) throw result.left
 }
 
 // Read version from package.json
@@ -346,13 +352,19 @@ For more information about a command, run:
 	`)
 }
 
+const machineMode = process.argv.slice(2).includes("--json")
+
 try {
 	const args = process.argv.slice(2)
 	const { commandName, args: commandArgs, values } = parseCli(args)
 
 	// Handle global flags
 	if (values.version) {
-		console.log(`v${VERSION}`)
+		if (machineMode) {
+			writeEnvelope(successEnvelope({ version: VERSION }))
+		} else {
+			console.log(`v${VERSION}`)
+		}
 		process.exit(0)
 	}
 
@@ -365,9 +377,22 @@ try {
 
 	const command = commands[commandName]!
 	const inputAllowed =
-		!values["no-input"] && Boolean(process.stdin.isTTY && process.stderr.isTTY)
-	await command.run(commandArgs, { ...values, inputAllowed })
+		!values.json &&
+		!values["no-input"] &&
+		Boolean(process.stdin.isTTY && process.stderr.isTTY)
+	if (values.json) {
+		const result = await collectCommandResult(() =>
+			command.run(commandArgs, { ...values, inputAllowed }),
+		)
+		writeEnvelope(successEnvelope(result))
+	} else {
+		await command.run(commandArgs, { ...values, inputAllowed })
+	}
 } catch (error) {
+	if (machineMode) {
+		writeEnvelope(errorEnvelope(error))
+		process.exit(1)
+	}
 	if (error instanceof Error) {
 		let message = error.message
 

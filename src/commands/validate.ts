@@ -15,6 +15,11 @@ interface ValidateOptions extends BaseCommandOptions {
 
 class ValidationFailedError extends Data.TaggedError("ValidationFailedError")<{
 	readonly message: string
+	readonly root: string
+	readonly issues: readonly {
+		readonly path: string
+		readonly message: string
+	}[]
 }> {}
 
 export const validate = (
@@ -46,6 +51,8 @@ export const validate = (
 				.join("\n")
 			return yield* new ValidationFailedError({
 				message: `Workbase validation failed with ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"}:\n${details}`,
+				root: report.root,
+				issues: report.issues,
 			})
 		}
 

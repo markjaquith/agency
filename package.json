@@ -21,6 +21,8 @@
     "index.ts",
     "cli.ts",
     "src",
+    "schemas",
+    "fixtures/protocol",
     "skills",
     "README.md",
     "LICENSE"
@@ -31,6 +33,19 @@
     ".": {
       "types": "./index.ts",
       "import": "./index.ts"
+    },
+    "./protocol": {
+      "types": "./src/protocol.ts",
+      "import": "./src/protocol.ts"
+    },
+    "./schemas/agency-envelope-v1.json": {
+      "default": "./schemas/agency-envelope-v1.schema.json"
+    },
+    "./fixtures/protocol/success.json": {
+      "default": "./fixtures/protocol/success.json"
+    },
+    "./fixtures/protocol/error.json": {
+      "default": "./fixtures/protocol/error.json"
     }
   },
   "publishConfig": {

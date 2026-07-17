@@ -1,3 +1,5 @@
+import { emitCommandResult } from "../protocol"
+
 export function createLoggers(options: {
 	readonly silent?: boolean
 	readonly verbose?: boolean
@@ -5,7 +7,7 @@ export function createLoggers(options: {
 }) {
 	const { silent = false, verbose = false, json = false } = options
 	return {
-		log: silent ? () => {} : console.log,
-		verboseLog: verbose && !silent && !json ? console.log : () => {},
+		log: json ? emitCommandResult : silent ? () => {} : console.log,
+		verboseLog: verbose && !silent ? console.error : () => {},
 	}
 }

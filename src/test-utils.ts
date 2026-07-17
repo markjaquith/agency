@@ -45,17 +45,24 @@ export async function runTestEffect<A, E>(
 	return Effect.runPromise(program)
 }
 
-export async function captureLogs(
+async function captureConsole(
+	method: "log" | "error",
 	run: () => Promise<unknown>,
 ): Promise<string[]> {
 	const logs: string[] = []
-	const log = spyOn(console, "log").mockImplementation((...args) => {
+	const output = spyOn(console, method).mockImplementation((...args) => {
 		logs.push(args.join(" "))
 	})
 	try {
 		await run()
 		return logs
 	} finally {
-		log.mockRestore()
+		output.mockRestore()
 	}
 }
+
+export const captureLogs = (run: () => Promise<unknown>) =>
+	captureConsole("log", run)
+
+export const captureErrors = (run: () => Promise<unknown>) =>
+	captureConsole("error", run)

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "ok": false,
+  "error": {
+    "code": "CLI_USAGE",
+    "message": "Unknown command 'unknown'.\n\nUsage: agency <command> [options]",
+    "fields": {
+      "detail": "Unknown command 'unknown'.",
+      "usage": "agency <command> [options]"
+    },
+    "retryable": false,
+    "remediation": "Correct the arguments using the usage value in error.fields."
+  }
+}

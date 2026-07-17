@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import {
-	captureLogs,
+	captureErrors,
 	cleanupTempDir,
 	createTempDir,
 	runTestEffect,
@@ -287,7 +287,7 @@ describe("WorktreeService", () => {
 			),
 		)
 
-		const logs = await captureLogs(() =>
+		const logs = await captureErrors(() =>
 			runTestEffect(
 				WorktreeService.pipe(
 					Effect.flatMap((service) =>
