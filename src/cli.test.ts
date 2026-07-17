@@ -81,6 +81,91 @@ describe("CLI", () => {
 		expect(taggedError.stderr).not.toContain("An error has occurred")
 	})
 
+	test("coordinates claims through revision-guarded machine commands", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		await mkdir(join(root, "repos", "agency"), { recursive: true })
+		parseJson(
+			await runCli(
+				["task", "create", "claimed", "--repo", "agency", "--json"],
+				root,
+			),
+		)
+		const context = parseJson(
+			await runCli(["context", "tasks/claimed", "--json"], root),
+		)
+		const revision = context.documents.task.sha256
+		const claimed = parseJson(
+			await runCli(
+				[
+					"claim",
+					"claimed",
+					"--claimant",
+					"orchestrator",
+					"--runner",
+					"agent",
+					"--session-id",
+					"job-1",
+					"--revision",
+					revision,
+					"--json",
+				],
+				root,
+			),
+		)
+		expect(claimed.claim).toMatchObject({
+			claimant: "orchestrator",
+			runner: "agent",
+			sessionId: "job-1",
+			state: "active",
+		})
+
+		const conflict = await runCli(
+			[
+				"claim",
+				"claimed",
+				"--claimant",
+				"other",
+				"--runner",
+				"other-agent",
+				"--session-id",
+				"job-2",
+				"--revision",
+				claimed.revision,
+				"--json",
+			],
+			root,
+		)
+		expect(conflict.exitCode).toBe(1)
+		expect(JSON.parse(conflict.stdout)).toMatchObject({
+			ok: false,
+			error: {
+				code: "CLAIM_CONFLICT",
+				retryable: true,
+				fields: { claim: { runner: "agent", sessionId: "job-1" } },
+			},
+		})
+
+		const finished = parseJson(
+			await runCli(
+				[
+					"finish",
+					"claimed",
+					"--session-id",
+					"job-1",
+					"--revision",
+					claimed.revision,
+					"--outcome",
+					"done",
+					"--json",
+				],
+				root,
+			),
+		)
+		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
+	})
+
 	test("emits one versioned error envelope for usage and command failures", async () => {
 		const usage = await runCli(["unknown", "--json"])
 		expect(usage.exitCode).toBe(1)

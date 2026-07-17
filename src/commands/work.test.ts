@@ -6,6 +6,7 @@ import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
+import { ClaimService } from "../services/ClaimService"
 import { captureErrors, captureLogs } from "../test-utils"
 import { work, workPrepare } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
@@ -133,6 +134,30 @@ const createHarness = (options: HarnessOptions = {}) => {
 			return Effect.void
 		},
 	}
+	const claims = {
+		inspect: (taskId: string, phaseId?: string) =>
+			Effect.succeed({
+				target: {
+					kind: phaseId ? "phase" : "task",
+					taskId,
+					phaseId,
+					path: phaseId
+						? `/workbase/tasks/${taskId}/phases/${phaseId}/PHASE.md`
+						: `/workbase/tasks/${taskId}/TASK.md`,
+					label: phaseId ? `phase '${taskId}/${phaseId}'` : `task '${taskId}'`,
+				},
+				revision: "0".repeat(64),
+				data: {},
+			}),
+		claim: (input: { taskId: string; phaseId?: string }) => {
+			statusUpdates.push(
+				input.phaseId
+					? `phase:${input.taskId}:${input.phaseId}:working`
+					: `task:${input.taskId}:working`,
+			)
+			return Effect.succeed({ revision: "1".repeat(64) })
+		},
+	}
 	const fs = {
 		isDirectory: (path: string) =>
 			Effect.succeed(options.existingDirectories?.includes(path) ?? true),
@@ -171,6 +196,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(EpicService, epics as never),
 				Effect.provideService(TaskService, tasks as never),
 				Effect.provideService(PhaseService, phases as never),
+				Effect.provideService(ClaimService, claims as never),
 			) as Effect.Effect<void, unknown, never>,
 		)
 	const runPrepare = (commandOptions: Parameters<typeof workPrepare>[0]) =>

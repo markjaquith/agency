@@ -7,6 +7,7 @@ import { WorkbaseService } from "../services/WorkbaseService"
 import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
+import { ClaimService } from "../services/ClaimService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
 import { createProgress, type Progress } from "../utils/progress"
@@ -60,6 +61,8 @@ export const work = (
 				new Error("Cannot use both --opencode and --claude"),
 			)
 		}
+		const previousSessionId = process.env.AGENCY_SESSION_ID
+		const previousClaimRevision = process.env.AGENCY_CLAIM_REVISION
 		if (
 			options.epicId &&
 			(options.directory || options.taskId || options.phaseId)
@@ -75,6 +78,7 @@ export const work = (
 		const epics = yield* EpicService
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
+		const claims = yield* ClaimService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const directoryPath = options.directory
@@ -229,10 +233,27 @@ export const work = (
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
-		if (target.kind === "phase") {
-			yield* phases.setStatus(target.taskId, target.phaseId, "working", root)
-		} else if (target.kind === "task" && !target.multiPhase) {
-			yield* tasks.setStatus(target.taskId, "working", root)
+		if (
+			target.kind === "phase" ||
+			(target.kind === "task" && !target.multiPhase)
+		) {
+			const phaseId = target.kind === "phase" ? target.phaseId : undefined
+			const current = yield* claims.inspect(target.taskId, phaseId, root)
+			const sessionId =
+				process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
+			const acquired = yield* claims.claim(
+				{
+					taskId: target.taskId,
+					...(phaseId ? { phaseId } : {}),
+					claimant: process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency",
+					runner: process.env.AGENCY_RUNNER ?? cli,
+					sessionId,
+					revision: current.revision,
+				},
+				root,
+			)
+			process.env.AGENCY_SESSION_ID = sessionId
+			process.env.AGENCY_CLAIM_REVISION = acquired.revision
 		}
 
 		const args =
@@ -240,7 +261,15 @@ export const work = (
 		verboseLog(
 			`Launching command: ${formatCommand([cli, ...args])} (cwd: ${launchPath})`,
 		)
-		launch(cli, [cli, ...args], launchPath)
+		try {
+			launch(cli, [cli, ...args], launchPath)
+		} finally {
+			if (previousSessionId === undefined) delete process.env.AGENCY_SESSION_ID
+			else process.env.AGENCY_SESSION_ID = previousSessionId
+			if (previousClaimRevision === undefined)
+				delete process.env.AGENCY_CLAIM_REVISION
+			else process.env.AGENCY_CLAIM_REVISION = previousClaimRevision
+		}
 	})
 
 export const workPrepare = (options: WorkOptions = {}) =>

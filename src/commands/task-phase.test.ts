@@ -172,13 +172,13 @@ describe("task and phase command JSON output", () => {
 			runTestEffect(
 				phase({
 					subcommand: "status",
-					args: ["multi", "first", "delegated"],
+					args: ["multi", "first", "done"],
 					cwd: root,
 					json: true,
 				}),
 			),
 		)
-		expect(JSON.parse(phaseLogs[0]!).data.status).toBe("delegated")
+		expect(JSON.parse(phaseLogs[0]!).data.status).toBe("done")
 
 		await runTestEffect(
 			task({
@@ -196,13 +196,13 @@ describe("task and phase command JSON output", () => {
 			runTestEffect(
 				task({
 					subcommand: "status",
-					args: ["single-status", "delegated"],
+					args: ["single-status", "done"],
 					cwd: root,
 					json: true,
 				}),
 			),
 		)
-		expect(JSON.parse(taskLogs[0]!).data.status).toBe("delegated")
+		expect(JSON.parse(taskLogs[0]!).data.status).toBe("done")
 	})
 
 	test("converts a single-phase task with an explicit first phase ID", async () => {

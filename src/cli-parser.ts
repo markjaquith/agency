@@ -59,6 +59,21 @@ const phaseCreateOptions = {
 	"first-phase": { type: "string" },
 } satisfies OptionConfig
 
+const claimOptions = {
+	...outputOptions,
+	claimant: { type: "string" },
+	runner: { type: "string" },
+	"session-id": { type: "string" },
+	revision: { type: "string" },
+	"expires-at": { type: "string" },
+} satisfies OptionConfig
+
+const ownedClaimOptions = {
+	...outputOptions,
+	"session-id": { type: "string" },
+	revision: { type: "string" },
+} satisfies OptionConfig
+
 const commands = {
 	init: {
 		usage: "agency init [path] [--json]",
@@ -256,6 +271,52 @@ const commands = {
 				maxArgs: 3,
 				options: ["json"],
 			},
+		},
+	},
+	claim: {
+		usage: "agency claim <task-id> [phase-id] [options]",
+		options: claimOptions,
+		command: {
+			usage:
+				"agency claim <task-id> [phase-id] --claimant <id> --runner <id> --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]",
+			minArgs: 1,
+			maxArgs: 2,
+			options: [
+				"claimant",
+				"runner",
+				"session-id",
+				"revision",
+				"expires-at",
+				"json",
+			],
+			required: ["claimant", "runner", "session-id", "revision"],
+		},
+	},
+	release: {
+		usage: "agency release <task-id> [phase-id] [options]",
+		options: ownedClaimOptions,
+		command: {
+			usage:
+				"agency release <task-id> [phase-id] --session-id <id> --revision <sha256> [--json]",
+			minArgs: 1,
+			maxArgs: 2,
+			options: ["session-id", "revision", "json"],
+			required: ["session-id", "revision"],
+		},
+	},
+	finish: {
+		usage: "agency finish <task-id> [phase-id] [options]",
+		options: {
+			...ownedClaimOptions,
+			outcome: { type: "string" },
+		},
+		command: {
+			usage:
+				"agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [--json]",
+			minArgs: 1,
+			maxArgs: 2,
+			options: ["session-id", "revision", "outcome", "json"],
+			required: ["session-id", "revision", "outcome"],
 		},
 	},
 	archive: {
@@ -652,6 +713,16 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	if (commandName === "graph") {
 		validateGraphOptions(parsed.values, spec)
+	}
+	if (
+		commandName === "finish" &&
+		parsed.values.outcome !== "done" &&
+		parsed.values.outcome !== "dropped"
+	) {
+		throw usageError(
+			"Option '--outcome' must be 'done' or 'dropped'.",
+			spec.usage,
+		)
 	}
 	if (commandName === "work") {
 		const preparing = commandPositionals[0] === "prepare"

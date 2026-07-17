@@ -357,7 +357,7 @@ Inspect tasks:
 ```text
 agency task list [--json]
 agency task show <id> [--json]
-agency task status <id> <open|working|delegated|done|dropped> [--json]
+agency task status <id> <open|done|dropped> [--json]
 ```
 
 To add a phase to an existing single-phase task, name the phase that will own
@@ -384,16 +384,48 @@ agency phase create <task-id> <phase-id>
 
 agency phase list <task-id> [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|working|delegated|done|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|done|dropped> [--json]
 ```
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Use the status subcommands to mark work `delegated`, `done`,
-`dropped`, or open it again. The interactive work selector displays status
-markers before execution units. Open, working, and delegated work may transition
-to any status. Done and dropped work are terminal and may only remain unchanged
-or transition to open; reopen terminal work before changing its outcome.
+before launch. Use claims for coordinated ownership and the status subcommands
+for manual lifecycle overrides. The interactive work selector displays status
+markers before execution units. Existing working and delegated work may be
+released to `open` or assigned a terminal outcome. Done and dropped work are
+terminal and may only remain unchanged or transition to open; reopen terminal
+work before changing its outcome.
+
+`delegated` remains readable for existing workbases but cannot be newly assigned.
+Delegation is now explicit: the claimant identifies the orchestrator and the
+runner identifies the assigned agent.
+
+### Claims
+
+Claim mutations require the SHA-256 revision exposed by `agency context` or
+`agency graph`. Every operation compares that revision while holding an exclusive
+document lock and atomically replaces the execution document.
+
+```text
+agency claim <task-id> [phase-id] --claimant <id> --runner <id>
+  --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]
+agency release <task-id> [phase-id] --session-id <id>
+  --revision <sha256> [--json]
+agency finish <task-id> [phase-id] --session-id <id>
+  --revision <sha256> --outcome <done|dropped> [--json]
+```
+
+An active claim sets status to `working`. Release returns it to `open`; finish
+sets the terminal outcome. Released and finished ownership metadata remains in
+frontmatter. Conflicts return the current revision and complete ownership record
+in the machine error envelope rather than overwriting it. Expired claims may be
+replaced with a revision-guarded claim.
+
+`agency work` claims an execution unit before launching its agent. Set
+`AGENCY_CLAIMANT`, `AGENCY_RUNNER`, or `AGENCY_SESSION_ID` to supply orchestrator
+identities; otherwise Agency derives them from the user, selected agent, and
+process. The launched agent receives `AGENCY_SESSION_ID` and
+`AGENCY_CLAIM_REVISION` for a later release or finish operation.
 
 ### Archive
 
