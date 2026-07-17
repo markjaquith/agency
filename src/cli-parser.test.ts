@@ -404,6 +404,36 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
+	test("parses worktree lifecycle commands and selectors", () => {
+		expect(parseCli(["worktree", "list", "--json"])).toMatchObject({
+			commandName: "worktree",
+			args: ["list"],
+			values: { json: true },
+		})
+		expect(
+			parseCli([
+				"worktree",
+				"rebuild",
+				"--task",
+				"example",
+				"--phase",
+				"verify",
+				"--dry-run",
+			]),
+		).toMatchObject({
+			commandName: "worktree",
+			args: ["rebuild", "example", "verify"],
+			values: { task: "example", phase: "verify", "dry-run": true },
+		})
+		expectUsageError(
+			["worktree", "inspect", "example", "--dry-run"],
+			"agency worktree inspect",
+		)
+		expect(() => parseCli(["worktree", "repair", "--phase", "verify"])).toThrow(
+			"requires '--task'",
+		)
+	})
+
 	test("accepts runner selection and command inspection for work", () => {
 		expect(
 			parseCli(["work", "example", "--runner", "custom", "--print-command"]),

@@ -115,6 +115,7 @@ export const command = (options) =>
 - `agency archive list|show|epic|task|phase`: Browse or archive work items.
 - `agency restore epic|task|phase`: Restore archived work with graph preflight.
 - `agency work [<directory> | --epic <epic>]`: Launch an orchestration or execution agent.
+- `agency worktree list|inspect|prepare|remove|rebuild|repair`: Inspect and maintain managed worktrees.
 - `agency status`: Show workbase status.
 - `agency validate`: Validate workbase documents and relationships.
 - `agency next`: List or select graph-ready execution units.

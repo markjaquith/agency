@@ -692,6 +692,40 @@ status: open
 			await runCli(["task", "show", "example", "--json"], root),
 		)
 		expect(task.data.status).toBe("open")
+
+		const listed = parseJson(await runCli(["worktree", "list", "--json"], root))
+		expect(listed).toEqual([
+			expect.objectContaining({
+				owner: expect.objectContaining({ kind: "task", taskId: "example" }),
+				checkouts: [
+					expect.objectContaining({
+						repo: "agency",
+						kind: "writable",
+						registered: true,
+						actualBranch: "feat/example",
+						actualCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+						dirty: false,
+					}),
+				],
+			}),
+		])
+		const rebuild = parseJson(
+			await runCli(
+				["worktree", "rebuild", "example", "--dry-run", "--json"],
+				root,
+			),
+		)
+		expect(rebuild).toMatchObject({
+			operation: "rebuild",
+			dryRun: true,
+			actions: [
+				`remove ${join(workbaseRoot, "tasks/example/code/agency")}`,
+				`create ${join(workbaseRoot, "tasks/example/code/agency")}`,
+			],
+		})
+		expect(
+			await Bun.file(join(root, "tasks/example/code/agency/README.md")).text(),
+		).toBe("example\n")
 	})
 
 	test("envelopes help and version output in machine mode", async () => {
