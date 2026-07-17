@@ -40,9 +40,12 @@ describe("epic command", () => {
 			),
 		)
 
-		expect(JSON.parse(logs[0]!)).toEqual({
+		const created = JSON.parse(logs[0]!)
+		expect(created.revision).toMatch(/^[a-f0-9]{64}$/)
+		expect(created).toEqual({
 			id: "example",
 			path: join(root, "epics/example/EPIC.md"),
+			revision: created.revision,
 			data: {
 				ticketUrl: "https://example.com/epic",
 				repos: [{ repo: "agency", ref: "main" }],
@@ -68,10 +71,13 @@ describe("epic command", () => {
 				epic({ subcommand: "list", args: [], cwd: root, json: true }),
 			),
 		)
-		expect(JSON.parse(listLogs[0]!)).toEqual([
+		const listed = JSON.parse(listLogs[0]!)
+		expect(listed[0].revision).toMatch(/^[a-f0-9]{64}$/)
+		expect(listed).toEqual([
 			{
 				id: "example",
 				path: join(root, "epics/example/EPIC.md"),
+				revision: listed[0].revision,
 				data: {
 					ticketUrl: "https://example.com/epic",
 					repos: [{ repo: "agency", ref: "main" }],
@@ -90,9 +96,12 @@ describe("epic command", () => {
 				}),
 			),
 		)
-		expect(JSON.parse(showLogs[0]!)).toEqual({
+		const shown = JSON.parse(showLogs[0]!)
+		expect(shown.revision).toBe(listed[0].revision)
+		expect(shown).toEqual({
 			id: "example",
 			path: join(root, "epics/example/EPIC.md"),
+			revision: shown.revision,
 			data: {
 				ticketUrl: "https://example.com/epic",
 				repos: [{ repo: "agency", ref: "main" }],

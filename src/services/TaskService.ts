@@ -16,6 +16,7 @@ import {
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
+import { documentRevision } from "../workbase/document-revision"
 
 class TaskError extends Data.TaggedError("TaskError")<{
 	readonly message: string
@@ -25,6 +26,7 @@ interface TaskRecord {
 	readonly id: string
 	readonly path: string
 	readonly content: string
+	readonly revision: string
 	readonly data: TaskData
 }
 
@@ -158,7 +160,13 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					yield* fs.writeFile(parentEpic.path, updated)
 				}
 
-				return { id, path, content, data } satisfies TaskRecord
+				return {
+					id,
+					path,
+					content,
+					revision: documentRevision(content),
+					data,
+				} satisfies TaskRecord
 			}),
 
 		list: (startPath: string = process.cwd()) =>
@@ -178,7 +186,13 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					const content = yield* fs.readFile(path)
 					const parsed = yield* parseFrontmatter(content, path)
 					const data = yield* decodeTask(parsed.data)
-					records.push({ id: entry.name, path, content, data })
+					records.push({
+						id: entry.name,
+						path,
+						content,
+						revision: documentRevision(content),
+						data,
+					})
 				}
 				return records
 			}),
@@ -233,7 +247,12 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				const data = { ...record.data, status: validStatus }
 				const content = formatMarkdownDocument(data, parsed.body)
 				yield* fs.writeFile(record.path, content)
-				return { ...record, content, data } satisfies TaskRecord
+				return {
+					...record,
+					content,
+					revision: documentRevision(content),
+					data,
+				} satisfies TaskRecord
 			}),
 	}),
 }) {}

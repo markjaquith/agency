@@ -280,6 +280,37 @@ describe("GraphMutationService", () => {
 		)
 	})
 
+	test("rejects stale guarded moves before changing any document", async () => {
+		const paths = [
+			join(root, "tasks/alpha/TASK.md"),
+			join(root, "epics/first-epic/EPIC.md"),
+			join(root, "epics/second-epic/EPIC.md"),
+		]
+		const before = await Promise.all(paths.map((path) => Bun.file(path).text()))
+		let conflict: unknown
+		try {
+			await runTestEffect(
+				Effect.gen(function* () {
+					return yield* (yield* GraphMutationService).moveTask(
+						"alpha",
+						"second-epic",
+						root,
+						"0".repeat(64),
+					)
+				}),
+			)
+		} catch (error) {
+			conflict = error
+		}
+
+		expect(String(conflict)).toContain(
+			"Revision conflict for tasks/alpha/TASK.md",
+		)
+		expect(
+			await Promise.all(paths.map((path) => Bun.file(path).text())),
+		).toEqual(before)
+	})
+
 	test("refuses a rename that would invalidate a materialized worktree", async () => {
 		await mkdir(join(root, "tasks/alpha/code/agency"), { recursive: true })
 		await expect(

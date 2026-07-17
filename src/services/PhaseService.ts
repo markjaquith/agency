@@ -16,16 +16,18 @@ import {
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
+import { documentRevision } from "../workbase/document-revision"
 
 class PhaseError extends Data.TaggedError("PhaseError")<{
 	readonly message: string
 }> {}
 
-interface PhaseRecord {
+export interface PhaseRecord {
 	readonly taskId: string
 	readonly id: string
 	readonly path: string
 	readonly content: string
+	readonly revision: string
 	readonly data: PhaseData
 }
 
@@ -261,7 +263,14 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							task.path,
 							formatMarkdownDocument(convertedTaskData, parsedTask.body),
 						)
-						return { taskId, id, path, content, data } satisfies PhaseRecord
+						return {
+							taskId,
+							id,
+							path,
+							content,
+							revision: documentRevision(content),
+							data,
+						} satisfies PhaseRecord
 					}
 
 					yield* fs.createDirectory(directory)
@@ -283,7 +292,14 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						formatMarkdownDocument(updatedTaskData, parsedTask.body),
 					)
 
-					return { taskId, id, path, content, data } satisfies PhaseRecord
+					return {
+						taskId,
+						id,
+						path,
+						content,
+						revision: documentRevision(content),
+						data,
+					} satisfies PhaseRecord
 				}),
 
 			list: (taskId: string, startPath: string = process.cwd()) =>
@@ -311,6 +327,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							id: entry.name,
 							path,
 							content,
+							revision: documentRevision(content),
 							data,
 						})
 					}
@@ -363,7 +380,12 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					const data = { ...record.data, status: validStatus }
 					const content = formatMarkdownDocument(data, parsed.body)
 					yield* fs.writeFile(record.path, content)
-					return { ...record, content, data } satisfies PhaseRecord
+					return {
+						...record,
+						content,
+						revision: documentRevision(content),
+						data,
+					} satisfies PhaseRecord
 				}),
 		}),
 	},

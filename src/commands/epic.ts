@@ -13,6 +13,7 @@ interface EpicOptions extends BaseCommandOptions {
 	readonly ticketUrl?: string
 	readonly description?: string
 	readonly clearDescription?: boolean
+	readonly ifRevision?: string
 	readonly repos?: readonly string[]
 	readonly json?: boolean
 	readonly statuses?: readonly string[]
@@ -122,6 +123,7 @@ export const epic = (options: EpicOptions) =>
 								: parseRepositoryReferences(options.repos),
 					},
 					cwd,
+					options.ifRevision,
 				)
 				log(
 					options.json
@@ -138,7 +140,12 @@ export const epic = (options: EpicOptions) =>
 						new Error("Epic ID and new ID are required"),
 					)
 				}
-				const output = yield* mutations.renameEpic(id, newId, cwd)
+				const output = yield* mutations.renameEpic(
+					id,
+					newId,
+					cwd,
+					options.ifRevision,
+				)
 				log(
 					options.json
 						? JSON.stringify(output, null, 2)
@@ -176,6 +183,9 @@ Update options:
   --description <text>  Replace the description
   --clear-description   Remove the description
   --repo <alias>:<ref>  Replace repository references; repeatable
+
+Mutation options:
+  --if-revision <hash>  Require the target's current revision
 
 Options:
   --json                Output results as JSON

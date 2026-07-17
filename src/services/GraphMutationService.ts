@@ -2,9 +2,9 @@ import { Schema, TreeFormatter } from "@effect/schema"
 import { Data, Effect, Either } from "effect"
 import { open, rename, rm } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
-import { EpicService } from "./EpicService"
+import { EpicService, type EpicRecord } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
-import { PhaseService } from "./PhaseService"
+import { PhaseService, type PhaseRecord } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import {
@@ -23,6 +23,10 @@ import {
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { validateDependencies } from "../workbase/dependency-graph"
+import {
+	documentRevision,
+	RevisionConflictError,
+} from "../workbase/document-revision"
 
 class GraphMutationError extends Data.TaggedError("GraphMutationError")<{
 	readonly message: string
@@ -47,6 +51,10 @@ interface MutationResult {
 
 interface WritePlan {
 	readonly root: string
+	readonly preconditions: readonly {
+		readonly path: string
+		readonly revision: string
+	}[]
 	readonly writes: readonly {
 		readonly path: string
 		readonly content: string
@@ -114,7 +122,7 @@ const exists = async (path: string) => {
 	}
 }
 
-const applyWritePlan = ({ root, writes, move }: WritePlan) =>
+const applyWritePlan = ({ root, preconditions, writes, move }: WritePlan) =>
 	Effect.tryPromise({
 		try: async () => {
 			const lockPath = join(root, ".agency-graph-mutation.lock")
@@ -139,6 +147,18 @@ const applyWritePlan = ({ root, writes, move }: WritePlan) =>
 			let moved = false
 			let rollbackFailed = false
 			try {
+				for (const precondition of preconditions) {
+					const content = await Bun.file(precondition.path).text()
+					const currentRevision = documentRevision(content)
+					if (currentRevision !== precondition.revision) {
+						throw new RevisionConflictError({
+							path: relative(root, precondition.path),
+							expectedRevision: precondition.revision,
+							currentRevision,
+							message: `Revision conflict for ${relative(root, precondition.path)}`,
+						})
+					}
+				}
 				for (const write of staged) await Bun.write(write.stage, write.content)
 				if (move) {
 					await rename(move.from, move.to)
@@ -195,7 +215,8 @@ const applyWritePlan = ({ root, writes, move }: WritePlan) =>
 			}
 		},
 		catch: (cause) =>
-			cause instanceof GraphMutationError
+			cause instanceof GraphMutationError ||
+			cause instanceof RevisionConflictError
 				? cause
 				: new GraphMutationError({
 						message:
@@ -211,6 +232,19 @@ const contentWith = (
 	parseFrontmatter(record.content, record.path).pipe(
 		Effect.map((parsed) => formatMarkdownDocument(data, parsed.body)),
 	)
+
+type RevisionedRecord = {
+	readonly path: string
+	readonly revision: string
+}
+
+const precondition = (
+	record: RevisionedRecord,
+	ifRevision?: string,
+): { readonly path: string; readonly revision: string } => ({
+	path: record.path,
+	revision: ifRevision ?? record.revision,
+})
 
 const result = (
 	root: string,
@@ -250,6 +284,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				updates: EpicUpdates,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -289,10 +324,18 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						})
 					}
 					const content = yield* contentWith(record, data)
-					if (content === record.content)
+					if (content === record.content) {
+						if (ifRevision)
+							yield* applyWritePlan({
+								root,
+								preconditions: [precondition(record, ifRevision)],
+								writes: [],
+							})
 						return result(root, "epic.update", "epic", id, [])
+					}
 					yield* applyWritePlan({
 						root,
+						preconditions: [precondition(record, ifRevision)],
 						writes: [{ path: record.path, content }],
 					})
 					return result(root, "epic.update", "epic", id, [record.path])
@@ -302,6 +345,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				updates: TaskUpdates,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -410,10 +454,18 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						}
 					}
 					const content = yield* contentWith(record, data)
-					if (content === record.content)
+					if (content === record.content) {
+						if (ifRevision)
+							yield* applyWritePlan({
+								root,
+								preconditions: [precondition(record, ifRevision)],
+								writes: [],
+							})
 						return result(root, "task.update", "task", id, [])
+					}
 					yield* applyWritePlan({
 						root,
+						preconditions: [precondition(record, ifRevision)],
 						writes: [{ path: record.path, content }],
 					})
 					return result(root, "task.update", "task", id, [record.path])
@@ -424,6 +476,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				updates: PhaseUpdates,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -515,10 +568,18 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						}
 					}
 					const content = yield* contentWith(record, data)
-					if (content === record.content)
+					if (content === record.content) {
+						if (ifRevision)
+							yield* applyWritePlan({
+								root,
+								preconditions: [precondition(record, ifRevision)],
+								writes: [],
+							})
 						return result(root, "phase.update", "phase", id, [])
+					}
 					yield* applyWritePlan({
 						root,
+						preconditions: [precondition(record, ifRevision)],
 						writes: [{ path: record.path, content }],
 					})
 					return result(root, "phase.update", "phase", id, [record.path])
@@ -529,6 +590,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				dependencyId: string,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -582,6 +644,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 					const content = yield* contentWith(epic, data)
 					yield* applyWritePlan({
 						root,
+						preconditions: [precondition(task, ifRevision), precondition(epic)],
 						writes: [{ path: epic.path, content }],
 					})
 					return result(root, `task.dependency.${operation}`, "task", id, [
@@ -595,12 +658,14 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				dependencyId: string,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(taskId, root)
+					const phase = yield* (yield* PhaseService).show(taskId, id, root)
 					if (!("phases" in task.data))
 						return yield* new GraphMutationError({
 							message: `Task '${taskId}' does not have phases`,
@@ -641,6 +706,10 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 					const content = yield* contentWith(task, data)
 					yield* applyWritePlan({
 						root,
+						preconditions: [
+							precondition(phase, ifRevision),
+							precondition(task),
+						],
 						writes: [{ path: task.path, content }],
 					})
 					return result(root, `phase.dependency.${operation}`, "phase", id, [
@@ -652,6 +721,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				newId: string,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -698,7 +768,17 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 							content: yield* contentWith(task, data),
 						})
 					}
-					yield* applyWritePlan({ root, writes, move: { from, to } })
+					yield* applyWritePlan({
+						root,
+						preconditions: [
+							precondition(epic, ifRevision),
+							...allTasks
+								.filter((task) => task.data.epic === id)
+								.map((task) => precondition(task)),
+						],
+						writes,
+						move: { from, to },
+					})
 					return result(
 						root,
 						"epic.rename",
@@ -713,6 +793,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				newId: string,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -736,6 +817,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						return yield* new GraphMutationError({
 							message: `Task '${id}' has a materialized worktree; remove it with Agency before renaming`,
 						})
+					const movedPhases: PhaseRecord[] = []
 					if ("phases" in task.data) {
 						for (const phase of task.data.phases) {
 							const record = yield* (yield* PhaseService).show(
@@ -743,6 +825,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 								phase.id,
 								root,
 							)
+							movedPhases.push(record)
 							if (record.data.claim?.state === "active")
 								return yield* new GraphMutationError({
 									message: `Phase '${phase.id}' has an active claim; release or finish it before renaming task '${id}'`,
@@ -762,6 +845,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						}
 					}
 					const writes: { path: string; content: string }[] = []
+					const affectedEpics: EpicRecord[] = []
 					for (const epic of yield* epics.list(root)) {
 						if (
 							!epic.data.tasks.some(
@@ -769,6 +853,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 							)
 						)
 							continue
+						affectedEpics.push(epic)
 						const data = {
 							...epic.data,
 							tasks: epic.data.tasks.map((item) => ({
@@ -789,7 +874,16 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 							content: yield* contentWith(epic, data),
 						})
 					}
-					yield* applyWritePlan({ root, writes, move: { from, to } })
+					yield* applyWritePlan({
+						root,
+						preconditions: [
+							precondition(task, ifRevision),
+							...movedPhases.map((phase) => precondition(phase)),
+							...affectedEpics.map((epic) => precondition(epic)),
+						],
+						writes,
+						move: { from, to },
+					})
 					return result(
 						root,
 						"task.rename",
@@ -805,6 +899,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				newId: string,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -856,6 +951,10 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 					const content = yield* contentWith(task, data)
 					yield* applyWritePlan({
 						root,
+						preconditions: [
+							precondition(phase, ifRevision),
+							precondition(task),
+						],
 						writes: [{ path: task.path, content }],
 						move: { from, to },
 					})
@@ -873,6 +972,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 				id: string,
 				epicId: string | null,
 				startPath: string = process.cwd(),
+				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -881,8 +981,15 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(id, root)
 					const sourceId = task.data.epic
-					if (sourceId === epicId)
+					if (sourceId === epicId) {
+						if (ifRevision)
+							yield* applyWritePlan({
+								root,
+								preconditions: [precondition(task, ifRevision)],
+								writes: [],
+							})
 						return result(root, "task.move", "task", id, [])
+					}
 					const source = sourceId
 						? yield* epics.show(sourceId, root)
 						: undefined
@@ -938,7 +1045,15 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						path: task.path,
 						content: yield* contentWith(task, taskData),
 					})
-					yield* applyWritePlan({ root, writes })
+					yield* applyWritePlan({
+						root,
+						preconditions: [
+							precondition(task, ifRevision),
+							...(source ? [precondition(source)] : []),
+							...(target ? [precondition(target)] : []),
+						],
+						writes,
+					})
 					return result(
 						root,
 						"task.move",

@@ -21,6 +21,7 @@ import {
 } from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
 import { normalizePullRequestRecord } from "../workbase/delivery-command"
+import { documentRevision } from "../workbase/document-revision"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
@@ -73,9 +74,6 @@ const repositoryNodeId = (alias: string) => `repository:${alias}`
 const taskExecutionNodeId = (taskId: string) => `execution-unit:task/${taskId}`
 const phaseExecutionNodeId = (taskId: string, phaseId: string) =>
 	`execution-unit:phase/${taskId}/${phaseId}`
-
-const hash = (content: string) =>
-	new Bun.CryptoHasher("sha256").update(content).digest("hex")
 
 const decode = <S extends Schema.Schema.AnyNoContext>(
 	schema: S,
@@ -162,7 +160,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 							return {
 								id,
 								path,
-								sha256: hash(content),
+								sha256: documentRevision(content),
 								data: decoded.value,
 								body: parsed.body,
 							} satisfies Document<Schema.Schema.Type<S>>

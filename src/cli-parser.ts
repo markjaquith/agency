@@ -91,6 +91,7 @@ const phaseCreateOptions = {
 } satisfies OptionConfig
 
 const mutationOptions = {
+	"if-revision": { type: "string" },
 	"clear-description": { type: "boolean" },
 	"clear-ticket": { type: "boolean" },
 	"clear-references": { type: "boolean" },
@@ -249,6 +250,7 @@ const commands = {
 					"clear-description",
 					"ticket-url",
 					"repo",
+					"if-revision",
 					"json",
 				],
 				repeatable: ["repo"],
@@ -258,7 +260,7 @@ const commands = {
 				usage: "agency epic rename <id> <new-id> [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json"],
+				options: ["if-revision", "json"],
 			},
 		},
 	},
@@ -344,6 +346,7 @@ const commands = {
 					"base",
 					"pr-url",
 					"clear-pr",
+					"if-revision",
 					"json",
 				],
 				repeatable: ["reference"],
@@ -358,13 +361,13 @@ const commands = {
 				usage: "agency task rename <id> <new-id> [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json"],
+				options: ["if-revision", "json"],
 			},
 			move: {
 				usage: "agency task move <id> (--epic <id> | --no-epic) [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["epic", "no-epic", "json"],
+				options: ["epic", "no-epic", "if-revision", "json"],
 				conflicts: [["epic", "no-epic"]],
 			},
 			dependency: {
@@ -372,7 +375,7 @@ const commands = {
 					"agency task dependency <add|remove> <task-id> <dependency-id> [--json]",
 				minArgs: 3,
 				maxArgs: 3,
-				options: ["json"],
+				options: ["if-revision", "json"],
 			},
 		},
 	},
@@ -441,6 +444,7 @@ const commands = {
 					"base",
 					"pr-url",
 					"clear-pr",
+					"if-revision",
 					"json",
 				],
 				repeatable: ["reference"],
@@ -454,14 +458,14 @@ const commands = {
 				usage: "agency phase rename <task-id> <phase-id> <new-id> [--json]",
 				minArgs: 3,
 				maxArgs: 3,
-				options: ["json"],
+				options: ["if-revision", "json"],
 			},
 			dependency: {
 				usage:
 					"agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id> [--json]",
 				minArgs: 4,
 				maxArgs: 4,
-				options: ["json"],
+				options: ["if-revision", "json"],
 			},
 		},
 	},
@@ -1125,10 +1129,21 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		["epic", "task", "phase"].includes(commandName) &&
 		subcommand === "update"
 	) {
-		const mutationNames = (spec.options ?? []).filter((name) => name !== "json")
+		const mutationNames = (spec.options ?? []).filter(
+			(name) => name !== "json" && name !== "if-revision",
+		)
 		if (!mutationNames.some((name) => parsed.values[name] !== undefined)) {
 			throw usageError("At least one update option is required.", spec.usage)
 		}
+	}
+	if (
+		typeof parsed.values["if-revision"] === "string" &&
+		!/^[a-f0-9]{64}$/.test(parsed.values["if-revision"])
+	) {
+		throw usageError(
+			"Option '--if-revision' must be a 64-character SHA-256 hash.",
+			spec.usage,
+		)
 	}
 	if (commandName === "graph") {
 		validateGraphOptions(parsed.values, spec)

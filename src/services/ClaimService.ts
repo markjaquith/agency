@@ -9,12 +9,16 @@ import {
 	unlink,
 	writeFile,
 } from "node:fs/promises"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, join, relative } from "node:path"
 import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import { FileSystemService } from "./FileSystemService"
-import { documentRevision } from "../workbase/document-revision"
+import {
+	documentRevision,
+	isDocumentRevision,
+	RevisionConflictError,
+} from "../workbase/document-revision"
 import {
 	formatMarkdownDocument,
 	parseFrontmatterSync,
@@ -31,14 +35,6 @@ import {
 class ClaimError extends Data.TaggedError("ClaimError")<{
 	readonly message: string
 	readonly target?: string
-}> {}
-
-class RevisionConflictError extends Data.TaggedError("RevisionConflictError")<{
-	readonly message: string
-	readonly target: string
-	readonly expectedRevision: string
-	readonly actualRevision: string
-	readonly claim?: ClaimRecord
 }> {}
 
 class ClaimConflictError extends Data.TaggedError("ClaimConflictError")<{
@@ -59,6 +55,7 @@ class ClaimOwnershipError extends Data.TaggedError("ClaimOwnershipError")<{
 
 interface ClaimTarget {
 	readonly kind: "task" | "phase"
+	readonly root: string
 	readonly taskId: string
 	readonly phaseId?: string
 	readonly path: string
@@ -149,7 +146,7 @@ const decodeExecution = (target: ClaimTarget, input: unknown) => {
 }
 
 const assertRevision = (revision: string) => {
-	if (!/^[a-f0-9]{64}$/.test(revision)) {
+	if (!isDocumentRevision(revision)) {
 		throw new ClaimError({
 			message: "Revision must be a 64-character SHA-256 hash",
 		})
@@ -169,8 +166,7 @@ const isUnexpired = (claim: ClaimRecord, now: Date) =>
 	claim.state === "active" &&
 	(claim.expiresAt === undefined || Date.parse(claim.expiresAt) > now.getTime())
 
-const acquireLock = async (path: string) => {
-	const lockPath = `${path}.claim.lock`
+const acquireLock = async (lockPath: string, label: string) => {
 	for (let attempt = 0; attempt < 1_750; attempt += 1) {
 		try {
 			const handle = await open(lockPath, "wx")
@@ -192,7 +188,7 @@ const acquireLock = async (path: string) => {
 			await Bun.sleep(20)
 		}
 	}
-	throw new ClaimError({ message: `Timed out waiting to update ${path}` })
+	throw new ClaimError({ message: `Timed out waiting to update ${label}` })
 }
 
 const updateAtomically = async <T>(
@@ -207,18 +203,24 @@ const updateAtomically = async <T>(
 	now: Date,
 ) => {
 	assertRevision(expectedRevision)
-	const { handle, lockPath } = await acquireLock(target.path)
+	const graphLock = await acquireLock(
+		join(target.root, ".agency-graph-mutation.lock"),
+		target.root,
+	)
+	let documentLock: Awaited<ReturnType<typeof acquireLock>> | undefined
 	let temporaryPath: string | undefined
 	try {
+		documentLock = await acquireLock(`${target.path}.claim.lock`, target.path)
 		const content = await readFile(target.path, "utf8")
-		const actualRevision = documentRevision(content)
+		const currentRevision = documentRevision(content)
 		const parsed = parseFrontmatterSync(content, target.path)
 		const current = decodeExecution(target, parsed.data)
-		if (actualRevision !== expectedRevision) {
+		if (currentRevision !== expectedRevision) {
 			throw new RevisionConflictError({
+				path: relative(target.root, target.path),
 				target: target.label,
 				expectedRevision,
-				actualRevision,
+				currentRevision,
 				claim: current.claim,
 				message: `Revision conflict for ${target.label}`,
 			})
@@ -235,13 +237,15 @@ const updateAtomically = async <T>(
 		return {
 			...result,
 			target: target.label,
-			previousRevision: actualRevision,
+			previousRevision: currentRevision,
 			revision: documentRevision(updatedContent),
 		}
 	} finally {
 		if (temporaryPath) await unlink(temporaryPath).catch(() => undefined)
-		await handle.close().catch(() => undefined)
-		await unlink(lockPath).catch(() => undefined)
+		await documentLock?.handle.close().catch(() => undefined)
+		if (documentLock) await unlink(documentLock.lockPath).catch(() => undefined)
+		await graphLock.handle.close().catch(() => undefined)
+		await unlink(graphLock.lockPath).catch(() => undefined)
 	}
 }
 
@@ -278,6 +282,7 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 					const target: ClaimTarget = phaseId
 						? {
 								kind: "phase",
+								root,
 								taskId: task.id,
 								phaseId,
 								path: phase!.path,
@@ -285,6 +290,7 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 							}
 						: {
 								kind: "task",
+								root,
 								taskId: task.id,
 								path: task.path,
 								label: `task '${task.id}'`,

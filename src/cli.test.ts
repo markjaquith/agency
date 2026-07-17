@@ -203,6 +203,41 @@ describe("CLI", () => {
 				),
 			)
 		}
+		const observed = parseJson(
+			await runCli(["task", "show", "second", "--json"], root),
+		)
+		const taskPath = join(root, "tasks/second/TASK.md")
+		await Bun.write(
+			taskPath,
+			`${await Bun.file(taskPath).text()}\nConcurrent edit.\n`,
+		)
+		const conflict = await runCli(
+			[
+				"task",
+				"update",
+				"second",
+				"--description",
+				"Stale update",
+				"--if-revision",
+				observed.revision,
+				"--json",
+			],
+			root,
+		)
+		expect(conflict.exitCode).toBe(1)
+		expect(JSON.parse(conflict.stdout)).toMatchObject({
+			ok: false,
+			error: {
+				code: "REVISION_CONFLICT",
+				retryable: true,
+				fields: {
+					path: "tasks/second/TASK.md",
+					expectedRevision: observed.revision,
+					currentRevision: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
+			},
+		})
+		expect(await Bun.file(taskPath).text()).toContain("Concurrent edit.")
 
 		const updated = parseJson(
 			await runCli(
