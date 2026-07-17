@@ -121,6 +121,23 @@ describe("strict CLI parsing", () => {
 		expect(parseCli(["status", "--no-pr"]).values["no-pr"]).toBe(true)
 	})
 
+	test("parses addressable resource maintenance commands", () => {
+		for (const args of [
+			["repo", "show", "agency", "--json"],
+			["repo", "fetch", "agency"],
+			["repo", "remove", "agency"],
+			["repo", "unlink", "agency"],
+			["repo", "rename", "agency", "renamed"],
+			["repo", "remote", "agency", "https://example.com/repo.git"],
+			["repo", "verify", "agency"],
+			["workbase", "show", "primary", "--json"],
+			["workbase", "name", "primary", "renamed"],
+			["workbase", "name", "primary", "--clear"],
+		]) {
+			expect(() => parseCli(args)).not.toThrow()
+		}
+	})
+
 	test("validates view filter values and conflicts", () => {
 		expect(() => parseCli(["epic", "list", "--status", "invalid"])).toThrow(
 			"Invalid '--status' value",

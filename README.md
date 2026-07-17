@@ -379,14 +379,24 @@ conditions remain visible in `warnings` or `unresolved` with a suggested action.
 agency init [path] [--json]
 agency workbase add <path> [--name <name>] [--json]
 agency workbase list [--json]
+agency workbase show <id|name|path> [--json]
+agency workbase name <id|name|path> <name> [--json]
+agency workbase name <id|name|path> --clear [--json]
 agency workbase remove <id|name|path> [--json]
 agency workbase prune [--json]
-agency workbase default [<id|name> | --clear] [--json]
+agency workbase default [<id|name|path> | --clear] [--json]
 agency integration status [--json]
 agency integration sync [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
 agency repo list [--json]
+agency repo show <alias> [--json]
+agency repo fetch <alias> [--json]
+agency repo remove <alias> [--json]
+agency repo unlink <alias> [--json]
+agency repo rename <alias> <new-alias> [--json]
+agency repo remote <alias> [remote] [--json]
+agency repo verify <alias> [--json]
 ```
 
 Registered workbases are stored in
@@ -395,7 +405,9 @@ Each registration has a stable ID and may have a unique name. A default workbase
 is used when the current directory is outside every workbase. `prune` removes
 registrations whose workbase configuration no longer exists.
 `repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
-repository. Alias names are then used by all documents and commands.
+repository. Alias names are then used by all documents and commands. Remove,
+unlink, and rename refuse aliases referenced by active work or backed by linked
+worktrees, and report each blocker.
 
 Commands that print Agency-owned results accept `--json`, including initialization,
 integration inspection/sync, repository mutations, entity creation/list/show,

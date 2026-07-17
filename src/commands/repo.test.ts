@@ -52,6 +52,21 @@ describe("repo command", () => {
 		])
 	})
 
+	test("shows a repository by alias as JSON", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				repo({
+					subcommand: "show",
+					args: ["agency"],
+					cwd: root,
+					json: true,
+				}),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!).alias).toBe("agency")
+	})
+
 	test("outputs a linked repository as JSON", async () => {
 		const target = join(root, "source")
 		await mkdir(target)
@@ -76,5 +91,34 @@ describe("repo command", () => {
 			alias: "linked",
 			path: join(root, "repos/linked"),
 		})
+	})
+
+	test("unlinks a linked repository by alias", async () => {
+		const target = join(root, "unlink-source")
+		await mkdir(target)
+		const git = Bun.spawn(["git", "init", target], {
+			stdout: "ignore",
+			stderr: "ignore",
+		})
+		expect(await git.exited).toBe(0)
+		await runTestEffect(
+			repo({
+				subcommand: "link",
+				args: ["linked", target],
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		await runTestEffect(
+			repo({
+				subcommand: "unlink",
+				args: ["linked"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		expect(await Bun.file(join(target, ".git/HEAD")).exists()).toBe(true)
 	})
 })

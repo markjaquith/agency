@@ -111,6 +111,52 @@ describe("WorkbaseService", () => {
 		expect(result.defaultWorkbase).toEqual(registered)
 	})
 
+	test("shows, names, clears names, and defaults by path", async () => {
+		const workbaseRoot = join(root, "workbase")
+		const configDirectory = join(root, "config")
+		await write(workbaseRoot, "agency.json", '{"version":2}\n')
+		const registered = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					service.register(workbaseRoot, configDirectory),
+				),
+			),
+		)
+
+		const result = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) =>
+					Effect.gen(function* () {
+						const named = yield* service.nameRegistered(
+							workbaseRoot,
+							"primary",
+							configDirectory,
+						)
+						const shown = yield* service.showRegistered(
+							"primary",
+							configDirectory,
+						)
+						const defaultWorkbase = yield* service.setDefault(
+							workbaseRoot,
+							configDirectory,
+						)
+						const unnamed = yield* service.nameRegistered(
+							registered.id,
+							null,
+							configDirectory,
+						)
+						return { named, shown, defaultWorkbase, unnamed }
+					}),
+				),
+			),
+		)
+
+		expect(result.named.name).toBe("primary")
+		expect(result.shown).toEqual(result.named)
+		expect(result.defaultWorkbase?.id).toBe(registered.id)
+		expect(result.unnamed).toEqual({ id: registered.id, path: registered.path })
+	})
+
 	test("rejects names that collide with stable IDs", async () => {
 		const firstRoot = join(root, "first")
 		const secondRoot = join(root, "second")
