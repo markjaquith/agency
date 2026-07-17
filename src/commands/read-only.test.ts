@@ -12,6 +12,7 @@ import { status } from "./status"
 import { task } from "./task"
 import { validate } from "./validate"
 import { context } from "./context"
+import { graph } from "./graph"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -143,6 +144,7 @@ status: open
 				silent: true,
 			}),
 		)
+		await runTestEffect(graph({ cwd: root, silent: true }))
 
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(

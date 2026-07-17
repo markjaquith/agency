@@ -14,6 +14,7 @@ import { PullRequestService } from "./services/PullRequestService"
 import { ArchiveService } from "./services/ArchiveService"
 import { IntegrationService } from "./services/IntegrationService"
 import { ContextService } from "./services/ContextService"
+import { GraphService } from "./services/GraphService"
 
 export const createTempDir = () => mkdtemp(join(tmpdir(), "agency-test-"))
 
@@ -32,6 +33,7 @@ const TestLayer = Layer.mergeAll(
 	ArchiveService.Default,
 	IntegrationService.Default,
 	ContextService.Default,
+	GraphService.Default,
 )
 
 export async function runTestEffect<A, E>(

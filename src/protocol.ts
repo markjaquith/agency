@@ -90,6 +90,11 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 		remediation:
 			"Run the command from an Agency entity or provide a valid target.",
 	},
+	GraphError: {
+		code: "GRAPH_ERROR",
+		retryable: false,
+		remediation: "Correct the workbase graph data or filters and retry.",
+	},
 	ProcessError: { code: "PROCESS_ERROR", retryable: true },
 	ProtocolOutputError: {
 		code: "PROTOCOL_OUTPUT_ERROR",
