@@ -63,9 +63,9 @@ a refinement loop, or pausing or handing off completed implementation work):
 
 `agency integration status` reports `managed`, `drifted`, `customized`, or
 `missing` generated files. `agency integration sync` updates only missing or
-checksum-safe drifted files and preserves user-customized files.
+checksum-safe drifted files and preserves user-customized files. `agency init`
+creates these files, and `agency work` reconciles them before launching an agent.
 
-OpenCode references expose only task and epic context and do not expand Agency
-write authority. Reference directories receive OpenCode's scoped external-path
-access automatically; other missing tool permissions remain visible rather than
-being blanket-allowed.
+OpenCode can access the complete workbase tree, but this filesystem permission
+does not expand Agency write authority beyond the checkout reported by
+`agency context`.

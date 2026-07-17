@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
-import { mkdir, symlink, unlink } from "node:fs/promises"
+import { mkdir, stat, symlink, unlink, utimes } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { managedWorkbaseAgents } from "../workbase/agents-file"
@@ -93,7 +93,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("agency integration status")
 	})
 
-	test("scopes and documents OpenCode references without blanket permissions", () => {
+	test("grants OpenCode access to the complete workbase", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.references).toEqual({
@@ -108,7 +108,9 @@ describe("IntegrationService", () => {
 					"Agency epic definitions and orchestration context; no implementation write authority",
 			},
 		})
-		expect(config.permission).toBeUndefined()
+		expect(config.permission).toEqual({
+			external_directory: { "../**": "allow" },
+		})
 	})
 
 	test("treats an existing JSON OpenCode config as customized", async () => {
@@ -149,6 +151,21 @@ describe("IntegrationService", () => {
 		)
 	})
 
+	test("does not rewrite an already-current OpenCode configuration", async () => {
+		const path = join(root, ".opencode/opencode.jsonc")
+		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
+		const timestamp = new Date("2000-01-01T00:00:00.000Z")
+		await utimes(path, timestamp, timestamp)
+
+		const result = await sync(root)
+
+		expect(result.files[1]).toMatchObject({
+			state: "managed",
+			changed: false,
+		})
+		expect((await stat(path)).mtimeMs).toBe(timestamp.getTime())
+	})
+
 	test("does not overwrite managed files whose checksums no longer match", async () => {
 		const tampered = `${managed(
 			"<!-- agency-managed: sha256=",
@@ -163,6 +180,23 @@ describe("IntegrationService", () => {
 			changed: false,
 		})
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(tampered)
+	})
+
+	test("does not overwrite a user-modified OpenCode configuration", async () => {
+		const tampered = `${managed(
+			"// agency-managed: sha256=",
+			'{"references":{}}\n',
+		)}// User edit\n`
+		await write(root, ".opencode/opencode.jsonc", tampered)
+
+		const result = await sync(root)
+		expect(result.files[1]).toMatchObject({
+			state: "customized",
+			changed: false,
+		})
+		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
+			tampered,
+		)
 	})
 
 	test("does not follow symlinked integration files", async () => {

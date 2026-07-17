@@ -22,6 +22,11 @@ const body = () =>
 						"Agency epic definitions and orchestration context; no implementation write authority",
 				},
 			},
+			permission: {
+				external_directory: {
+					"../**": "allow",
+				},
+			},
 		},
 		null,
 		2,
