@@ -456,16 +456,16 @@ describe("CLI", () => {
 			await runCli(["integration", "status", "--json"], root),
 		)
 		expect(before.files).toMatchObject([
-			{ name: "agents", state: "missing" },
-			{ name: "opencode", state: "missing" },
+			{ name: "agents", state: "managed" },
+			{ name: "opencode", state: "managed" },
 		])
 
 		const synced = parseJson(
 			await runCli(["integration", "sync", "--json"], root),
 		)
 		expect(synced.files).toMatchObject([
-			{ name: "agents", state: "managed", changed: true },
-			{ name: "opencode", state: "managed", changed: true },
+			{ name: "agents", state: "managed", changed: false },
+			{ name: "opencode", state: "managed", changed: false },
 		])
 	})
 

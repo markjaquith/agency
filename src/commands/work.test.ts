@@ -8,6 +8,7 @@ import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
 import { ClaimService } from "../services/ClaimService"
 import { ReadinessService } from "../services/ReadinessService"
+import { IntegrationService } from "../services/IntegrationService"
 import { captureErrors, captureLogs } from "../test-utils"
 import { work, workPrepare } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
@@ -74,6 +75,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const statusUpdates: string[] = []
 	const shownTasks: string[] = []
 	const progressUpdates: string[] = []
+	let integrationSyncs = 0
 	const guards: Array<{ target: string; override?: boolean }> = []
 	const launches: Array<{
 		cli: string
@@ -210,6 +212,12 @@ const createHarness = (options: HarnessOptions = {}) => {
 				: Effect.void
 		},
 	}
+	const integrations = {
+		sync: () => {
+			integrationSyncs += 1
+			return Effect.succeed({ root: "/workbase", files: [] })
+		},
+	}
 	const fs = {
 		isDirectory: (path: string) =>
 			Effect.succeed(options.existingDirectories?.includes(path) ?? true),
@@ -256,6 +264,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(PhaseService, phases as never),
 				Effect.provideService(ClaimService, claims as never),
 				Effect.provideService(ReadinessService, readiness as never),
+				Effect.provideService(IntegrationService, integrations as never),
 			) as Effect.Effect<void, unknown, never>,
 		)
 	const runPrepare = (commandOptions: Parameters<typeof workPrepare>[0]) =>
@@ -279,12 +288,23 @@ const createHarness = (options: HarnessOptions = {}) => {
 		shownTasks,
 		progressUpdates,
 		guards,
+		get integrationSyncs() {
+			return integrationSyncs
+		},
 		run,
 		runPrepare,
 	}
 }
 
 describe("work command", () => {
+	test("reconciles managed integration files before preparing work", async () => {
+		const harness = createHarness()
+
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.integrationSyncs).toBe(1)
+	})
+
 	test("guards execution targets before materialization and honors --force", async () => {
 		const blocked = createHarness({ guardError: new Error("blocked") })
 		await expect(

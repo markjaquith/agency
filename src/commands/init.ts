@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import { resolve } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
+import { IntegrationService } from "../services/IntegrationService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import { createLoggers } from "../utils/effect"
 
@@ -10,12 +11,14 @@ interface InitOptions extends BaseCommandOptions {
 
 export const init = (options: InitOptions = {}) =>
 	Effect.gen(function* () {
+		const integrations = yield* IntegrationService
 		const workbase = yield* WorkbaseService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const root = yield* workbase.initialize(
 			options.path ? resolve(cwd, options.path) : cwd,
 		)
+		yield* integrations.sync(root)
 		log(
 			options.json
 				? JSON.stringify({ root }, null, 2)

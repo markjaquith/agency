@@ -9,6 +9,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { ClaimService } from "../services/ClaimService"
 import { ReadinessService } from "../services/ReadinessService"
+import { IntegrationService } from "../services/IntegrationService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
 import { createProgress, type Progress } from "../utils/progress"
@@ -106,6 +107,7 @@ export const work = (
 		const phases = yield* PhaseService
 		const claims = yield* ClaimService
 		const readiness = yield* ReadinessService
+		const integrations = yield* IntegrationService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const directoryPath = options.directory
@@ -118,6 +120,7 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
+		yield* integrations.sync(root)
 		const { config } = yield* workbase.loadConfig(root)
 
 		let target: WorkTarget | null = null
