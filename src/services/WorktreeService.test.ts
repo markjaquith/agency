@@ -206,6 +206,18 @@ describe("WorktreeService", () => {
 		expect(
 			await Bun.file(join(root, "tasks", "valid-target", "code")).exists(),
 		).toBe(false)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("valid-target", undefined, root, {
+							force: true,
+						}),
+					),
+				),
+			),
+		).resolves.toMatchObject({ repo: "agency" })
 	})
 
 	test("uses a configured worktree creation command", async () => {

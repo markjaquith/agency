@@ -7,6 +7,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
 import { ClaimService } from "../services/ClaimService"
+import { ReadinessService } from "../services/ReadinessService"
 import { captureErrors, captureLogs } from "../test-utils"
 import { work, workPrepare } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
@@ -55,6 +56,8 @@ interface HarnessOptions {
 	readonly outsideWorkbase?: boolean
 	readonly registeredWorkbases?: readonly string[]
 	readonly existingDirectories?: readonly string[]
+	readonly guardError?: Error
+	readonly readyTargetIds?: readonly string[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -63,6 +66,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const statusUpdates: string[] = []
 	const shownTasks: string[] = []
 	const progressUpdates: string[] = []
+	const guards: Array<{ target: string; override?: boolean }> = []
 	const launches: Array<{
 		cli: string
 		args: readonly string[]
@@ -167,6 +171,34 @@ const createHarness = (options: HarnessOptions = {}) => {
 			return Effect.succeed({ revision: "1".repeat(64) })
 		},
 	}
+	const readiness = {
+		getReadyWorkTargetIds: () =>
+			Effect.succeed(
+				new Set(
+					options.readyTargetIds ?? [
+						...(options.epicRecords ?? []).map(
+							(record: any) => `epic:${record.id}`,
+						),
+						...(options.taskRecords ?? []).map((record: any) =>
+							"phases" in record.data
+								? `task:${record.id}`
+								: `execution-unit:task/${record.id}`,
+						),
+						...(options.phaseRecords ?? []).map(
+							(record: any) =>
+								`execution-unit:phase/${record.taskId}/${record.id}`,
+						),
+					],
+				),
+			),
+		guardWorkTarget: (target: string, _root: string, override?: boolean) => {
+			if (options.guardError || override) events.push("guard")
+			guards.push({ target, override })
+			return options.guardError && !override
+				? Effect.fail(options.guardError)
+				: Effect.void
+		},
+	}
 	const fs = {
 		isDirectory: (path: string) =>
 			Effect.succeed(options.existingDirectories?.includes(path) ?? true),
@@ -206,6 +238,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(TaskService, tasks as never),
 				Effect.provideService(PhaseService, phases as never),
 				Effect.provideService(ClaimService, claims as never),
+				Effect.provideService(ReadinessService, readiness as never),
 			) as Effect.Effect<void, unknown, never>,
 		)
 	const runPrepare = (commandOptions: Parameters<typeof workPrepare>[0]) =>
@@ -227,12 +260,63 @@ const createHarness = (options: HarnessOptions = {}) => {
 		statusUpdates,
 		shownTasks,
 		progressUpdates,
+		guards,
 		run,
 		runPrepare,
 	}
 }
 
 describe("work command", () => {
+	test("guards execution targets before materialization and honors --force", async () => {
+		const blocked = createHarness({ guardError: new Error("blocked") })
+		await expect(
+			blocked.run({ taskId: "example", opencode: true }),
+		).rejects.toThrow("blocked")
+		expect(blocked.events).toEqual(["guard"])
+		expect(blocked.guards).toEqual([
+			{ target: "execution-unit:task/example", override: undefined },
+		])
+
+		const forced = createHarness({ guardError: new Error("blocked") })
+		await forced.run({ taskId: "example", opencode: true, force: true })
+		expect(forced.events).toEqual([
+			"guard",
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
+		expect(forced.guards[0]).toEqual({
+			target: "execution-unit:task/example",
+			override: true,
+		})
+	})
+
+	test("offers only graph-ready targets to the interactive chooser", async () => {
+		const harness = createHarness({
+			taskRecords: [
+				{
+					id: "ready",
+					path: "/workbase/tasks/ready/TASK.md",
+					data: { status: "open" },
+				},
+				{
+					id: "blocked",
+					path: "/workbase/tasks/blocked/TASK.md",
+					data: { status: "open" },
+				},
+			],
+			readyTargetIds: ["execution-unit:task/ready"],
+		})
+		let labels: readonly string[] = []
+		const pick: PickWorkTarget = (choices) => {
+			labels = choices.map((choice) => choice.plainLabel)
+			return Effect.succeed(null)
+		}
+
+		await harness.run({ cwd: "/workbase" }, pick)
+		expect(labels).toEqual(["[open] task ready"])
+	})
+
 	test("prepares without launching or changing lifecycle status", async () => {
 		const harness = createHarness({ existingDirectories: [] })
 

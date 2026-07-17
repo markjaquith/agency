@@ -141,6 +141,7 @@ describe("strict CLI parsing", () => {
 			[["validate", "one", "two"], "agency validate"],
 			[["context", "one", "two"], "agency context"],
 			[["graph", "extra"], "agency graph"],
+			[["next", "extra"], "agency next"],
 			[["sync", "extra"], "agency sync"],
 			[
 				[
@@ -190,6 +191,24 @@ describe("strict CLI parsing", () => {
 		] as const) {
 			expectUsageError([...args], usage)
 		}
+	})
+
+	test("parses readiness selection and explicit guard overrides", () => {
+		expect(parseCli(["next", "--select", "--json"])).toMatchObject({
+			commandName: "next",
+			values: { select: true, json: true },
+		})
+		expect(parseCli(["work", "example", "--force"])).toMatchObject({
+			commandName: "work",
+			values: { force: true },
+		})
+		expect(parseCli(["pr", "create", "example", "--force"])).toMatchObject({
+			commandName: "pr",
+			values: { force: true },
+		})
+		expect(() => parseCli(["work", "prepare", "example", "--force"])).toThrow(
+			"cannot be combined",
+		)
 	})
 
 	test("parses reconciliation modes and rejects conflicting modes", () => {

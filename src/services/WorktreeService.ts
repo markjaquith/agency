@@ -84,6 +84,10 @@ const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
 const originRef = (ref: string) =>
 	ref.replace(/^refs\/remotes\/origin\//, "").replace(/^origin\//, "")
 
+interface MaterializeOptions extends BaseCommandOptions {
+	readonly force?: boolean
+}
+
 export class WorktreeService extends Effect.Service<WorktreeService>()(
 	"WorktreeService",
 	{
@@ -92,7 +96,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 				taskId: string,
 				phaseId?: string,
 				startPath: string = process.cwd(),
-				options: BaseCommandOptions = {},
+				options: MaterializeOptions = {},
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -105,7 +109,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 					const { root, config } = yield* workbase.loadConfig(startPath)
 					const report = yield* workbase.validate(root)
 					const validationIssue = report.issues[0]
-					if (validationIssue) {
+					if (validationIssue && !options.force) {
 						return yield* new WorktreeError({
 							message: `${validationIssue.path}: ${validationIssue.message}`,
 						})

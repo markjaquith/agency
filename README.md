@@ -304,6 +304,21 @@ inspection are opt-in include layers.
 `end` record with counts. Combining the metadata with the streamed node and edge
 records reconstructs the same result as `--json`.
 
+### Next Ready Work
+
+`agency next` lists ready execution units in descending unlock priority, with
+their epic and task context. `agency next --select` returns only the highest-
+priority ready unit in human output.
+
+`agency next --json` returns the same ranked `ready` set plus every `excluded`
+execution unit. Excluded entries retain status, terminal state, `blockedBy`, and
+detailed dependency, validation, or status blockers for orchestrators.
+
+`agency work` and `agency pr create` consult this shared readiness model before
+materializing or pushing. Blocked, done, and dropped targets are rejected unless
+`--force` is supplied explicitly. PR creation permits active `working` and
+`delegated` targets when they have no dependency or validation blocker.
+
 ### Reconciliation
 
 `agency sync` compares every execution declaration with local branch and worktree

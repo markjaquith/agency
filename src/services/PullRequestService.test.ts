@@ -67,11 +67,12 @@ describe("PullRequestService", () => {
 		taskId = "example",
 		phaseId?: string,
 		draft = false,
+		force = false,
 	) =>
 		runTestEffect(
 			PullRequestService.pipe(
 				Effect.flatMap((service) =>
-					service.create(taskId, phaseId, draft, root),
+					service.create(taskId, phaseId, draft, root, { force }),
 				),
 			),
 		)
@@ -247,6 +248,24 @@ process.exit(${exitCode})
 			"main",
 			"--draft",
 		])
+	})
+
+	test("guards terminal targets before materializing unless forced", async () => {
+		await createTask()
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.setStatus("example", "done", root)),
+			),
+		)
+
+		await expect(createPullRequest()).rejects.toThrow("Task status is done")
+		expect(
+			await Bun.file(join(root, "tasks/example/code/agency")).exists(),
+		).toBe(false)
+
+		const url = "https://github.com/example/agency/pull/49"
+		await writeFakeGh({ stdout: url })
+		expect(await createPullRequest("example", undefined, false, true)).toBe(url)
 	})
 
 	test("updates only PHASE.md for a phase PR", async () => {

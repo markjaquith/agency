@@ -245,6 +245,7 @@ describe("CLI", () => {
 			["validate", "Usage: agency validate"],
 			["context", "Usage: agency context"],
 			["graph", "Usage: agency graph"],
+			["next", "Usage: agency next"],
 		] as const) {
 			const result = await runCli([command, "--help"])
 			expect(result.exitCode).toBe(0)
@@ -264,6 +265,55 @@ describe("CLI", () => {
 
 		const after = await runCli(["status", "--silent"], root)
 		expect(after).toEqual({ exitCode: 0, stdout: "", stderr: "" })
+	}, 10_000)
+
+	test("lists ready work and exposes excluded blockers through one result", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		await mkdir(join(root, "repos/agency"), { recursive: true })
+		for (const id of ["ready", "finished"]) {
+			parseJson(
+				await runCli(
+					["task", "create", id, "--repo", "agency", "--json"],
+					root,
+				),
+			)
+		}
+		parseJson(
+			await runCli(["task", "status", "finished", "done", "--json"], root),
+		)
+
+		const human = await runCli(["next"], root)
+		expect(human).toMatchObject({ exitCode: 0, stderr: "" })
+		expect(human.stdout).toContain("1. task/ready")
+		expect(human.stdout).not.toContain("task/finished")
+
+		const result = parseJson(await runCli(["next", "--select", "--json"], root))
+		expect(result.selected).toMatchObject({ key: "task/ready", rank: 1 })
+		expect(result.ready.map((item: any) => item.key)).toEqual(["task/ready"])
+		expect(result.excluded).toMatchObject([
+			{
+				key: "task/finished",
+				status: "done",
+				terminal: true,
+				blockers: [{ kind: "status", reason: "Task status is done" }],
+			},
+		])
+
+		const blockedPr = await runCli(["pr", "create", "finished", "--json"], root)
+		expect(blockedPr.exitCode).toBe(1)
+		expect(blockedPr.stderr).toBe("")
+		expect(JSON.parse(blockedPr.stdout)).toMatchObject({
+			ok: false,
+			error: {
+				code: "EXECUTION_BLOCKED",
+				fields: {
+					status: "done",
+					blockers: [{ kind: "status", reason: "Task status is done" }],
+				},
+			},
+		})
 	})
 
 	test("reports and synchronizes managed integration files", async () => {

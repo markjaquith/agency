@@ -10,6 +10,7 @@ import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
 import { graph, help as graphHelp } from "./src/commands/graph"
+import { next, help as nextHelp } from "./src/commands/next"
 import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -35,6 +36,7 @@ import { ContextService } from "./src/services/ContextService"
 import { GraphService } from "./src/services/GraphService"
 import { ClaimService } from "./src/services/ClaimService"
 import { SyncService } from "./src/services/SyncService"
+import { ReadinessService } from "./src/services/ReadinessService"
 import {
 	claimCommand,
 	claimHelp,
@@ -64,6 +66,7 @@ const CliLayer = Layer.mergeAll(
 	GraphService.Default,
 	ClaimService.Default,
 	SyncService.Default,
+	ReadinessService.Default,
 )
 
 /**
@@ -213,6 +216,7 @@ const commands: Record<string, Command> = {
 					taskId: args[1],
 					phaseId: args[2],
 					draft: options.draft,
+					force: options.force,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -351,7 +355,21 @@ const commands: Record<string, Command> = {
 					verbose: options.verbose,
 					opencode: options.opencode,
 					claude: options.claude,
+					force: options.force,
 					inputAllowed: options.inputAllowed,
+				}),
+			)
+		},
+	},
+	next: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(nextHelp)
+			await runCommand(
+				next({
+					select: options.select,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
 				}),
 			)
 		},
@@ -464,6 +482,7 @@ Commands:
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase
+  next                   List or select ready execution units
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase

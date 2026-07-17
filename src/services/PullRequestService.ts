@@ -5,6 +5,7 @@ import { WorktreeService } from "./WorktreeService"
 import type { BaseCommandOptions } from "../utils/command"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
+import { ReadinessService } from "./ReadinessService"
 import {
 	formatMarkdownDocument,
 	parseFrontmatter,
@@ -15,6 +16,10 @@ class PullRequestError extends Data.TaggedError("PullRequestError")<{
 }> {}
 
 const PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/
+
+interface PullRequestOptions extends BaseCommandOptions {
+	readonly force?: boolean
+}
 
 export class PullRequestService extends Effect.Service<PullRequestService>()(
 	"PullRequestService",
@@ -60,7 +65,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 				phaseId?: string,
 				draft = false,
 				startPath: string = process.cwd(),
-				options: BaseCommandOptions = {},
+				options: PullRequestOptions = {},
 			) =>
 				Effect.gen(function* () {
 					const service = yield* PullRequestService
@@ -68,6 +73,14 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
 					const worktrees = yield* WorktreeService
+					const readiness = yield* ReadinessService
+					yield* readiness.guard(
+						"pr",
+						taskId,
+						phaseId,
+						startPath,
+						options.force,
+					)
 					const workspace = yield* worktrees.materialize(
 						taskId,
 						phaseId,

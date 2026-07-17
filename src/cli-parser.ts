@@ -368,13 +368,14 @@ const commands = {
 			epic: { type: "string" },
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
+			force: { type: "boolean" },
 		},
 		command: {
 			usage:
 				"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
-			options: ["json", "dry-run", "epic", "opencode", "claude"],
+			options: ["json", "dry-run", "epic", "opencode", "claude", "force"],
 			conflicts: [
 				["opencode", "claude"],
 				["epic", "$positional"],
@@ -386,14 +387,29 @@ const commands = {
 		options: {
 			...outputOptions,
 			draft: { type: "boolean" },
+			force: { type: "boolean" },
 		},
 		subcommands: {
 			create: {
-				usage: "agency pr create <task-id> [phase-id] [--draft] [--json]",
+				usage:
+					"agency pr create <task-id> [phase-id] [--draft] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["draft", "json"],
+				options: ["draft", "force", "json"],
 			},
+		},
+	},
+	next: {
+		usage: "agency next [--select] [--json]",
+		options: {
+			...outputOptions,
+			select: { type: "boolean" },
+		},
+		command: {
+			usage: "agency next [--select] [--json]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["select", "json"],
 		},
 	},
 	status: {
@@ -744,7 +760,10 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		if (
 			(!preparing && commandPositionals.length > 1) ||
 			(preparing &&
-				(parsed.values.epic || parsed.values.opencode || parsed.values.claude))
+				(parsed.values.epic ||
+					parsed.values.opencode ||
+					parsed.values.claude ||
+					parsed.values.force))
 		) {
 			throw usageError(
 				preparing
