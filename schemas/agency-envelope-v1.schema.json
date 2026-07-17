@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-envelope-v1.schema.json",
+  "title": "Agency machine result envelope v1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "ok", "result"],
+      "properties": {
+        "version": { "const": 1 },
+        "ok": { "const": true },
+        "result": true
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "ok", "error"],
+      "properties": {
+        "version": { "const": 1 },
+        "ok": { "const": false },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "fields", "retryable"],
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "fields": { "type": "object" },
+            "retryable": { "type": "boolean" },
+            "remediation": { "type": "string" }
+          }
+        }
+      }
+    }
+  ]
+}

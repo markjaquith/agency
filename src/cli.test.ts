@@ -34,7 +34,9 @@ async function runCli(
 function parseJson(result: CliResult) {
 	expect(result.exitCode).toBe(0)
 	expect(result.stderr).toBe("")
-	return JSON.parse(result.stdout)
+	const envelope = JSON.parse(result.stdout)
+	expect(envelope).toMatchObject({ version: 1, ok: true })
+	return envelope.result
 }
 
 describe("CLI", () => {
@@ -77,6 +79,46 @@ describe("CLI", () => {
 		expect(taggedError.stdout).toBe("")
 		expect(taggedError.stderr).toContain("ⓘ No Agency workbase found from")
 		expect(taggedError.stderr).not.toContain("An error has occurred")
+	})
+
+	test("emits one versioned error envelope for usage and command failures", async () => {
+		const usage = await runCli(["unknown", "--json"])
+		expect(usage.exitCode).toBe(1)
+		expect(usage.stderr).toBe("")
+		expect(usage.stdout.trim().split("\n")).toHaveLength(1)
+		expect(JSON.parse(usage.stdout)).toEqual({
+			version: 1,
+			ok: false,
+			error: {
+				code: "CLI_USAGE",
+				message:
+					"Unknown command 'unknown'.\n\nUsage: agency <command> [options]",
+				fields: {
+					detail: "Unknown command 'unknown'.",
+					usage: "agency <command> [options]",
+				},
+				retryable: false,
+				remediation:
+					"Correct the arguments using the usage value in error.fields.",
+			},
+		})
+
+		const cwd = await createTempDir()
+		tempDirs.push(cwd)
+		const commandFailure = await runCli(
+			["repo", "list", "--json", "--silent"],
+			cwd,
+		)
+		expect(commandFailure.exitCode).toBe(1)
+		expect(commandFailure.stderr).toBe("")
+		expect(JSON.parse(commandFailure.stdout)).toMatchObject({
+			version: 1,
+			ok: false,
+			error: {
+				code: "WORKBASE_NOT_FOUND",
+				retryable: false,
+			},
+		})
 	})
 
 	test("rejects malformed input before running a command", async () => {
@@ -176,6 +218,30 @@ describe("CLI", () => {
 		expect(
 			parseJson(await runCli(["workbase", "list", "--json"], parent, env)),
 		).toEqual([await realpath(root)])
+	})
+
+	test("lets JSON override silent and disables interactive task input", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		const result = await runCli(["init", root, "--json", "--silent"])
+		expect(parseJson(result)).toEqual({ root })
+
+		const interactive = await runCli(["task", "new", "--json"])
+		expect(interactive.exitCode).toBe(1)
+		expect(interactive.stderr).toBe("")
+		expect(JSON.parse(interactive.stdout)).toMatchObject({
+			version: 1,
+			ok: false,
+			error: { code: "COMMAND_FAILED", retryable: false },
+		})
+	})
+
+	test("envelopes help and version output in machine mode", async () => {
+		const help = await runCli(["status", "--help", "--json"])
+		expect(parseJson(help)).toContain("Usage: agency status")
+
+		const version = await runCli(["status", "--version", "--json"])
+		expect(parseJson(version)).toEqual({ version: "0.0.0-development" })
 	})
 
 	test("runs a multi-phase domain workflow through subprocesses", async () => {
