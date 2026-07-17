@@ -38,6 +38,7 @@ import { GraphService } from "./src/services/GraphService"
 import { ClaimService } from "./src/services/ClaimService"
 import { SyncService } from "./src/services/SyncService"
 import { ReadinessService } from "./src/services/ReadinessService"
+import { GraphMutationService } from "./src/services/GraphMutationService"
 import {
 	claimCommand,
 	claimHelp,
@@ -68,6 +69,7 @@ const CliLayer = Layer.mergeAll(
 	ClaimService.Default,
 	SyncService.Default,
 	ReadinessService.Default,
+	GraphMutationService.Default,
 )
 
 /**
@@ -235,6 +237,7 @@ const commands: Record<string, Command> = {
 					args: args.slice(1),
 					ticketUrl: options["ticket-url"],
 					description: options.description,
+					clearDescription: options["clear-description"],
 					repos: options.repo,
 					json: options.json,
 					statuses: options.status,
@@ -278,10 +281,14 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					description: options.description,
+					clearDescription: options["clear-description"],
 					repo: options.repo?.[0],
 					references: options.reference,
 					branch: options.branch,
 					base: options.base,
+					clearReferences: options["clear-references"],
+					prUrl: options["pr-url"],
+					clearPr: options["clear-pr"],
 					dependsOn: options["depends-on"],
 					firstPhase: options["first-phase"],
 					json: options.json,
@@ -381,12 +388,18 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					ticketUrl: options["ticket-url"],
+					clearTicket: options["clear-ticket"],
 					description: options.description,
+					clearDescription: options["clear-description"],
 					epic: options.epic,
 					repo: options.repo?.[0],
 					references: options.reference,
 					branch: options.branch,
 					base: options.base,
+					clearReferences: options["clear-references"],
+					prUrl: options["pr-url"],
+					clearPr: options["clear-pr"],
+					noEpic: options["no-epic"],
 					multiPhase: options["multi-phase"],
 					json: options.json,
 					statuses: options.status,

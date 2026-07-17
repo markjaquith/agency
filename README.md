@@ -408,6 +408,9 @@ agency epic create <id> --ticket-url <url> [--description <text>] [--json]
   --repo <alias>:<ref> [--repo <alias>:<ref>...]
 agency epic list [filters] [--json]
 agency epic show <id> [--json]
+agency epic update <id> [--ticket-url <url>] [--description <text>]
+  [--clear-description] [--repo <alias>:<ref>...] [--json]
+agency epic rename <id> <new-id> [--json]
 ```
 
 Creating a task with `--epic <id>` adds the task to the epic and writes the task
@@ -463,7 +466,17 @@ Inspect tasks:
 agency task list [filters] [--json]
 agency task show <id> [--json]
 agency task status <id> <open|done|dropped> [--json]
+agency task update <id> [metadata options] [--json]
+agency task rename <id> <new-id> [--json]
+agency task move <id> (--epic <epic-id> | --no-epic) [--json]
+agency task dependency <add|remove> <task-id> <dependency-id> [--json]
 ```
+
+Task updates can replace or clear descriptions, tickets, repository references,
+and pull request URLs, or replace writable repository, branch, and base metadata.
+Execution metadata changes refuse to run while code is materialized. Moving a
+task with scoped incoming or outgoing dependencies also refuses until those
+dependencies are removed.
 
 To add a phase to an existing single-phase task, name the phase that will own
 the task's current execution fields with `--first-phase`:
@@ -490,7 +503,17 @@ agency phase create <task-id> <phase-id>
 agency phase list <task-id> [filters] [--json]
 agency phase show <task-id> <phase-id> [--json]
 agency phase status <task-id> <phase-id> <open|done|dropped> [--json]
+agency phase update <task-id> <phase-id> [metadata options] [--json]
+agency phase rename <task-id> <phase-id> <new-id> [--json]
+agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
+  [--json]
 ```
+
+Dependency additions append without reordering existing declarations and reject
+unknown IDs, self-dependencies, and cycles. Rename operations update structured
+references as one rollback-capable mutation and refuse when a materialized
+worktree would make the directory move unsafe. Mutation JSON includes changed
+paths and the focused validation scope.
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately

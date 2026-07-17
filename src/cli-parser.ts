@@ -90,6 +90,15 @@ const phaseCreateOptions = {
 	"first-phase": { type: "string" },
 } satisfies OptionConfig
 
+const mutationOptions = {
+	"clear-description": { type: "boolean" },
+	"clear-ticket": { type: "boolean" },
+	"clear-references": { type: "boolean" },
+	"pr-url": { type: "string" },
+	"clear-pr": { type: "boolean" },
+	"no-epic": { type: "boolean" },
+} satisfies OptionConfig
+
 const claimOptions = {
 	...outputOptions,
 	claimant: { type: "string" },
@@ -200,8 +209,13 @@ const commands = {
 		},
 	},
 	epic: {
-		usage: "agency epic <create|list|show>",
-		options: { ...createOptions, ...viewOptions, epic: { type: "string" } },
+		usage: "agency epic <create|list|show|update|rename>",
+		options: {
+			...createOptions,
+			...viewOptions,
+			...mutationOptions,
+			epic: { type: "string" },
+		},
 		subcommands: {
 			create: {
 				usage:
@@ -226,11 +240,38 @@ const commands = {
 				maxArgs: 1,
 				options: ["json", "epic"],
 			},
+			update: {
+				usage: "agency epic update <id> [options] [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: [
+					"description",
+					"clear-description",
+					"ticket-url",
+					"repo",
+					"json",
+				],
+				repeatable: ["repo"],
+				conflicts: [["description", "clear-description"]],
+			},
+			rename: {
+				usage: "agency epic rename <id> <new-id> [--json]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: ["json"],
+			},
 		},
 	},
 	task: {
-		usage: "agency task <new|create|list|show|status>",
-		options: { ...taskCreateOptions, ...viewOptions, task: { type: "string" } },
+		usage:
+			"agency task <new|create|list|show|status|update|rename|move|dependency>",
+		options: {
+			...taskCreateOptions,
+			...viewOptions,
+			...mutationOptions,
+			"pr-url": { type: "string" },
+			task: { type: "string" },
+		},
 		subcommands: {
 			new: {
 				usage: "agency task new [id] [options]",
@@ -287,13 +328,61 @@ const commands = {
 				maxArgs: 2,
 				options: ["json", "task"],
 			},
+			update: {
+				usage: "agency task update <id> [options] [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: [
+					"ticket-url",
+					"clear-ticket",
+					"description",
+					"clear-description",
+					"repo",
+					"reference",
+					"clear-references",
+					"branch",
+					"base",
+					"pr-url",
+					"clear-pr",
+					"json",
+				],
+				repeatable: ["reference"],
+				conflicts: [
+					["ticket-url", "clear-ticket"],
+					["description", "clear-description"],
+					["reference", "clear-references"],
+					["pr-url", "clear-pr"],
+				],
+			},
+			rename: {
+				usage: "agency task rename <id> <new-id> [--json]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: ["json"],
+			},
+			move: {
+				usage: "agency task move <id> (--epic <id> | --no-epic) [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["epic", "no-epic", "json"],
+				conflicts: [["epic", "no-epic"]],
+			},
+			dependency: {
+				usage:
+					"agency task dependency <add|remove> <task-id> <dependency-id> [--json]",
+				minArgs: 3,
+				maxArgs: 3,
+				options: ["json"],
+			},
 		},
 	},
 	phase: {
-		usage: "agency phase <create|list|show|status>",
+		usage: "agency phase <create|list|show|status|update|rename|dependency>",
 		options: {
 			...phaseCreateOptions,
 			...viewOptions,
+			...mutationOptions,
+			"pr-url": { type: "string" },
 			task: { type: "string" },
 			phase: { type: "string" },
 		},
@@ -337,6 +426,42 @@ const commands = {
 				minArgs: 3,
 				maxArgs: 3,
 				options: ["json", "task", "phase"],
+			},
+			update: {
+				usage: "agency phase update <task-id> <phase-id> [options] [--json]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: [
+					"description",
+					"clear-description",
+					"repo",
+					"reference",
+					"clear-references",
+					"branch",
+					"base",
+					"pr-url",
+					"clear-pr",
+					"json",
+				],
+				repeatable: ["reference"],
+				conflicts: [
+					["description", "clear-description"],
+					["reference", "clear-references"],
+					["pr-url", "clear-pr"],
+				],
+			},
+			rename: {
+				usage: "agency phase rename <task-id> <phase-id> <new-id> [--json]",
+				minArgs: 3,
+				maxArgs: 3,
+				options: ["json"],
+			},
+			dependency: {
+				usage:
+					"agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id> [--json]",
+				minArgs: 4,
+				maxArgs: 4,
+				options: ["json"],
 			},
 		},
 	},
@@ -976,6 +1101,34 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		(subcommand === "new" || subcommand === "create")
 	) {
 		validateTaskCreate(parsed.values, spec, subcommand === "create")
+	}
+	if (["task", "phase"].includes(commandName) && subcommand === "dependency") {
+		if (!["add", "remove"].includes(commandPositionals[0] ?? "")) {
+			throw usageError(
+				"Dependency operation must be 'add' or 'remove'.",
+				spec.usage,
+			)
+		}
+	}
+	if (commandName === "task" && subcommand === "move") {
+		if (
+			parsed.values.epic === undefined &&
+			parsed.values["no-epic"] === undefined
+		) {
+			throw usageError(
+				"One of '--epic' or '--no-epic' is required.",
+				spec.usage,
+			)
+		}
+	}
+	if (
+		["epic", "task", "phase"].includes(commandName) &&
+		subcommand === "update"
+	) {
+		const mutationNames = (spec.options ?? []).filter((name) => name !== "json")
+		if (!mutationNames.some((name) => parsed.values[name] !== undefined)) {
+			throw usageError("At least one update option is required.", spec.usage)
+		}
 	}
 	if (commandName === "graph") {
 		validateGraphOptions(parsed.values, spec)
