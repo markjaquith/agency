@@ -5,6 +5,7 @@ export interface BaseCommandOptions {
 	readonly silent?: boolean
 	readonly verbose?: boolean
 	readonly json?: boolean
+	readonly dryRun?: boolean
 	/** Whether this invocation may open prompts or selectors. */
 	readonly inputAllowed?: boolean
 	/**

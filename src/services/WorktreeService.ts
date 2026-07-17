@@ -16,6 +16,22 @@ class WorktreeError extends Data.TaggedError("WorktreeError")<{
 	readonly message: string
 }> {}
 
+interface WorkspaceOperation {
+	readonly action: "fetch" | "create-branch" | "create-worktree"
+	readonly repo: string
+	readonly command: readonly string[]
+	readonly status: "planned" | "completed"
+}
+
+interface WorkspaceCheckout {
+	readonly repo: string
+	readonly kind: "writable" | "reference"
+	readonly path: string
+	readonly requestedRef: string
+	readonly resolvedCommit: string | null
+	readonly action: "created" | "reused"
+}
+
 interface ExecutionWorkspace {
 	readonly root: string
 	readonly taskPath: string
@@ -24,6 +40,9 @@ interface ExecutionWorkspace {
 	readonly writablePath: string
 	readonly repo: string
 	readonly repos: readonly RepositoryReference[]
+	readonly dryRun: boolean
+	readonly checkouts: readonly WorkspaceCheckout[]
+	readonly operations: readonly WorkspaceOperation[]
 }
 
 interface GitWorktree {
@@ -121,7 +140,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						codePath = join(dirname(task.path), "code")
 					}
 
-					yield* fs.createDirectory(codePath)
+					if (!options.dryRun) yield* fs.createDirectory(codePath)
+					const operations: WorkspaceOperation[] = []
+					const checkoutReports: WorkspaceCheckout[] = []
 					const checkouts: readonly (
 						| { readonly repo: string; readonly branch: string }
 						| RepositoryReference
@@ -146,23 +167,38 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									{ captureOutput: true },
 								)
 								if (remote.exitCode !== 0) return false
+								const command = [
+									"git",
+									"-C",
+									repositoryPath,
+									"fetch",
+									"origin",
+									...(ref ? [ref] : []),
+								]
+								if (options.dryRun) {
+									operations.push({
+										action: "fetch",
+										repo: alias,
+										command,
+										status: "planned",
+									})
+									return false
+								}
 
-								const fetch = yield* fs.runCommand(
-									[
-										"git",
-										"-C",
-										repositoryPath,
-										"fetch",
-										"origin",
-										...(ref ? [ref] : []),
-									],
-									{ captureOutput: true },
-								)
+								const fetch = yield* fs.runCommand(command, {
+									captureOutput: true,
+								})
 								if (fetch.exitCode !== 0) {
 									return yield* new WorktreeError({
 										message: `Failed to fetch '${alias}': ${fetch.stderr}`,
 									})
 								}
+								operations.push({
+									action: "fetch",
+									repo: alias,
+									command,
+									status: "completed",
+								})
 								return true
 							})
 
@@ -183,7 +219,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								message: `Failed to inspect worktrees for '${alias}': ${listed.stderr}`,
 							})
 						}
-						const canonicalCodePath = yield* fs.realPath(codePath)
+						const canonicalCodePath = (yield* fs.exists(codePath))
+							? yield* fs.realPath(codePath)
+							: resolve(codePath)
 						const canonicalCheckoutPath = join(canonicalCodePath, alias)
 						const worktrees: GitWorktree[] = []
 						for (const worktree of parseWorktreeList(listed.stdout)) {
@@ -212,7 +250,17 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								})
 							}
 							if (yield* fs.isDirectory(checkoutPath)) {
-								if (registeredAtPath?.branch === branchRef) continue
+								if (registeredAtPath?.branch === branchRef) {
+									checkoutReports.push({
+										repo: alias,
+										kind: "writable",
+										path: checkoutPath,
+										requestedRef: checkout.branch,
+										resolvedCommit: registeredAtPath.head ?? null,
+										action: "reused",
+									})
+									continue
+								}
 								return yield* new WorktreeError({
 									message: `Existing checkout ${checkoutPath} is not registered to branch '${checkout.branch}'`,
 								})
@@ -260,21 +308,29 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									{ captureOutput: true },
 								)
 								if (branchExists.exitCode !== 0) {
-									const createBranch = yield* fs.runCommand(
-										[
-											"git",
-											"-C",
-											repositoryPath,
-											"branch",
-											checkout.branch,
-											execution.base,
-										],
-										{ captureOutput: true },
-									)
-									if (createBranch.exitCode !== 0) {
-										return yield* new WorktreeError({
-											message: `Failed to create branch '${checkout.branch}': ${createBranch.stderr}`,
+									const command = [
+										"git",
+										"-C",
+										repositoryPath,
+										"branch",
+										checkout.branch,
+										execution.base,
+									]
+									operations.push({
+										action: "create-branch",
+										repo: alias,
+										command,
+										status: options.dryRun ? "planned" : "completed",
+									})
+									if (!options.dryRun) {
+										const createBranch = yield* fs.runCommand(command, {
+											captureOutput: true,
 										})
+										if (createBranch.exitCode !== 0) {
+											return yield* new WorktreeError({
+												message: `Failed to create branch '${checkout.branch}': ${createBranch.stderr}`,
+											})
+										}
 									}
 								}
 								args = [
@@ -286,6 +342,48 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									checkoutPath,
 									checkout.branch,
 								]
+							}
+							if (options.dryRun) {
+								operations.push({
+									action: "create-worktree",
+									repo: alias,
+									command: args,
+									status: "planned",
+								})
+								let resolved = yield* fs.runCommand(
+									[
+										"git",
+										"-C",
+										repositoryPath,
+										"rev-parse",
+										"--verify",
+										`${checkout.branch}^{commit}`,
+									],
+									{ captureOutput: true },
+								)
+								if (resolved.exitCode !== 0) {
+									resolved = yield* fs.runCommand(
+										[
+											"git",
+											"-C",
+											repositoryPath,
+											"rev-parse",
+											"--verify",
+											`${execution.base}^{commit}`,
+										],
+										{ captureOutput: true },
+									)
+								}
+								checkoutReports.push({
+									repo: alias,
+									kind: "writable",
+									path: checkoutPath,
+									requestedRef: checkout.branch,
+									resolvedCommit:
+										resolved.exitCode === 0 ? resolved.stdout.trim() : null,
+									action: "created",
+								})
+								continue
 							}
 
 							if (config.worktreeCreateCommand) {
@@ -308,6 +406,24 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Worktree command did not create ${checkoutPath}`,
 								})
 							}
+							operations.push({
+								action: "create-worktree",
+								repo: alias,
+								command: args,
+								status: "completed",
+							})
+							const head = yield* fs.runCommand(
+								["git", "-C", checkoutPath, "rev-parse", "HEAD"],
+								{ captureOutput: true },
+							)
+							checkoutReports.push({
+								repo: alias,
+								kind: "writable",
+								path: checkoutPath,
+								requestedRef: checkout.branch,
+								resolvedCommit: head.exitCode === 0 ? head.stdout.trim() : null,
+								action: "created",
+							})
 						} else {
 							const fetched = isCommitId(checkout.ref)
 								? false
@@ -349,6 +465,14 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									currentHead.exitCode === 0 &&
 									currentHead.stdout.trim() === commit
 								) {
+									checkoutReports.push({
+										repo: alias,
+										kind: "reference",
+										path: checkoutPath,
+										requestedRef: checkout.ref,
+										resolvedCommit: commit,
+										action: "reused",
+									})
 									continue
 								}
 								return yield* new WorktreeError({
@@ -360,24 +484,55 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									message: `Worktree registry contains a missing checkout at ${checkoutPath}`,
 								})
 							}
-							const result = yield* fs.runCommand(
-								[
-									"git",
-									"-C",
-									repositoryPath,
-									"worktree",
-									"add",
-									"--detach",
-									checkoutPath,
-									commit,
-								],
-								{ captureOutput: true },
-							)
+							const command = [
+								"git",
+								"-C",
+								repositoryPath,
+								"worktree",
+								"add",
+								"--detach",
+								checkoutPath,
+								commit,
+							]
+							if (options.dryRun) {
+								operations.push({
+									action: "create-worktree",
+									repo: alias,
+									command,
+									status: "planned",
+								})
+								checkoutReports.push({
+									repo: alias,
+									kind: "reference",
+									path: checkoutPath,
+									requestedRef: checkout.ref,
+									resolvedCommit: commit,
+									action: "created",
+								})
+								continue
+							}
+							const result = yield* fs.runCommand(command, {
+								captureOutput: true,
+							})
 							if (result.exitCode !== 0) {
 								return yield* new WorktreeError({
 									message: `Failed to create worktree for '${alias}': ${result.stderr}`,
 								})
 							}
+							operations.push({
+								action: "create-worktree",
+								repo: alias,
+								command,
+								status: "completed",
+							})
+							checkoutReports.push({
+								repo: alias,
+								kind: "reference",
+								path: checkoutPath,
+								requestedRef: checkout.ref,
+								resolvedCommit: commit,
+								action: "created",
+							})
 						}
 					}
 
@@ -389,6 +544,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						writablePath: join(codePath, execution.repo),
 						repo: execution.repo,
 						repos: execution.repos ?? [],
+						dryRun: options.dryRun === true,
+						checkouts: checkoutReports,
+						operations,
 					} satisfies ExecutionWorkspace
 				}),
 

@@ -243,13 +243,73 @@ export const work = (
 		launch(cli, [cli, ...args], launchPath)
 	})
 
+export const workPrepare = (options: WorkOptions = {}) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const workbase = yield* WorkbaseService
+		const tasks = yield* TaskService
+		const phases = yield* PhaseService
+		const worktrees = yield* WorktreeService
+		const { log } = createLoggers(options)
+		const cwd = options.cwd ?? process.cwd()
+		const targetPath = options.directory ? resolve(cwd, options.directory) : cwd
+		const isDirectory = yield* fs.isDirectory(targetPath)
+		const root = yield* workbase.discover(isDirectory ? targetPath : cwd)
+
+		let taskId: string | undefined
+		let phaseId: string | undefined
+		if (options.directory && !isDirectory) {
+			const task = yield* tasks.show(options.directory, root)
+			taskId = task.id
+		} else {
+			const path = relative(root, targetPath)
+			const parts =
+				!path || isAbsolute(path) || path.startsWith(`..${sep}`)
+					? []
+					: path.split(sep)
+			if (parts[0] === "tasks" && parts[1]) {
+				const task = yield* tasks.show(parts[1], root)
+				taskId = task.id
+				if (parts[2] === "phases" && parts[3]) {
+					const phase = yield* phases.show(task.id, parts[3], root)
+					phaseId = phase.id
+				}
+			}
+		}
+
+		if (!taskId) {
+			return yield* Effect.fail(
+				new Error(
+					"Work preparation requires a task ID or a path inside an execution unit",
+				),
+			)
+		}
+
+		const workspace = yield* worktrees.materialize(taskId, phaseId, root, {
+			...options,
+			dryRun: options.dryRun,
+		})
+		if (options.json) {
+			log(JSON.stringify(workspace, null, 2))
+		} else {
+			log(
+				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath}`,
+			)
+		}
+	})
+
 export const help = `
 Usage: agency work [<directory-or-task-id> | --epic <epic-id>]
+       agency work prepare [target] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
 with fzf. A positional argument resolves as a directory first, then as a task
 ID. Use '.' for the current directory. Outside a workbase, select a registered
 workbase first.
+
+The prepare subcommand resolves and materializes an execution workspace without
+launching an agent or changing lifecycle status. --dry-run reports planned Git
+changes without fetching, creating branches, or creating worktrees.
 
 Options:
   --epic <id>         Work on an epic

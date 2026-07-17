@@ -283,18 +283,22 @@ const commands = {
 		},
 	},
 	work: {
-		usage: "agency work [<directory-or-task-id> | --epic <epic-id>]",
+		usage:
+			"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
+			json: { type: "boolean" },
+			"dry-run": { type: "boolean" },
 			epic: { type: "string" },
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
 		},
 		command: {
-			usage: "agency work [<directory-or-task-id> | --epic <epic-id>]",
+			usage:
+				"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
 			minArgs: 0,
-			maxArgs: 1,
-			options: ["epic", "opencode", "claude"],
+			maxArgs: 2,
+			options: ["json", "dry-run", "epic", "opencode", "claude"],
 			conflicts: [
 				["opencode", "claude"],
 				["epic", "$positional"],
@@ -648,6 +652,27 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	if (commandName === "graph") {
 		validateGraphOptions(parsed.values, spec)
+	}
+	if (commandName === "work") {
+		const preparing = commandPositionals[0] === "prepare"
+		if (
+			(!preparing && commandPositionals.length > 1) ||
+			(preparing &&
+				(parsed.values.epic || parsed.values.opencode || parsed.values.claude))
+		) {
+			throw usageError(
+				preparing
+					? "Work preparation cannot be combined with agent or epic options."
+					: "The work command accepts at most one target.",
+				spec.usage,
+			)
+		}
+		if (!preparing && (parsed.values.json || parsed.values["dry-run"])) {
+			throw usageError(
+				"Options '--json' and '--dry-run' are only valid with 'agency work prepare'.",
+				spec.usage,
+			)
+		}
 	}
 
 	return {

@@ -412,6 +412,7 @@ before moving files, refuses dirty worktrees, and preserves branches.
 
 ```text
 agency work [<directory> | --epic <epic-id>] [--opencode | --claude]
+agency work prepare [target] [--dry-run] [--json]
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
@@ -420,6 +421,12 @@ agency pr create <task-id> [phase-id] [--draft] [--json]
 workbase, Agency first presents the registered workbases, then the selected
 workbase's hierarchy. If `fzf` is not installed, Agency prints the available
 choices and asks for an explicit directory.
+
+`agency work prepare` resolves an execution unit and creates or reuses its
+writable and reference worktrees without launching an agent or changing status.
+Its JSON result includes document and checkout paths, resolved commits, actions,
+and Git operations. Use `--dry-run` to report planned fetch, branch, and worktree
+changes without applying them.
 
 Epic and multi-phase task targets launch orchestration agents beside their
 documents. Single-phase tasks and phases fetch repositories, create or reuse

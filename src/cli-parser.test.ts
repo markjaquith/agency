@@ -155,6 +155,22 @@ describe("strict CLI parsing", () => {
 		expectUsageError(["status", "--compact"], "agency status")
 	})
 
+	test("accepts work preparation options only for the prepare subcommand", () => {
+		expect(
+			parseCli(["work", "prepare", "tasks/example", "--dry-run", "--json"]),
+		).toMatchObject({
+			commandName: "work",
+			args: ["prepare", "tasks/example"],
+			values: { "dry-run": true, json: true },
+		})
+		expect(() => parseCli(["work", "example", "--dry-run"])).toThrow(
+			"only valid with 'agency work prepare'",
+		)
+		expect(() => parseCli(["work", "prepare", "--opencode"])).toThrow(
+			"cannot be combined",
+		)
+	})
+
 	test("accepts repeatable graph filters and rejects output conflicts", () => {
 		expect(
 			parseCli([

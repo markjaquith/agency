@@ -5,7 +5,7 @@ import { parseCli } from "./src/cli-parser"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
-import { work, help as workHelp } from "./src/commands/work"
+import { work, workPrepare, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
@@ -274,10 +274,13 @@ const commands: Record<string, Command> = {
 				console.log(workHelp)
 				return
 			}
+			const preparing = args[0] === "prepare"
 			await runCommand(
-				work({
-					directory: args[0],
+				(preparing ? workPrepare : work)({
+					directory: args[preparing ? 1 : 0],
 					epicId: options.epic,
+					json: options.json,
+					dryRun: options["dry-run"],
 					silent: options.silent,
 					verbose: options.verbose,
 					opencode: options.opencode,
