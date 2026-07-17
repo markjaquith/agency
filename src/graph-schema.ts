@@ -46,6 +46,8 @@ export const GraphProgress = Schema.Struct({
 export const GraphReadiness = Schema.Struct({
 	ready: Schema.Boolean,
 	blocked: Schema.Boolean,
+	blockedBy: Schema.Array(Schema.String),
+	terminal: Schema.Boolean,
 	blockers: Schema.Array(GraphBlocker),
 })
 

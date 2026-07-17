@@ -14,6 +14,13 @@ describe("graph contract", () => {
 			required: ["ready", "blocked", "statuses", "repositories", "kinds"],
 		})
 		expect(jsonSchema.$defs.node.allOf).toHaveLength(5)
+		expect(jsonSchema.$defs.readiness.required).toEqual([
+			"ready",
+			"blocked",
+			"blockedBy",
+			"terminal",
+			"blockers",
+		])
 		expect(jsonSchema.$defs.node.allOf[3]?.then?.properties).toMatchObject({
 			status: { type: "null" },
 			readiness: { type: "null" },

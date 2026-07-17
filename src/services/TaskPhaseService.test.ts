@@ -244,6 +244,22 @@ describe("task and phase services", () => {
 		expect(task.data.status).toBe("delegated")
 		expect(task.content).toContain("status: delegated")
 		expect(task.content).toContain("Describe the task outcome.")
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "done", root),
+				),
+			),
+		)
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("single-status", "dropped", root),
+					),
+				),
+			),
+		).rejects.toThrow("reopen it first")
 
 		await runTestEffect(
 			TaskService.pipe(
@@ -283,6 +299,33 @@ describe("task and phase services", () => {
 			),
 		)
 		expect(phase.data.status).toBe("dropped")
+		await expect(
+			runTestEffect(
+				PhaseService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("multi-status", "implementation", "done", root),
+					),
+				),
+			),
+		).rejects.toThrow("reopen it first")
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("multi-status", "implementation", "open", root),
+				),
+			),
+		)
+		expect(
+			(
+				await runTestEffect(
+					PhaseService.pipe(
+						Effect.flatMap((service) =>
+							service.setStatus("multi-status", "implementation", "done", root),
+						),
+					),
+				)
+			).data.status,
+		).toBe("done")
 		await expect(
 			runTestEffect(
 				TaskService.pipe(

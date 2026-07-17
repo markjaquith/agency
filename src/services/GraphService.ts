@@ -12,9 +12,13 @@ import {
 	type GraphNode,
 	type GraphNodeKind,
 	type GraphPr,
-	type GraphProgress,
 	type GraphRepositoryGit,
 } from "../graph-schema"
+import {
+	aggregateProgress,
+	isDependencySatisfied,
+	readinessState,
+} from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
 import {
 	EpicFrontmatter,
@@ -68,33 +72,6 @@ const repositoryNodeId = (alias: string) => `repository:${alias}`
 const taskExecutionNodeId = (taskId: string) => `execution-unit:task/${taskId}`
 const phaseExecutionNodeId = (taskId: string, phaseId: string) =>
 	`execution-unit:phase/${taskId}/${phaseId}`
-
-const progress = (statuses: readonly WorkStatus[]): GraphProgress => {
-	const counts = {
-		total: statuses.length,
-		open: statuses.filter((status) => status === "open").length,
-		working: statuses.filter((status) => status === "working").length,
-		delegated: statuses.filter((status) => status === "delegated").length,
-		done: statuses.filter((status) => status === "done").length,
-		dropped: statuses.filter((status) => status === "dropped").length,
-		terminal: statuses.filter(
-			(status) => status === "done" || status === "dropped",
-		).length,
-	}
-	const status: WorkStatus =
-		statuses.length === 0
-			? "open"
-			: statuses.every((value) => value === "done")
-				? "done"
-				: statuses.every((value) => value === "done" || value === "dropped")
-					? "dropped"
-					: statuses.includes("working")
-						? "working"
-						: statuses.includes("delegated")
-							? "delegated"
-							: "open"
-	return { status, ...counts }
-}
 
 const hash = (content: string) =>
 	new Bun.CryptoHasher("sha256").update(content).digest("hex")
@@ -256,7 +233,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 							: [task.data.status]
 					}
 					const taskStatus = (taskId: string) =>
-						progress(taskLeafStatuses(taskId)).status
+						aggregateProgress(taskLeafStatuses(taskId)).status
 					const dependencyBlockers = (
 						dependencies: readonly string[],
 						toId: (id: string) => string,
@@ -265,7 +242,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 					): GraphBlocker[] =>
 						dependencies.flatMap((dependency) => {
 							const value = status(dependency)
-							return value === "done"
+							return isDependencySatisfied(value)
 								? []
 								: [
 										{
@@ -336,10 +313,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 						}
 						return {
 							status,
-							aggregate: progress([status]),
+							aggregate: aggregateProgress([status]),
 							readiness: {
-								ready: status === "open" && blockers.length === 0,
-								blocked: status === "open" && blockers.length > 0,
+								...readinessState(status, blockers),
 								blockers: uniqueBlockers(blockers),
 							},
 						}
@@ -348,7 +324,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 					const taskState = (taskId: string) => {
 						const task = tasks.get(taskId)
 						const statuses = taskLeafStatuses(taskId)
-						const aggregate = progress(statuses)
+						const aggregate = aggregateProgress(statuses)
 						const descendantPaths = task
 							? [
 									relative(root, task.path),
@@ -410,8 +386,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 							status: aggregate.status,
 							aggregate,
 							readiness: {
-								ready,
-								blocked: !ready && taskBlockers.length > 0,
+								...readinessState(aggregate.status, taskBlockers, ready),
 								blockers: taskBlockers,
 							},
 						}
@@ -422,7 +397,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 						const statuses =
 							epic?.data.tasks.flatMap((item) => taskLeafStatuses(item.id)) ??
 							[]
-						const aggregate = progress(statuses)
+						const aggregate = aggregateProgress(statuses)
 						const paths = epic
 							? [
 									relative(root, epic.path),
@@ -467,8 +442,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 							status: aggregate.status,
 							aggregate,
 							readiness: {
-								ready,
-								blocked: !ready && epicBlockers.length > 0,
+								...readinessState(aggregate.status, epicBlockers, ready),
 								blockers: epicBlockers,
 							},
 						}
@@ -874,7 +848,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 						includes,
 						nodes: filteredNodes,
 						edges: filteredEdges,
-						summary: progress(leafStatuses),
+						summary: aggregateProgress(leafStatuses),
 						validation: {
 							valid: validation.valid,
 							issues: validation.issues,

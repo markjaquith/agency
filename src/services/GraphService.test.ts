@@ -154,12 +154,33 @@ describe("GraphService", () => {
 		)!
 		const verify = graph.nodes.find((node) => node.id === "phase:ship/verify")!
 		expect(prepare.dependents).toEqual(["task:ship"])
-		expect(ship.readiness).toMatchObject({ ready: true, blocked: false })
+		expect(prepare.readiness).toMatchObject({
+			ready: false,
+			terminal: true,
+		})
+		expect(ship.readiness).toMatchObject({
+			ready: true,
+			blocked: false,
+			terminal: false,
+		})
+		expect(ship.aggregate).toMatchObject({ total: 2, open: 2, terminal: 0 })
 		expect(implement.dependents).toEqual(["phase:ship/verify"])
 		expect(implement.readiness).toMatchObject({ ready: true, blocked: false })
+		expect(
+			graph.nodes.find(
+				(node) => node.id === "execution-unit:phase/ship/implement",
+			)?.readiness,
+		).toMatchObject({
+			ready: true,
+			blocked: false,
+			blockedBy: [],
+			terminal: false,
+		})
 		expect(verify.readiness).toMatchObject({
 			ready: false,
 			blocked: true,
+			blockedBy: ["phase:ship/implement"],
+			terminal: false,
 			blockers: [
 				{
 					kind: "dependency",
@@ -168,6 +189,8 @@ describe("GraphService", () => {
 				},
 			],
 		})
+		const epic = graph.nodes.find((node) => node.id === "epic:delivery")!
+		expect(epic.aggregate).toMatchObject({ total: 3, done: 1, open: 2 })
 		expect(graph.summary).toEqual({
 			status: "open",
 			total: 3,
@@ -179,6 +202,36 @@ describe("GraphService", () => {
 			terminal: 1,
 		})
 		expect(await getGraph(root)).toEqual(graph)
+	})
+
+	test("never reports claimed or terminal execution units as ready", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		const path = "tasks/ship/phases/implement/PHASE.md"
+
+		for (const status of ["working", "delegated", "done", "dropped"]) {
+			await write(
+				root,
+				path,
+				`---
+repo: agency
+branch: feat/implement
+base: main
+pr: null
+status: ${status}
+---
+
+# Implement
+`,
+			)
+			const graph = await getGraph(root, {
+				kinds: ["execution-unit"],
+				ready: true,
+			})
+			expect(graph.nodes.map((node) => node.key)).not.toContain(
+				"phase/ship/implement",
+			)
+		}
 	})
 
 	test("applies filters after computing graph state", async () => {
@@ -235,6 +288,7 @@ status: open
 					reason: "Unlisted phase 'orphan'",
 				},
 			],
+			blockedBy: ["tasks/ship/TASK.md"],
 		})
 	})
 

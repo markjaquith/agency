@@ -125,10 +125,15 @@
     "readiness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ready", "blocked", "blockers"],
+      "required": ["ready", "blocked", "blockedBy", "terminal", "blockers"],
       "properties": {
         "ready": { "type": "boolean" },
         "blocked": { "type": "boolean" },
+        "blockedBy": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "terminal": { "type": "boolean" },
         "blockers": {
           "type": "array",
           "items": { "$ref": "#/$defs/blocker" }
