@@ -671,6 +671,56 @@ const commands = {
 			},
 		},
 	},
+	worktree: {
+		usage: "agency worktree <list|inspect|prepare|remove|rebuild|repair>",
+		options: {
+			...outputOptions,
+			...entitySelectorOptions,
+			"dry-run": { type: "boolean" },
+		},
+		subcommands: {
+			list: {
+				usage: "agency worktree list [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["json"],
+			},
+			inspect: {
+				usage: "agency worktree inspect <task-id> [phase-id] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["json", "task", "phase"],
+			},
+			prepare: {
+				usage:
+					"agency worktree prepare <task-id> [phase-id] [--dry-run] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["dry-run", "json", "task", "phase"],
+			},
+			remove: {
+				usage:
+					"agency worktree remove <task-id> [phase-id] [--dry-run] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["dry-run", "json", "task", "phase"],
+			},
+			rebuild: {
+				usage:
+					"agency worktree rebuild <task-id> [phase-id] [--dry-run] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["dry-run", "json", "task", "phase"],
+			},
+			repair: {
+				usage:
+					"agency worktree repair <task-id> [phase-id] [--dry-run] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["dry-run", "json", "task", "phase"],
+			},
+		},
+	},
 	work: {
 		usage:
 			"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] | agency work prepare [target] [--dry-run] [--json]",
@@ -902,6 +952,9 @@ const targetSlots = (
 				: subcommand === "phase"
 					? ["task", "phase"]
 					: []
+	if (commandName === "worktree" && subcommand !== "list") {
+		return ["task", "phase"]
+	}
 	if (commandName === "pr" && subcommand === "create") return ["task", "phase"]
 	return []
 }

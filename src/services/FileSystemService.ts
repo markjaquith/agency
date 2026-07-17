@@ -6,6 +6,7 @@ import {
 	readdir,
 	realpath,
 	rename,
+	rmdir,
 	stat,
 	symlink,
 } from "node:fs/promises"
@@ -174,6 +175,31 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 							}),
 					),
 				),
+
+			deleteDirectoryIfEmpty: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						try {
+							await rmdir(path)
+							return true
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								["ENOENT", "ENOTEMPTY", "EEXIST"].includes(String(error.code))
+							) {
+								return false
+							}
+							throw error
+						}
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to delete empty directory: ${path}`,
+							cause: error,
+						}),
+				}),
 
 			runCommand: (
 				args: readonly string[],

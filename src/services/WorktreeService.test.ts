@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, rm } from "node:fs/promises"
+import { mkdir, realpath, rename, rm } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureErrors,
@@ -1106,7 +1106,8 @@ pr: null
 			),
 		)
 
-		expect(removed).toEqual([])
+		expect(removed).toHaveLength(1)
+		expect(removed[0]).toEndWith("/tasks/stale/code/agency")
 		const worktrees = Bun.spawnSync([
 			"git",
 			"-C",
@@ -1128,6 +1129,456 @@ pr: null
 				"refs/heads/task/stale",
 			]).exitCode,
 		).toBe(0)
+	})
+
+	test("lists and inspects ownership, registration, commits, and dirtiness", async () => {
+		const repository = join(root, "repos/agency")
+		await git(["-C", repository, "branch", "task/inspected", "main"])
+		const outside = join(root, "outside-inspected")
+		await git(["-C", repository, "worktree", "add", outside, "task/inspected"])
+		await Bun.write(join(outside, "dirty.txt"), "keep\n")
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "inspected",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/inspected",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const inspections = await runTestEffect(
+			WorktreeService.pipe(Effect.flatMap((service) => service.list(root))),
+		)
+		const inspection = inspections.find(
+			({ owner }) => owner.taskId === "inspected",
+		)!
+		const checkout = inspection.checkouts[0]!
+		expect(inspection.owner).toMatchObject({
+			kind: "task",
+			taskId: "inspected",
+			documentPath: join(root, "tasks/inspected/TASK.md"),
+		})
+		const registeredOutside = await realpath(outside)
+		expect(checkout).toMatchObject({
+			registeredPath: registeredOutside,
+			actualBranch: "task/inspected",
+			actualCommit: expect.stringMatching(/^[0-9a-f]{40}$/),
+			dirty: true,
+		})
+		expect(checkout.conflicts).toContainEqual(
+			expect.objectContaining({
+				kind: "branch-conflict",
+				registeredPath: registeredOutside,
+				branch: "task/inspected",
+				commit: expect.stringMatching(/^[0-9a-f]{40}$/),
+				dirty: true,
+			}),
+		)
+	})
+
+	test("refuses to remove a clean checkout owned by the wrong branch", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "remove-wrong",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/expected-remove",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const repository = join(root, "repos/agency")
+		await git(["-C", repository, "branch", "task/actual-remove", "main"])
+		const checkout = join(root, "tasks/remove-wrong/code/agency")
+		await mkdir(join(root, "tasks/remove-wrong/code"), { recursive: true })
+		await git([
+			"-C",
+			repository,
+			"worktree",
+			"add",
+			checkout,
+			"task/actual-remove",
+		])
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("remove-wrong", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("not branch 'task/expected-remove'")
+		expect(await Bun.file(join(checkout, "README.md")).exists()).toBe(true)
+	})
+
+	test("does not delete a non-worktree entry named for an expected alias", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "unexpected-file",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/unexpected-file",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const codePath = join(root, "tasks/unexpected-file/code")
+		const unexpected = join(codePath, "agency")
+		await mkdir(codePath, { recursive: true })
+		await Bun.write(unexpected, "keep me\n")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("unexpected-file", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("is not a directory")
+		expect(await Bun.file(unexpected).text()).toBe("keep me\n")
+	})
+
+	test("refuses removal when a branch has duplicate Agency owners", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "owned-removal",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/owned-removal",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("owned-removal", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "other-owner",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/owned-removal",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("owned-removal", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("multiple Agency owners")
+		expect(
+			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+		).toBe(true)
+	})
+
+	test("dry-runs and rebuilds every clean declared checkout", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "rebuilt",
+							ticketUrl: null,
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/rebuilt",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const original = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("rebuilt", undefined, root),
+				),
+			),
+		)
+		const plan = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.rebuild("rebuilt", undefined, root, { dryRun: true }),
+				),
+			),
+		)
+		expect(plan.actions).toEqual(
+			expect.arrayContaining([
+				`remove ${join(original.codePath, "agency")}`,
+				`create ${join(original.codePath, "agency")}`,
+				`remove ${join(original.codePath, "effect")}`,
+				`create ${join(original.codePath, "effect")}`,
+			]),
+		)
+		expect(
+			await Bun.file(join(original.writablePath, "README.md")).exists(),
+		).toBe(true)
+
+		const rebuilt = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.rebuild("rebuilt", undefined, root),
+				),
+			),
+		)
+		expect(rebuilt.inspection.conflicts).toEqual([])
+		expect(
+			await Bun.file(join(original.writablePath, "README.md")).exists(),
+		).toBe(true)
+	})
+
+	test("restores removed worktrees when rebuild creation fails", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "rebuild-rollback",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/rebuild-rollback",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("rebuild-rollback", undefined, root),
+				),
+			),
+		)
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: [
+					"sh",
+					"-c",
+					"echo rebuild-failed >&2; exit 7",
+					"{repo}",
+					"{worktree}",
+				],
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.rebuild("rebuild-rollback", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("original worktrees were restored")
+		expect(
+			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+		).toBe(true)
+	})
+
+	test("repairs a stale registration without deleting the writable branch", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "repaired",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/repaired",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("repaired", undefined, root),
+				),
+			),
+		)
+		await rm(workspace.codePath, { recursive: true })
+
+		const plan = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.repair("repaired", undefined, root, { dryRun: true }),
+				),
+			),
+		)
+		expect(plan.actions.join("\n")).toContain("worktree prune --expire now")
+		expect(plan.actions).toContain(`prepare ${workspace.writablePath}`)
+
+		const repaired = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.repair("repaired", undefined, root),
+				),
+			),
+		)
+		expect(repaired.inspection.conflicts).toEqual([])
+		expect(
+			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+		).toBe(true)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/repaired",
+			]).exitCode,
+		).toBe(0)
+	})
+
+	test("refuses to repair an unregistered checkout on the wrong branch", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "repair-wrong",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/repair-expected",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const repository = join(root, "repos/agency")
+		await git(["-C", repository, "branch", "task/repair-actual", "main"])
+		const oldPath = join(root, "repair-old-path")
+		const checkout = join(root, "tasks/repair-wrong/code/agency")
+		await git([
+			"-C",
+			repository,
+			"worktree",
+			"add",
+			oldPath,
+			"task/repair-actual",
+		])
+		await mkdir(join(root, "tasks/repair-wrong/code"), { recursive: true })
+		await rename(oldPath, checkout)
+		await Bun.write(join(checkout, "uncommitted.txt"), "keep me\n")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.repair("repair-wrong", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("not branch 'task/repair-expected'")
+		expect(await Bun.file(join(checkout, "uncommitted.txt")).text()).toBe(
+			"keep me\n",
+		)
+	})
+
+	test("repairs a moved checkout without changing its branch or dirty files", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "repair-moved",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/repair-moved",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const repository = join(root, "repos/agency")
+		await git(["-C", repository, "branch", "task/repair-moved", "main"])
+		const oldPath = join(root, "repair-moved-old")
+		const checkout = join(root, "tasks/repair-moved/code/agency")
+		await git([
+			"-C",
+			repository,
+			"worktree",
+			"add",
+			oldPath,
+			"task/repair-moved",
+		])
+		await mkdir(join(root, "tasks/repair-moved/code"), { recursive: true })
+		await rename(oldPath, checkout)
+		await Bun.write(join(checkout, "uncommitted.txt"), "keep me\n")
+
+		const repaired = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.repair("repair-moved", undefined, root),
+				),
+			),
+		)
+		expect(repaired.inspection.conflicts).toEqual([])
+		expect(repaired.inspection.checkouts[0]).toMatchObject({
+			actualBranch: "task/repair-moved",
+			dirty: true,
+			registered: true,
+		})
+		expect(await Bun.file(join(checkout, "uncommitted.txt")).text()).toBe(
+			"keep me\n",
+		)
 	})
 
 	test("supports Worktrunk as the configured command", async () => {

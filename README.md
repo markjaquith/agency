@@ -610,6 +610,7 @@ for restoration. Archived IDs are reserved until restored.
 ```text
 agency work [<directory> | --epic <epic-id>] [--runner <name>] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
+agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
@@ -628,6 +629,15 @@ writable and reference worktrees without launching an agent or changing status.
 Its JSON result includes document and checkout paths, resolved commits, actions,
 and Git operations. Use `--dry-run` to report planned fetch, branch, and worktree
 changes without applying them.
+
+`agency worktree list` and `inspect` report each declared checkout's expected and
+registered path, branch, commit, Agency owner, dirtiness, and conflicts. `prepare`
+is the explicit lifecycle form of `agency work prepare`. `remove`, `rebuild`, and
+`repair` preflight every writable and reference checkout before changing any of
+them and accept `--dry-run`. Removal preserves branches. Rebuild rejects dirty or
+conflicting worktrees. Repair is deliberately conservative: it repairs safe Git
+registration issues and materializes missing checkouts, but never switches a
+branch, resets a commit, or discards uncommitted work.
 
 Epic and multi-phase task targets launch orchestration agents beside their
 documents. Single-phase tasks and phases fetch repositories, create or reuse

@@ -7,6 +7,7 @@ import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
 import { work, workPrepare, help as workHelp } from "./src/commands/work"
+import { worktree, help as worktreeHelp } from "./src/commands/worktree"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
@@ -470,6 +471,25 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	worktree: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(worktreeHelp)
+				return
+			}
+			await runCommand(
+				worktree({
+					subcommand: args[0],
+					args: args.slice(1),
+					dryRun: options["dry-run"],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	next: {
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(nextHelp)
@@ -607,6 +627,7 @@ Commands:
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase
+  worktree <subcommand>  Inspect and maintain managed worktrees
   next                   List or select ready execution units
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
