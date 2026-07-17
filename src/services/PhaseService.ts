@@ -17,6 +17,7 @@ import {
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
 import { documentRevision } from "../workbase/document-revision"
+import { archivedPhaseDirectory } from "../workbase/archive"
 
 class PhaseError extends Data.TaggedError("PhaseError")<{
 	readonly message: string
@@ -112,6 +113,11 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					) {
 						return yield* new PhaseError({
 							message: `Phase '${id}' already exists on task '${taskId}'`,
+						})
+					}
+					if (yield* fs.exists(archivedPhaseDirectory(root, taskId, id))) {
+						return yield* new PhaseError({
+							message: `Phase '${id}' on task '${taskId}' is archived; restore it before reusing this ID`,
 						})
 					}
 					const knownPhases = new Set(

@@ -75,6 +75,27 @@ describe("strict CLI parsing", () => {
 			reference: ["two:main", "three:main"],
 			"depends-on": ["first", "second"],
 		})
+		expect(
+			parseCli([
+				"archive",
+				"list",
+				"--kind",
+				"task",
+				"--kind",
+				"phase",
+				"--status",
+				"done",
+				"--repository",
+				"agency",
+			]).values,
+		).toMatchObject({
+			kind: ["task", "phase"],
+			status: ["done"],
+			repository: ["agency"],
+		})
+		expect(
+			parseCli(["restore", "task", "example", "--dry-run"]).values,
+		).toMatchObject({ "dry-run": true })
 	})
 
 	test("parses composable view filters", () => {
@@ -109,6 +130,9 @@ describe("strict CLI parsing", () => {
 		).toThrow("cannot be combined")
 		expect(() => parseCli(["status", "--pr", "--no-pr"])).toThrow(
 			"cannot be combined",
+		)
+		expect(() => parseCli(["archive", "list", "--status", "invalid"])).toThrow(
+			"Invalid '--status' value",
 		)
 	})
 
@@ -170,6 +194,14 @@ describe("strict CLI parsing", () => {
 			[["archive", "epic", "one", "two"], "agency archive epic"],
 			[["archive", "task", "one", "two"], "agency archive task"],
 			[["archive", "phase", "one", "two", "three"], "agency archive phase"],
+			[["archive", "list", "extra"], "agency archive list"],
+			[
+				["archive", "show", "task", "one", "extra", "more"],
+				"agency archive show",
+			],
+			[["restore", "epic", "one", "two"], "agency restore epic"],
+			[["restore", "task", "one", "two"], "agency restore task"],
+			[["restore", "phase", "one", "two", "three"], "agency restore phase"],
 			[["work", "one", "two"], "agency work"],
 			[["pr", "create", "one", "two", "three"], "agency pr create"],
 			[["status", "extra"], "agency status"],

@@ -345,6 +345,7 @@ describe("CLI", () => {
 			["task", "Usage: agency task"],
 			["phase", "Usage: agency phase"],
 			["archive", "Usage: agency archive"],
+			["restore", "Usage: agency restore"],
 			["work", "Usage: agency work"],
 			["pr", "Usage: agency pr"],
 			["status", "Usage: agency status"],

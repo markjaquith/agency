@@ -17,6 +17,7 @@ import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
 import { archive, help as archiveHelp } from "./src/commands/archive"
+import { restore, help as restoreHelp } from "./src/commands/restore"
 import { workbase, help as workbaseHelp } from "./src/commands/workbase"
 import {
 	integration,
@@ -317,6 +318,29 @@ const commands: Record<string, Command> = {
 					type: args[0],
 					args: args.slice(1),
 					json: options.json,
+					dryRun: options["dry-run"],
+					kinds: options.kind,
+					statuses: options.status,
+					repositories: options.repository,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
+	restore: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(restoreHelp)
+				return
+			}
+			await runCommand(
+				restore({
+					type: args[0],
+					args: args.slice(1),
+					json: options.json,
+					dryRun: options["dry-run"],
 					silent: options.silent,
 					verbose: options.verbose,
 					cwd: options.cwd,

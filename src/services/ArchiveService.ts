@@ -1,5 +1,7 @@
-import { Data, Effect } from "effect"
-import { dirname, join } from "node:path"
+import { Schema, TreeFormatter } from "@effect/schema"
+import { Data, Effect, Either } from "effect"
+import { mkdir, open, rename, rm } from "node:fs/promises"
+import { dirname, join, relative } from "node:path"
 import { EpicService, type EpicRecord } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
@@ -10,19 +12,87 @@ import {
 	formatMarkdownDocument,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
-import type { TaskFrontmatter as TaskData } from "../workbase/schemas"
+import {
+	EpicFrontmatter,
+	Dependency,
+	PhaseFrontmatter,
+	TaskFrontmatter,
+	type Dependency as DependencyData,
+	type EpicFrontmatter as EpicData,
+	type PhaseFrontmatter as PhaseData,
+	type TaskFrontmatter as TaskData,
+} from "../workbase/schemas"
+import { validateDependencies } from "../workbase/dependency-graph"
+import {
+	archivedEpicDirectory,
+	archivedPhaseDirectory,
+	archivedTaskDirectory,
+	lifecycleManifestPath,
+} from "../workbase/archive"
 
 class ArchiveError extends Data.TaggedError("ArchiveError")<{
 	readonly message: string
+	readonly cause?: unknown
 }> {}
 
-interface ArchiveResult {
-	readonly kind: "epic" | "task" | "phase"
+export type ArchiveKind = "epic" | "task" | "phase"
+
+const LifecycleEventSchema = Schema.Struct({
+	operation: Schema.Literal("archive", "restore"),
+	at: Schema.String,
+	from: Schema.String,
+	to: Schema.String,
+})
+
+const LifecycleManifestSchema = Schema.Struct({
+	version: Schema.Literal(1),
+	kind: Schema.Literal("epic", "task", "phase"),
+	id: Schema.String,
+	taskId: Schema.optional(Schema.String),
+	parent: Schema.optional(
+		Schema.Struct({
+			kind: Schema.Literal("epic", "task"),
+			id: Schema.String,
+			declaration: Dependency,
+		}),
+	),
+	history: Schema.Array(LifecycleEventSchema),
+})
+
+type LifecycleEvent = Schema.Schema.Type<typeof LifecycleEventSchema>
+type LifecycleManifest = Schema.Schema.Type<typeof LifecycleManifestSchema>
+
+interface ArchivedRecord {
+	readonly kind: ArchiveKind
 	readonly id: string
 	readonly taskId?: string
 	readonly path: string
-	readonly archivedPaths: readonly string[]
+	readonly documentPath: string
+	readonly content: string
+	readonly data: EpicData | TaskData | PhaseData
+	readonly provenance?: LifecycleManifest
+}
+
+interface LifecycleResult {
+	readonly operation: "archive" | "restore"
+	readonly kind: ArchiveKind
+	readonly id: string
+	readonly taskId?: string
+	readonly path: string
+	readonly affectedPaths: readonly string[]
 	readonly removedWorktrees: readonly string[]
+	readonly dryRun: boolean
+	readonly at: string
+}
+
+interface LifecycleOptions {
+	readonly dryRun?: boolean
+}
+
+export interface ArchiveFilters {
+	readonly kinds?: readonly string[]
+	readonly statuses?: readonly string[]
+	readonly repositories?: readonly string[]
 }
 
 interface TaskRecord {
@@ -32,23 +102,437 @@ interface TaskRecord {
 	readonly data: TaskData
 }
 
-const rejectExistingDestination = (path: string) =>
+interface Move {
+	readonly from: string
+	readonly to: string
+}
+
+interface Write {
+	readonly path: string
+	readonly content: string
+}
+
+interface WorktreeTarget {
+	readonly taskId: string
+	readonly phaseId?: string
+}
+
+const decode = <S extends Schema.Schema.AnyNoContext>(
+	schema: S,
+	input: unknown,
+	label: string,
+) => {
+	const result = Schema.decodeUnknownEither(schema, {
+		errors: "all",
+		onExcessProperty: "error",
+	})(input)
+	return Either.isLeft(result)
+		? Effect.fail(
+				new ArchiveError({
+					message: `Invalid archived ${label}: ${TreeFormatter.formatErrorSync(result.left)}`,
+				}),
+			)
+		: Effect.succeed(result.right)
+}
+
+const readManifest = (directory: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const path = lifecycleManifestPath(directory)
+		if (!(yield* fs.exists(path))) return undefined
+		const content = yield* fs.readFile(path)
+		const input = yield* Effect.try({
+			try: () => JSON.parse(content) as unknown,
+			catch: (cause) =>
+				new ArchiveError({
+					message: `Invalid lifecycle provenance: ${path}`,
+					cause,
+				}),
+		})
+		const decoded = Schema.decodeUnknownEither(LifecycleManifestSchema, {
+			errors: "all",
+			onExcessProperty: "error",
+		})(input)
+		if (Either.isLeft(decoded)) {
+			return yield* new ArchiveError({
+				message: `Invalid lifecycle provenance ${path}: ${TreeFormatter.formatErrorSync(decoded.left)}`,
+			})
+		}
+		return decoded.right
+	})
+
+const manifestFor = (
+	existing: LifecycleManifest | undefined,
+	entity: Omit<LifecycleManifest, "version" | "history">,
+	event: LifecycleEvent,
+): LifecycleManifest => ({
+	version: 1,
+	...entity,
+	history: [...(existing?.history ?? []), event],
+})
+
+const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n"
+
+const withLifecycleLock = <A, E, R>(
+	root: string,
+	operation: Effect.Effect<A, E, R>,
+) => {
+	const lockPath = join(root, ".agency-archive.lock")
+	return Effect.acquireUseRelease(
+		Effect.tryPromise({
+			try: () => open(lockPath, "wx"),
+			catch: (cause) =>
+				new ArchiveError({
+					message:
+						"Another archive or restore operation is in progress; wait and retry",
+					cause,
+				}),
+		}),
+		() => operation,
+		(lock) =>
+			Effect.promise(async () => {
+				await lock.close().catch(() => undefined)
+				await rm(lockPath, { force: true }).catch(() => undefined)
+			}),
+	)
+}
+
+const applyMutation = (moves: readonly Move[], writes: readonly Write[]) =>
+	Effect.tryPromise({
+		try: async () => {
+			const completedMoves: Move[] = []
+			const completedWrites: {
+				path: string
+				existed: boolean
+				content?: string
+			}[] = []
+			try {
+				for (const move of moves) {
+					await mkdir(dirname(move.to), { recursive: true })
+					await rename(move.from, move.to)
+					completedMoves.push(move)
+				}
+				for (const write of writes) {
+					const file = Bun.file(write.path)
+					const existed = await file.exists()
+					completedWrites.push({
+						path: write.path,
+						existed,
+						...(existed ? { content: await file.text() } : {}),
+					})
+					await Bun.write(write.path, write.content)
+				}
+			} catch (cause) {
+				let rollbackCause: unknown
+				for (const write of [...completedWrites].reverse()) {
+					try {
+						if (write.existed) await Bun.write(write.path, write.content!)
+						else await rm(write.path, { force: true })
+					} catch (error) {
+						rollbackCause ??= error
+					}
+				}
+				for (const move of [...completedMoves].reverse()) {
+					try {
+						await rename(move.to, move.from)
+					} catch (error) {
+						rollbackCause ??= error
+					}
+				}
+				if (rollbackCause) {
+					throw new ArchiveError({
+						message:
+							"Archive lifecycle rollback failed; manual recovery is required",
+						cause: new AggregateError([cause, rollbackCause]),
+					})
+				}
+				throw cause
+			}
+		},
+		catch: (cause) =>
+			cause instanceof ArchiveError
+				? cause
+				: new ArchiveError({
+						message:
+							"Archive lifecycle operation failed; changes were rolled back",
+						cause,
+					}),
+	})
+
+const applyArchiveMutation = (
+	root: string,
+	targets: readonly WorktreeTarget[],
+	moves: readonly Move[],
+	writes: readonly Write[],
+) =>
+	Effect.gen(function* () {
+		const worktrees = yield* WorktreeService
+		const removedPaths: string[] = []
+		const removedTargets: WorktreeTarget[] = []
+		return yield* withLifecycleLock(
+			root,
+			Effect.gen(function* () {
+				const targetsWithWorktrees = new Set<WorktreeTarget>()
+				for (const target of targets) {
+					const planned = yield* worktrees.remove(
+						target.taskId,
+						target.phaseId,
+						root,
+						{
+							dryRun: true,
+						},
+					)
+					if (planned.length > 0) targetsWithWorktrees.add(target)
+				}
+				for (const target of targets) {
+					if (targetsWithWorktrees.has(target)) removedTargets.push(target)
+					const removed = yield* worktrees.remove(
+						target.taskId,
+						target.phaseId,
+						root,
+					)
+					removedPaths.push(...removed)
+				}
+				yield* applyMutation(moves, writes)
+				return removedPaths
+			}).pipe(
+				Effect.catchAll((cause) =>
+					Effect.gen(function* () {
+						const rollbackErrors: unknown[] = []
+						for (const target of [...removedTargets].reverse()) {
+							const restored = yield* worktrees
+								.materialize(target.taskId, target.phaseId, root)
+								.pipe(Effect.either)
+							if (Either.isLeft(restored)) rollbackErrors.push(restored.left)
+						}
+						if (rollbackErrors.length > 0) {
+							return yield* new ArchiveError({
+								message:
+									"Archive failed and worktree rollback was incomplete; manual recovery is required",
+								cause: new AggregateError([cause, ...rollbackErrors]),
+							})
+						}
+						return yield* Effect.fail(cause)
+					}),
+				),
+			),
+		)
+	})
+
+const rejectExistingDestination = (
+	path: string,
+	operation: "Archive" | "Restore",
+) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		if (yield* fs.exists(path)) {
 			return yield* new ArchiveError({
-				message: `Archive destination already exists: ${path}`,
+				message: `${operation} destination already exists: ${path}`,
 			})
 		}
 	})
+
+const event = (
+	root: string,
+	operation: LifecycleEvent["operation"],
+	at: string,
+	from: string,
+	to: string,
+): LifecycleEvent => ({
+	operation,
+	at,
+	from: relative(root, from),
+	to: relative(root, to),
+})
+
+const declarationContent = (
+	record: { readonly content: string; readonly path: string },
+	data: EpicData | TaskData,
+) =>
+	parseFrontmatter(record.content, record.path).pipe(
+		Effect.map((parsed) => formatMarkdownDocument(data, parsed.body)),
+	)
+
+const repositoriesFor = (record: ArchivedRecord) => {
+	if (record.kind === "epic") {
+		return (record.data as EpicData).repos.map((reference) => reference.repo)
+	}
+	if ("repo" in record.data) {
+		return [
+			record.data.repo,
+			...(record.data.repos ?? []).map((reference) => reference.repo),
+		]
+	}
+	return []
+}
+
+const statusFor = (record: ArchivedRecord) =>
+	"status" in record.data ? record.data.status : undefined
 
 export class ArchiveService extends Effect.Service<ArchiveService>()(
 	"ArchiveService",
 	{
 		sync: () => ({
-			archiveEpic: (id: string, startPath: string = process.cwd()) =>
+			list: (filters: ArchiveFilters = {}, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const root = yield* workbase.discover(startPath)
+					const kinds = filters.kinds?.length
+						? new Set(filters.kinds)
+						: new Set<ArchiveKind>(["epic", "task", "phase"])
+					for (const kind of kinds) {
+						if (
+							!(["epic", "task", "phase"] as const).includes(
+								kind as ArchiveKind,
+							)
+						) {
+							return yield* new ArchiveError({
+								message: `Unknown archive kind '${kind}'`,
+							})
+						}
+					}
+
+					const records: ArchivedRecord[] = []
+					const readRecord = (
+						kind: ArchiveKind,
+						id: string,
+						directory: string,
+						documentName: string,
+						schema: Schema.Schema.AnyNoContext,
+						taskId?: string,
+					) =>
+						Effect.gen(function* () {
+							const documentPath = join(directory, documentName)
+							if (!(yield* fs.exists(documentPath))) return
+							const content = yield* fs.readFile(documentPath)
+							const parsed = yield* parseFrontmatter(content, documentPath)
+							const data = yield* decode(schema, parsed.data, `${kind} '${id}'`)
+							const provenance = yield* readManifest(directory)
+							if (
+								provenance &&
+								(provenance.kind !== kind ||
+									provenance.id !== id ||
+									(kind === "phase" && provenance.taskId !== taskId))
+							) {
+								return yield* new ArchiveError({
+									message: `Lifecycle provenance does not match archived ${kind} '${id}'`,
+								})
+							}
+							records.push({
+								kind,
+								id,
+								...(taskId ? { taskId } : {}),
+								path: directory,
+								documentPath,
+								content,
+								data: data as EpicData | TaskData | PhaseData,
+								...(provenance ? { provenance } : {}),
+							})
+						})
+
+					if (kinds.has("epic")) {
+						const directory = join(root, "archive", "epics")
+						if (yield* fs.isDirectory(directory)) {
+							for (const entry of yield* fs.readDirectory(directory)) {
+								if (entry.isDirectory)
+									yield* readRecord(
+										"epic",
+										entry.name,
+										join(directory, entry.name),
+										"EPIC.md",
+										EpicFrontmatter,
+									)
+							}
+						}
+					}
+
+					const tasksDirectory = join(root, "archive", "tasks")
+					if (yield* fs.isDirectory(tasksDirectory)) {
+						for (const taskEntry of yield* fs.readDirectory(tasksDirectory)) {
+							if (!taskEntry.isDirectory) continue
+							const taskDirectory = join(tasksDirectory, taskEntry.name)
+							if (kinds.has("task")) {
+								yield* readRecord(
+									"task",
+									taskEntry.name,
+									taskDirectory,
+									"TASK.md",
+									TaskFrontmatter,
+								)
+							}
+							if (!kinds.has("phase")) continue
+							const phasesDirectory = join(taskDirectory, "phases")
+							if (!(yield* fs.isDirectory(phasesDirectory))) continue
+							for (const phaseEntry of yield* fs.readDirectory(
+								phasesDirectory,
+							)) {
+								if (phaseEntry.isDirectory)
+									yield* readRecord(
+										"phase",
+										phaseEntry.name,
+										join(phasesDirectory, phaseEntry.name),
+										"PHASE.md",
+										PhaseFrontmatter,
+										taskEntry.name,
+									)
+							}
+						}
+					}
+
+					return records
+						.filter(
+							(record) =>
+								!filters.statuses?.length ||
+								filters.statuses.includes(statusFor(record) ?? ""),
+						)
+						.filter(
+							(record) =>
+								!filters.repositories?.length ||
+								filters.repositories.some((repository) =>
+									repositoriesFor(record).includes(repository),
+								),
+						)
+						.sort((a, b) =>
+							`${a.kind}:${a.taskId ?? ""}:${a.id}`.localeCompare(
+								`${b.kind}:${b.taskId ?? ""}:${b.id}`,
+							),
+						)
+				}),
+
+			show: (
+				kind: ArchiveKind,
+				id: string,
+				taskId: string | undefined,
+				startPath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const service = yield* ArchiveService
+					const record = (yield* service.list(
+						{ kinds: [kind] },
+						startPath,
+					)).find(
+						(candidate) =>
+							candidate.id === id &&
+							(kind !== "phase" || candidate.taskId === taskId),
+					)
+					if (!record) {
+						return yield* new ArchiveError({
+							message:
+								kind === "phase"
+									? `Archived phase '${id}' does not exist on task '${taskId}'`
+									: `Archived ${kind} '${id}' does not exist`,
+						})
+					}
+					return record
+				}),
+
+			archiveEpic: (
+				id: string,
+				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
+			) =>
+				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
 					const epics = yield* EpicService
 					const tasks = yield* TaskService
@@ -65,65 +549,117 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						}
 						taskRecords.push(task)
 					}
-
-					const epicDestination = join(root, "archive", "epics", id)
-					yield* rejectExistingDestination(epicDestination)
-					for (const task of taskRecords) {
+					const destination = archivedEpicDirectory(root, id)
+					yield* rejectExistingDestination(destination, "Archive")
+					for (const task of taskRecords)
 						yield* rejectExistingDestination(
-							join(root, "archive", "tasks", task.id),
+							archivedTaskDirectory(root, task.id),
+							"Archive",
 						)
-					}
 
-					const removedWorktrees: string[] = []
+					let removedWorktrees: string[] = []
+					const targets: WorktreeTarget[] = []
 					for (const task of taskRecords) {
 						if ("phases" in task.data) {
 							for (const phase of task.data.phases) {
+								targets.push({ taskId: task.id, phaseId: phase.id })
 								removedWorktrees.push(
-									...(yield* worktrees.remove(task.id, phase.id, root)),
+									...(yield* worktrees.remove(task.id, phase.id, root, {
+										dryRun: true,
+									})),
 								)
 							}
 						} else {
+							targets.push({ taskId: task.id })
 							removedWorktrees.push(
-								...(yield* worktrees.remove(task.id, undefined, root)),
+								...(yield* worktrees.remove(task.id, undefined, root, {
+									dryRun: true,
+								})),
 							)
 						}
 					}
 
-					const archivedPaths: string[] = []
+					const at = new Date().toISOString()
+					const moves: Move[] = taskRecords.map((task) => ({
+						from: dirname(task.path),
+						to: archivedTaskDirectory(root, task.id),
+					}))
+					moves.push({ from: dirname(epic.path), to: destination })
+					const writes: Write[] = []
 					for (const task of taskRecords) {
-						const destination = join(root, "archive", "tasks", task.id)
-						yield* fs.createDirectory(dirname(destination))
-						yield* fs.moveDirectory(dirname(task.path), destination)
-						archivedPaths.push(destination)
+						const target = archivedTaskDirectory(root, task.id)
+						const declaration = epic.data.tasks.find(
+							(child) => child.id === task.id,
+						)!
+						writes.push({
+							path: lifecycleManifestPath(target),
+							content: json(
+								manifestFor(
+									yield* readManifest(dirname(task.path)),
+									{
+										kind: "task",
+										id: task.id,
+										parent: { kind: "epic", id, declaration },
+									},
+									event(root, "archive", at, dirname(task.path), target),
+								),
+							),
+						})
 					}
-					yield* fs.createDirectory(dirname(epicDestination))
-					yield* fs.moveDirectory(dirname(epic.path), epicDestination)
-					archivedPaths.push(epicDestination)
-
+					writes.push({
+						path: lifecycleManifestPath(destination),
+						content: json(
+							manifestFor(
+								yield* readManifest(dirname(epic.path)),
+								{ kind: "epic", id },
+								event(root, "archive", at, dirname(epic.path), destination),
+							),
+						),
+					})
+					if (!options.dryRun) {
+						removedWorktrees = yield* applyArchiveMutation(
+							root,
+							targets,
+							moves,
+							writes,
+						)
+					}
 					return {
+						operation: "archive",
 						kind: "epic",
 						id,
-						path: epicDestination,
-						archivedPaths,
+						path: destination,
+						affectedPaths: moves.map((move) => move.to),
 						removedWorktrees,
-					} satisfies ArchiveResult
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies LifecycleResult
 				}),
 
-			archiveTask: (id: string, startPath: string = process.cwd()) =>
+			archiveTask: (
+				id: string,
+				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
+			) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const epics = yield* EpicService
 					const tasks = yield* TaskService
 					const worktrees = yield* WorktreeService
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(id, root)
-					const destination = join(root, "archive", "tasks", id)
-					yield* rejectExistingDestination(destination)
-
+					const destination = archivedTaskDirectory(root, id)
+					yield* rejectExistingDestination(destination, "Archive")
 					let parentEpic: EpicRecord | undefined
+					let declaration: DependencyData | undefined
 					if (task.data.epic) {
 						parentEpic = yield* epics.show(task.data.epic, root)
+						declaration = parentEpic.data.tasks.find((child) => child.id === id)
+						if (!declaration) {
+							return yield* new ArchiveError({
+								message: `Epic '${task.data.epic}' does not declare task '${id}'`,
+							})
+						}
 						const dependent = parentEpic.data.tasks.find((child) =>
 							child.dependsOn?.includes(id),
 						)
@@ -134,56 +670,85 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						}
 					}
 
-					const removedWorktrees: string[] = []
+					let plannedWorktrees: string[] = []
+					const targets: WorktreeTarget[] = []
 					if ("phases" in task.data) {
 						for (const phase of task.data.phases) {
-							removedWorktrees.push(
-								...(yield* worktrees.remove(id, phase.id, root)),
+							targets.push({ taskId: id, phaseId: phase.id })
+							plannedWorktrees.push(
+								...(yield* worktrees.remove(id, phase.id, root, {
+									dryRun: true,
+								})),
 							)
 						}
 					} else {
-						removedWorktrees.push(
-							...(yield* worktrees.remove(id, undefined, root)),
+						targets.push({ taskId: id })
+						plannedWorktrees.push(
+							...(yield* worktrees.remove(id, undefined, root, {
+								dryRun: true,
+							})),
 						)
 					}
-
+					const at = new Date().toISOString()
+					const writes: Write[] = []
 					if (parentEpic) {
-						const parsed = yield* parseFrontmatter(
-							parentEpic.content,
-							parentEpic.path,
-						)
-						yield* fs.writeFile(
-							parentEpic.path,
-							formatMarkdownDocument(
+						writes.push({
+							path: parentEpic.path,
+							content: yield* declarationContent(parentEpic, {
+								...parentEpic.data,
+								tasks: parentEpic.data.tasks.filter((child) => child.id !== id),
+							}),
+						})
+					}
+					writes.push({
+						path: lifecycleManifestPath(destination),
+						content: json(
+							manifestFor(
+								yield* readManifest(dirname(task.path)),
 								{
-									...parentEpic.data,
-									tasks: parentEpic.data.tasks.filter(
-										(child) => child.id !== id,
-									),
+									kind: "task",
+									id,
+									...(task.data.epic && declaration
+										? {
+												parent: {
+													kind: "epic" as const,
+													id: task.data.epic,
+													declaration,
+												},
+											}
+										: {}),
 								},
-								parsed.body,
+								event(root, "archive", at, dirname(task.path), destination),
 							),
+						),
+					})
+					if (!options.dryRun) {
+						plannedWorktrees = yield* applyArchiveMutation(
+							root,
+							targets,
+							[{ from: dirname(task.path), to: destination }],
+							writes,
 						)
 					}
-
-					yield* fs.createDirectory(dirname(destination))
-					yield* fs.moveDirectory(dirname(task.path), destination)
 					return {
+						operation: "archive",
 						kind: "task",
 						id,
 						path: destination,
-						archivedPaths: [destination],
-						removedWorktrees,
-					} satisfies ArchiveResult
+						affectedPaths: [destination],
+						removedWorktrees: plannedWorktrees,
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies LifecycleResult
 				}),
 
 			archivePhase: (
 				taskId: string,
 				id: string,
 				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
 			) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
@@ -196,6 +761,9 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						})
 					}
 					const phase = yield* phases.show(taskId, id, root)
+					const declaration = task.data.phases.find(
+						(candidate) => candidate.id === id,
+					)!
 					const dependent = task.data.phases.find((candidate) =>
 						candidate.dependsOn?.includes(id),
 					)
@@ -204,42 +772,354 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							message: `Cannot archive phase '${id}'; phase '${dependent.id}' depends on it`,
 						})
 					}
-
-					const destination = join(
-						root,
-						"archive",
-						"tasks",
-						taskId,
-						"phases",
-						id,
-					)
-					yield* rejectExistingDestination(destination)
-					const removedWorktrees = yield* worktrees.remove(taskId, id, root)
-
-					const parsed = yield* parseFrontmatter(task.content, task.path)
-					yield* fs.writeFile(
-						task.path,
-						formatMarkdownDocument(
-							{
-								...task.data,
-								phases: task.data.phases.filter(
-									(candidate) => candidate.id !== id,
+					const destination = archivedPhaseDirectory(root, taskId, id)
+					yield* rejectExistingDestination(destination, "Archive")
+					let removedWorktrees = yield* worktrees.remove(taskId, id, root, {
+						dryRun: true,
+					})
+					const at = new Date().toISOString()
+					const content = yield* declarationContent(task, {
+						...task.data,
+						phases: task.data.phases.filter((candidate) => candidate.id !== id),
+					})
+					const writes: Write[] = [
+						{ path: task.path, content },
+						{
+							path: lifecycleManifestPath(destination),
+							content: json(
+								manifestFor(
+									yield* readManifest(dirname(phase.path)),
+									{
+										kind: "phase",
+										id,
+										taskId,
+										parent: { kind: "task", id: taskId, declaration },
+									},
+									event(root, "archive", at, dirname(phase.path), destination),
 								),
-							},
-							parsed.body,
-						),
-					)
-					yield* fs.createDirectory(dirname(destination))
-					yield* fs.moveDirectory(dirname(phase.path), destination)
-
+							),
+						},
+					]
+					if (!options.dryRun) {
+						removedWorktrees = yield* applyArchiveMutation(
+							root,
+							[{ taskId, phaseId: id }],
+							[{ from: dirname(phase.path), to: destination }],
+							writes,
+						)
+					}
 					return {
+						operation: "archive",
 						kind: "phase",
 						id,
 						taskId,
 						path: destination,
-						archivedPaths: [destination],
+						affectedPaths: [destination],
 						removedWorktrees,
-					} satisfies ArchiveResult
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies LifecycleResult
+				}),
+
+			restoreEpic: (
+				id: string,
+				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
+			) =>
+				Effect.gen(function* () {
+					const workbase = yield* WorkbaseService
+					const epics = yield* EpicService
+					const service = yield* ArchiveService
+					const root = yield* workbase.discover(startPath)
+					const epic = yield* service.show("epic", id, undefined, root)
+					const epicData = epic.data as EpicData
+					const destination = join(root, "epics", id)
+					yield* rejectExistingDestination(destination, "Restore")
+					const activeEpics = yield* epics.list(root)
+					const tasks: ArchivedRecord[] = []
+					for (const child of epicData.tasks) {
+						const conflictingEpic = activeEpics.find((candidate) =>
+							candidate.data.tasks.some(
+								(declaration) => declaration.id === child.id,
+							),
+						)
+						if (conflictingEpic) {
+							return yield* new ArchiveError({
+								message: `Active epic '${conflictingEpic.id}' already declares archived task '${child.id}'`,
+							})
+						}
+						const task = yield* service.show("task", child.id, undefined, root)
+						if ((task.data as TaskData).epic !== id) {
+							return yield* new ArchiveError({
+								message: `Archived task '${child.id}' does not backlink to epic '${id}'`,
+							})
+						}
+						if (
+							task.provenance?.parent &&
+							(task.provenance.parent.kind !== "epic" ||
+								task.provenance.parent.id !== id ||
+								task.provenance.parent.declaration.id !== child.id)
+						) {
+							return yield* new ArchiveError({
+								message: `Archived task '${child.id}' has conflicting epic provenance`,
+							})
+						}
+						yield* rejectExistingDestination(
+							join(root, "tasks", child.id),
+							"Restore",
+						)
+						tasks.push(task)
+					}
+					const dependencyIssue = validateDependencies(
+						epicData.tasks,
+						`epic '${id}'`,
+					)
+					if (dependencyIssue)
+						return yield* new ArchiveError({ message: dependencyIssue })
+					const at = new Date().toISOString()
+					const moves: Move[] = tasks.map((task) => ({
+						from: task.path,
+						to: join(root, "tasks", task.id),
+					}))
+					moves.push({ from: epic.path, to: destination })
+					if (!options.dryRun) {
+						const writes: Write[] = []
+						for (const record of [...tasks, epic]) {
+							const target =
+								record.kind === "epic"
+									? destination
+									: join(root, "tasks", record.id)
+							const manifest = manifestFor(
+								record.provenance,
+								{
+									kind: record.kind,
+									id: record.id,
+									...(record.provenance?.parent
+										? { parent: record.provenance.parent }
+										: {}),
+								},
+								event(root, "restore", at, record.path, target),
+							)
+							writes.push({
+								path: lifecycleManifestPath(target),
+								content: json(manifest),
+							})
+						}
+						yield* withLifecycleLock(root, applyMutation(moves, writes))
+					}
+					return {
+						operation: "restore",
+						kind: "epic",
+						id,
+						path: destination,
+						affectedPaths: moves.map((move) => move.to),
+						removedWorktrees: [],
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies LifecycleResult
+				}),
+
+			restoreTask: (
+				id: string,
+				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
+			) =>
+				Effect.gen(function* () {
+					const workbase = yield* WorkbaseService
+					const epics = yield* EpicService
+					const service = yield* ArchiveService
+					const root = yield* workbase.discover(startPath)
+					const task = yield* service.show("task", id, undefined, root)
+					const taskData = task.data as TaskData
+					const destination = join(root, "tasks", id)
+					yield* rejectExistingDestination(destination, "Restore")
+					const activeEpics = yield* epics.list(root)
+					const conflictingEpic = activeEpics.find(
+						(candidate) =>
+							candidate.id !== taskData.epic &&
+							candidate.data.tasks.some((declaration) => declaration.id === id),
+					)
+					if (conflictingEpic) {
+						return yield* new ArchiveError({
+							message: `Active epic '${conflictingEpic.id}' already declares archived task '${id}'`,
+						})
+					}
+					if (!taskData.epic && task.provenance?.parent) {
+						return yield* new ArchiveError({
+							message: `Archived task '${id}' is missing its epic backlink`,
+						})
+					}
+					let parent: EpicRecord | undefined
+					let declaration: DependencyData | undefined
+					if (taskData.epic) {
+						parent = yield* epics.show(taskData.epic, root)
+						if (
+							task.provenance?.parent &&
+							(task.provenance.parent.kind !== "epic" ||
+								task.provenance.parent.id !== taskData.epic)
+						) {
+							return yield* new ArchiveError({
+								message: `Archived task '${id}' has conflicting epic backlink provenance`,
+							})
+						}
+						declaration = task.provenance?.parent?.declaration ?? { id }
+						if (declaration.id !== id) {
+							return yield* new ArchiveError({
+								message: `Archived task '${id}' has a conflicting parent declaration ID '${declaration.id}'`,
+							})
+						}
+						if (parent.data.tasks.some((child) => child.id === id)) {
+							return yield* new ArchiveError({
+								message: `Epic '${taskData.epic}' already declares task '${id}'`,
+							})
+						}
+						const nodes = [...parent.data.tasks, declaration]
+						const dependencyIssue = validateDependencies(
+							nodes,
+							`epic '${taskData.epic}'`,
+						)
+						if (dependencyIssue)
+							return yield* new ArchiveError({ message: dependencyIssue })
+					}
+					const at = new Date().toISOString()
+					if (!options.dryRun) {
+						const writes: Write[] = [
+							{
+								path: lifecycleManifestPath(destination),
+								content: json(
+									manifestFor(
+										task.provenance,
+										{
+											kind: "task",
+											id,
+											...(task.provenance?.parent
+												? { parent: task.provenance.parent }
+												: {}),
+										},
+										event(root, "restore", at, task.path, destination),
+									),
+								),
+							},
+						]
+						if (parent && declaration) {
+							writes.push({
+								path: parent.path,
+								content: yield* declarationContent(parent, {
+									...parent.data,
+									tasks: [...parent.data.tasks, declaration],
+								}),
+							})
+						}
+						yield* withLifecycleLock(
+							root,
+							applyMutation([{ from: task.path, to: destination }], writes),
+						)
+					}
+					return {
+						operation: "restore",
+						kind: "task",
+						id,
+						path: destination,
+						affectedPaths: [destination],
+						removedWorktrees: [],
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies LifecycleResult
+				}),
+
+			restorePhase: (
+				taskId: string,
+				id: string,
+				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
+			) =>
+				Effect.gen(function* () {
+					const workbase = yield* WorkbaseService
+					const tasks = yield* TaskService
+					const service = yield* ArchiveService
+					const root = yield* workbase.discover(startPath)
+					const task = yield* tasks.show(taskId, root)
+					if (!("phases" in task.data)) {
+						return yield* new ArchiveError({
+							message: `Task '${taskId}' is single-phase and cannot receive a phase`,
+						})
+					}
+					const phase = yield* service.show("phase", id, taskId, root)
+					if (
+						phase.provenance?.parent &&
+						(phase.provenance.parent.kind !== "task" ||
+							phase.provenance.parent.id !== taskId)
+					) {
+						return yield* new ArchiveError({
+							message: `Archived phase '${id}' has conflicting task backlink provenance`,
+						})
+					}
+					if (task.data.phases.some((candidate) => candidate.id === id)) {
+						return yield* new ArchiveError({
+							message: `Task '${taskId}' already declares phase '${id}'`,
+						})
+					}
+					const destination = join(root, "tasks", taskId, "phases", id)
+					yield* rejectExistingDestination(destination, "Restore")
+					const declaration = phase.provenance?.parent?.declaration ?? { id }
+					if (declaration.id !== id) {
+						return yield* new ArchiveError({
+							message: `Archived phase '${id}' has a conflicting parent declaration ID '${declaration.id}'`,
+						})
+					}
+					const nodes = [...task.data.phases, declaration]
+					const dependencyIssue = validateDependencies(
+						nodes,
+						`task '${taskId}'`,
+					)
+					if (dependencyIssue)
+						return yield* new ArchiveError({ message: dependencyIssue })
+					const at = new Date().toISOString()
+					if (!options.dryRun) {
+						yield* withLifecycleLock(
+							root,
+							applyMutation(
+								[{ from: phase.path, to: destination }],
+								[
+									{
+										path: task.path,
+										content: yield* declarationContent(task, {
+											...task.data,
+											phases: [...task.data.phases, declaration],
+										}),
+									},
+									{
+										path: lifecycleManifestPath(destination),
+										content: json(
+											manifestFor(
+												phase.provenance,
+												{
+													kind: "phase",
+													id,
+													taskId,
+													...(phase.provenance?.parent
+														? { parent: phase.provenance.parent }
+														: {}),
+												},
+												event(root, "restore", at, phase.path, destination),
+											),
+										),
+									},
+								],
+							),
+						)
+					}
+					return {
+						operation: "restore",
+						kind: "phase",
+						id,
+						taskId,
+						path: destination,
+						affectedPaths: [destination],
+						removedWorktrees: [],
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies LifecycleResult
 				}),
 		}),
 	},

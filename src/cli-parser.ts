@@ -543,26 +543,76 @@ const commands = {
 		},
 	},
 	archive: {
-		usage: "agency archive <epic|task|phase>",
-		options: { ...outputOptions, ...entitySelectorOptions },
+		usage: "agency archive <list|show|epic|task|phase>",
+		options: {
+			...outputOptions,
+			...entitySelectorOptions,
+			"dry-run": { type: "boolean" },
+			kind: { type: "string", multiple: true },
+			status: { type: "string", multiple: true },
+			repository: { type: "string", multiple: true },
+		},
 		subcommands: {
+			list: {
+				usage:
+					"agency archive list [--kind <kind>] [--status <status>] [--repository <alias>] [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["kind", "status", "repository", "json"],
+				repeatable: ["kind", "status", "repository"],
+			},
+			show: {
+				usage:
+					"agency archive show <epic|task> <id> | phase <task-id> <phase-id> [--json]",
+				minArgs: 2,
+				maxArgs: 3,
+				options: ["json"],
+			},
 			epic: {
-				usage: "agency archive epic <epic-id> [--json]",
+				usage: "agency archive epic <epic-id> [--dry-run] [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json", "epic"],
+				options: ["dry-run", "json", "epic"],
 			},
 			task: {
-				usage: "agency archive task <task-id> [--json]",
+				usage: "agency archive task <task-id> [--dry-run] [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json", "task"],
+				options: ["dry-run", "json", "task"],
 			},
 			phase: {
-				usage: "agency archive phase <task-id> <phase-id> [--json]",
+				usage: "agency archive phase <task-id> <phase-id> [--dry-run] [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json", "task", "phase"],
+				options: ["dry-run", "json", "task", "phase"],
+			},
+		},
+	},
+	restore: {
+		usage: "agency restore <epic|task|phase>",
+		options: {
+			...outputOptions,
+			...entitySelectorOptions,
+			"dry-run": { type: "boolean" },
+		},
+		subcommands: {
+			epic: {
+				usage: "agency restore epic <epic-id> [--dry-run] [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["dry-run", "json", "epic"],
+			},
+			task: {
+				usage: "agency restore task <task-id> [--dry-run] [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["dry-run", "json", "task"],
+			},
+			phase: {
+				usage: "agency restore phase <task-id> <phase-id> [--dry-run] [--json]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: ["dry-run", "json", "task", "phase"],
 			},
 		},
 	},
@@ -789,12 +839,14 @@ const targetSlots = (
 		return subcommand === "list" ? ["task"] : ["task", "phase"]
 	if (["claim", "release", "finish"].includes(commandName))
 		return ["task", "phase"]
-	if (commandName === "archive")
+	if (["archive", "restore"].includes(commandName))
 		return subcommand === "epic"
 			? ["epic"]
 			: subcommand === "task"
 				? ["task"]
-				: ["task", "phase"]
+				: subcommand === "phase"
+					? ["task", "phase"]
+					: []
 	if (commandName === "pr" && subcommand === "create") return ["task", "phase"]
 	return []
 }
@@ -1150,6 +1202,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	if (
 		commandName === "status" ||
+		(commandName === "archive" && subcommand === "list") ||
 		(["epic", "task", "phase"].includes(commandName) && subcommand === "list")
 	) {
 		validateViewOptions(parsed.values, spec)

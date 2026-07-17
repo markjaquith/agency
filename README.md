@@ -574,15 +574,24 @@ runner environment documented above for a later release or finish operation.
 ### Archive
 
 ```text
-agency archive epic <epic-id> [--json]
-agency archive task <task-id> [--json]
-agency archive phase <task-id> <phase-id> [--json]
+agency archive list [--kind <kind>] [--status <status>] [--repository <alias>]
+agency archive show <epic|task> <id>
+agency archive show phase <task-id> <phase-id>
+agency archive epic <epic-id> [--dry-run] [--json]
+agency archive task <task-id> [--dry-run] [--json]
+agency archive phase <task-id> <phase-id> [--dry-run] [--json]
+agency restore epic <epic-id> [--dry-run] [--json]
+agency restore task <task-id> [--dry-run] [--json]
+agency restore phase <task-id> <phase-id> [--dry-run] [--json]
 ```
 
 Archived work keeps its hierarchy under `archive/`. Epic archiving includes its
 listed tasks. Task and phase archiving update the active parent document and
 reject items that active siblings depend on. Agency removes registered worktrees
-before moving files, refuses dirty worktrees, and preserves branches.
+before moving files, refuses dirty worktrees, and preserves branches. Archive and
+restore preflight all destinations and graph references before changing files.
+Versioned lifecycle provenance preserves parent declarations and dependency edges
+for restoration. Archived IDs are reserved until restored.
 
 ### Work and Pull Requests
 
