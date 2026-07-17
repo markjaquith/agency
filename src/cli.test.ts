@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { access, mkdir, realpath } from "node:fs/promises"
 import { join } from "node:path"
+import errorFixture from "../fixtures/protocol/error.json"
+import successFixture from "../fixtures/protocol/success.json"
 import { cleanupTempDir, createTempDir } from "./test-utils"
 
 const projectRoot = join(import.meta.dir, "..")
@@ -63,6 +65,28 @@ describe("CLI", () => {
 		expect(help.exitCode).toBe(0)
 		expect(help.stdout).toContain("Usage: agency <command> [options]")
 		expect(help.stderr).toBe("")
+	})
+
+	test("keeps the published protocol fixtures synchronized with CLI output", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const root = join(parent, "workbase")
+		const success = await runCli(["init", root, "--json"], parent)
+		expect(success.exitCode).toBe(0)
+		expect(success.stderr).toBe("")
+		expect(success.stdout.endsWith("\n")).toBe(true)
+		const successEnvelope = JSON.parse(success.stdout)
+		expect(successEnvelope.result.root).toBe(root)
+		expect({
+			...successEnvelope,
+			result: { ...successEnvelope.result, root: "/work/agency" },
+		}).toEqual(successFixture)
+
+		const failure = await runCli(["unknown", "--json"])
+		expect(failure.exitCode).toBe(1)
+		expect(failure.stderr).toBe("")
+		expect(failure.stdout.endsWith("\n")).toBe(true)
+		expect(JSON.parse(failure.stdout)).toEqual(errorFixture)
 	})
 
 	test("reports unknown commands and preserves tagged error messages", async () => {

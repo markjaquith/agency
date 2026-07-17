@@ -27,6 +27,9 @@ applying filters. `doctor` discovers required tools, integrations, repositories,
 refs, worktrees, permissions, drift, and optional runner capabilities. `sync` is
 observational unless `--apply` is explicit.
 
+`next` currently resolves only the process cwd. Although global `--cwd` and
+`--workbase` are accepted by the parser, run `next` from the intended workbase.
+
 ## Workbase And Repositories
 
 ```text
@@ -75,8 +78,10 @@ agency task show <id> [--json]
 agency task status <id> <open|done|dropped> [--json]
 agency task update <id> [metadata options] [--if-revision <hash>] [--json]
 agency task rename <id> <new-id> [--if-revision <hash>] [--json]
-agency task move <id> (--epic <epic-id> | --no-epic) [--json]
-agency task dependency <add|remove> <task-id> <dependency-id> [--json]
+agency task move <id> (--epic <epic-id> | --no-epic)
+  [--if-revision <hash>] [--json]
+agency task dependency <add|remove> <task-id> <dependency-id>
+  [--if-revision <hash>] [--json]
 
 agency phase create <task-id> <phase-id> --repo <alias> --branch <name>
   --base <name> [--description <text>] [--reference <alias>:<ref>...]
@@ -89,7 +94,7 @@ agency phase update <task-id> <phase-id> [metadata options]
 agency phase rename <task-id> <phase-id> <new-id>
   [--if-revision <hash>] [--json]
 agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
-  [--json]
+  [--if-revision <hash>] [--json]
 ```
 
 `task new` is interactive and requires a TTY. Agents and scripts use
@@ -133,14 +138,16 @@ agency worktree prepare <task-id> [phase-id] [--dry-run] [--json]
 agency worktree remove <task-id> [phase-id] [--dry-run] [--json]
 agency worktree rebuild <task-id> [phase-id] [--dry-run] [--json]
 agency worktree repair <task-id> [phase-id] [--dry-run] [--json]
-agency pr create <task-id> [phase-id] [--draft] [--json]
+agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 ```
 
 `work` is a launch flow, not an active-agent step. `work prepare` materializes
-without launching or changing status. Worktree mutations preflight every
-declared checkout and refuse dirty or conflicting state. `pr create` requires a
-clean writable checkout, pushes the declared branch, invokes `gh pr create
---fill`, and records the returned URL.
+without launching or changing status. Destructive remove and rebuild operations
+refuse dirty or conflicting state. Conservative repair may correct registration
+while preserving dirty files, but never discards changes. `pr create` requires a
+clean writable checkout, pushes the declared branch, invokes the configured
+delivery provider or falls back to `gh pr create --fill`, and records the
+returned URL.
 
 ## Noninteractive Selection
 
@@ -148,3 +155,7 @@ Use global `--workbase <id|name|path>` outside a workbase, or `--cwd <path>` to
 perform cwd inference elsewhere. Targeted commands accept `--epic`, `--task`,
 and, with a task, `--phase`. `--json`, `--no-input`, or non-TTY execution disables
 prompts; provide all selectors and required inputs explicitly.
+
+Selectors are only a resolution mechanism; they do not make discovery and claim
+atomic. There is no `assign` command. Use `work` for a local human launch, or use
+`claim` and manage an external runner separately.
