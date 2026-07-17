@@ -314,6 +314,20 @@ process.exit(${exitCode})
 		expect(await Bun.file(ghCallPath).exists()).toBe(false)
 	})
 
+	test("blocks PR creation when workbase validation fails", async () => {
+		await createTask()
+		await materialize()
+		await mkdir(join(root, "tasks", "missing-document"), { recursive: true })
+		await writeFakeGh({ stdout: "https://github.com/example/agency/pull/45" })
+
+		await expect(createPullRequest()).rejects.toThrow(
+			"Required document is missing",
+		)
+
+		await expectRemoteBranch("task/example", false)
+		expect(await Bun.file(ghCallPath).exists()).toBe(false)
+	})
+
 	test("reports push failure and does not invoke gh", async () => {
 		await createTask()
 		await materialize()

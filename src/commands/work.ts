@@ -206,7 +206,7 @@ export const work = (
 			prompt = workspace.phasePath
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
-			launchPath = dirname(target.path)
+			launchPath = workspace.writablePath
 		}
 
 		const requested = options.claude ? "claude" : "opencode"
@@ -227,7 +227,8 @@ export const work = (
 			yield* tasks.setStatus(target.taskId, "working", root)
 		}
 
-		const args = cli === "opencode" ? ["--continue"] : [prompt]
+		const args =
+			cli === "opencode" ? ["--continue", "--prompt", prompt] : [prompt]
 		verboseLog(
 			`Launching command: ${formatCommand([cli, ...args])} (cwd: ${launchPath})`,
 		)
