@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import orchestrationRecipes from "../fixtures/protocol/orchestration-recipes.json"
 import { parseCli } from "./cli-parser"
 
 const expectUsageError = (args: string[], usage: string) => {
@@ -6,6 +7,12 @@ const expectUsageError = (args: string[], usage: string) => {
 }
 
 describe("strict CLI parsing", () => {
+	test("accepts every documented orchestration recipe command", () => {
+		for (const args of orchestrationRecipes) {
+			expect(() => parseCli(args)).not.toThrow()
+		}
+	})
+
 	test("rejects misspelled and command-inapplicable options", () => {
 		expectUsageError(["task", "list", "--josn"], "agency task")
 		expectUsageError(

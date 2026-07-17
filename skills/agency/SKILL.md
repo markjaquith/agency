@@ -16,7 +16,7 @@ source of truth and Agency commands as the safe way to mutate their structure.
 
 ## Start With Context
 
-The first inspection command is always:
+For an entity target, the first inspection command is:
 
 ```bash
 agency context . --json
@@ -25,6 +25,10 @@ agency context . --json
 It identifies the target and ancestors, document revisions, dependency
 readiness, write authority, checkout state, PR state, and validation warnings.
 Use its paths and IDs instead of inferring them from the process cwd.
+
+At the workbase root, context cannot infer one entity from `.`. Use
+`agency next --json` or `agency graph --json` to choose a target, then pass that
+target to `agency context <target> --json`.
 
 For broader orchestration, load the graph and discover available capabilities:
 

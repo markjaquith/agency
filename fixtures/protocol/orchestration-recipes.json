@@ -1,0 +1,59 @@
+[
+  ["context", "--task", "checkout", "--phase", "ui", "--json"],
+  ["worktree", "inspect", "checkout", "ui", "--json"],
+  ["next", "--json"],
+  ["graph", "--ready", "--json"],
+  [
+    "claim",
+    "checkout",
+    "ui",
+    "--claimant",
+    "orchestrator-1",
+    "--runner",
+    "opencode",
+    "--session-id",
+    "session-123",
+    "--revision",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "--json"
+  ],
+  [
+    "work",
+    "prepare",
+    "--task",
+    "checkout",
+    "--phase",
+    "ui",
+    "--dry-run",
+    "--json"
+  ],
+  ["work", "prepare", "--task", "checkout", "--phase", "ui", "--json"],
+  ["work", "tasks/checkout/phases/ui", "--runner", "opencode"],
+  ["sync", "--dry-run", "--json"],
+  ["sync", "--apply", "--json"],
+  ["pr", "create", "checkout", "ui", "--json"],
+  [
+    "finish",
+    "checkout",
+    "ui",
+    "--session-id",
+    "session-123",
+    "--revision",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "--outcome",
+    "done",
+    "--json"
+  ],
+  ["doctor", "--json"],
+  ["worktree", "repair", "checkout", "ui", "--dry-run", "--json"],
+  [
+    "release",
+    "checkout",
+    "ui",
+    "--session-id",
+    "session-123",
+    "--revision",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "--json"
+  ]
+]

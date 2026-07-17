@@ -707,27 +707,34 @@ Every error contains a stable `code`, human-readable `message`, structured
 `fields`, and `retryable`. `remediation` is included when Agency knows a specific
 recovery action. Version 1 defines these codes:
 
-| Code                      | Meaning                                                  |
-| ------------------------- | -------------------------------------------------------- |
-| `CLI_USAGE`               | Invalid command, option, argument, or option combination |
-| `WORKBASE_NOT_FOUND`      | No workbase could be resolved                            |
-| `WORKBASE_CONFIG_INVALID` | Invalid workbase configuration                           |
-| `WORKBASE_REGISTRY_ERROR` | Invalid or inaccessible workbase registry                |
-| `FILE_NOT_FOUND`          | A required path does not exist                           |
-| `FILESYSTEM_ERROR`        | A filesystem operation failed                            |
-| `FRONTMATTER_INVALID`     | A durable document has invalid frontmatter               |
-| `VALIDATION_FAILED`       | Workbase validation reported issues                      |
-| `REPOSITORY_ERROR`        | Repository operation failed                              |
-| `EPIC_ERROR`              | Epic operation failed                                    |
-| `TASK_ERROR`              | Task operation failed                                    |
-| `PHASE_ERROR`             | Phase operation failed                                   |
-| `ARCHIVE_ERROR`           | Archive operation failed                                 |
-| `WORKTREE_ERROR`          | Worktree operation failed                                |
-| `PULL_REQUEST_ERROR`      | Pull request operation failed                            |
-| `GRAPH_ERROR`             | Workbase graph construction failed                       |
-| `PROCESS_ERROR`           | A child process failed and may be retried                |
-| `PROTOCOL_OUTPUT_ERROR`   | A command violated the machine output contract           |
-| `COMMAND_FAILED`          | An otherwise unclassified command failure                |
+| Code                      | Meaning                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| `CLI_USAGE`               | Invalid command, option, argument, or option combination  |
+| `WORKBASE_NOT_FOUND`      | No workbase could be resolved                             |
+| `WORKBASE_CONFIG_INVALID` | Invalid workbase configuration                            |
+| `WORKBASE_REGISTRY_ERROR` | Invalid or inaccessible workbase registry                 |
+| `FILE_NOT_FOUND`          | A required path does not exist                            |
+| `FILESYSTEM_ERROR`        | A filesystem operation failed                             |
+| `FRONTMATTER_INVALID`     | A durable document has invalid frontmatter                |
+| `VALIDATION_FAILED`       | Workbase validation reported issues                       |
+| `REPOSITORY_ERROR`        | Repository operation failed                               |
+| `EPIC_ERROR`              | Epic operation failed                                     |
+| `TASK_ERROR`              | Task operation failed                                     |
+| `PHASE_ERROR`             | Phase operation failed                                    |
+| `CLAIM_ERROR`             | Claim input or lifecycle state is invalid                 |
+| `CLAIM_CONFLICT`          | Active or legacy ownership conflicts with an operation    |
+| `REVISION_CONFLICT`       | A durable document changed since inspection               |
+| `CLAIM_OWNERSHIP`         | The session does not own the active claim                 |
+| `ARCHIVE_ERROR`           | Archive operation failed                                  |
+| `WORKTREE_ERROR`          | Worktree operation failed                                 |
+| `PULL_REQUEST_ERROR`      | Pull request operation failed                             |
+| `CONTEXT_ERROR`           | A context target or required document is invalid          |
+| `GRAPH_ERROR`             | Workbase graph construction failed                        |
+| `EXECUTION_BLOCKED`       | Readiness or lifecycle blockers prevent execution         |
+| `SYNC_ERROR`              | Reconciliation validation, inspection, or provider failed |
+| `PROCESS_ERROR`           | A child process failed and may be retried                 |
+| `PROTOCOL_OUTPUT_ERROR`   | A command violated the machine output contract            |
+| `COMMAND_FAILED`          | An otherwise unclassified command failure                 |
 
 The Effect schemas are exported from `@markjaquith/agency` and
 `@markjaquith/agency/protocol`. The distributable JSON Schemas are exported as
@@ -735,6 +742,12 @@ The Effect schemas are exported from `@markjaquith/agency` and
 `@markjaquith/agency/schemas/agency-graph-v1.json`. Representative envelope
 payloads are exported as `@markjaquith/agency/fixtures/protocol/success.json` and
 `@markjaquith/agency/fixtures/protocol/error.json`.
+
+Success, help, and version output exit `0`; usage and command failures exit `1`.
+There are no error-specific exit statuses. `graph --jsonl` streams versioned
+records on success instead of wrapping them in an envelope; JSONL failures still
+use one error envelope. See `skills/agency/references/contracts.md` for revision,
+selector, projection, retry, and capability details.
 
 ## Agent Skill
 
