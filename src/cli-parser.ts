@@ -88,6 +88,24 @@ const commands = {
 			},
 		},
 	},
+	integration: {
+		usage: "agency integration <status|sync>",
+		options: outputOptions,
+		subcommands: {
+			status: {
+				usage: "agency integration status [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["json"],
+			},
+			sync: {
+				usage: "agency integration sync [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["json"],
+			},
+		},
+	},
 	repo: {
 		usage: "agency repo <add|link|list>",
 		options: outputOptions,

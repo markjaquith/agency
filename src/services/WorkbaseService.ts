@@ -17,14 +17,6 @@ import {
 	type TaskFrontmatter as TaskData,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
-import {
-	canUpdateManagedWorkbaseAgents,
-	managedWorkbaseAgents,
-} from "../workbase/agents-file"
-import {
-	canUpdateManagedWorkbaseOpencode,
-	managedWorkbaseOpencode,
-} from "../workbase/opencode-file"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -119,48 +111,6 @@ const readRegistry = (configDirectory?: string) =>
 		return { path, registry: decoded.value }
 	})
 
-const ensureWorkbaseAgents = (root: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const path = join(root, "AGENTS.md")
-		if (!(yield* fs.exists(path))) {
-			yield* fs.writeFile(path, managedWorkbaseAgents)
-			return
-		}
-
-		const content = yield* fs.readFile(path)
-		if (
-			content !== managedWorkbaseAgents &&
-			canUpdateManagedWorkbaseAgents(content)
-		) {
-			yield* fs.writeFile(path, managedWorkbaseAgents)
-		}
-	})
-
-const ensureWorkbaseOpencode = (root: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const directory = join(root, ".opencode")
-		const path = join(directory, "opencode.jsonc")
-		const managed = managedWorkbaseOpencode(root)
-		if (!(yield* fs.exists(path))) {
-			if (yield* fs.exists(join(directory, "opencode.json"))) return
-			yield* fs.createDirectory(directory)
-			yield* fs.writeFile(path, managed)
-			return
-		}
-
-		const content = yield* fs.readFile(path)
-		if (content !== managed && canUpdateManagedWorkbaseOpencode(content)) {
-			yield* fs.writeFile(path, managed)
-		}
-	})
-
-const ensureWorkbaseAgentFiles = (root: string) =>
-	Effect.all([ensureWorkbaseAgents(root), ensureWorkbaseOpencode(root)], {
-		concurrency: "unbounded",
-	})
-
 const findCycles = (nodes: readonly Dependency[]): readonly string[] => {
 	const dependencies = new Map(
 		nodes.map((node) => [node.id, [...(node.dependsOn ?? [])]]),
@@ -239,8 +189,6 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							`${existing}${prefix}${missing.join("\n")}\n`,
 						)
 					}
-					yield* ensureWorkbaseAgentFiles(root)
-
 					return root
 				}),
 
@@ -296,7 +244,6 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 										})
 									}
 								}
-								yield* ensureWorkbaseAgentFiles(current)
 								return current
 							}
 						}

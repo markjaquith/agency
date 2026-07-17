@@ -12,6 +12,7 @@ import { PhaseService } from "./services/PhaseService"
 import { WorktreeService } from "./services/WorktreeService"
 import { PullRequestService } from "./services/PullRequestService"
 import { ArchiveService } from "./services/ArchiveService"
+import { IntegrationService } from "./services/IntegrationService"
 
 export const createTempDir = () => mkdtemp(join(tmpdir(), "agency-test-"))
 
@@ -28,6 +29,7 @@ const TestLayer = Layer.mergeAll(
 	WorktreeService.Default,
 	PullRequestService.Default,
 	ArchiveService.Default,
+	IntegrationService.Default,
 )
 
 export async function runTestEffect<A, E>(

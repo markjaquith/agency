@@ -13,6 +13,10 @@ import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
 import { archive, help as archiveHelp } from "./src/commands/archive"
 import { workbase, help as workbaseHelp } from "./src/commands/workbase"
+import {
+	integration,
+	help as integrationHelp,
+} from "./src/commands/integration"
 import type { Command } from "./src/types"
 import { FileSystemService } from "./src/services/FileSystemService"
 import { WorkbaseService } from "./src/services/WorkbaseService"
@@ -23,6 +27,7 @@ import { PhaseService } from "./src/services/PhaseService"
 import { WorktreeService } from "./src/services/WorktreeService"
 import { PullRequestService } from "./src/services/PullRequestService"
 import { ArchiveService } from "./src/services/ArchiveService"
+import { IntegrationService } from "./src/services/IntegrationService"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -35,6 +40,7 @@ const CliLayer = Layer.mergeAll(
 	WorktreeService.Default,
 	PullRequestService.Default,
 	ArchiveService.Default,
+	IntegrationService.Default,
 )
 
 /**
@@ -191,6 +197,22 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	integration: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(integrationHelp)
+				return
+			}
+			await runCommand(
+				integration({
+					subcommand: args[0],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 	repo: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -296,6 +318,7 @@ Usage: agency <command> [options]
 Commands:
   init [path]            Initialize an Agency workbase
   workbase <subcommand>  Manage registered workbases
+  integration <command> Inspect or sync managed integration files
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
   archive <type>         Archive a work item
