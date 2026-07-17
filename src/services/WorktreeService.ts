@@ -88,6 +88,8 @@ interface MaterializeOptions extends BaseCommandOptions {
 	readonly force?: boolean
 }
 
+interface RemoveOptions extends BaseCommandOptions {}
+
 export class WorktreeService extends Effect.Service<WorktreeService>()(
 	"WorktreeService",
 	{
@@ -558,6 +560,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 				taskId: string,
 				phaseId?: string,
 				startPath: string = process.cwd(),
+				options: RemoveOptions = {},
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -592,11 +595,22 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 					}
 
 					const codeDirectoryExists = yield* fs.isDirectory(codePath)
-					const removed: string[] = []
-					for (const alias of [
+					const aliases = [
 						execution.repo,
 						...(execution.repos ?? []).map((reference) => reference.repo),
-					]) {
+					]
+					if (codeDirectoryExists) {
+						const unmanaged = (yield* fs.readDirectory(codePath)).filter(
+							(entry) => !aliases.includes(entry.name),
+						)
+						if (unmanaged.length > 0) {
+							return yield* new WorktreeError({
+								message: `Cannot remove ${codePath}; it contains unmanaged entries: ${unmanaged.map((entry) => entry.name).join(", ")}`,
+							})
+						}
+					}
+					const removed: string[] = []
+					for (const alias of aliases) {
 						const repositoryPath = join(root, "repos", alias)
 						const checkoutPath = join(codePath, alias)
 						const listed = yield* fs.runCommand(
@@ -643,6 +657,19 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							}
 							continue
 						}
+						if (checkoutExists) {
+							const status = yield* fs.runCommand(
+								["git", "-C", checkoutPath, "status", "--porcelain"],
+								{ captureOutput: true },
+							)
+							if (status.exitCode !== 0 || status.stdout.trim()) {
+								return yield* new WorktreeError({
+									message: `Failed to remove worktree for '${alias}': worktree has uncommitted changes`,
+								})
+							}
+							removed.push(checkoutPath)
+						}
+						if (options.dryRun) continue
 
 						const result = yield* fs.runCommand(
 							[
@@ -661,10 +688,13 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								message: `Failed to remove worktree for '${alias}': ${result.stderr}`,
 							})
 						}
-						if (checkoutExists) removed.push(checkoutPath)
 					}
 
-					if (codeDirectoryExists && (yield* fs.isDirectory(codePath))) {
+					if (
+						!options.dryRun &&
+						codeDirectoryExists &&
+						(yield* fs.isDirectory(codePath))
+					) {
 						const remaining = yield* fs.readDirectory(codePath)
 						if (remaining.length > 0) {
 							return yield* new WorktreeError({

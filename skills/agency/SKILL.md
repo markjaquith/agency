@@ -248,14 +248,22 @@ agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outco
 ## Archive Completed Work
 
 ```bash
+agency archive list
+agency archive show <epic|task> <id>
 agency archive epic <epic-id>
 agency archive task <task-id>
 agency archive phase <task-id> <phase-id>
+agency restore epic <epic-id>
+agency restore task <task-id>
+agency restore phase <task-id> <phase-id>
 ```
 
 Use these commands instead of moving work item folders manually. Agency mirrors
 their hierarchy under `archive/`, removes registered worktrees first, and keeps
-branches. It refuses dirty worktrees and active sibling dependencies.
+branches. It refuses dirty worktrees and active sibling dependencies. Use
+`--dry-run` to preflight archive or restore. Restore uses lifecycle provenance to
+recreate parent declarations and rejects ID, backlink, dependency, and destination
+conflicts. Archived IDs remain reserved until restored.
 
 ## Validate Every Structural Change
 

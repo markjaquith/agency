@@ -52,18 +52,36 @@ describe("archive command", () => {
 			),
 		)
 
-		expect(JSON.parse(logs[0]!)).toEqual({
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			operation: "archive",
 			kind: "task",
 			id: "example",
 			path: join(root, "archive/tasks/example"),
-			archivedPaths: [join(root, "archive/tasks/example")],
+			affectedPaths: [join(root, "archive/tasks/example")],
 			removedWorktrees: [],
+			dryRun: false,
 		})
 	})
 
 	test("requires a supported work item type", async () => {
 		await expect(
 			runTestEffect(archive({ args: [], cwd: root, silent: true })),
-		).rejects.toThrow("Available: epic, task, phase")
+		).rejects.toThrow("Available: list, show, epic, task, phase")
+	})
+
+	test("rejects an extra archive show identifier", async () => {
+		await runTestEffect(
+			archive({ type: "task", args: ["example"], cwd: root, silent: true }),
+		)
+		await expect(
+			runTestEffect(
+				archive({
+					type: "show",
+					args: ["task", "example", "extra"],
+					cwd: root,
+					silent: true,
+				}),
+			),
+		).rejects.toThrow("Usage: agency archive show")
 	})
 })

@@ -13,6 +13,7 @@ import {
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { documentRevision } from "../workbase/document-revision"
+import { archivedEpicDirectory } from "../workbase/archive"
 
 class EpicError extends Data.TaggedError("EpicError")<{
 	readonly message: string
@@ -71,6 +72,11 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 				if (yield* fs.exists(directory)) {
 					return yield* new EpicError({
 						message: `Epic '${validId}' already exists`,
+					})
+				}
+				if (yield* fs.exists(archivedEpicDirectory(root, validId))) {
+					return yield* new EpicError({
+						message: `Epic '${validId}' is archived; restore it before reusing this ID`,
 					})
 				}
 

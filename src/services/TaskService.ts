@@ -17,6 +17,7 @@ import {
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
 import { documentRevision } from "../workbase/document-revision"
+import { archivedTaskDirectory } from "../workbase/archive"
 
 class TaskError extends Data.TaggedError("TaskError")<{
 	readonly message: string
@@ -83,6 +84,11 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				if (yield* fs.exists(directory)) {
 					return yield* new TaskError({
 						message: `Task '${id}' already exists`,
+					})
+				}
+				if (yield* fs.exists(archivedTaskDirectory(root, id))) {
+					return yield* new TaskError({
+						message: `Task '${id}' is archived; restore it before reusing this ID`,
 					})
 				}
 
