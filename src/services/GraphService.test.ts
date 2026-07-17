@@ -292,6 +292,42 @@ status: open
 		})
 	})
 
+	test("inherits parent epic validation blockers", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		await write(
+			root,
+			"tasks/unlisted/TASK.md",
+			`---
+ticketUrl: null
+epic: delivery
+repo: agency
+branch: feat/unlisted
+base: main
+pr: null
+status: open
+---
+
+# Unlisted
+`,
+		)
+
+		const graph = await getGraph(root)
+		const execution = graph.nodes.find(
+			(node) => node.id === "execution-unit:task/unlisted",
+		)
+
+		expect(execution?.readiness).toMatchObject({
+			ready: false,
+			blockers: [
+				{
+					kind: "validation",
+					reason: "Epic does not list child task 'unlisted'",
+				},
+			],
+		})
+	})
+
 	test("adds body, workspace, git, and PR details only when requested", async () => {
 		const root = await createWorkbase()
 		roots.push(root)

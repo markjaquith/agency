@@ -8,6 +8,7 @@ interface PrOptions extends BaseCommandOptions {
 	readonly taskId?: string
 	readonly phaseId?: string
 	readonly draft?: boolean
+	readonly force?: boolean
 }
 
 export const pr = (options: PrOptions) =>
@@ -37,5 +38,6 @@ task or phase document.
 
 Options:
   --draft             Create a draft pull request
+  --force             Override readiness and terminal-state guards
   --json              Output the pull request URL as JSON
 `

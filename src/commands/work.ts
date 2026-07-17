@@ -8,6 +8,7 @@ import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { ClaimService } from "../services/ClaimService"
+import { ReadinessService } from "../services/ReadinessService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
 import { createProgress, type Progress } from "../utils/progress"
@@ -30,6 +31,7 @@ interface WorkOptions extends BaseCommandOptions {
 	readonly epicId?: string
 	readonly opencode?: boolean
 	readonly claude?: boolean
+	readonly force?: boolean
 }
 
 type LaunchAgent = (cli: string, args: readonly string[], cwd: string) => void
@@ -46,6 +48,16 @@ const formatCommand = (args: readonly string[]) =>
 const launchAgent: LaunchAgent = (cli, args, cwd) => {
 	process.chdir(cwd)
 	execvp(cli, [...args])
+}
+
+const targetNodeId = (target: WorkTarget) => {
+	if (target.kind === "epic") return `epic:${target.epicId}`
+	if (target.kind === "phase") {
+		return `execution-unit:phase/${target.taskId}/${target.phaseId}`
+	}
+	return target.multiPhase
+		? `task:${target.taskId}`
+		: `execution-unit:task/${target.taskId}`
 }
 
 export const work = (
@@ -79,6 +91,7 @@ export const work = (
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
 		const claims = yield* ClaimService
+		const readiness = yield* ReadinessService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const directoryPath = options.directory
@@ -168,20 +181,29 @@ export const work = (
 					phaseRecords.push(...(yield* phases.list(task.id, root)))
 				}
 			}
-			const choices = buildWorkTargetChoices(
+			const allChoices = buildWorkTargetChoices(
 				epicRecords,
 				taskRecords,
 				phaseRecords,
 			)
+			const readyTargetIds = options.force
+				? null
+				: yield* readiness.getReadyWorkTargetIds(root)
+			const choices = options.force
+				? allChoices
+				: allChoices.filter((choice) =>
+						readyTargetIds!.has(targetNodeId(choice.target)),
+					)
 			if (choices.length === 0) {
 				return yield* Effect.fail(
-					new Error("No epics, tasks, or phases found in this workbase"),
+					new Error("No ready work targets found in this workbase"),
 				)
 			}
 			const { config } = yield* workbase.loadConfig(root)
 			target = yield* pick(choices, config.chooserCommand)
 			if (!target) return
 		}
+		yield* readiness.guardWorkTarget(targetNodeId(target), root, options.force)
 
 		let prompt: string
 		let launchPath: string
@@ -334,6 +356,7 @@ Options:
   --epic <id>         Work on an epic
   --opencode           Require OpenCode
   --claude             Require Claude Code
+  --force              Override readiness and terminal-state guards
   --no-input          Never open an interactive selector
 
 Without interactive input, provide a directory, task ID, or --epic and run the

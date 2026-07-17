@@ -111,6 +111,12 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 		retryable: false,
 		remediation: "Correct the workbase graph data or filters and retry.",
 	},
+	ExecutionGuardError: {
+		code: "EXECUTION_BLOCKED",
+		retryable: false,
+		remediation:
+			"Resolve the reported blockers or retry intentionally with --force.",
+	},
 	SyncError: {
 		code: "SYNC_ERROR",
 		retryable: false,

@@ -279,6 +279,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 					const phaseState = (taskId: string, phaseId: string) => {
 						const task = tasks.get(taskId)
 						const phase = phases.get(`${taskId}/${phaseId}`)
+						const parentEpic = task?.data.epic
+							? epics.get(task.data.epic)
+							: undefined
 						const declaration =
 							task && "phases" in task.data
 								? task.data.phases.find((item) => item.id === phaseId)
@@ -297,7 +300,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 								"Parent task",
 							),
 							...validationBlockers(
-								[phase?.path, task?.path]
+								[phase?.path, task?.path, parentEpic?.path]
 									.filter((path): path is string => Boolean(path))
 									.map((path) => relative(root, path)),
 							),
@@ -323,11 +326,15 @@ export class GraphService extends Effect.Service<GraphService>()(
 
 					const taskState = (taskId: string) => {
 						const task = tasks.get(taskId)
+						const parentEpic = task?.data.epic
+							? epics.get(task.data.epic)
+							: undefined
 						const statuses = taskLeafStatuses(taskId)
 						const aggregate = aggregateProgress(statuses)
 						const descendantPaths = task
 							? [
 									relative(root, task.path),
+									...(parentEpic ? [relative(root, parentEpic.path)] : []),
 									...[...phases.entries()]
 										.filter(([key]) => key.startsWith(`${taskId}/`))
 										.map(([, phase]) => relative(root, phase.path)),
