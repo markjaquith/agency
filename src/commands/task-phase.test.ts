@@ -124,6 +124,26 @@ describe("task and phase command JSON output", () => {
 		})
 	})
 
+	test("renders task and phase operational tables", async () => {
+		const taskLogs = await captureLogs(() =>
+			runTestEffect(task({ subcommand: "list", args: [], cwd: root })),
+		)
+		expect(taskLogs[0]).toContain(
+			"TASK   PARENT  STATUS  READINESS  REPOSITORIES  BRANCH",
+		)
+		expect(taskLogs[0]).toContain("multi  -       open    ready")
+
+		const phaseLogs = await captureLogs(() =>
+			runTestEffect(phase({ subcommand: "list", args: ["multi"], cwd: root })),
+		)
+		expect(phaseLogs[0]).toContain(
+			"PHASE  PARENT  STATUS  READINESS  REPOSITORIES  BRANCH",
+		)
+		expect(phaseLogs[0]).toContain(
+			"first  multi   open    ready      agency        task/first  absent  absent",
+		)
+	})
+
 	test("outputs created task and phase records as JSON", async () => {
 		const taskLogs = await captureLogs(() =>
 			runTestEffect(

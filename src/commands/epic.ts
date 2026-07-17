@@ -2,6 +2,8 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { EpicService } from "../services/EpicService"
 import { createLoggers } from "../utils/effect"
+import { formatTable } from "../utils/table"
+import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 
 interface EpicOptions extends BaseCommandOptions {
@@ -11,6 +13,11 @@ interface EpicOptions extends BaseCommandOptions {
 	readonly description?: string
 	readonly repos?: readonly string[]
 	readonly json?: boolean
+	readonly statuses?: readonly string[]
+	readonly repositories?: readonly string[]
+	readonly ready?: boolean
+	readonly blocked?: boolean
+	readonly pr?: boolean
 }
 
 export const epic = (options: EpicOptions) =>
@@ -47,16 +54,40 @@ export const epic = (options: EpicOptions) =>
 
 			case "list": {
 				const records = yield* epics.list(cwd)
+				const { epicRows } = yield* getWorkViews({
+					cwd,
+					statuses: options.statuses,
+					repositories: options.repositories,
+					ready: options.ready,
+					blocked: options.blocked,
+					pr: options.pr,
+				})
+				const ordered = epicRows.flatMap((row) => {
+					const record = records.find((item) => item.id === row.key)
+					return record ? [record] : []
+				})
 				if (options.json) {
 					log(
 						JSON.stringify(
-							records.map(({ content: _, ...record }) => record),
+							ordered.map(({ content: _, ...record }) => record),
 							null,
 							2,
 						),
 					)
 				} else {
-					for (const record of records) log(record.id)
+					log(
+						formatTable(
+							["EPIC", "STATUS", "READINESS", "REPOSITORIES", "PR", "WORKTREE"],
+							epicRows.map((row) => [
+								row.id,
+								row.status,
+								row.readiness,
+								row.repositories,
+								row.pr,
+								row.worktree,
+							]),
+						),
+					)
 				}
 				return
 			}
@@ -98,4 +129,9 @@ Create options:
 
 Options:
   --json                Output results as JSON
+  --status <status>     Filter list by status; repeatable
+  --repository <alias>  Filter list by repository; repeatable
+  --ready               Include only ready epics
+  --blocked             Include only blocked epics
+  --pr / --no-pr        Filter by recorded PR presence
 `

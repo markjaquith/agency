@@ -100,4 +100,26 @@ describe("epic command", () => {
 			},
 		})
 	})
+
+	test("renders a readable operational table", async () => {
+		await runTestEffect(
+			epic({
+				subcommand: "create",
+				args: ["example"],
+				ticketUrl: "https://example.com/epic",
+				repos: ["agency:main"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(epic({ subcommand: "list", args: [], cwd: root })),
+		)
+		expect(logs[0]).toContain(
+			"EPIC     STATUS  READINESS  REPOSITORIES  PR  WORKTREE",
+		)
+		expect(logs[0]).toContain("example  open    waiting    agency")
+		expect(logs[0]).not.toMatch(/[\u{e000}-\u{f8ff}]/u)
+	})
 })

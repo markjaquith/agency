@@ -2,6 +2,8 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { PhaseService } from "../services/PhaseService"
 import { createLoggers } from "../utils/effect"
+import { formatTable } from "../utils/table"
+import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 
 interface PhaseOptions extends BaseCommandOptions {
@@ -15,6 +17,11 @@ interface PhaseOptions extends BaseCommandOptions {
 	readonly dependsOn?: readonly string[]
 	readonly firstPhase?: string
 	readonly json?: boolean
+	readonly statuses?: readonly string[]
+	readonly repositories?: readonly string[]
+	readonly ready?: boolean
+	readonly blocked?: boolean
+	readonly pr?: boolean
 }
 
 export const phase = (options: PhaseOptions) =>
@@ -64,15 +71,53 @@ export const phase = (options: PhaseOptions) =>
 			case "list": {
 				if (!taskId) return yield* Effect.fail(new Error("Task ID is required"))
 				const records = yield* phases.list(taskId, cwd)
+				const { phaseRows } = yield* getWorkViews({
+					cwd,
+					statuses: options.statuses,
+					repositories: options.repositories,
+					ready: options.ready,
+					blocked: options.blocked,
+					pr: options.pr,
+				})
+				const rows = phaseRows.filter((row) => row.parent === taskId)
+				const ordered = rows.flatMap((row) => {
+					const record = records.find((item) => item.id === row.id)
+					return record ? [record] : []
+				})
 				if (options.json) {
 					log(
 						JSON.stringify(
-							records.map(({ content: _, ...record }) => record),
+							ordered.map(({ content: _, ...record }) => record),
 							null,
 							2,
 						),
 					)
-				} else for (const record of records) log(record.id)
+				} else {
+					log(
+						formatTable(
+							[
+								"PHASE",
+								"PARENT",
+								"STATUS",
+								"READINESS",
+								"REPOSITORIES",
+								"BRANCH",
+								"PR",
+								"WORKTREE",
+							],
+							rows.map((row) => [
+								row.id,
+								row.parent,
+								row.status,
+								row.readiness,
+								row.repositories,
+								row.branch,
+								row.pr,
+								row.worktree,
+							]),
+						),
+					)
+				}
 				return
 			}
 			case "show": {
@@ -139,4 +184,9 @@ Create options:
 
 Options:
   --json                Output results as JSON
+  --status <status>     Filter list by status; repeatable
+  --repository <alias>  Filter list by repository; repeatable
+  --ready               Include only ready phases
+  --blocked             Include only blocked phases
+  --pr / --no-pr        Filter by recorded PR presence
 `

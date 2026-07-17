@@ -774,10 +774,20 @@ status: open
 			await runCli(["phase", "list", "ship", "--json"], root),
 		)
 		expect(phaseList.map((phase: { id: string }) => phase.id)).toEqual([
-			"implement",
 			"prepare",
+			"implement",
 			"release",
 		])
+		const phaseTable = await runCli(
+			["phase", "list", "ship", "--repository", "agency", "--no-pr"],
+			root,
+		)
+		expect(phaseTable.stdout).toMatch(
+			/PHASE\s+PARENT\s+STATUS\s+READINESS\s+REPOSITORIES\s+BRANCH/,
+		)
+		expect(phaseTable.stdout.indexOf("prepare")).toBeLessThan(
+			phaseTable.stdout.indexOf("implement"),
+		)
 
 		const phaseShow = parseJson(
 			await runCli(["phase", "show", "ship", "release", "--json"], root),

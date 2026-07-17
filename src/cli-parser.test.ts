@@ -10,9 +10,9 @@ describe("strict CLI parsing", () => {
 		expectUsageError(["task", "list", "--josn"], "agency task")
 		expectUsageError(
 			["task", "list", "--repo", "agency"],
-			"agency task list [--json]",
+			"agency task list [filters] [--json]",
 		)
-		expectUsageError(["status", "--draft"], "agency status [--json]")
+		expectUsageError(["status", "--draft"], "agency status [filters] [--json]")
 	})
 
 	test("rejects duplicate scalar, boolean, and single-value multiple options", () => {
@@ -75,6 +75,41 @@ describe("strict CLI parsing", () => {
 			reference: ["two:main", "three:main"],
 			"depends-on": ["first", "second"],
 		})
+	})
+
+	test("parses composable view filters", () => {
+		expect(
+			parseCli([
+				"task",
+				"list",
+				"--status",
+				"open",
+				"--status",
+				"working",
+				"--repository",
+				"agency",
+				"--ready",
+				"--pr",
+			]).values,
+		).toMatchObject({
+			status: ["open", "working"],
+			repository: ["agency"],
+			ready: true,
+			pr: true,
+		})
+		expect(parseCli(["status", "--no-pr"]).values["no-pr"]).toBe(true)
+	})
+
+	test("validates view filter values and conflicts", () => {
+		expect(() => parseCli(["epic", "list", "--status", "invalid"])).toThrow(
+			"Invalid '--status' value",
+		)
+		expect(() =>
+			parseCli(["phase", "list", "task", "--ready", "--blocked"]),
+		).toThrow("cannot be combined")
+		expect(() => parseCli(["status", "--pr", "--no-pr"])).toThrow(
+			"cannot be combined",
+		)
 	})
 
 	test("enforces exact maximum positional arity for every leaf command", () => {
