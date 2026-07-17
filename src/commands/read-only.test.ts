@@ -11,6 +11,7 @@ import { repo } from "./repo"
 import { status } from "./status"
 import { task } from "./task"
 import { validate } from "./validate"
+import { context } from "./context"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -135,6 +136,13 @@ status: open
 		)
 		await runTestEffect(status({ cwd: root, silent: true }))
 		await runTestEffect(validate({ path: root, silent: true }))
+		await runTestEffect(
+			context({
+				target: "tasks/example-task/phases/implementation",
+				cwd: root,
+				silent: true,
+			}),
+		)
 
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(

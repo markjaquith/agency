@@ -158,6 +158,7 @@ describe("CLI", () => {
 			["pr", "Usage: agency pr"],
 			["status", "Usage: agency status"],
 			["validate", "Usage: agency validate"],
+			["context", "Usage: agency context"],
 		] as const) {
 			const result = await runCli([command, "--help"])
 			expect(result.exitCode).toBe(0)

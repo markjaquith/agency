@@ -338,6 +338,19 @@ const commands = {
 			options: ["json"],
 		},
 	},
+	context: {
+		usage: "agency context [target] [--json] [--compact]",
+		options: {
+			...outputOptions,
+			compact: { type: "boolean" },
+		},
+		command: {
+			usage: "agency context [target] [--json] [--compact]",
+			minArgs: 0,
+			maxArgs: 1,
+			options: ["json", "compact"],
+		},
+	},
 } satisfies Readonly<Record<string, CommandDefinition>>
 
 const rootOptions = commonOptions
