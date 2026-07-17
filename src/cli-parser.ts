@@ -319,6 +319,21 @@ const commands = {
 			required: ["session-id", "revision", "outcome"],
 		},
 	},
+	sync: {
+		usage: "agency sync [--dry-run | --apply] [--json]",
+		options: {
+			...outputOptions,
+			"dry-run": { type: "boolean" },
+			apply: { type: "boolean" },
+		},
+		command: {
+			usage: "agency sync [--dry-run | --apply] [--json]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["dry-run", "apply", "json"],
+			conflicts: [["dry-run", "apply"]],
+		},
+	},
 	archive: {
 		usage: "agency archive <epic|task|phase>",
 		options: outputOptions,

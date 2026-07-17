@@ -282,6 +282,25 @@ inspection are opt-in include layers.
 `end` record with counts. Combining the metadata with the streamed node and edge
 records reconstructs the same result as `--json`.
 
+### Reconciliation
+
+`agency sync` compares every execution declaration with local branch and worktree
+registration, writable and reference checkout dirtiness, resolved reference
+commits, claim expiry, and GitHub pull request and merge state. It reports
+structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
+default and `--dry-run` modes are observational.
+
+`agency sync --apply` performs only these safe transitions:
+
+- materialize missing checkouts when no registration, branch, or path conflicts;
+- release an active claim only after its declared expiry has passed;
+- record a single PR whose head and base match the declaration; and
+- mark work done after its authoritative PR is merged and no active claim remains.
+
+Apply never modifies dirty checkouts, moves worktrees, switches branches, resets
+reference commits, chooses among multiple PRs, or bypasses active claims. Those
+conditions remain visible in `warnings` or `unresolved` with a suggested action.
+
 ### Workbase and Repositories
 
 ```text
@@ -302,7 +321,7 @@ repository. Alias names are then used by all documents and commands.
 
 Commands that print Agency-owned results accept `--json`, including initialization,
 integration inspection/sync, repository mutations, entity creation/list/show,
-status, validation, graph export, and PR creation.
+status, validation, graph export, reconciliation, and PR creation.
 
 ### Epics
 

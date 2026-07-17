@@ -111,6 +111,11 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 		retryable: false,
 		remediation: "Correct the workbase graph data or filters and retry.",
 	},
+	SyncError: {
+		code: "SYNC_ERROR",
+		retryable: false,
+		remediation: "Resolve workbase validation errors before reconciling.",
+	},
 	ProcessError: { code: "PROCESS_ERROR", retryable: true },
 	ProtocolOutputError: {
 		code: "PROTOCOL_OUTPUT_ERROR",

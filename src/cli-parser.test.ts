@@ -141,6 +141,7 @@ describe("strict CLI parsing", () => {
 			[["validate", "one", "two"], "agency validate"],
 			[["context", "one", "two"], "agency context"],
 			[["graph", "extra"], "agency graph"],
+			[["sync", "extra"], "agency sync"],
 			[
 				[
 					"claim",
@@ -189,6 +190,20 @@ describe("strict CLI parsing", () => {
 		] as const) {
 			expectUsageError([...args], usage)
 		}
+	})
+
+	test("parses reconciliation modes and rejects conflicting modes", () => {
+		expect(parseCli(["sync", "--dry-run", "--json"])).toMatchObject({
+			commandName: "sync",
+			values: { "dry-run": true, json: true },
+		})
+		expect(parseCli(["sync", "--apply"])).toMatchObject({
+			commandName: "sync",
+			values: { apply: true },
+		})
+		expect(() => parseCli(["sync", "--dry-run", "--apply"])).toThrow(
+			"cannot be combined",
+		)
 	})
 
 	test("validates revision-guarded claim operations", () => {

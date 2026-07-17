@@ -1,0 +1,364 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { chmod, mkdir, rm } from "node:fs/promises"
+import { join } from "node:path"
+import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import { ClaimService } from "./ClaimService"
+import { PullRequestService } from "./PullRequestService"
+import { SyncService } from "./SyncService"
+import { TaskService } from "./TaskService"
+import { WorktreeService } from "./WorktreeService"
+
+const git = async (args: string[], cwd?: string) => {
+	const process = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await process.exited
+	if (process.exitCode !== 0) {
+		throw new Error(await new Response(process.stderr).text())
+	}
+}
+
+describe("SyncService", () => {
+	let root: string
+	let originalPath: string | undefined
+
+	beforeEach(async () => {
+		root = await createTempDir()
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		const source = join(root, "source")
+		await mkdir(source, { recursive: true })
+		await git(["init", "--initial-branch=main"], source)
+		await git(["config", "user.email", "test@example.com"], source)
+		await git(["config", "user.name", "Test"], source)
+		await Bun.write(join(source, "README.md"), "example\n")
+		await git(["add", "README.md"], source)
+		await git(["-c", "commit.gpgsign=false", "commit", "-m", "initial"], source)
+		await mkdir(join(root, "repos"), { recursive: true })
+		await git(["clone", "--bare", source, join(root, "repos/agency")])
+		await git(["clone", "--bare", source, join(root, "repos/reference")])
+
+		const bin = join(root, "bin")
+		await mkdir(bin)
+		const gh = join(bin, "gh")
+		await Bun.write(
+			gh,
+			`#!/bin/sh
+if [ "$2" = "view" ]; then
+cat <<'JSON'
+{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}
+JSON
+exit 0
+fi
+cat <<'JSON'
+[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}]
+JSON
+`,
+		)
+		await chmod(gh, 0o755)
+		originalPath = process.env.PATH
+		process.env.PATH = `${bin}:${originalPath}`
+	})
+
+	afterEach(async () => {
+		if (originalPath === undefined) delete process.env.PATH
+		else process.env.PATH = originalPath
+		await cleanupTempDir(root)
+	})
+
+	test("observes drift without mutation and applies only safe transitions", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "example",
+							ticketUrl: null,
+							repo: "agency",
+							repos: [{ repo: "reference", ref: "main" }],
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("example", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		const inspected = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("example", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.claim(
+						{
+							taskId: "example",
+							claimant: "orchestrator",
+							runner: "agent",
+							sessionId: "session-1",
+							revision: inspected.revision,
+							expiresAt: "2099-01-01T00:00:00.000Z",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await Bun.write(
+			join(workspace.codePath, "reference", "LOCAL.md"),
+			"dirty\n",
+		)
+
+		const taskPath = join(root, "tasks/example/TASK.md")
+		const before = await Bun.file(taskPath).text()
+		const observed = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, now: new Date("2100-01-02") }),
+				),
+			),
+		)
+
+		expect(observed.mode).toBe("dry-run")
+		expect(observed.warnings).toContainEqual(
+			expect.objectContaining({
+				kind: "dirty-reference",
+				target: "task:example",
+			}),
+		)
+		expect(observed.changes.map((change) => change.kind)).toEqual([
+			"release-stale-claim",
+			"record-pr",
+			"mark-done",
+		])
+		expect(await Bun.file(taskPath).text()).toBe(before)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({
+						cwd: root,
+						apply: true,
+						now: new Date("2100-01-02"),
+					}),
+				),
+			),
+		)
+		expect(applied.changes.map((change) => change.kind)).toEqual([
+			"release-stale-claim",
+			"record-pr",
+			"mark-done",
+		])
+		expect(applied.changes.every((change) => change.status === "applied")).toBe(
+			true,
+		)
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect(task.data).toMatchObject({
+			status: "done",
+			pr: "https://github.com/example/agency/pull/42",
+			claim: { state: "released", sessionId: "session-1" },
+		})
+	})
+
+	test("materializes missing workspaces but leaves branch conflicts unresolved", async () => {
+		for (const [id, branch] of [
+			["missing", "feat/missing"],
+			["conflict", "feat/conflict"],
+		] as const) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{ id, ticketUrl: null, repo: "agency", branch, base: "main" },
+							root,
+						),
+					),
+				),
+			)
+		}
+		const repository = join(root, "repos/agency")
+		await git(["branch", "feat/conflict", "main"], repository)
+		await git(
+			["worktree", "add", join(root, "external-conflict"), "feat/conflict"],
+			repository,
+		)
+
+		const observed = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(observed.changes).toContainEqual(
+			expect.objectContaining({
+				kind: "materialize-workspace",
+				target: "task:missing",
+				status: "planned",
+			}),
+		)
+		expect(observed.unresolved).toContainEqual(
+			expect.objectContaining({
+				kind: "branch-conflict",
+				target: "task:conflict",
+			}),
+		)
+		expect(
+			await Bun.file(
+				join(root, "tasks/missing/code/agency/README.md"),
+			).exists(),
+		).toBe(false)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(applied.changes).toContainEqual(
+			expect.objectContaining({
+				kind: "materialize-workspace",
+				target: "task:missing",
+				status: "applied",
+			}),
+		)
+		expect(
+			applied.executions.find((item) => item.target === "task:missing")
+				?.checkouts[0],
+		).toMatchObject({ exists: true, registered: true, dirty: false })
+		expect(
+			await Bun.file(join(root, "tasks/missing/code/agency/README.md")).text(),
+		).toBe("example\n")
+		expect(
+			await Bun.file(
+				join(root, "tasks/conflict/code/agency/README.md"),
+			).exists(),
+		).toBe(false)
+	})
+
+	test("leaves a missing checkout registration unresolved", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "stale",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/stale",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("stale", undefined, root),
+				),
+			),
+		)
+		await rm(workspace.writablePath, { recursive: true, force: true })
+
+		const observed = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(observed.changes).toEqual([])
+		expect(observed.unresolved).toContainEqual(
+			expect.objectContaining({
+				kind: "stale-registration",
+				target: "task:stale",
+			}),
+		)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(applied.changes).toEqual([])
+		expect(
+			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+		).toBe(false)
+	})
+
+	test("does not trust a recorded PR from another repository", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "example",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"example",
+						undefined,
+						"https://github.com/other/repository/pull/42",
+						root,
+					),
+				),
+			),
+		)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(applied.unresolved).toContainEqual(
+			expect.objectContaining({
+				kind: "pr-repository-conflict",
+				target: "task:example",
+			}),
+		)
+		expect(applied.changes.some((change) => change.kind === "mark-done")).toBe(
+			false,
+		)
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect(task.data).toMatchObject({ status: "open" })
+	})
+})
