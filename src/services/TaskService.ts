@@ -15,6 +15,7 @@ import {
 	formatMarkdownDocument,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
+import { canTransitionStatus } from "../readiness"
 
 class TaskError extends Data.TaggedError("TaskError")<{
 	readonly message: string
@@ -210,6 +211,11 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				if ("phases" in record.data) {
 					return yield* new TaskError({
 						message: `Task '${id}' has multiple phases; set status on a phase instead`,
+					})
+				}
+				if (!canTransitionStatus(record.data.status, validStatus)) {
+					return yield* new TaskError({
+						message: `Cannot transition task '${id}' from ${record.data.status} to ${validStatus}; reopen it first`,
 					})
 				}
 				const parsed = yield* parseFrontmatter(record.content, record.path)

@@ -262,9 +262,10 @@ Nodes use stable IDs (`epic:<id>`, `task:<id>`, `phase:<task>/<phase>`,
 `repository:<alias>`, and `execution-unit:<kind>/<id>`). Typed edges are `owns`,
 `depends_on`, `writes`, and `references`.
 
-Every work node includes status, readiness, blockers, reverse dependents, and
-aggregate progress. Only `done` satisfies a dependency. The graph summary counts
-the statuses of all execution units, independent of filters.
+Every work node includes status, readiness, `blockedBy`, detailed blockers,
+terminal state, reverse dependents, and aggregate progress. Only `done` satisfies
+a dependency; `dropped` is terminal but does not satisfy dependents. The graph
+summary counts the statuses of all execution units, independent of filters.
 
 ```text
 agency graph [--json | --jsonl] [--ready | --blocked]
@@ -390,7 +391,9 @@ Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
 before launch. Use the status subcommands to mark work `delegated`, `done`,
 `dropped`, or open it again. The interactive work selector displays status
-markers before execution units.
+markers before execution units. Open, working, and delegated work may transition
+to any status. Done and dropped work are terminal and may only remain unchanged
+or transition to open; reopen terminal work before changing its outcome.
 
 ### Archive
 

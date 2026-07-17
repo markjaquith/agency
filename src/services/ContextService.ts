@@ -4,6 +4,7 @@ import { join, relative, resolve, sep } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { RepositoryService } from "./RepositoryService"
+import { aggregateProgress, readinessState } from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
 import {
 	EpicFrontmatter,
@@ -61,29 +62,6 @@ interface ReferenceCheckout extends CheckoutInspection {
 	readonly repositoryPath: string
 	readonly checkoutPath: string
 	readonly resolvedCommit: string | null
-}
-
-const statusCounts = (statuses: readonly WorkStatus[]) => ({
-	total: statuses.length,
-	open: statuses.filter((status) => status === "open").length,
-	working: statuses.filter((status) => status === "working").length,
-	delegated: statuses.filter((status) => status === "delegated").length,
-	done: statuses.filter((status) => status === "done").length,
-	dropped: statuses.filter((status) => status === "dropped").length,
-	terminal: statuses.filter(
-		(status) => status === "done" || status === "dropped",
-	).length,
-})
-
-const aggregateStatus = (statuses: readonly WorkStatus[]): WorkStatus => {
-	if (statuses.length === 0) return "open"
-	if (statuses.every((status) => status === "done")) return "done"
-	if (statuses.every((status) => status === "done" || status === "dropped")) {
-		return "dropped"
-	}
-	if (statuses.includes("working")) return "working"
-	if (statuses.includes("delegated")) return "delegated"
-	return "open"
 }
 
 const decode = <S extends Schema.Schema.AnyNoContext>(
@@ -337,13 +315,13 @@ export class ContextService extends Effect.Service<ContextService>()(
 							return (record.data as PhaseData).status
 						const data = record.data as TaskData
 						if (!("phases" in data)) return data.status
-						return aggregateStatus(
+						return aggregateProgress(
 							data.phases.map(
 								(item) =>
 									phaseDocuments.get(`${record.taskId}/${item.id}`)?.data
 										.status ?? "open",
 							),
-						)
+						).status
 					}
 
 					const taskDependencyEntries = (
@@ -551,7 +529,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 									)
 								: [child.data.status]
 						})
-						targetStatus = aggregateStatus(aggregateStatuses)
+						targetStatus = aggregateProgress(aggregateStatuses).status
 						descendantsReady = epic.data.tasks.some((item: Dependency) =>
 							taskReady(item.id),
 						)
@@ -832,14 +810,10 @@ export class ContextService extends Effect.Service<ContextService>()(
 							dependencies,
 							dependents,
 							readiness: {
-								ready,
-								blocked: !ready && blockers.length > 0,
+								...readinessState(targetStatus, blockers, ready),
 								blockers,
 							},
-							aggregate: {
-								status: aggregateStatus(aggregateStatuses),
-								...statusCounts(aggregateStatuses),
-							},
+							aggregate: aggregateProgress(aggregateStatuses),
 						},
 						authority: {
 							mode: executionData ? "execution" : "orchestration",
