@@ -9,6 +9,7 @@ import { pr, help as prHelp } from "./src/commands/pr"
 import { work, workPrepare, help as workHelp } from "./src/commands/work"
 import { worktree, help as worktreeHelp } from "./src/commands/worktree"
 import { status, help as statusHelp } from "./src/commands/status"
+import { doctor, help as doctorHelp } from "./src/commands/doctor"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
 import { graph, help as graphHelp } from "./src/commands/graph"
@@ -41,6 +42,7 @@ import { ClaimService } from "./src/services/ClaimService"
 import { SyncService } from "./src/services/SyncService"
 import { ReadinessService } from "./src/services/ReadinessService"
 import { GraphMutationService } from "./src/services/GraphMutationService"
+import { DoctorService } from "./src/services/DoctorService"
 import {
 	claimCommand,
 	claimHelp,
@@ -72,6 +74,7 @@ const CliLayer = Layer.mergeAll(
 	SyncService.Default,
 	ReadinessService.Default,
 	GraphMutationService.Default,
+	DoctorService.Default,
 )
 
 /**
@@ -524,6 +527,22 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	doctor: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(doctorHelp)
+				return
+			}
+			await runCommand(
+				doctor({
+					silent: options.silent,
+					verbose: options.verbose,
+					json: options.json,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	validate: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -632,6 +651,7 @@ Commands:
   pr create              Create a pull request for an execution unit
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
+  doctor                 Diagnose workbase health and integrations
   validate [path]        Validate a workbase
   context [target]       Return complete target context
   graph                  Export the complete workbase graph

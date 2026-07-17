@@ -117,6 +117,7 @@ export const command = (options) =>
 - `agency work [<directory> | --epic <epic>]`: Launch an orchestration or execution agent.
 - `agency worktree list|inspect|prepare|remove|rebuild|repair`: Inspect and maintain managed worktrees.
 - `agency status`: Show workbase status.
+- `agency doctor`: Diagnose tools, integrations, repositories, refs, worktrees, permissions, and managed-file drift.
 - `agency validate`: Validate workbase documents and relationships.
 - `agency next`: List or select graph-ready execution units.
 - `agency pr create <task> [phase]`: Create and record a GitHub PR.
