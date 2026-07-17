@@ -1,43 +1,30 @@
 import { Effect } from "effect"
 import { resolve } from "node:path"
-import { FileSystemService } from "../services/FileSystemService"
 import { WorkbaseService } from "../services/WorkbaseService"
+import { choose } from "../utils/chooser"
 
 export type PickWorkbase = (
 	workbases: readonly string[],
+	command?: readonly string[],
 ) => Effect.Effect<string | null, Error>
 
-export const pickWorkbase: PickWorkbase = (workbases) =>
-	Effect.tryPromise({
-		try: async () => {
-			const input = workbases
-				.map((workbase, index) => `${index}\t${workbase}`)
-				.join("\n")
-			const process = Bun.spawn(
-				["fzf", "--delimiter=\t", "--with-nth=2..", "--prompt=Workbase> "],
-				{ stdin: new Blob([input]), stdout: "pipe", stderr: "inherit" },
-			)
-			const [exitCode, output] = await Promise.all([
-				process.exited,
-				new Response(process.stdout).text(),
-			])
-			if (exitCode === 1 || exitCode === 130) return null
-			if (exitCode !== 0) throw new Error(`fzf exited with code ${exitCode}`)
-			const index = Number.parseInt(output.split("\t", 1)[0] ?? "", 10)
-			return workbases[index] ?? null
-		},
-		catch: (cause) =>
-			new Error("Failed to select a workbase with fzf", { cause }),
-	})
+export const pickWorkbase: PickWorkbase = (workbases, command) =>
+	choose(
+		"Workbase",
+		workbases.map((workbase, index) => ({
+			key: String(index),
+			label: workbase,
+			value: workbase,
+		})),
+		command,
+	)
 
 export const resolveWorkbase = (
 	startPath: string,
-	log: (message: string) => void,
 	pick: PickWorkbase = pickWorkbase,
 	inputAllowed = true,
 ) =>
 	Effect.gen(function* () {
-		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
 
 		return yield* workbase.discover(startPath).pipe(
@@ -55,18 +42,6 @@ export const resolveWorkbase = (
 						return yield* Effect.fail(
 							new Error(
 								"Workbase selection requires interactive input; provide an explicit path or run Agency from a workbase",
-							),
-						)
-					}
-
-					const fzf = yield* fs.runCommand(["which", "fzf"], {
-						captureOutput: true,
-					})
-					if (fzf.exitCode !== 0) {
-						for (const path of registered) log(path)
-						return yield* Effect.fail(
-							new Error(
-								"fzf is required to select a workbase; install fzf or run Agency from a registered workbase",
 							),
 						)
 					}

@@ -46,7 +46,8 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
-	readonly available?: Partial<Record<"opencode" | "claude" | "fzf", boolean>>
+	readonly available?: Partial<Record<"opencode" | "claude", boolean>>
+	readonly chooserCommand?: readonly string[]
 	readonly multiPhaseTasks?: readonly string[]
 	readonly epicRecords?: readonly any[]
 	readonly taskRecords?: readonly any[]
@@ -93,6 +94,14 @@ const createHarness = (options: HarnessOptions = {}) => {
 					})
 				: Effect.succeed("/workbase"),
 		listRegistered: () => Effect.succeed(options.registeredWorkbases ?? []),
+		loadConfig: () =>
+			Effect.succeed({
+				root: "/workbase",
+				config: {
+					version: 2 as const,
+					chooserCommand: options.chooserCommand,
+				},
+			}),
 	}
 	const epics = {
 		show: (id: string) =>
@@ -359,7 +368,7 @@ describe("work command", () => {
 		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
 	})
 
-	test("selects a target with fzf when no directory is provided", async () => {
+	test("selects a target when no directory is provided", async () => {
 		const phase = {
 			taskId: "delivery",
 			id: "build",
@@ -385,7 +394,6 @@ describe("work command", () => {
 		await harness.run({ cwd: "/workbase/tasks/example", opencode: true }, pick)
 
 		expect(harness.events).toEqual([
-			"probe:fzf",
 			"materialize",
 			"probe:opencode",
 			"launch:opencode",
@@ -442,7 +450,6 @@ describe("work command", () => {
 
 		expect(selections).toEqual([["/first", "/workbase"]])
 		expect(harness.events).toEqual([
-			"probe:fzf",
 			"materialize",
 			"probe:opencode",
 			"launch:opencode",
@@ -476,9 +483,9 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("prints the target tree when fzf is unavailable", async () => {
+	test("passes the configured chooser command to the shared picker", async () => {
 		const harness = createHarness({
-			available: { fzf: false },
+			chooserCommand: ["gum", "filter"],
 			epicRecords: [
 				{
 					id: "delivery",
@@ -487,14 +494,15 @@ describe("work command", () => {
 				},
 			],
 		})
+		let command: readonly string[] | undefined
+		const pick: PickWorkTarget = (_choices, chooserCommand) => {
+			command = chooserCommand
+			return Effect.succeed(null)
+		}
 
-		const logs = await captureLogs(async () => {
-			await expect(harness.run({ cwd: "/workbase" })).rejects.toThrow(
-				"fzf is required",
-			)
-		})
+		await harness.run({ cwd: "/workbase" }, pick)
 
-		expect(logs).toEqual(["\x1b[35m\x1b[0m delivery"])
+		expect(command).toEqual(["gum", "filter"])
 		expect(harness.launches).toEqual([])
 	})
 

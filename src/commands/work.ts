@@ -89,7 +89,7 @@ export const work = (
 			: false
 		const startPath = isDirectory && directoryPath ? directoryPath : cwd
 		const inputAllowed = options.inputAllowed ?? true
-		const root = yield* resolveWorkbase(startPath, log, pickBase, inputAllowed)
+		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
 
 		let target: WorkTarget | null = null
@@ -178,18 +178,8 @@ export const work = (
 					new Error("No epics, tasks, or phases found in this workbase"),
 				)
 			}
-			const fzf = yield* fs.runCommand(["which", "fzf"], {
-				captureOutput: true,
-			})
-			if (fzf.exitCode !== 0) {
-				for (const choice of choices) log(choice.label)
-				return yield* Effect.fail(
-					new Error(
-						"fzf is required to select a work target; install fzf or provide a directory explicitly",
-					),
-				)
-			}
-			target = yield* pick(choices)
+			const { config } = yield* workbase.loadConfig(root)
+			target = yield* pick(choices, config.chooserCommand)
 			if (!target) return
 		}
 
@@ -332,7 +322,7 @@ Usage: agency work [<directory-or-task-id> | --epic <epic-id>]
        agency work prepare [target] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
-with fzf. A positional argument resolves as a directory first, then as a task
+interactively. A positional argument resolves as a directory first, then as a task
 ID. Use '.' for the current directory. Outside a workbase, select a registered
 workbase first.
 

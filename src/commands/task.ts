@@ -6,6 +6,8 @@ import { EpicService } from "../services/EpicService"
 import { RepositoryService } from "../services/RepositoryService"
 import { createLoggers } from "../utils/effect"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
+import { WorkbaseService } from "../services/WorkbaseService"
+import { choose } from "../utils/chooser"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -29,7 +31,9 @@ export interface TaskInteraction {
 	) => Effect.Effect<string | null, Error>
 }
 
-const defaultInteraction: TaskInteraction = {
+const defaultInteraction = (
+	chooserCommand?: readonly string[],
+): TaskInteraction => ({
 	text: (prompt) =>
 		Effect.tryPromise({
 			try: async () => {
@@ -46,37 +50,23 @@ const defaultInteraction: TaskInteraction = {
 			catch: (cause) => new Error("Failed to read task input", { cause }),
 		}),
 	select: (prompt, choices) =>
-		Effect.tryPromise({
-			try: async () => {
-				const process = Bun.spawn(
-					["fzf", `--prompt=${prompt}> `, "--height=~40%", "--reverse"],
-					{
-						stdin: new Blob([choices.join("\n")]),
-						stdout: "pipe",
-						stderr: "inherit",
-					},
-				)
-				const [exitCode, output] = await Promise.all([
-					process.exited,
-					new Response(process.stdout).text(),
-				])
-				if (exitCode === 1 || exitCode === 130) return null
-				if (exitCode !== 0) throw new Error(`fzf exited with code ${exitCode}`)
-				return output.trim() || null
-			},
-			catch: (cause) =>
-				new Error("Failed to select task input with fzf", { cause }),
-		}),
-}
+		choose(
+			prompt,
+			choices.map((choice, index) => ({
+				key: String(index),
+				label: choice,
+				value: choice,
+			})),
+			chooserCommand,
+		),
+})
 
-export const task = (
-	options: TaskOptions,
-	interaction: TaskInteraction = defaultInteraction,
-) =>
+export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 	Effect.gen(function* () {
 		const tasks = yield* TaskService
 		const epics = yield* EpicService
 		const repositories = yield* RepositoryService
+		const workbase = yield* WorkbaseService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 
@@ -89,8 +79,13 @@ export const task = (
 						),
 					)
 				}
+				const activeInteraction =
+					interaction ??
+					defaultInteraction(
+						(yield* workbase.loadConfig(cwd)).config.chooserCommand,
+					)
 				const id =
-					options.args[0] ?? (yield* interaction.text("Task ID: ")).trim()
+					options.args[0] ?? (yield* activeInteraction.text("Task ID: ")).trim()
 				if (!id) {
 					return yield* Effect.fail(new Error("Task ID is required"))
 				}
@@ -103,18 +98,20 @@ export const task = (
 
 				if (options.ticketUrl === undefined) {
 					ticketUrl =
-						(yield* interaction.text("Ticket URL (optional): ")).trim() || null
+						(yield* activeInteraction.text("Ticket URL (optional): ")).trim() ||
+						null
 				}
 				if (options.description === undefined) {
 					description =
-						(yield* interaction.text("Description (optional): ")).trim() ||
-						undefined
+						(yield* activeInteraction.text(
+							"Description (optional): ",
+						)).trim() || undefined
 				}
 				if (options.epic === undefined) {
 					const epicRecords = yield* epics.list(cwd)
 					if (epicRecords.length > 0) {
 						const none = "(none)"
-						const selected = yield* interaction.select("Parent epic", [
+						const selected = yield* activeInteraction.select("Parent epic", [
 							none,
 							...epicRecords.map((record) => record.id),
 						])
@@ -125,7 +122,7 @@ export const task = (
 					}
 				}
 				if (options.multiPhase === undefined) {
-					const selected = yield* interaction.select("Task type", [
+					const selected = yield* activeInteraction.select("Task type", [
 						"single-phase",
 						"multi-phase",
 					])
@@ -144,7 +141,7 @@ export const task = (
 							),
 						)
 					}
-					const selected = yield* interaction.select(
+					const selected = yield* activeInteraction.select(
 						"Writable repository",
 						records.map((record) => record.alias),
 					)

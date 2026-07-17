@@ -284,4 +284,16 @@ describe("schema boundaries", () => {
 			).not.toThrow()
 		}
 	})
+
+	test("accepts a configured chooser argv", () => {
+		expect(
+			Schema.decodeUnknownSync(WorkbaseConfig)({
+				version: 2,
+				chooserCommand: ["fzf", "--accept-nth=1"],
+			}),
+		).toEqual({
+			version: 2,
+			chooserCommand: ["fzf", "--accept-nth=1"],
+		})
+	})
 })
