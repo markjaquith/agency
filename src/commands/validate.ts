@@ -32,12 +32,7 @@ export const validate = (
 		const startPath = options.path ?? options.cwd ?? process.cwd()
 		const root = options.path
 			? yield* workbase.discover(startPath)
-			: yield* resolveWorkbase(
-					startPath,
-					log,
-					pick,
-					options.inputAllowed ?? true,
-				)
+			: yield* resolveWorkbase(startPath, pick, options.inputAllowed ?? true)
 		if (!root) return
 		const report = yield* workbase.validate(root)
 

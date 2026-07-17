@@ -11,7 +11,6 @@ or write.
 - Git
 - [GitHub CLI](https://cli.github.com/) for `agency pr create`
 - OpenCode or Claude Code for `agency work`
-- [fzf](https://github.com/junegunn/fzf) for interactive work target selection
 
 ## Installation
 
@@ -145,6 +144,29 @@ and verifies that `{worktree}` exists afterward.
 The configured command applies only to the writable checkout. Supplemental
 read-only repositories remain detached Git worktrees at their declared refs so
 they do not acquire writable branches.
+
+### Custom Chooser Command
+
+Interactive selection uses a native numbered chooser by default. To use an
+external chooser, configure an argv command in `agency.json`:
+
+```json
+{
+	"version": 2,
+	"chooserCommand": ["fzf", "--ansi", "--delimiter=\\t", "--with-nth=2.."]
+}
+```
+
+Agency writes one `key<TAB>label` record per choice to the command's stdin. The
+command must write the selected opaque key or selected record to stdout; commands
+such as `["gum", "filter"]` therefore work without wrappers. Exit codes 1 and
+130, empty stdout, native `q`, and an empty native response cancel selection.
+Other nonzero exits, unknown keys, and invalid native numbers are errors.
+
+Selectors are opened only when stdin and stderr are terminals and neither
+`--no-input` nor JSON output is active. Labels use color only when stderr is a
+terminal, `TERM` is not `dumb`, and `NO_COLOR` is unset; otherwise selectors use
+plain labels without ANSI styling or icon-font dependencies.
 
 ## Frontmatter
 

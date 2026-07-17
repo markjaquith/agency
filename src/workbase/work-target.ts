@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import type { WorkStatus } from "./schemas"
+import { choose } from "../utils/chooser"
 
 export type WorkTarget =
 	| {
@@ -52,6 +53,7 @@ interface PhaseRecord {
 
 export interface WorkTargetChoice {
 	readonly label: string
+	readonly plainLabel: string
 	readonly target: WorkTarget
 }
 
@@ -78,6 +80,15 @@ const label = (
 		}[kind]
 	} ${id}${description === undefined ? "" : `\x1b[2m - ${description}\x1b[0m`}`
 
+const plainLabel = (
+	indent: string,
+	kind: WorkTarget["kind"],
+	id: string,
+	description?: string,
+	status?: WorkStatus,
+) =>
+	`${indent}${status === undefined ? "" : `[${status}] `}${kind} ${id}${description === undefined ? "" : ` - ${description}`}`
+
 const taskChoices = (
 	task: TaskRecord,
 	phaseRecords: readonly PhaseRecord[],
@@ -87,6 +98,13 @@ const taskChoices = (
 	const choices: WorkTargetChoice[] = [
 		{
 			label: label(
+				indent,
+				"task",
+				task.id,
+				task.data.description,
+				multiPhase ? undefined : (task.data.status ?? "open"),
+			),
+			plainLabel: plainLabel(
 				indent,
 				"task",
 				task.id,
@@ -117,6 +135,13 @@ const taskChoices = (
 				record.data.description,
 				record.data.status ?? "open",
 			),
+			plainLabel: plainLabel(
+				`${indent}  `,
+				"phase",
+				record.id,
+				record.data.description,
+				record.data.status ?? "open",
+			),
 			target: {
 				kind: "phase",
 				taskId: task.id,
@@ -129,6 +154,13 @@ const taskChoices = (
 		if (renderedPhases.has(record.id)) continue
 		choices.push({
 			label: label(
+				`${indent}  `,
+				"phase",
+				record.id,
+				record.data.description,
+				record.data.status ?? "open",
+			),
+			plainLabel: plainLabel(
 				`${indent}  `,
 				"phase",
 				record.id,
@@ -164,6 +196,7 @@ export const buildWorkTargetChoices = (
 	for (const epic of epicRecords) {
 		choices.push({
 			label: label("", "epic", epic.id, epic.data.description),
+			plainLabel: plainLabel("", "epic", epic.id, epic.data.description),
 			target: { kind: "epic", epicId: epic.id, path: epic.path },
 		})
 		for (const child of epic.data.tasks) {
@@ -184,40 +217,17 @@ export const buildWorkTargetChoices = (
 
 export type PickWorkTarget = (
 	choices: readonly WorkTargetChoice[],
+	command?: readonly string[],
 ) => Effect.Effect<WorkTarget | null, Error>
 
-const parseWorkTargetSelection = (
-	output: string,
-	choices: readonly WorkTargetChoice[],
-) => {
-	const index = Number.parseInt(output.split("\t", 1)[0] ?? "", 10)
-	return choices[index]?.target ?? null
-}
-
-export const pickWorkTarget: PickWorkTarget = (choices) =>
-	Effect.tryPromise({
-		try: async () => {
-			const input = choices
-				.map((choice, index) => `${index}\t${choice.label}`)
-				.join("\n")
-			const process = Bun.spawn(
-				[
-					"fzf",
-					"--ansi",
-					"--delimiter=\t",
-					"--with-nth=2..",
-					"--prompt=Work on> ",
-				],
-				{ stdin: new Blob([input]), stdout: "pipe", stderr: "inherit" },
-			)
-			const [exitCode, output] = await Promise.all([
-				process.exited,
-				new Response(process.stdout).text(),
-			])
-			if (exitCode === 1 || exitCode === 130) return null
-			if (exitCode !== 0) throw new Error(`fzf exited with code ${exitCode}`)
-			return parseWorkTargetSelection(output, choices)
-		},
-		catch: (cause) =>
-			new Error("Failed to select a work target with fzf", { cause }),
-	})
+export const pickWorkTarget: PickWorkTarget = (choices, command) =>
+	choose(
+		"Work on",
+		choices.map((choice, index) => ({
+			key: String(index),
+			label: choice.label,
+			plainLabel: choice.plainLabel,
+			value: choice.target,
+		})),
+		command,
+	)

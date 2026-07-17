@@ -50,6 +50,7 @@ const GitHubPullRequestUrl = NonEmptyString.pipe(
 
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
+	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 })
 

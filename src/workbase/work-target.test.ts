@@ -80,5 +80,15 @@ describe("work target choices", () => {
 			"task",
 			"task",
 		])
+		expect(choices.map((choice) => choice.plainLabel)).toEqual([
+			"epic delivery - Ship the release",
+			"  task multi",
+			"    [working] phase build",
+			"    [done] phase verify",
+			"    [dropped] phase unlisted",
+			"  [done] task single",
+			"[open] task standalone - Independent work",
+			"[delegated] task delegated",
+		])
 	})
 })
