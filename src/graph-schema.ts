@@ -2,6 +2,7 @@ import { Schema } from "@effect/schema"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
+	PullRequestRecord,
 	TaskFrontmatter,
 	WorkStatus,
 } from "./workbase/schemas"
@@ -109,16 +110,7 @@ export const GraphExecutionGit = Schema.Struct({
 export const GraphPr = Schema.Union(
 	Schema.Struct({ url: Schema.Null, state: Schema.Literal("none") }),
 	Schema.Struct({ url: Schema.String, state: Schema.Literal("unavailable") }),
-	Schema.Struct({
-		recordedUrl: Schema.String,
-		number: Schema.Number,
-		state: Schema.String,
-		title: Schema.String,
-		isDraft: Schema.Boolean,
-		headRefName: Schema.String,
-		baseRefName: Schema.String,
-		url: Schema.String,
-	}),
+	PullRequestRecord,
 )
 
 const NodeIdentity = {

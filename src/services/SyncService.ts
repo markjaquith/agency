@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Either } from "effect"
 import { dirname, join, resolve } from "node:path"
 import { documentRevision } from "../workbase/document-revision"
 import type {
@@ -7,7 +7,14 @@ import type {
 	RepositoryReference,
 	TaskFrontmatter,
 	WorkStatus,
+	PullRequestRecord,
 } from "../workbase/schemas"
+import {
+	normalizePullRequestRecord,
+	parseOptionalPullRequestRecord,
+	recordFromGitHubJson,
+	resolveDeliveryCommand,
+} from "../workbase/delivery-command"
 import { ClaimService } from "./ClaimService"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
@@ -143,7 +150,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const phases = yield* PhaseService
 				const worktrees = yield* WorktreeService
 				const claims = yield* ClaimService
-				const root = yield* workbase.discover(options.cwd)
+				const { root, config } = yield* workbase.loadConfig(options.cwd)
 				const validation = yield* workbase.validate(root)
 				if (!validation.valid) {
 					return yield* new SyncError({
@@ -161,12 +168,16 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const executions: ExecutionSyncState[] = []
 				const runExternal = (
 					args: readonly string[],
-					commandOptions?: { readonly cwd?: string },
+					commandOptions?: {
+						readonly cwd?: string
+						readonly env?: Record<string, string>
+					},
 				) =>
 					fs
 						.runCommand(args, {
 							cwd: commandOptions?.cwd,
 							captureOutput: true,
+							env: commandOptions?.env,
 						})
 						.pipe(
 							Effect.catchAll((error) =>
@@ -551,50 +562,127 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 
-					let pr: Record<string, unknown> = { url: data.pr, state: "none" }
+					const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
+					let current: PullRequestRecord | null = existing
+					let pr: Record<string, unknown> = existing ?? {
+						url: null,
+						state: "none",
+					}
 					let prConflict = false
-					if (data.pr) {
-						const remote = yield* runExternal([
-							"git",
-							"-C",
-							join(root, "repos", data.repo),
-							"remote",
-							"get-url",
-							"origin",
-						])
-						const remoteRepository = remote.stdout
-							.trim()
-							.match(/(?:github\.com[/:])([^/]+\/[^/]+)$/)?.[1]
-							?.replace(/\.git$/, "")
-						const prRepository = data.pr.match(
-							/^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/\d+\/?$/,
-						)?.[1]
-						if (
-							!remoteRepository ||
-							remoteRepository.toLowerCase() !== prRepository?.toLowerCase()
-						) {
-							prConflict = true
-							unresolved.push({
-								kind: "pr-repository-conflict",
+					const repositoryPath = join(root, "repos", data.repo)
+					const remoteName = config.delivery?.remote ?? "origin"
+					const remote = yield* runExternal([
+						"git",
+						"-C",
+						repositoryPath,
+						"remote",
+						"get-url",
+						remoteName,
+					])
+					const remoteRepository = remote.stdout
+						.trim()
+						.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
+						.replace(/^[^:]+:/, "")
+						.replace(/\.git\/?$/, "")
+						.replace(/\/$/, "")
+
+					if (
+						existing &&
+						remoteRepository.toLowerCase() !== existing.repository.toLowerCase()
+					) {
+						prConflict = true
+						unresolved.push({
+							kind: "pr-repository-conflict",
+							target: record.key,
+							message: `Recorded PR repository does not match writable repository remote '${remoteName}'`,
+							action: "Correct the configured remote or recorded PR",
+						})
+					}
+
+					if (config.delivery && remote.exitCode !== 0) {
+						warnings.push({
+							kind: "delivery-remote-unavailable",
+							target: record.key,
+							message: `Could not inspect delivery remote '${remoteName}': ${remote.stderr.trim()}`,
+						})
+					} else if (config.delivery) {
+						const resolved = resolveDeliveryCommand(config.delivery, "query", {
+							repository: remoteRepository,
+							branch: data.branch,
+							base: data.base,
+							draft: existing ? String(existing.draft) : "",
+							url: existing?.url ?? "",
+							identifier: existing?.identifier ?? "",
+						})
+						const queried = yield* runExternal(resolved.argv, {
+							cwd: repositoryPath,
+							env: resolved.environment,
+						})
+						if (queried.exitCode === 0) {
+							const parsed = yield* Effect.try({
+								try: () => parseOptionalPullRequestRecord(queried.stdout),
+								catch: (cause) =>
+									new SyncError({
+										message:
+											cause instanceof Error ? cause.message : String(cause),
+									}),
+							}).pipe(Effect.either)
+							if (Either.isLeft(parsed)) {
+								warnings.push({
+									kind: "pr-provider-invalid-output",
+									target: record.key,
+									message: parsed.left.message,
+								})
+							} else if (
+								parsed.right &&
+								(parsed.right.provider !== config.delivery.provider ||
+									parsed.right.repository.toLowerCase() !==
+										remoteRepository.toLowerCase())
+							) {
+								if (parsed.right) {
+									prConflict = true
+									unresolved.push({
+										kind: "pr-provider-conflict",
+										target: record.key,
+										message:
+											"Delivery provider returned a record for the wrong provider or repository",
+										action: "Correct the delivery provider output",
+									})
+								}
+							} else {
+								current = parsed.right
+								pr = parsed.right ?? { url: null, state: "none" }
+							}
+						} else {
+							pr = existing
+								? { url: existing.url, state: "unavailable" }
+								: { url: null, state: "none" }
+							warnings.push({
+								kind: existing ? "pr-unavailable" : "pr-discovery-unavailable",
 								target: record.key,
 								message:
-									"Recorded PR repository does not match the writable repository origin",
-								action: "Correct the repository origin or recorded PR URL",
+									queried.stderr.trim() || "Could not query delivery provider",
 							})
 						}
+					} else if (existing) {
 						const viewed = yield* runExternal([
 							"gh",
 							"pr",
 							"view",
-							data.pr,
+							existing.url,
 							"--json",
 							"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit",
 						])
 						if (viewed.exitCode === 0) {
-							pr = parseJson(viewed.stdout, pr)
+							const detail = parseJson<Record<string, unknown>>(
+								viewed.stdout,
+								{},
+							)
+							current = recordFromGitHubJson(detail)
+							pr = { ...detail, ...current }
 							if (
-								pr.headRefName !== data.branch ||
-								pr.baseRefName !== data.base
+								detail.headRefName !== data.branch ||
+								detail.baseRefName !== data.base
 							) {
 								prConflict = true
 								unresolved.push({
@@ -605,11 +693,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								})
 							}
 						} else {
-							pr = { url: data.pr, state: "unavailable" }
+							pr = { url: existing.url, state: "unavailable" }
 							warnings.push({
 								kind: "pr-unavailable",
 								target: record.key,
-								message: `Could not inspect ${data.pr}: ${viewed.stderr.trim()}`,
+								message: `Could not inspect ${existing.url}: ${viewed.stderr.trim()}`,
 							})
 						}
 					} else {
@@ -625,7 +713,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								"--json",
 								"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit",
 							],
-							{ cwd: join(root, "repos", data.repo) },
+							{ cwd: repositoryPath },
 						)
 						if (listed.exitCode === 0) {
 							const matches = parseJson<Record<string, unknown>[]>(
@@ -634,31 +722,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							).filter(
 								(item) =>
 									item.headRefName === data.branch &&
-									item.baseRefName === data.base &&
-									typeof item.url === "string",
+									item.baseRefName === data.base,
 							)
 							if (matches.length === 1) {
-								pr = matches[0]!
-								const url = pr.url as string
-								if (apply) {
-									const recorded = yield* claims.reconcile(
-										{
-											taskId: record.taskId,
-											phaseId: record.phaseId,
-											revision,
-											pr: url,
-										},
-										root,
-									)
-									data = recorded.data
-									revision = recorded.revision
-								}
-								changes.push({
-									kind: "record-pr",
-									target: record.key,
-									message: `Record pull request ${url}`,
-									status: apply ? "applied" : "planned",
-								})
+								current = recordFromGitHubJson(matches[0]!)
+								pr = { ...matches[0], ...current }
 							} else if (matches.length > 1) {
 								unresolved.push({
 									kind: "multiple-prs",
@@ -677,8 +745,30 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						}
 					}
 
+					if (current && JSON.stringify(current) !== JSON.stringify(existing)) {
+						if (apply) {
+							const recorded = yield* claims.reconcile(
+								{
+									taskId: record.taskId,
+									phaseId: record.phaseId,
+									revision,
+									pr: current,
+								},
+								root,
+							)
+							data = recorded.data
+							revision = recorded.revision
+						}
+						changes.push({
+							kind: "record-pr",
+							target: record.key,
+							message: `Record pull request ${current.url}`,
+							status: apply ? "applied" : "planned",
+						})
+					}
+
 					if (
-						pr.state === "MERGED" &&
+						current?.merged === true &&
 						!prConflict &&
 						data.status !== "done" &&
 						data.status !== "dropped"

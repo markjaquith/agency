@@ -104,6 +104,41 @@ describe("runner configuration", () => {
 	})
 })
 
+describe("delivery configuration", () => {
+	test("accepts an argv-based create and query provider", () => {
+		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
+			version: 2,
+			delivery: {
+				provider: "forge",
+				remote: "upstream",
+				createCommand: ["forge", "create", "{branch}"],
+				queryCommand: ["forge", "query", "{identifier}"],
+			},
+		})
+		expect(config.delivery?.remote).toBe("upstream")
+	})
+
+	test("accepts normalized non-GitHub pull request records", () => {
+		const phase = Schema.decodeUnknownSync(PhaseFrontmatter)({
+			repo: "agency",
+			branch: "feat/example",
+			base: "main",
+			pr: {
+				provider: "forge",
+				repository: "example/agency",
+				identifier: "17",
+				url: "https://forge.example/example/agency/pulls/17",
+				state: "open",
+				draft: false,
+				merged: false,
+			},
+		})
+		expect(phase.pr && typeof phase.pr !== "string" && phase.pr.provider).toBe(
+			"forge",
+		)
+	})
+})
+
 describe("work status", () => {
 	const supportedStatuses: Record<WorkStatus, true> = {
 		open: true,

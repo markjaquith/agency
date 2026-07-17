@@ -211,7 +211,15 @@ describe("task and phase services", () => {
 			repos: [{ repo: "effect", ref: "main" }],
 			branch: "task/single",
 			base: "main",
-			pr: "https://github.com/example/agency/pull/42",
+			pr: {
+				provider: "github",
+				repository: "example/agency",
+				identifier: "42",
+				url: "https://github.com/example/agency/pull/42",
+				state: "open",
+				draft: false,
+				merged: false,
+			},
 			status: "open",
 		})
 	})

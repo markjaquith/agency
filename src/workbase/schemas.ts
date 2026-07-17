@@ -51,6 +51,26 @@ const GitHubPullRequestUrl = NonEmptyString.pipe(
 	Schema.pattern(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/),
 )
 
+export const PullRequestRecord = Schema.Struct({
+	provider: EntityId,
+	repository: NonEmptyString,
+	identifier: NonEmptyString,
+	url: Url,
+	state: Schema.Literal("open", "closed", "merged"),
+	draft: Schema.Boolean,
+	merged: Schema.Boolean,
+})
+
+const DeliveryProvider = Schema.Struct({
+	provider: EntityId,
+	remote: Schema.optional(NonEmptyString),
+	createCommand: Schema.NonEmptyArray(NonEmptyString),
+	queryCommand: Schema.NonEmptyArray(NonEmptyString),
+	environment: Schema.optional(
+		Schema.Record({ key: EnvironmentName, value: Schema.String }),
+	),
+})
+
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
@@ -67,6 +87,7 @@ export const WorkbaseConfig = Schema.Struct({
 			}),
 		}),
 	),
+	delivery: Schema.optional(DeliveryProvider),
 })
 
 export const LegacyWorkbaseRegistry = Schema.Struct({
@@ -96,7 +117,7 @@ const ExecutionUnit = {
 	repos: Schema.optional(Schema.Array(RepositoryReference)),
 	branch: NonEmptyString,
 	base: NonEmptyString,
-	pr: Schema.NullOr(GitHubPullRequestUrl),
+	pr: Schema.NullOr(Schema.Union(GitHubPullRequestUrl, PullRequestRecord)),
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
 	claim: Schema.optional(ClaimRecord),
 }
@@ -141,6 +162,7 @@ export type Dependency = Schema.Schema.Type<typeof Dependency>
 export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
 export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
+export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>
