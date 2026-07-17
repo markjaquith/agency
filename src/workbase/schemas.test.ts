@@ -78,6 +78,32 @@ describe("body-of-work descriptions", () => {
 	})
 })
 
+describe("runner configuration", () => {
+	test("accepts named argv commands with resume commands and environment", () => {
+		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
+			version: 2,
+			runners: {
+				custom: {
+					command: ["agent", "{prompt}"],
+					resumeCommand: ["agent", "resume", "{sessionId}"],
+					environment: { CUSTOM_TARGET: "{target}" },
+				},
+			},
+		})
+
+		expect(config.runners?.custom?.command).toEqual(["agent", "{prompt}"])
+	})
+
+	test("rejects shell strings in place of argv arrays", () => {
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseConfig)({
+				version: 2,
+				runners: { custom: { command: "agent {prompt}" } },
+			}),
+		).toThrow()
+	})
+})
+
 describe("work status", () => {
 	const supportedStatuses: Record<WorkStatus, true> = {
 		open: true,

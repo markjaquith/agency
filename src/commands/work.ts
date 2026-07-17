@@ -23,6 +23,11 @@ import {
 	resolveWorkbase,
 	type PickWorkbase,
 } from "../workbase/workbase-choice"
+import {
+	printableEnvironment,
+	resolveRunnerCommand,
+	runnerEnvironment,
+} from "../workbase/runner-command"
 
 interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -31,10 +36,17 @@ interface WorkOptions extends BaseCommandOptions {
 	readonly epicId?: string
 	readonly opencode?: boolean
 	readonly claude?: boolean
+	readonly runner?: string
+	readonly printCommand?: boolean
 	readonly force?: boolean
 }
 
-type LaunchAgent = (cli: string, args: readonly string[], cwd: string) => void
+type LaunchAgent = (
+	cli: string,
+	args: readonly string[],
+	cwd: string,
+	environment: Readonly<Record<string, string>>,
+) => void
 
 const formatCommand = (args: readonly string[]) =>
 	args
@@ -68,13 +80,15 @@ export const work = (
 	pickBase: PickWorkbase = pickWorkbase,
 ) =>
 	Effect.gen(function* () {
-		if (options.opencode && options.claude) {
+		if (
+			(options.opencode && options.claude) ||
+			(options.runner && (options.opencode || options.claude))
+		) {
 			return yield* Effect.fail(
-				new Error("Cannot use both --opencode and --claude"),
+				new Error("Cannot combine --runner, --opencode, and --claude"),
 			)
 		}
-		const previousSessionId = process.env.AGENCY_SESSION_ID
-		const previousClaimRevision = process.env.AGENCY_CLAIM_REVISION
+		const previousEnvironment = { ...process.env }
 		if (
 			options.epicId &&
 			(options.directory || options.taskId || options.phaseId)
@@ -104,6 +118,7 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
+		const { config } = yield* workbase.loadConfig(root)
 
 		let target: WorkTarget | null = null
 		if (options.epicId) {
@@ -199,7 +214,6 @@ export const work = (
 					new Error("No ready work targets found in this workbase"),
 				)
 			}
-			const { config } = yield* workbase.loadConfig(root)
 			target = yield* pick(choices, config.chooserCommand)
 			if (!target) return
 		}
@@ -233,13 +247,49 @@ export const work = (
 			launchPath = workspace.writablePath
 		}
 
-		const requested = options.claude ? "claude" : "opencode"
-		let cli = requested
+		const explicitlyRequested = Boolean(
+			options.runner ||
+			options.opencode ||
+			options.claude ||
+			process.env.AGENCY_RUNNER,
+		)
+		let runner =
+			options.runner ??
+			process.env.AGENCY_RUNNER ??
+			(options.claude ? "claude" : "opencode")
+		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
+		const sessionId =
+			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
+		const resume = process.env.AGENCY_SESSION_ID !== undefined
+		let claimRevision = ""
+		let variables = {
+			prompt,
+			workbase: root,
+			target: targetNodeId(target),
+			task: target.kind === "epic" ? "" : target.taskId,
+			phase: target.kind === "phase" ? target.phaseId : "",
+			claimant,
+			sessionId,
+			claimRevision,
+		}
+		let resolved = resolveRunnerCommand(
+			runner,
+			config.runners,
+			variables,
+			resume,
+		)
+		let cli = resolved.argv[0]!
 		let available = yield* fs.runCommand(["which", cli], {
 			captureOutput: true,
 		})
-		if (available.exitCode !== 0 && !options.opencode && !options.claude) {
-			cli = "claude"
+		if (
+			available.exitCode !== 0 &&
+			!explicitlyRequested &&
+			runner === "opencode"
+		) {
+			runner = "claude"
+			resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
+			cli = resolved.argv[0]!
 			available = yield* fs.runCommand(["which", cli], { captureOutput: true })
 		}
 		if (available.exitCode !== 0) {
@@ -251,36 +301,55 @@ export const work = (
 		) {
 			const phaseId = target.kind === "phase" ? target.phaseId : undefined
 			const current = yield* claims.inspect(target.taskId, phaseId, root)
-			const sessionId =
-				process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 			const acquired = yield* claims.claim(
 				{
 					taskId: target.taskId,
 					...(phaseId ? { phaseId } : {}),
-					claimant: process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency",
-					runner: process.env.AGENCY_RUNNER ?? cli,
+					claimant,
+					runner,
 					sessionId,
 					revision: current.revision,
 				},
 				root,
 			)
-			process.env.AGENCY_SESSION_ID = sessionId
-			process.env.AGENCY_CLAIM_REVISION = acquired.revision
+			claimRevision = acquired.revision
 		}
 
-		const args =
-			cli === "opencode" ? ["--continue", "--prompt", prompt] : [prompt]
+		variables = { ...variables, claimRevision }
+		resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
+		cli = resolved.argv[0]!
+		const environment = {
+			...resolved.environment,
+			...runnerEnvironment(runner, variables),
+		}
+		if (options.printCommand) {
+			log(
+				JSON.stringify(
+					{
+						cwd: launchPath,
+						argv: resolved.argv,
+						environment: printableEnvironment(environment),
+					},
+					null,
+					2,
+				),
+			)
+			return
+		}
+		for (const [key, value] of Object.entries(environment)) {
+			process.env[key] = value
+		}
 		verboseLog(
-			`Launching command: ${formatCommand([cli, ...args])} (cwd: ${launchPath})`,
+			`Launching command: ${formatCommand(resolved.argv)} (cwd: ${launchPath})`,
 		)
 		try {
-			launch(cli, [cli, ...args], launchPath)
+			launch(cli, resolved.argv, launchPath, environment)
 		} finally {
-			if (previousSessionId === undefined) delete process.env.AGENCY_SESSION_ID
-			else process.env.AGENCY_SESSION_ID = previousSessionId
-			if (previousClaimRevision === undefined)
-				delete process.env.AGENCY_CLAIM_REVISION
-			else process.env.AGENCY_CLAIM_REVISION = previousClaimRevision
+			for (const key of Object.keys(environment)) {
+				const previous = previousEnvironment[key]
+				if (previous === undefined) delete process.env[key]
+				else process.env[key] = previous
+			}
 		}
 	})
 
@@ -344,7 +413,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 	})
 
 export const help = `
-Usage: agency work [<directory-or-task-id> | --epic <epic-id>]
+Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>]
        agency work prepare [target] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
@@ -362,8 +431,10 @@ Options:
   --phase <id>         Work on a phase selected with --task
   --workbase <target>  Select a workbase by ID, name, or path
   --cwd <path>         Resolve context from a specific directory
-  --opencode           Require OpenCode
-  --claude             Require Claude Code
+  --runner <name>      Select a configured runner or built-in preset
+  --print-command      Print cwd, argv, and non-secret environment without launch
+  --opencode           Require the OpenCode preset
+  --claude             Require the Claude Code preset
   --force              Override readiness and terminal-state guards
   --no-input           Never open an interactive selector
 

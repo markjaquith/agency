@@ -1,6 +1,9 @@
 import { Schema } from "@effect/schema"
 
 const NonEmptyString = Schema.String.pipe(Schema.minLength(1))
+const EnvironmentName = NonEmptyString.pipe(
+	Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/),
+)
 
 const Description = Schema.optional(NonEmptyString)
 
@@ -52,6 +55,18 @@ export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
+	runners: Schema.optional(
+		Schema.Record({
+			key: EntityId,
+			value: Schema.Struct({
+				command: Schema.NonEmptyArray(NonEmptyString),
+				resumeCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
+				environment: Schema.optional(
+					Schema.Record({ key: EnvironmentName, value: Schema.String }),
+				),
+			}),
+		}),
+	),
 })
 
 export const LegacyWorkbaseRegistry = Schema.Struct({

@@ -21,6 +21,7 @@ import {
 	type WorkbaseRegistration,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
+import { validateRunners } from "../workbase/runner-command"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -276,6 +277,17 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 													: "Invalid worktreeCreateCommand",
 										})
 									}
+								}
+								try {
+									validateRunners(decoded.value.runners)
+								} catch (cause) {
+									return yield* new WorkbaseConfigError({
+										path: configPath,
+										message:
+											cause instanceof Error
+												? cause.message
+												: "Invalid runner configuration",
+									})
 								}
 								return current
 							}
