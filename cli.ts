@@ -8,6 +8,7 @@ import { pr, help as prHelp } from "./src/commands/pr"
 import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
+import { context, help as contextHelp } from "./src/commands/context"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
@@ -28,6 +29,7 @@ import { WorktreeService } from "./src/services/WorktreeService"
 import { PullRequestService } from "./src/services/PullRequestService"
 import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
+import { ContextService } from "./src/services/ContextService"
 import {
 	collectCommandResult,
 	errorEnvelope,
@@ -47,6 +49,7 @@ const CliLayer = Layer.mergeAll(
 	PullRequestService.Default,
 	ArchiveService.Default,
 	IntegrationService.Default,
+	ContextService.Default,
 )
 
 /**
@@ -313,6 +316,23 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	context: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(contextHelp)
+				return
+			}
+			await runCommand(
+				context({
+					target: args[0],
+					compact: options.compact,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 }
 
 function showMainHelp() {
@@ -334,6 +354,7 @@ Commands:
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
   validate [path]        Validate a workbase
+  context [target]       Return complete target context
 
 Global Options:
   -h, --help             Show help for a command

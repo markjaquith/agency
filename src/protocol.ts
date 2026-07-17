@@ -84,6 +84,12 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 	ArchiveError: { code: "ARCHIVE_ERROR", retryable: false },
 	WorktreeError: { code: "WORKTREE_ERROR", retryable: false },
 	PullRequestError: { code: "PULL_REQUEST_ERROR", retryable: false },
+	ContextError: {
+		code: "CONTEXT_ERROR",
+		retryable: false,
+		remediation:
+			"Run the command from an Agency entity or provide a valid target.",
+	},
 	ProcessError: { code: "PROCESS_ERROR", retryable: true },
 	ProtocolOutputError: {
 		code: "PROTOCOL_OUTPUT_ERROR",

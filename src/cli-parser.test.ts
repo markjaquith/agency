@@ -139,9 +139,19 @@ describe("strict CLI parsing", () => {
 			[["pr", "create", "one", "two", "three"], "agency pr create"],
 			[["status", "extra"], "agency status"],
 			[["validate", "one", "two"], "agency validate"],
+			[["context", "one", "two"], "agency context"],
 		] as const) {
 			expectUsageError([...args], usage)
 		}
+	})
+
+	test("accepts context projections and keeps compact command-local", () => {
+		expect(parseCli(["context", ".", "--json", "--compact"])).toMatchObject({
+			commandName: "context",
+			args: ["."],
+			values: { json: true, compact: true },
+		})
+		expectUsageError(["status", "--compact"], "agency status")
 	})
 
 	test("reports unknown subcommands with parent usage", () => {
