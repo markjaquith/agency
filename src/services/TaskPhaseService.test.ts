@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { EpicService } from "./EpicService"
@@ -58,6 +58,52 @@ describe("task and phase services", () => {
 			),
 		)
 		expect(epic.data.tasks).toEqual([{ id: "task-one" }])
+	})
+
+	test("does not create a task when its parent update cannot start", async () => {
+		await runTestEffect(
+			EpicService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						"locked",
+						"https://example.com/epic",
+						[{ repo: "agency", ref: "main" }],
+						root,
+					),
+				),
+			),
+		)
+		const lock = join(root, ".agency-graph-mutation.lock")
+		await Bun.write(lock, "held")
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id: "not-created",
+								ticketUrl: null,
+								epic: "locked",
+								repo: "agency",
+								branch: "task/not-created",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("Another graph mutation is in progress")
+		await rm(lock)
+		expect(
+			await Bun.file(join(root, "tasks/not-created/TASK.md")).exists(),
+		).toBe(false)
+		const epic = await runTestEffect(
+			EpicService.pipe(
+				Effect.flatMap((service) => service.show("locked", root)),
+			),
+		)
+		expect(epic.data.tasks).toEqual([])
 	})
 
 	test("creates and sequences phases on a multi-phase task", async () => {

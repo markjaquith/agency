@@ -683,6 +683,7 @@ try {
 	}
 	if (error instanceof Error) {
 		let message = error.message
+		let details: any = error
 
 		// Handle Effect FiberFailure errors that wrap tagged errors
 		// When the message is generic "An error has occurred", try to extract the actual error
@@ -695,6 +696,7 @@ try {
 				const cause = (error as any)[causeSymbol]
 				if (cause && cause._tag === "Fail" && cause.failure) {
 					const failure = cause.failure
+					details = failure
 					// Try common error message patterns
 					message =
 						failure.message ||
@@ -704,6 +706,14 @@ try {
 							: JSON.stringify(failure))
 				}
 			}
+		}
+		for (const [field, label] of [
+			["completed", "Completed"],
+			["rolledBack", "Rolled back"],
+			["manualRecovery", "Manual recovery"],
+		] as const) {
+			if (Array.isArray(details[field]) && details[field].length > 0)
+				message += `\n${label}: ${details[field].join("; ")}`
 		}
 
 		console.error(`ⓘ ${message}`)

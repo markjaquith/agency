@@ -63,6 +63,28 @@ describe("archive command", () => {
 		})
 	})
 
+	test("preflights an archive without moving the task", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				archive({
+					type: "task",
+					args: ["example"],
+					cwd: root,
+					dryRun: true,
+					json: true,
+				}),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!).dryRun).toBe(true)
+		expect(await Bun.file(join(root, "tasks/example/TASK.md")).exists()).toBe(
+			true,
+		)
+		expect(await Bun.file(join(root, "archive/tasks/example")).exists()).toBe(
+			false,
+		)
+	})
+
 	test("requires a supported work item type", async () => {
 		await expect(
 			runTestEffect(archive({ args: [], cwd: root, silent: true })),

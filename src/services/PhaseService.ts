@@ -1,5 +1,6 @@
 import { Schema, TreeFormatter } from "@effect/schema"
 import { Data, Effect, Either } from "effect"
+import { lstat, mkdir, readdir, realpath, rename, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -18,6 +19,12 @@ import {
 import { canTransitionStatus } from "../readiness"
 import { documentRevision } from "../workbase/document-revision"
 import { archivedPhaseDirectory } from "../workbase/archive"
+import {
+	documentWriteStep,
+	runLifecycleTransaction,
+	type TransactionStep,
+} from "./LifecycleTransaction"
+import { withWorktreeLocks } from "./WorktreeLock"
 
 class PhaseError extends Data.TaggedError("PhaseError")<{
 	readonly message: string
@@ -156,6 +163,16 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 								]
 							: []),
 					])
+					const newAliases = [
+						data.repo,
+						...(data.repos ?? []).map((reference) => reference.repo),
+					]
+					if (new Set(newAliases).size !== newAliases.length) {
+						return yield* new PhaseError({
+							message:
+								"Repository references must be unique and cannot include the writable repository",
+						})
+					}
 					for (const alias of aliases) {
 						if (!(yield* fs.exists(join(root, "repos", alias)))) {
 							return yield* new PhaseError({
@@ -209,46 +226,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							.map((part) => part[0]?.toUpperCase() + part.slice(1))
 							.join(" ")
 
-						yield* fs.createDirectory(firstDirectory)
-						yield* fs.createDirectory(directory)
-						yield* fs.writeFile(
-							join(firstDirectory, "PHASE.md"),
-							formatMarkdownDocument(
-								firstData,
-								`# ${firstTitle}\n\nDescribe the phase outcome.`,
-							),
-						)
-						yield* fs.writeFile(path, content)
-
 						const oldCodePath = join(root, "tasks", taskId, "code")
-						if (yield* fs.isDirectory(oldCodePath)) {
-							const firstCodePath = join(firstDirectory, "code")
-							yield* fs.moveDirectory(oldCodePath, firstCodePath)
-							for (const alias of [
-								firstData.repo,
-								...(firstData.repos ?? []).map((reference) => reference.repo),
-							]) {
-								const checkoutPath = join(firstCodePath, alias)
-								if (!(yield* fs.isDirectory(checkoutPath))) continue
-								const repair = yield* fs.runCommand(
-									[
-										"git",
-										"-C",
-										join(root, "repos", alias),
-										"worktree",
-										"repair",
-										checkoutPath,
-									],
-									{ captureOutput: true },
-								)
-								if (repair.exitCode !== 0) {
-									return yield* new PhaseError({
-										message: `Failed to repair moved worktree for '${alias}': ${repair.stderr}`,
-									})
-								}
-							}
-						}
-
 						const convertedTaskData = {
 							ticketUrl: task.data.ticketUrl,
 							...(task.data.description
@@ -265,9 +243,129 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 								},
 							],
 						}
-						yield* fs.writeFile(
-							task.path,
-							formatMarkdownDocument(convertedTaskData, parsedTask.body),
+						const firstPhasePath = join(firstDirectory, "PHASE.md")
+						const firstContent = formatMarkdownDocument(
+							firstData,
+							`# ${firstTitle}\n\nDescribe the phase outcome.`,
+						)
+						const steps: TransactionStep[] = []
+						if (yield* fs.isDirectory(oldCodePath)) {
+							const firstCodePath = join(firstDirectory, "code")
+							const checkoutAliases = [
+								firstData.repo,
+								...(firstData.repos ?? []).map((reference) => reference.repo),
+							]
+							const repair = async (basePath: string) => {
+								for (const alias of checkoutAliases) {
+									const checkoutPath = join(basePath, alias)
+									try {
+										await lstat(checkoutPath)
+									} catch {
+										continue
+									}
+									const result = Bun.spawnSync([
+										"git",
+										"-C",
+										join(root, "repos", alias),
+										"worktree",
+										"repair",
+										checkoutPath,
+									])
+									if (result.exitCode !== 0) {
+										throw new Error(
+											`Failed to repair moved worktree for '${alias}': ${new TextDecoder().decode(result.stderr)}`,
+										)
+									}
+								}
+							}
+							steps.push({
+								label: `move and repair code for ${taskId}/${firstPhaseId}`,
+								preflight: async () => {
+									for (const entry of await readdir(oldCodePath)) {
+										if (!checkoutAliases.includes(entry))
+											throw new Error(
+												`Cannot convert task '${taskId}'; code contains unmanaged entry '${entry}'`,
+											)
+									}
+									for (const alias of checkoutAliases) {
+										const checkoutPath = join(oldCodePath, alias)
+										try {
+											await lstat(checkoutPath)
+										} catch {
+											continue
+										}
+										const listed = Bun.spawnSync([
+											"git",
+											"-C",
+											join(root, "repos", alias),
+											"worktree",
+											"list",
+											"--porcelain",
+										])
+										if (listed.exitCode !== 0)
+											throw new Error(
+												`Failed to inspect worktrees for '${alias}'`,
+											)
+										const expected = await realpath(checkoutPath)
+										let registered = false
+										for (const line of new TextDecoder()
+											.decode(listed.stdout)
+											.split("\n")) {
+											if (!line.startsWith("worktree ")) continue
+											try {
+												if ((await realpath(line.slice(9))) === expected) {
+													registered = true
+													break
+												}
+											} catch {}
+										}
+										if (!registered)
+											throw new Error(
+												`Cannot convert task '${taskId}'; checkout '${alias}' is not registered as a Git worktree`,
+											)
+									}
+								},
+								apply: async () => {
+									await mkdir(firstDirectory, { recursive: true })
+									await rename(oldCodePath, firstCodePath)
+									try {
+										await repair(firstCodePath)
+									} catch (cause) {
+										await rename(firstCodePath, oldCodePath)
+										await repair(oldCodePath)
+										await rm(firstDirectory, { recursive: true, force: true })
+										throw cause
+									}
+								},
+								rollback: async () => {
+									await rename(firstCodePath, oldCodePath)
+									await repair(oldCodePath)
+									await rm(firstDirectory, { recursive: true, force: true })
+								},
+								manualRecovery: `Move ${firstCodePath} back to ${oldCodePath} and run git worktree repair`,
+							})
+						}
+						steps.push(
+							documentWriteStep(root, [
+								{ path: firstPhasePath, content: firstContent, create: true },
+								{ path, content, create: true },
+								{
+									path: task.path,
+									content: formatMarkdownDocument(
+										convertedTaskData,
+										parsedTask.body,
+									),
+								},
+							]),
+						)
+						yield* withWorktreeLocks(
+							root,
+							[{ taskId }],
+							runLifecycleTransaction({
+								root,
+								preconditions: [{ path: task.path, revision: task.revision }],
+								steps,
+							}),
 						)
 						return {
 							taskId,
@@ -279,8 +377,6 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						} satisfies PhaseRecord
 					}
 
-					yield* fs.createDirectory(directory)
-					yield* fs.writeFile(path, content)
 					const updatedTaskData = {
 						...task.data,
 						phases: [
@@ -293,10 +389,22 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							},
 						],
 					}
-					yield* fs.writeFile(
-						task.path,
-						formatMarkdownDocument(updatedTaskData, parsedTask.body),
-					)
+					yield* runLifecycleTransaction({
+						root,
+						preconditions: [{ path: task.path, revision: task.revision }],
+						steps: [
+							documentWriteStep(root, [
+								{ path, content, create: true },
+								{
+									path: task.path,
+									content: formatMarkdownDocument(
+										updatedTaskData,
+										parsedTask.body,
+									),
+								},
+							]),
+						],
+					})
 
 					return {
 						taskId,

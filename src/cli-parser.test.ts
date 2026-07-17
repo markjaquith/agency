@@ -292,6 +292,15 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
+	test("accepts archive dry-run", () => {
+		expect(parseCli(["archive", "task", "example", "--dry-run"])).toMatchObject(
+			{
+				commandName: "archive",
+				values: { "dry-run": true },
+			},
+		)
+	})
+
 	test("validates revision-guarded claim operations", () => {
 		const revision = "0".repeat(64)
 		expect(

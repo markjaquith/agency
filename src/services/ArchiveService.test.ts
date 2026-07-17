@@ -850,4 +850,63 @@ describe("ArchiveService", () => {
 			),
 		).rejects.toThrow("is archived; restore it")
 	})
+
+	test("preflights every phase worktree before removing any of them", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "multi-dirty",
+							ticketUrl: "https://example.com/task",
+							multiPhase: true,
+						},
+						root,
+					),
+				),
+			),
+		)
+		for (const id of ["clean", "dirty"]) {
+			await runTestEffect(
+				PhaseService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								taskId: "multi-dirty",
+								id,
+								repo: "agency",
+								branch: `task/${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("multi-dirty", id, root),
+					),
+				),
+			)
+		}
+		await Bun.write(
+			join(root, "tasks/multi-dirty/phases/dirty/code/agency/dirty.txt"),
+			"keep me\n",
+		)
+
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) => service.archiveTask("multi-dirty", root)),
+				),
+			),
+		).rejects.toThrow("uncommitted changes")
+		expect(
+			await Bun.file(
+				join(root, "tasks/multi-dirty/phases/clean/code/agency/README.md"),
+			).exists(),
+		).toBe(true)
+	})
 })
