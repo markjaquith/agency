@@ -1,353 +1,130 @@
 ---
 name: agency
 description: >
-  Use Agency to manage filesystem-backed workbases, repository aliases, epics,
-  tasks, phases, execution worktrees, and GitHub pull requests. Use when the
-  user asks to create, inspect, validate, or work on Agency epics/tasks/phases;
-  coordinate work across repositories; materialize task worktrees; or create a
-  PR through Agency.
+  Operate Agency workbases, epics, tasks, phases, execution worktrees, claims,
+  and pull requests. Use when inspecting or changing Agency-managed work,
+  coordinating dependencies, launching agents, or finishing an execution unit.
 license: MIT
-compatibility: Requires the agency CLI and Git, plus OpenCode or Claude Code. Interactive work selection uses fzf; PR creation uses gh.
+compatibility: Requires the agency CLI and Git. Agent launch requires a configured runner; GitHub pull requests require gh.
 ---
 
 # Agency
 
-Use Agency to coordinate durable work across one or more Git repositories.
-Agency stores planning and orchestration as Markdown with YAML frontmatter while
-keeping repository checkouts as local workbase state.
+Agency keeps plans and lifecycle state in durable Markdown documents. Git
+checkouts under `code/` are materialized local state. Treat the documents as the
+source of truth and Agency commands as the safe way to mutate their structure.
+
+## Start With Context
+
+The first inspection command is always:
+
+```bash
+agency context . --json
+```
+
+It identifies the target and ancestors, document revisions, dependency
+readiness, write authority, checkout state, PR state, and validation warnings.
+Use its paths and IDs instead of inferring them from the process cwd.
+
+For broader orchestration, load the graph and discover available capabilities:
+
+```bash
+agency graph --json
+agency doctor --json
+agency --help
+agency <command> --help
+```
+
+Use `agency next --json` when choosing ready execution work. Read
+[`references/contracts.md`](references/contracts.md) when consuming machine
+output or editing documents.
 
 ## Mental Model
 
-- A **workbase** is the root containing `agency.json`, `repos/`, `epics/`, and
-  `tasks/`.
-- A repository alias is a bare Git repository or symlink at `repos/{alias}`.
-- An **epic** orchestrates tasks and only reads repositories.
-- A **task** describes one durable outcome. It may be standalone or belong to an
-  epic.
-- A **phase** belongs to a multi-phase task and corresponds to one PR or intended
-  PR.
-- An **execution unit** is either a single-phase task or a phase. It has one
-  writable `repo`, optional read-only `repos`, one branch, one base, and one
-  `pr` value.
-
-IDs are directory names. Do not repeat IDs in document frontmatter.
-
-## Start By Inspecting
-
-From anywhere beneath a workbase, run:
-
-```bash
-agency status --json
-agency validate --json
-agency integration status --json
-agency repo list --json
-agency epic list --json
-agency task list --json
-```
-
-Use `show` before changing an existing entity:
-
-```bash
-agency epic show <epic-id> --json
-agency task show <task-id> --json
-agency phase show <task-id> <phase-id> --json
-```
-
-If no workbase is found, do not initialize one without user intent. When asked:
-
-```bash
-agency init [path]
-agency integration sync
-```
-
-Register and name known workbases so commands can select one from anywhere:
-
-```bash
-agency workbase add <path> [--name <name>]
-agency workbase list
-agency workbase show <id|name|path>
-agency workbase name <id|name|path> <name> | --clear
-agency workbase default [<id|name|path> | --clear]
-agency workbase remove <id|name|path>
-agency workbase prune
-```
-
-Use `--workbase <id|name|path>` to bypass cwd inference, or `--cwd <path>` to
-infer context from a specific directory. The options are mutually exclusive.
-
-## Repository Aliases
-
-Add a remote as an Agency-managed bare repository:
-
-```bash
-agency repo add <alias> <git-remote>
-```
-
-Link an existing local Git repository:
-
-```bash
-agency repo link <alias> <path>
-agency repo show <alias>
-agency repo fetch <alias>
-agency repo remove <alias>
-agency repo unlink <alias>
-agency repo rename <alias> <new-alias>
-agency repo remote <alias> [remote]
-agency repo verify <alias>
-```
-
-Use aliases, never absolute paths or Git URLs, in epic/task/phase frontmatter.
-
-## Choose The Correct Work Shape
-
-Use a single-phase task when one PR in one writable repository can deliver the
-outcome. Use a multi-phase task when the outcome requires multiple intended PRs,
-possibly across repositories or with sequencing dependencies. Use an epic when
-several independently meaningful tasks need orchestration.
-
-If phases are known up front, create a multi-phase task. To add a phase later,
-use `--first-phase <id>` to name the phase created from the task's existing
-execution fields and worktrees.
-
-## Create Epics
-
-```bash
-agency epic create <id> \
-  --ticket-url <url> \
-  [--description <text>] \
-  --repo <read-only-alias>:<ref> \
-  [--repo <another-alias>:<ref>]
-```
-
-Epic task ordering and dependencies live in `EPIC.md`. Creating a task with
-`--epic` automatically writes both sides of the epic/task relationship.
-
-## Create Single-Phase Tasks
-
-For guided creation, run `agency task new`. It prompts for text input, uses fzf
-for known choices, and allows optional inputs to be skipped. It requires a TTY
-and fails when `--no-input` is set. `task create` never prompts and is the command
-to use from agents and scripts.
-
-```bash
-agency task create <id> \
-  [--ticket-url <url>] \
-  [--description <text>] \
-  [--epic <epic-id>] \
-  --repo <writable-alias> \
-  [--reference <read-only-alias>:<ref>] \
-  [--branch <branch>] \
-  [--base <base>]
-```
-
-The branch defaults to `task/<id>` and the base defaults to `main`.
-
-The task itself is the execution unit. Its worktrees live under
-`tasks/{id}/code/{alias}`.
-
-## Create Multi-Phase Tasks
-
-Create the task container:
-
-```bash
-agency task create <id> \
-  [--ticket-url <url>] \
-  [--description <text>] \
-  [--epic <epic-id>] \
-  --multi-phase
-```
-
-Then create each phase:
-
-```bash
-agency phase create <task-id> <phase-id> \
-  [--description <text>] \
-  --repo <writable-alias> \
-  [--reference <read-only-alias>:<ref>] \
-  --branch <branch> \
-  --base <base> \
-  [--depends-on <phase-id>]
-```
-
-Repeat `--reference` and `--depends-on` when needed. Phase worktrees live under
-`tasks/{task-id}/phases/{phase-id}/code/{alias}`.
-
-Convert an existing single-phase task while adding another phase:
-
-```bash
-agency phase create <task-id> <new-phase-id> \
-  --first-phase <existing-phase-id> \
-  --repo <writable-alias> \
-  --branch <new-branch> \
-  --base <base> \
-  [--depends-on <existing-phase-id>]
-```
-
-The conversion preserves task-level metadata and prose, moves execution metadata
-into the named existing phase, and relocates any materialized worktrees.
-
-## Frontmatter Rules
-
-Agency documents use YAML 1.2 frontmatter:
-
-```yaml
----
-ticketUrl: https://example.com/tickets/example
-description: Deliver the example outcome.
-repo: application
-repos:
-  - repo: api
-    ref: main
-branch: task/example
-base: main
-pr: null
-status: open
----
-```
-
-Follow these invariants:
-
-- `ticketUrl` belongs to epics and tasks, not phases.
-- `description` is an optional non-empty summary on epics, tasks, and phases.
-- `repo` is the one writable repository for an execution unit.
-- `repos` contains `{ repo, ref }` read-only references and must not repeat `repo`.
-- Epics may declare `repos` but never `repo`.
-- A writable `(repo, branch)` pair belongs to exactly one task or phase.
-- Use a commit SHA for a read-only `ref` when reproducibility matters.
-
-Commands that print Agency-owned results accept `--json` for machine-readable
-output, including mutations, entity inspection, status, validation, and PR creation.
-
-Use `agency graph --json` to load the complete, versioned workbase graph without
-walking directories. Filter it with repeatable `--status`, `--repository`, and
-`--kind` options or with `--ready`/`--blocked`. Add durable prose and observational
-details explicitly with `--include bodies|workspace|git|pr`. For large workbases,
-`--jsonl` streams equivalent versioned metadata, node, edge, and end records.
-
-- Multi-phase task frontmatter owns the phase dependency graph.
-- Epic frontmatter owns the child-task dependency graph.
-- `pr` is either a GitHub PR URL string or `null`.
-- Execution-unit `status` is `open`, `working`, `delegated`, `done`, or `dropped`.
-  New work starts open, and an active claim sets it working before agent launch.
-  `delegated` is readable legacy state; distinct claimant and runner identities
-  now represent delegation.
-- Keep directory IDs stable; encode sequencing with `dependsOn`, not numeric
-  directory prefixes.
-- Do not use YAML duplicate keys, anchors, aliases, or custom tags.
-
-Prefer Agency commands for creation. When manually editing dependencies or
-prose, preserve backlinks and run validation immediately afterward.
-
-Update execution status with:
-
-```bash
-agency task status <task-id> <open|done|dropped>
-agency phase status <task-id> <phase-id> <open|done|dropped>
-```
-
-Coordinate execution ownership with a document revision from `agency context`
-or `agency graph`:
-
-```bash
-agency claim <task-id> [phase-id] --claimant <id> --runner <id> --session-id <id> --revision <sha256>
-agency release <task-id> [phase-id] --session-id <id> --revision <sha256>
-agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped>
-```
-
-## Archive Completed Work
-
-```bash
-agency archive list
-agency archive show <epic|task> <id>
-agency archive epic <epic-id>
-agency archive task <task-id>
-agency archive phase <task-id> <phase-id>
-agency restore epic <epic-id>
-agency restore task <task-id>
-agency restore phase <task-id> <phase-id>
-```
-
-Use these commands instead of moving work item folders manually. Agency mirrors
-their hierarchy under `archive/`, removes registered worktrees first, and keeps
-branches. It refuses dirty worktrees and active sibling dependencies. Use
-`--dry-run` to preflight archive or restore. Restore uses lifecycle provenance to
-recreate parent declarations and rejects ID, backlink, dependency, and destination
-conflicts. Archived IDs remain reserved until restored.
-
-## Validate Every Structural Change
-
-```bash
-agency validate [path]
-```
-
-Use `--json` when diagnostics will be consumed programmatically. Resolve all
-validation errors before materializing worktrees or creating PRs. Validation
-checks schemas, aliases, backlinks, phase directories, duplicate references,
-duplicate writable branch ownership, unknown dependencies, and dependency cycles.
-Outside a workbase, Agency uses the configured default or opens the registered
-workbase picker. With `--no-input` or without a TTY, pass `--workbase` or `--cwd`.
-
-## Worktrees And Agent Launch
-
-```bash
-agency work
-agency work <directory>
-agency work --epic <epic-id>
-agency work --task <task-id> [--phase <phase-id>] --workbase <selector>
-```
-
-Use `--runner <name>` to select a configured runner or the built-in `opencode`
-and `claude` presets. `--opencode` and `--claude` remain shorthand. Use
-`--print-command` to inspect the resolved cwd, argv, and non-secret environment
-without launching. This command fetches
-repositories for execution targets, creates or reuses their worktrees, and
-replaces the current process with the selected agent. With no directory it opens
-an `fzf` picker containing the workbase hierarchy. Pass `.`, or another
-directory, to infer the nearest epic, task, or phase.
-Outside a workbase, it first opens a picker containing registered workbases.
-With `--no-input` or without a TTY, provide an explicit workbase or cwd and an
-`--epic`, `--task`, or `--task` plus `--phase` selector so no picker is needed.
-
-Epic and multi-phase task targets are orchestration sessions launched beside
-their documents. Single-phase tasks and phases are execution sessions launched
-in their writable checkout.
-
-The workbase may delegate writable checkout creation through
-`worktreeCreateCommand` in `agency.json`. Do not bypass that command or create a
-parallel worktree manually. Supplemental read-only checkouts are still detached
-Git worktrees managed directly by Agency at their declared refs.
-
-Agency inspects `git worktree list --porcelain` before materializing. It reuses a
-writable checkout only when both path and branch match, and reuses a reference
-checkout only when its commit matches the declared ref. If a branch is checked
-out elsewhere, choose a different branch or remove the conflicting worktree;
-never force a second checkout of the branch.
-
-Do not run `agency work` from inside an active agent session unless the user
-explicitly wants to launch a nested/replacement agent process. If already
-working in an Agency checkout, read the owning `TASK.md` and optional `PHASE.md`
-directly instead.
-
-## Create Pull Requests
-
-Only create a PR when the user explicitly requests it:
-
-```bash
-agency pr create <task-id> [phase-id] [--draft]
-```
-
-Agency requires a clean writable worktree, pushes the execution branch, runs
-`gh pr create --fill`, and records the returned URL in the owning document's
-`pr` field. If PR creation fails, do not invent or manually write a URL.
-
-## Safety Rules
-
-- Run `agency validate` before worktree or PR operations.
-- Inspect existing entities before editing them.
-- Never write through a repository listed in plural `repos`.
-- Do not manually move generated `code/` worktrees.
-- Do not manually edit bare repositories under `repos/`.
-- Do not create a PR, initialize a workbase, clone a remote, or add a symlink
-  without user intent.
-- Keep task-level decisions in `TASK.md` and delivery-specific context in
-  `PHASE.md`.
+- A **workbase** contains durable epics, tasks, phases, and repository aliases.
+- An **epic** coordinates tasks. It may inspect repositories but never writes code.
+- A **task** is one durable outcome. It is either an execution unit itself or a
+  container for phases.
+- A **phase** is one execution unit within a multi-phase task, normally one PR.
+- An **execution unit** has exactly one writable `repo`, optional read-only
+  `repos`, one branch, one base, and one recorded PR value.
+- `open` is available, `working` is actively owned, and `done` or `dropped` is
+  terminal. Only `done` satisfies a dependency.
+
+The `authority` returned by context is decisive. Write only through
+`authority.writable.checkoutPath`. Every entry in `authority.references` is
+read-only, even if filesystem permissions permit writes.
+
+## Decide Before Acting
+
+Require explicit user intent before:
+
+- initializing a workbase;
+- adding, linking, renaming, or removing a repository alias;
+- launching another agent with `agency work` from an active agent session;
+- creating a pull request;
+- archiving, restoring, dropping, or reopening work; or
+- using `--force` to override readiness.
+
+Use a single-phase task for one outcome delivered by one PR. Use phases when an
+outcome needs multiple PRs or ordered execution units. Use an epic when several
+independently meaningful tasks need coordination.
+
+## Safety Invariants
+
+- Keep task-wide decisions in `TASK.md` and phase delivery details in `PHASE.md`.
+- Never write through plural `repos` references.
+- Never edit bare repositories or repository symlinks under `repos/`.
+- Never manually create, move, or remove generated `code/` worktrees.
+- Never invent IDs, revisions, PR URLs, dependency completion, or checkout state.
+- Preserve parent backlinks and dependency declarations; use Agency mutations
+  instead of hand-editing structural frontmatter.
+- Run `agency validate` before worktree or PR operations and after structural edits.
+- Do not bypass dirty-worktree, active-claim, revision, readiness, or failed-check
+  protections.
+
+## Operating Protocol
+
+### Start
+
+1. Run `agency context . --json`.
+2. Confirm `target`, `graph.readiness`, `authority`, `workspace`, and `validation`.
+3. Read the returned task and phase document paths for prose requirements.
+4. Stop on validation errors, blockers, an unexpected writable repository, or a
+   conflicting active owner.
+
+### Work
+
+1. Change files only in the declared writable checkout.
+2. Keep durable status and decisions current as the work changes.
+3. Validate structure after Agency document mutations.
+4. Run repository-specific formatting, type checks, builds, dead-code checks,
+   and focused tests before committing.
+5. Review the diff and commit according to the repository's instructions.
+
+### Finish
+
+1. Re-run `agency validate` and repository checks.
+2. Create a PR only when requested: `agency pr create <task> [phase]`.
+3. Record terminal state only when the requested outcome is true. A created PR
+   alone does not make work `done` if completion requires merge.
+4. If the session has a claim, use revision-guarded `agency finish`; otherwise
+   use the task or phase status command. Use `dropped` only for intentionally
+   abandoned work.
+5. Report the durable status and PR URL. Do not manually remove the worktree.
+
+## Human Launch vs Active Agent
+
+`agency work` is a human/orchestrator launch flow. It selects work, checks
+readiness, materializes managed checkouts, claims the execution unit, marks it
+working, and starts the configured runner.
+
+An agent already running in an Agency checkout must not call `agency work` to
+start itself again. It should inspect context, perform the assigned work, and
+finish or release its existing claim. Launch a nested or replacement agent only
+when the user explicitly asks.
+
+Use [`references/recipes.md`](references/recipes.md) for human setup, agent
+execution, claim, PR, conversion, and recovery workflows. Use
+[`references/commands.md`](references/commands.md) only when exact command syntax
+is needed.
