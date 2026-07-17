@@ -193,6 +193,8 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							branch: task.data.branch,
 							base: task.data.base,
 							pr: task.data.pr,
+							status: task.data.status,
+							...(task.data.claim ? { claim: task.data.claim } : {}),
 						})
 						const firstTitle = firstPhaseId!
 							.split("-")
@@ -340,7 +342,18 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					const fs = yield* FileSystemService
 					const service = yield* PhaseService
 					const validStatus = yield* decodeStatus(status)
+					if (validStatus === "working" || validStatus === "delegated") {
+						return yield* new PhaseError({
+							message:
+								"Active work and delegation require explicit ownership; use 'agency claim'",
+						})
+					}
 					const record = yield* service.show(taskId, id, startPath)
+					if (record.data.claim?.state === "active") {
+						return yield* new PhaseError({
+							message: `Phase '${id}' has an active claim; use agency release or agency finish`,
+						})
+					}
 					if (!canTransitionStatus(record.data.status, validStatus)) {
 						return yield* new PhaseError({
 							message: `Cannot transition phase '${id}' from ${record.data.status} to ${validStatus}; reopen it first`,

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "@effect/schema"
 import {
 	EntityId,
+	ClaimRecord,
 	EpicFrontmatter,
 	PhaseFrontmatter,
 	TaskFrontmatter,
@@ -151,6 +152,32 @@ describe("work status", () => {
 				status: "blocked",
 			}),
 		).toThrow()
+	})
+})
+
+describe("claim records", () => {
+	const record = {
+		claimant: "orchestrator",
+		runner: "agent",
+		sessionId: "job-1",
+		startedAt: "2026-07-17T12:00:00.000Z",
+		targetRevision: "0".repeat(64),
+		expiresAt: "2026-07-17T13:00:00.000Z",
+		state: "active" as const,
+	}
+
+	test("accepts explicit ownership and revision metadata", () => {
+		expect(Schema.decodeUnknownSync(ClaimRecord)(record)).toEqual(record)
+	})
+
+	test("rejects malformed timestamps, revisions, and empty identities", () => {
+		for (const invalid of [
+			{ ...record, claimant: "" },
+			{ ...record, startedAt: "today" },
+			{ ...record, targetRevision: "abc" },
+		]) {
+			expect(() => Schema.decodeUnknownSync(ClaimRecord)(invalid)).toThrow()
+		}
 	})
 })
 

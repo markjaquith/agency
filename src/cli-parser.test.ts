@@ -141,9 +141,90 @@ describe("strict CLI parsing", () => {
 			[["validate", "one", "two"], "agency validate"],
 			[["context", "one", "two"], "agency context"],
 			[["graph", "extra"], "agency graph"],
+			[
+				[
+					"claim",
+					"one",
+					"two",
+					"three",
+					"--claimant",
+					"a",
+					"--runner",
+					"r",
+					"--session-id",
+					"s",
+					"--revision",
+					"0".repeat(64),
+				],
+				"agency claim",
+			],
+			[
+				[
+					"release",
+					"one",
+					"two",
+					"three",
+					"--session-id",
+					"s",
+					"--revision",
+					"0".repeat(64),
+				],
+				"agency release",
+			],
+			[
+				[
+					"finish",
+					"one",
+					"two",
+					"three",
+					"--session-id",
+					"s",
+					"--revision",
+					"0".repeat(64),
+					"--outcome",
+					"done",
+				],
+				"agency finish",
+			],
 		] as const) {
 			expectUsageError([...args], usage)
 		}
+	})
+
+	test("validates revision-guarded claim operations", () => {
+		const revision = "0".repeat(64)
+		expect(
+			parseCli([
+				"claim",
+				"task",
+				"phase",
+				"--claimant",
+				"orchestrator",
+				"--runner",
+				"agent",
+				"--session-id",
+				"job-1",
+				"--revision",
+				revision,
+				"--expires-at",
+				"2026-07-17T13:00:00.000Z",
+			]),
+		).toMatchObject({ commandName: "claim", args: ["task", "phase"] })
+		expect(() =>
+			parseCli(["release", "task", "--session-id", "job-1"]),
+		).toThrow("--revision' is required")
+		expect(() =>
+			parseCli([
+				"finish",
+				"task",
+				"--session-id",
+				"job-1",
+				"--revision",
+				revision,
+				"--outcome",
+				"working",
+			]),
+		).toThrow("must be 'done' or 'dropped'")
 	})
 
 	test("accepts context projections and keeps compact command-local", () => {

@@ -26,8 +26,8 @@ field. Repositories listed in plural `repos` are read-only references.
   `agency integration sync` to update managed agent files explicitly.
 - Keep task-level decisions in `TASK.md` and phase-specific delivery context in
   `PHASE.md`.
-- Keep execution-unit `status` current with `agency task status` or
-  `agency phase status`; `agency work` marks launched work as `working`.
+- Coordinate execution ownership with `agency claim`, `agency release`, and
+  `agency finish`; `agency work` claims execution units before launch.
 - Do not manually create, move, or remove worktrees under `code/`.
 - Use `agency archive`, rather than moving work item folders manually.
 - Do not edit bare repositories or repository symlinks under `repos/`.

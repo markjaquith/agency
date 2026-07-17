@@ -23,6 +23,25 @@ export const WorkStatus = Schema.Literal(
 	"dropped",
 )
 
+const IsoTimestamp = NonEmptyString.pipe(
+	Schema.pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
+)
+
+const DocumentRevision = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/))
+
+export const ClaimRecord = Schema.Struct({
+	claimant: NonEmptyString,
+	runner: NonEmptyString,
+	sessionId: NonEmptyString,
+	startedAt: IsoTimestamp,
+	targetRevision: DocumentRevision,
+	expiresAt: Schema.optional(IsoTimestamp),
+	state: Schema.Literal("active", "released", "finished"),
+	releasedAt: Schema.optional(IsoTimestamp),
+	finishedAt: Schema.optional(IsoTimestamp),
+	outcome: Schema.optional(Schema.Literal("done", "dropped")),
+})
+
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 
 const GitHubPullRequestUrl = NonEmptyString.pipe(
@@ -51,6 +70,7 @@ const ExecutionUnit = {
 	base: NonEmptyString,
 	pr: Schema.NullOr(GitHubPullRequestUrl),
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
+	claim: Schema.optional(ClaimRecord),
 }
 
 export const EpicFrontmatter = Schema.Struct({
@@ -89,6 +109,7 @@ export type WorkbaseRegistry = Schema.Schema.Type<typeof WorkbaseRegistry>
 export type Dependency = Schema.Schema.Type<typeof Dependency>
 export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
+export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

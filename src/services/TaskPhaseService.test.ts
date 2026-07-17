@@ -234,16 +234,17 @@ describe("task and phase services", () => {
 			),
 		)
 		expect(createdTask.content).toContain("status: open")
-		const task = await runTestEffect(
-			TaskService.pipe(
-				Effect.flatMap((service) =>
-					service.setStatus("single-status", "delegated", root),
+		for (const status of ["working", "delegated"]) {
+			await expect(
+				runTestEffect(
+					TaskService.pipe(
+						Effect.flatMap((service) =>
+							service.setStatus("single-status", status, root),
+						),
+					),
 				),
-			),
-		)
-		expect(task.data.status).toBe("delegated")
-		expect(task.content).toContain("status: delegated")
-		expect(task.content).toContain("Describe the task outcome.")
+			).rejects.toThrow("require explicit ownership")
+		}
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>

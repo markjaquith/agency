@@ -32,6 +32,13 @@ import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
 import { GraphService } from "./src/services/GraphService"
+import { ClaimService } from "./src/services/ClaimService"
+import {
+	claimCommand,
+	claimHelp,
+	releaseHelp,
+	finishHelp,
+} from "./src/commands/claim"
 import {
 	collectCommandResult,
 	errorEnvelope,
@@ -53,6 +60,7 @@ const CliLayer = Layer.mergeAll(
 	IntegrationService.Default,
 	ContextService.Default,
 	GraphService.Default,
+	ClaimService.Default,
 )
 
 /**
@@ -99,6 +107,61 @@ const VERSION = packageJson.version
 
 // Define commands
 const commands: Record<string, Command> = {
+	claim: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(claimHelp)
+			await runCommand(
+				claimCommand({
+					operation: "claim",
+					taskId: args[0],
+					phaseId: args[1],
+					claimant: options.claimant,
+					runner: options.runner,
+					sessionId: options["session-id"],
+					revision: options.revision,
+					expiresAt: options["expires-at"],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
+	release: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(releaseHelp)
+			await runCommand(
+				claimCommand({
+					operation: "release",
+					taskId: args[0],
+					phaseId: args[1],
+					sessionId: options["session-id"],
+					revision: options.revision,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
+	finish: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(finishHelp)
+			await runCommand(
+				claimCommand({
+					operation: "finish",
+					taskId: args[0],
+					phaseId: args[1],
+					sessionId: options["session-id"],
+					revision: options.revision,
+					outcome: options.outcome,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 	init: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -375,6 +438,9 @@ Commands:
   integration <command> Inspect or sync managed integration files
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
+  claim <task> [phase]   Claim an execution unit
+  release <task> [phase] Release an execution unit
+  finish <task> [phase]  Finish an execution unit
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase

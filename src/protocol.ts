@@ -81,6 +81,22 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 	EpicError: { code: "EPIC_ERROR", retryable: false },
 	TaskError: { code: "TASK_ERROR", retryable: false },
 	PhaseError: { code: "PHASE_ERROR", retryable: false },
+	ClaimError: { code: "CLAIM_ERROR", retryable: false },
+	ClaimConflictError: {
+		code: "CLAIM_CONFLICT",
+		retryable: true,
+		remediation: "Inspect the current ownership details before retrying.",
+	},
+	RevisionConflictError: {
+		code: "REVISION_CONFLICT",
+		retryable: true,
+		remediation: "Read the current document revision and retry intentionally.",
+	},
+	ClaimOwnershipError: {
+		code: "CLAIM_OWNERSHIP",
+		retryable: false,
+		remediation: "Use the session that owns the claim.",
+	},
 	ArchiveError: { code: "ARCHIVE_ERROR", retryable: false },
 	WorktreeError: { code: "WORKTREE_ERROR", retryable: false },
 	PullRequestError: { code: "PULL_REQUEST_ERROR", retryable: false },
