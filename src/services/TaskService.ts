@@ -18,6 +18,10 @@ import {
 import { canTransitionStatus } from "../readiness"
 import { documentRevision } from "../workbase/document-revision"
 import { archivedTaskDirectory } from "../workbase/archive"
+import {
+	documentWriteStep,
+	runLifecycleTransaction,
+} from "./LifecycleTransaction"
 
 class TaskError extends Data.TaggedError("TaskError")<{
 	readonly message: string
@@ -129,6 +133,12 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 								...(data.repos ?? []).map((reference) => reference.repo),
 							]
 						: []
+				if (new Set(referencedRepos).size !== referencedRepos.length) {
+					return yield* new TaskError({
+						message:
+							"Repository references must be unique and cannot include the writable repository",
+					})
+				}
 				for (const alias of referencedRepos) {
 					if (!(yield* fs.exists(join(root, "repos", alias)))) {
 						return yield* new TaskError({
@@ -140,6 +150,11 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				let parentEpic: EpicRecord | undefined
 				if (input.epic) {
 					parentEpic = yield* epics.show(input.epic, root)
+					if (parentEpic.data.tasks.some((task) => task.id === id)) {
+						return yield* new TaskError({
+							message: `Epic '${input.epic}' already lists task '${id}'`,
+						})
+					}
 				}
 
 				const title = id
@@ -150,9 +165,11 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					data,
 					`# ${title}\n\nDescribe the task outcome.`,
 				)
-				yield* fs.createDirectory(directory)
-				yield* fs.writeFile(path, content)
-
+				const writes: {
+					path: string
+					content: string
+					create?: boolean
+				}[] = [{ path, content, create: true }]
 				if (input.epic && parentEpic) {
 					const parsed = yield* parseFrontmatter(
 						parentEpic.content,
@@ -163,8 +180,15 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 						tasks: [...parentEpic.data.tasks, { id }],
 					}
 					const updated = formatMarkdownDocument(epicData, parsed.body)
-					yield* fs.writeFile(parentEpic.path, updated)
+					writes.push({ path: parentEpic.path, content: updated })
 				}
+				yield* runLifecycleTransaction({
+					root,
+					preconditions: parentEpic
+						? [{ path: parentEpic.path, revision: parentEpic.revision }]
+						: [],
+					steps: [documentWriteStep(root, writes)],
+				})
 
 				return {
 					id,

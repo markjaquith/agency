@@ -1,13 +1,16 @@
 import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
-import { mkdir, open, rename, rm } from "node:fs/promises"
+import { Data, Effect, Either, Layer } from "effect"
+import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { EpicService, type EpicRecord } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
-import { PhaseService } from "./PhaseService"
+import { PhaseService, type PhaseRecord } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
-import { WorktreeService } from "./WorktreeService"
+import {
+	WorktreeService,
+	type WorktreeRemovalSnapshot,
+} from "./WorktreeService"
 import {
 	formatMarkdownDocument,
 	parseFrontmatter,
@@ -29,6 +32,13 @@ import {
 	archivedTaskDirectory,
 	lifecycleManifestPath,
 } from "../workbase/archive"
+import {
+	directoryMoveStep,
+	documentWriteStep,
+	runLifecycleTransaction,
+	type TransactionStep,
+} from "./LifecycleTransaction"
+import { withWorktreeLocks } from "./WorktreeLock"
 
 class ArchiveError extends Data.TaggedError("ArchiveError")<{
 	readonly message: string
@@ -99,6 +109,7 @@ interface TaskRecord {
 	readonly id: string
 	readonly path: string
 	readonly content: string
+	readonly revision: string
 	readonly data: TaskData
 }
 
@@ -110,11 +121,6 @@ interface Move {
 interface Write {
 	readonly path: string
 	readonly content: string
-}
-
-interface WorktreeTarget {
-	readonly taskId: string
-	readonly phaseId?: string
 }
 
 const decode = <S extends Schema.Schema.AnyNoContext>(
@@ -259,65 +265,63 @@ const applyMutation = (moves: readonly Move[], writes: readonly Write[]) =>
 					}),
 	})
 
-const applyArchiveMutation = (
-	root: string,
-	targets: readonly WorktreeTarget[],
-	moves: readonly Move[],
-	writes: readonly Write[],
-) =>
-	Effect.gen(function* () {
-		const worktrees = yield* WorktreeService
-		const removedPaths: string[] = []
-		const removedTargets: WorktreeTarget[] = []
-		return yield* withLifecycleLock(
-			root,
-			Effect.gen(function* () {
-				const targetsWithWorktrees = new Set<WorktreeTarget>()
-				for (const target of targets) {
-					const planned = yield* worktrees.remove(
-						target.taskId,
-						target.phaseId,
-						root,
-						{
-							dryRun: true,
-						},
-					)
-					if (planned.length > 0) targetsWithWorktrees.add(target)
-				}
-				for (const target of targets) {
-					if (targetsWithWorktrees.has(target)) removedTargets.push(target)
-					const removed = yield* worktrees.remove(
-						target.taskId,
-						target.phaseId,
-						root,
-					)
-					removedPaths.push(...removed)
-				}
-				yield* applyMutation(moves, writes)
-				return removedPaths
-			}).pipe(
-				Effect.catchAll((cause) =>
-					Effect.gen(function* () {
-						const rollbackErrors: unknown[] = []
-						for (const target of [...removedTargets].reverse()) {
-							const restored = yield* worktrees
-								.materialize(target.taskId, target.phaseId, root)
-								.pipe(Effect.either)
-							if (Either.isLeft(restored)) rollbackErrors.push(restored.left)
-						}
-						if (rollbackErrors.length > 0) {
-							return yield* new ArchiveError({
-								message:
-									"Archive failed and worktree rollback was incomplete; manual recovery is required",
-								cause: new AggregateError([cause, ...rollbackErrors]),
-							})
-						}
-						return yield* Effect.fail(cause)
-					}),
-				),
-			),
+const WorktreeLayer = Layer.mergeAll(
+	FileSystemService.Default,
+	WorkbaseService.Default,
+	TaskService.Default,
+	PhaseService.Default,
+	WorktreeService.Default,
+)
+
+const runWorktreeEffect = <A, E>(effect: Effect.Effect<A, E, any>) =>
+	Effect.runPromise(
+		effect.pipe(Effect.provide(WorktreeLayer)) as Effect.Effect<A, E, never>,
+	)
+
+const runGit = async (args: readonly string[]) => {
+	const process = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe" })
+	const [exitCode, stdout, stderr] = await Promise.all([
+		process.exited,
+		new Response(process.stdout).text(),
+		new Response(process.stderr).text(),
+	])
+	if (exitCode !== 0) throw new Error(stderr.trim() || args.join(" "))
+	return stdout.trim()
+}
+
+const restoreWorktreeSnapshots = async (
+	snapshots: readonly WorktreeRemovalSnapshot[],
+) => {
+	for (const snapshot of snapshots) {
+		try {
+			await lstat(snapshot.path)
+			continue
+		} catch {}
+		await mkdir(dirname(snapshot.path), { recursive: true })
+		await runGit(
+			snapshot.branch
+				? [
+						"git",
+						"-C",
+						snapshot.repositoryPath,
+						"worktree",
+						"add",
+						snapshot.path,
+						snapshot.branch,
+					]
+				: [
+						"git",
+						"-C",
+						snapshot.repositoryPath,
+						"worktree",
+						"add",
+						"--detach",
+						snapshot.path,
+						snapshot.head,
+					],
 		)
-	})
+	}
+}
 
 const rejectExistingDestination = (
 	path: string,
@@ -533,6 +537,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 				options: LifecycleOptions = {},
 			) =>
 				Effect.gen(function* () {
+					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const epics = yield* EpicService
 					const tasks = yield* TaskService
@@ -549,34 +554,59 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						}
 						taskRecords.push(task)
 					}
+					const declared = new Set(epic.data.tasks.map((task) => task.id))
+					const unlisted = (yield* tasks.list(root)).find(
+						(task) => task.data.epic === id && !declared.has(task.id),
+					)
+					if (unlisted) {
+						return yield* new ArchiveError({
+							message: `Task '${unlisted.id}' references epic '${id}' but is not listed by it`,
+						})
+					}
+
 					const destination = archivedEpicDirectory(root, id)
 					yield* rejectExistingDestination(destination, "Archive")
-					for (const task of taskRecords)
+					for (const task of taskRecords) {
 						yield* rejectExistingDestination(
 							archivedTaskDirectory(root, task.id),
 							"Archive",
 						)
+					}
 
-					let removedWorktrees: string[] = []
-					const targets: WorktreeTarget[] = []
+					const executionUnits: { taskId: string; phaseId?: string }[] = []
+					const phaseRecords: PhaseRecord[] = []
 					for (const task of taskRecords) {
+						if ("claim" in task.data && task.data.claim?.state === "active") {
+							return yield* new ArchiveError({
+								message: `Task '${task.id}' has an active claim; release or finish it before archiving`,
+							})
+						}
 						if ("phases" in task.data) {
 							for (const phase of task.data.phases) {
-								targets.push({ taskId: task.id, phaseId: phase.id })
-								removedWorktrees.push(
-									...(yield* worktrees.remove(task.id, phase.id, root, {
-										dryRun: true,
-									})),
+								const record = yield* (yield* PhaseService).show(
+									task.id,
+									phase.id,
+									root,
 								)
+								if (record.data.claim?.state === "active") {
+									return yield* new ArchiveError({
+										message: `Phase '${phase.id}' has an active claim; release or finish it before archiving`,
+									})
+								}
+								phaseRecords.push(record)
+								executionUnits.push({ taskId: task.id, phaseId: phase.id })
 							}
 						} else {
-							targets.push({ taskId: task.id })
-							removedWorktrees.push(
-								...(yield* worktrees.remove(task.id, undefined, root, {
-									dryRun: true,
-								})),
-							)
+							executionUnits.push({ taskId: task.id })
 						}
+					}
+					const removedWorktrees: string[] = []
+					for (const unit of executionUnits) {
+						removedWorktrees.push(
+							...(yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
+								dryRun: true,
+							})),
+						)
 					}
 
 					const at = new Date().toISOString()
@@ -585,14 +615,16 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						to: archivedTaskDirectory(root, task.id),
 					}))
 					moves.push({ from: dirname(epic.path), to: destination })
-					const writes: Write[] = []
+					const writes: (Write & { create?: boolean })[] = []
 					for (const task of taskRecords) {
 						const target = archivedTaskDirectory(root, task.id)
+						const manifestPath = lifecycleManifestPath(dirname(task.path))
 						const declaration = epic.data.tasks.find(
 							(child) => child.id === task.id,
 						)!
 						writes.push({
-							path: lifecycleManifestPath(target),
+							path: manifestPath,
+							create: !(yield* fs.exists(manifestPath)),
 							content: json(
 								manifestFor(
 									yield* readManifest(dirname(task.path)),
@@ -606,8 +638,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							),
 						})
 					}
+					const epicManifestPath = lifecycleManifestPath(dirname(epic.path))
 					writes.push({
-						path: lifecycleManifestPath(destination),
+						path: epicManifestPath,
+						create: !(yield* fs.exists(epicManifestPath)),
 						content: json(
 							manifestFor(
 								yield* readManifest(dirname(epic.path)),
@@ -617,11 +651,52 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						),
 					})
 					if (!options.dryRun) {
-						removedWorktrees = yield* applyArchiveMutation(
+						const snapshots: WorktreeRemovalSnapshot[] = []
+						const steps: TransactionStep[] = [
+							documentWriteStep(root, writes),
+							{
+								label: `remove worktrees for epic ${id}`,
+								apply: async () => {
+									try {
+										for (const unit of executionUnits)
+											await runWorktreeEffect(
+												worktrees.remove(unit.taskId, unit.phaseId, root, {
+													snapshots,
+													lockHeld: true,
+												}),
+											)
+									} catch (cause) {
+										await restoreWorktreeSnapshots(snapshots)
+										throw cause
+									}
+								},
+								rollback: () => restoreWorktreeSnapshots(snapshots),
+								manualRecovery: `Run agency work prepare for each execution unit in epic '${id}'`,
+							},
+						]
+						for (const move of moves)
+							steps.push(directoryMoveStep(root, move.from, move.to))
+						yield* withLifecycleLock(
 							root,
-							targets,
-							moves,
-							writes,
+							withWorktreeLocks(
+								root,
+								executionUnits,
+								runLifecycleTransaction({
+									root,
+									preconditions: [
+										{ path: epic.path, revision: epic.revision },
+										...taskRecords.map((task) => ({
+											path: task.path,
+											revision: task.revision,
+										})),
+										...phaseRecords.map((phase) => ({
+											path: phase.path,
+											revision: phase.revision,
+										})),
+									],
+									steps,
+								}),
+							),
 						)
 					}
 					return {
@@ -642,12 +717,18 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 				options: LifecycleOptions = {},
 			) =>
 				Effect.gen(function* () {
+					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const epics = yield* EpicService
 					const tasks = yield* TaskService
 					const worktrees = yield* WorktreeService
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(id, root)
+					if ("claim" in task.data && task.data.claim?.state === "active") {
+						return yield* new ArchiveError({
+							message: `Task '${id}' has an active claim; release or finish it before archiving`,
+						})
+					}
 					const destination = archivedTaskDirectory(root, id)
 					yield* rejectExistingDestination(destination, "Archive")
 					let parentEpic: EpicRecord | undefined
@@ -670,27 +751,35 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						}
 					}
 
-					let plannedWorktrees: string[] = []
-					const targets: WorktreeTarget[] = []
+					const executionUnits: { taskId: string; phaseId?: string }[] = []
+					const phaseRecords: PhaseRecord[] = []
 					if ("phases" in task.data) {
 						for (const phase of task.data.phases) {
-							targets.push({ taskId: id, phaseId: phase.id })
-							plannedWorktrees.push(
-								...(yield* worktrees.remove(id, phase.id, root, {
-									dryRun: true,
-								})),
+							const record = yield* (yield* PhaseService).show(
+								id,
+								phase.id,
+								root,
 							)
+							if (record.data.claim?.state === "active") {
+								return yield* new ArchiveError({
+									message: `Phase '${phase.id}' has an active claim; release or finish it before archiving`,
+								})
+							}
+							phaseRecords.push(record)
+							executionUnits.push({ taskId: id, phaseId: phase.id })
 						}
 					} else {
-						targets.push({ taskId: id })
-						plannedWorktrees.push(
-							...(yield* worktrees.remove(id, undefined, root, {
+						executionUnits.push({ taskId: id })
+					}
+					const removedWorktrees: string[] = []
+					for (const unit of executionUnits)
+						removedWorktrees.push(
+							...(yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
 								dryRun: true,
 							})),
 						)
-					}
 					const at = new Date().toISOString()
-					const writes: Write[] = []
+					const writes: (Write & { create?: boolean })[] = []
 					if (parentEpic) {
 						writes.push({
 							path: parentEpic.path,
@@ -700,8 +789,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							}),
 						})
 					}
+					const manifestPath = lifecycleManifestPath(dirname(task.path))
 					writes.push({
-						path: lifecycleManifestPath(destination),
+						path: manifestPath,
+						create: !(yield* fs.exists(manifestPath)),
 						content: json(
 							manifestFor(
 								yield* readManifest(dirname(task.path)),
@@ -723,11 +814,55 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						),
 					})
 					if (!options.dryRun) {
-						plannedWorktrees = yield* applyArchiveMutation(
+						const snapshots: WorktreeRemovalSnapshot[] = []
+						const steps: TransactionStep[] = [
+							documentWriteStep(root, writes),
+							{
+								label: `remove worktrees for task ${id}`,
+								apply: async () => {
+									try {
+										for (const unit of executionUnits)
+											await runWorktreeEffect(
+												worktrees.remove(unit.taskId, unit.phaseId, root, {
+													snapshots,
+													lockHeld: true,
+												}),
+											)
+									} catch (cause) {
+										await restoreWorktreeSnapshots(snapshots)
+										throw cause
+									}
+								},
+								rollback: () => restoreWorktreeSnapshots(snapshots),
+								manualRecovery: `Run agency work prepare for task '${id}'`,
+							},
+							directoryMoveStep(root, dirname(task.path), destination),
+						]
+						yield* withLifecycleLock(
 							root,
-							targets,
-							[{ from: dirname(task.path), to: destination }],
-							writes,
+							withWorktreeLocks(
+								root,
+								executionUnits,
+								runLifecycleTransaction({
+									root,
+									preconditions: [
+										{ path: task.path, revision: task.revision },
+										...(parentEpic
+											? [
+													{
+														path: parentEpic.path,
+														revision: parentEpic.revision,
+													},
+												]
+											: []),
+										...phaseRecords.map((phase) => ({
+											path: phase.path,
+											revision: phase.revision,
+										})),
+									],
+									steps,
+								}),
+							),
 						)
 					}
 					return {
@@ -736,7 +871,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						id,
 						path: destination,
 						affectedPaths: [destination],
-						removedWorktrees: plannedWorktrees,
+						removedWorktrees,
 						dryRun: options.dryRun === true,
 						at,
 					} satisfies LifecycleResult
@@ -749,6 +884,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 				options: LifecycleOptions = {},
 			) =>
 				Effect.gen(function* () {
+					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
@@ -764,6 +900,11 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					const declaration = task.data.phases.find(
 						(candidate) => candidate.id === id,
 					)!
+					if (phase.data.claim?.state === "active") {
+						return yield* new ArchiveError({
+							message: `Phase '${id}' has an active claim; release or finish it before archiving`,
+						})
+					}
 					const dependent = task.data.phases.find((candidate) =>
 						candidate.dependsOn?.includes(id),
 					)
@@ -774,7 +915,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					}
 					const destination = archivedPhaseDirectory(root, taskId, id)
 					yield* rejectExistingDestination(destination, "Archive")
-					let removedWorktrees = yield* worktrees.remove(taskId, id, root, {
+					const removedWorktrees = yield* worktrees.remove(taskId, id, root, {
 						dryRun: true,
 					})
 					const at = new Date().toISOString()
@@ -782,10 +923,12 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						...task.data,
 						phases: task.data.phases.filter((candidate) => candidate.id !== id),
 					})
-					const writes: Write[] = [
+					const manifestPath = lifecycleManifestPath(dirname(phase.path))
+					const writes: (Write & { create?: boolean })[] = [
 						{ path: task.path, content },
 						{
-							path: lifecycleManifestPath(destination),
+							path: manifestPath,
+							create: !(yield* fs.exists(manifestPath)),
 							content: json(
 								manifestFor(
 									yield* readManifest(dirname(phase.path)),
@@ -801,11 +944,37 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						},
 					]
 					if (!options.dryRun) {
-						removedWorktrees = yield* applyArchiveMutation(
+						const snapshots: WorktreeRemovalSnapshot[] = []
+						yield* withLifecycleLock(
 							root,
-							[{ taskId, phaseId: id }],
-							[{ from: dirname(phase.path), to: destination }],
-							writes,
+							withWorktreeLocks(
+								root,
+								[{ taskId, phaseId: id }],
+								runLifecycleTransaction({
+									root,
+									preconditions: [
+										{ path: task.path, revision: task.revision },
+										{ path: phase.path, revision: phase.revision },
+									],
+									steps: [
+										documentWriteStep(root, writes),
+										{
+											label: `remove worktrees for phase ${taskId}/${id}`,
+											apply: async () => {
+												await runWorktreeEffect(
+													worktrees.remove(taskId, id, root, {
+														snapshots,
+														lockHeld: true,
+													}),
+												)
+											},
+											rollback: () => restoreWorktreeSnapshots(snapshots),
+											manualRecovery: `Run agency work prepare for phase '${taskId}/${id}'`,
+										},
+										directoryMoveStep(root, dirname(phase.path), destination),
+									],
+								}),
+							),
 						)
 					}
 					return {

@@ -427,7 +427,8 @@ describe("WorktreeService", () => {
 				repo: "agency",
 				base: "absent-base",
 				config: { version: 2 },
-				expected: "Failed to create branch 'task/bad-base'",
+				expected:
+					"Base 'absent-base' for repository 'agency' does not resolve to a commit",
 			},
 			{
 				id: "failed-command",
@@ -484,6 +485,64 @@ pr: null
 			).rejects.toThrow(fixture.expected)
 			await rm(taskDirectory, { recursive: true, force: true })
 		}
+	})
+
+	test("compensates a custom command that fails after creating Git state", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: [
+					"sh",
+					"-c",
+					'git -C "$1" worktree add -b "$3" "$2" "$4" >/dev/null 2>&1; exit 7',
+					"agency-worktree",
+					"{repo}",
+					"{worktree}",
+					"{branch}",
+					"{base}",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "compensated",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/compensated",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("compensated", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("Failed to create worktree for 'agency'")
+		expect(
+			await Bun.file(join(root, "tasks/compensated/code/agency")).exists(),
+		).toBe(false)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/compensated",
+			]).exitCode,
+		).not.toBe(0)
 	})
 
 	test("moves and repairs an existing worktree when converting a task", async () => {
@@ -552,6 +611,54 @@ pr: null
 			{ stdout: "pipe", stderr: "pipe" },
 		)
 		expect(status.exitCode).toBe(0)
+	})
+
+	test("preflights worktree registration before converting a task", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "unregistered",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/unregistered",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const checkout = join(root, "tasks/unregistered/code/agency")
+		await mkdir(checkout, { recursive: true })
+		await Bun.write(join(checkout, "keep.txt"), "keep\n")
+
+		await expect(
+			runTestEffect(
+				PhaseService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								taskId: "unregistered",
+								id: "follow-up",
+								firstPhase: "implementation",
+								repo: "agency",
+								branch: "task/follow-up-unregistered",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("is not registered as a Git worktree")
+		expect(await Bun.file(join(checkout, "keep.txt")).text()).toBe("keep\n")
+		expect(
+			await Bun.file(
+				join(root, "tasks/unregistered/phases/implementation/PHASE.md"),
+			).exists(),
+		).toBe(false)
 	})
 
 	test("rejects a writable branch checked out in another worktree", async () => {
@@ -733,6 +840,21 @@ pr: null
 				),
 			),
 		).rejects.toThrow("is attached to branch 'main'")
+		expect(
+			await Bun.file(
+				join(root, "tasks/attached-reference/code/agency"),
+			).exists(),
+		).toBe(false)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/attached-reference",
+			]).exitCode,
+		).not.toBe(0)
 	})
 
 	test("removes worktrees without deleting branches", async () => {
@@ -856,6 +978,57 @@ pr: null
 				"show-ref",
 				"--verify",
 				"refs/heads/task/planned",
+			]).exitCode,
+		).not.toBe(0)
+	})
+
+	test("dry-run resolves a reference that exists only on the remote", async () => {
+		await git(["checkout", "-b", "remote-only"], source)
+		await Bun.write(join(source, "remote.txt"), "remote\n")
+		await git(["add", "remote.txt"], source)
+		await git(
+			["-c", "commit.gpgsign=false", "commit", "-m", "remote branch"],
+			source,
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "remote-reference",
+							ticketUrl: null,
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "remote-only" }],
+							branch: "task/remote-reference",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("remote-reference", undefined, root, {
+						dryRun: true,
+					}),
+				),
+			),
+		)
+		expect(
+			workspace.checkouts.find((checkout) => checkout.repo === "effect")
+				?.resolvedCommit,
+		).toMatch(/^[0-9a-f]{40}$/)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/effect"),
+				"show-ref",
+				"--verify",
+				"refs/heads/remote-only",
 			]).exitCode,
 		).not.toBe(0)
 	})

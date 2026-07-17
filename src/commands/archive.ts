@@ -112,7 +112,9 @@ export const archive = (options: ArchiveOptions) =>
 		log(
 			options.json
 				? JSON.stringify(result, null, 2)
-				: `${result.dryRun ? "Would archive" : "Archived"} ${result.kind} '${result.id}' to ${result.path}`,
+				: result.dryRun
+					? `Would archive ${result.kind} '${result.id}' to ${result.path}`
+					: `Archived ${result.kind} '${result.id}' to ${result.path}`,
 		)
 	})
 
