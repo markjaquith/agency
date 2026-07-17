@@ -111,9 +111,22 @@ describe("RepositoryService", () => {
 	})
 
 	test("shows, fetches, updates, and verifies a repository", async () => {
-		const source = join(root, "source.git")
+		const source = join(root, "source")
 		const replacement = join(root, "replacement.git")
-		await runGit(["init", "--bare", "--initial-branch=main", source])
+		await runGit(["init", "--initial-branch=main", source])
+		await Bun.write(join(source, "README.md"), "# Source\n")
+		await runGit(["-C", source, "add", "README.md"])
+		await runGit([
+			"-C",
+			source,
+			"-c",
+			"user.name=Agency Tests",
+			"-c",
+			"user.email=agency@example.com",
+			"commit",
+			"-m",
+			"Initial commit",
+		])
 		await runGit(["init", "--bare", "--initial-branch=main", replacement])
 		await runTestEffect(
 			RepositoryService.pipe(
