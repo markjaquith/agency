@@ -351,6 +351,39 @@ const commands = {
 			options: ["json", "compact"],
 		},
 	},
+	graph: {
+		usage: "agency graph [options]",
+		options: {
+			...outputOptions,
+			jsonl: { type: "boolean" },
+			ready: { type: "boolean" },
+			blocked: { type: "boolean" },
+			status: { type: "string", multiple: true },
+			repository: { type: "string", multiple: true },
+			kind: { type: "string", multiple: true },
+			include: { type: "string", multiple: true },
+		},
+		command: {
+			usage: "agency graph [options]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: [
+				"json",
+				"jsonl",
+				"ready",
+				"blocked",
+				"status",
+				"repository",
+				"kind",
+				"include",
+			],
+			repeatable: ["status", "repository", "kind", "include"],
+			conflicts: [
+				["json", "jsonl"],
+				["ready", "blocked"],
+			],
+		},
+	},
 } satisfies Readonly<Record<string, CommandDefinition>>
 
 const rootOptions = commonOptions
@@ -459,6 +492,30 @@ function validateTaskCreate(
 			"Option '--repo' is required unless '--multi-phase' is used.",
 			spec.usage,
 		)
+	}
+}
+
+function validateGraphOptions(values: ParsedCli["values"], spec: LeafCommand) {
+	const allowed = {
+		status: new Set(["open", "working", "delegated", "done", "dropped"]),
+		kind: new Set(["epic", "task", "phase", "repository", "execution-unit"]),
+		include: new Set(["bodies", "workspace", "git", "pr"]),
+	}
+	for (const [name, accepted] of Object.entries(allowed)) {
+		const supplied = values[name]
+		const entries = Array.isArray(supplied)
+			? supplied
+			: supplied === undefined
+				? []
+				: [supplied]
+		for (const value of entries) {
+			if (typeof value !== "string" || !accepted.has(value)) {
+				throw usageError(
+					`Invalid '${optionLabel(name)}' value '${String(value)}'. Expected one of: ${[...accepted].join(", ")}.`,
+					spec.usage,
+				)
+			}
+		}
 	}
 }
 
@@ -588,6 +645,9 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		(subcommand === "new" || subcommand === "create")
 	) {
 		validateTaskCreate(parsed.values, spec, subcommand === "create")
+	}
+	if (commandName === "graph") {
+		validateGraphOptions(parsed.values, spec)
 	}
 
 	return {

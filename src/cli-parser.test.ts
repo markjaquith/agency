@@ -140,6 +140,7 @@ describe("strict CLI parsing", () => {
 			[["status", "extra"], "agency status"],
 			[["validate", "one", "two"], "agency validate"],
 			[["context", "one", "two"], "agency context"],
+			[["graph", "extra"], "agency graph"],
 		] as const) {
 			expectUsageError([...args], usage)
 		}
@@ -152,6 +153,50 @@ describe("strict CLI parsing", () => {
 			values: { json: true, compact: true },
 		})
 		expectUsageError(["status", "--compact"], "agency status")
+	})
+
+	test("accepts repeatable graph filters and rejects output conflicts", () => {
+		expect(
+			parseCli([
+				"graph",
+				"--json",
+				"--status",
+				"open",
+				"--status",
+				"working",
+				"--repository",
+				"agency",
+				"--kind",
+				"task",
+				"--kind",
+				"phase",
+				"--include",
+				"bodies",
+				"--include",
+				"git",
+			]).values,
+		).toMatchObject({
+			json: true,
+			status: ["open", "working"],
+			repository: ["agency"],
+			kind: ["task", "phase"],
+			include: ["bodies", "git"],
+		})
+		expect(() => parseCli(["graph", "--json", "--jsonl"])).toThrow(
+			"cannot be combined",
+		)
+		expect(() => parseCli(["graph", "--ready", "--blocked"])).toThrow(
+			"cannot be combined",
+		)
+		for (const [option, value] of [
+			["status", "started"],
+			["kind", "worktree"],
+			["include", "secrets"],
+		] as const) {
+			expect(() => parseCli(["graph", `--${option}`, value])).toThrow(
+				`Invalid '--${option}' value`,
+			)
+		}
 	})
 
 	test("reports unknown subcommands with parent usage", () => {

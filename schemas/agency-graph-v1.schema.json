@@ -1,0 +1,519 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-graph-v1.schema.json",
+  "title": "Agency workbase graph v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "workbase",
+    "filters",
+    "includes",
+    "nodes",
+    "edges",
+    "summary",
+    "validation"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "workbase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "const": 2 },
+        "root": { "type": "string" }
+      }
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "blocked", "statuses", "repositories", "kinds"],
+      "properties": {
+        "ready": { "type": ["boolean", "null"] },
+        "blocked": { "type": ["boolean", "null"] },
+        "statuses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/status" }
+        },
+        "repositories": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "kinds": {
+          "type": "array",
+          "items": {
+            "enum": ["epic", "task", "phase", "repository", "execution-unit"]
+          }
+        }
+      }
+    },
+    "includes": {
+      "type": "array",
+      "items": { "enum": ["bodies", "workspace", "git", "pr"] },
+      "uniqueItems": true
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" }
+    },
+    "summary": { "$ref": "#/$defs/progress" },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid", "issues"],
+      "properties": {
+        "valid": { "type": "boolean" },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "message"],
+            "properties": {
+              "path": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "status": {
+      "enum": ["open", "working", "delegated", "done", "dropped"]
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "total",
+        "open",
+        "working",
+        "delegated",
+        "done",
+        "dropped",
+        "terminal"
+      ],
+      "properties": {
+        "status": { "$ref": "#/$defs/status" },
+        "total": { "type": "number" },
+        "open": { "type": "number" },
+        "working": { "type": "number" },
+        "delegated": { "type": "number" },
+        "done": { "type": "number" },
+        "dropped": { "type": "number" },
+        "terminal": { "type": "number" }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "reason"],
+      "properties": {
+        "kind": { "enum": ["dependency", "validation", "status"] },
+        "id": { "type": "string" },
+        "status": { "$ref": "#/$defs/status" },
+        "reason": { "type": "string" }
+      }
+    },
+    "readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready", "blocked", "blockers"],
+      "properties": {
+        "ready": { "type": "boolean" },
+        "blocked": { "type": "boolean" },
+        "blockers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/blocker" }
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "key",
+        "status",
+        "readiness",
+        "aggregate",
+        "dependents",
+        "repositories",
+        "data"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": {
+          "enum": ["epic", "task", "phase", "repository", "execution-unit"]
+        },
+        "key": { "type": "string" },
+        "status": {
+          "oneOf": [{ "$ref": "#/$defs/status" }, { "type": "null" }]
+        },
+        "readiness": {
+          "oneOf": [{ "$ref": "#/$defs/readiness" }, { "type": "null" }]
+        },
+        "aggregate": {
+          "oneOf": [{ "$ref": "#/$defs/progress" }, { "type": "null" }]
+        },
+        "dependents": { "type": "array", "items": { "type": "string" } },
+        "repositories": { "type": "array", "items": { "type": "string" } },
+        "data": {
+          "oneOf": [
+            { "$ref": "#/$defs/epicData" },
+            { "$ref": "#/$defs/singleTaskData" },
+            { "$ref": "#/$defs/multiTaskData" },
+            { "$ref": "#/$defs/phaseData" },
+            { "$ref": "#/$defs/executionData" },
+            { "$ref": "#/$defs/repositoryData" }
+          ]
+        },
+        "body": { "type": "string" },
+        "workspace": {
+          "oneOf": [
+            { "$ref": "#/$defs/documentWorkspace" },
+            { "$ref": "#/$defs/repositoryWorkspace" },
+            { "$ref": "#/$defs/executionWorkspace" }
+          ]
+        },
+        "git": {
+          "oneOf": [
+            { "$ref": "#/$defs/repositoryGit" },
+            { "$ref": "#/$defs/executionGit" }
+          ]
+        },
+        "pr": { "$ref": "#/$defs/pr" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "epic" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/epicData" },
+              "workspace": { "$ref": "#/$defs/documentWorkspace" },
+              "status": { "$ref": "#/$defs/status" },
+              "readiness": { "$ref": "#/$defs/readiness" },
+              "aggregate": { "$ref": "#/$defs/progress" }
+            },
+            "not": {
+              "anyOf": [{ "required": ["git"] }, { "required": ["pr"] }]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "task" } } },
+          "then": {
+            "properties": {
+              "data": {
+                "oneOf": [
+                  { "$ref": "#/$defs/singleTaskData" },
+                  { "$ref": "#/$defs/multiTaskData" }
+                ]
+              },
+              "workspace": { "$ref": "#/$defs/documentWorkspace" },
+              "status": { "$ref": "#/$defs/status" },
+              "readiness": { "$ref": "#/$defs/readiness" },
+              "aggregate": { "$ref": "#/$defs/progress" }
+            },
+            "not": {
+              "anyOf": [{ "required": ["git"] }, { "required": ["pr"] }]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "phase" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/phaseData" },
+              "workspace": { "$ref": "#/$defs/documentWorkspace" },
+              "status": { "$ref": "#/$defs/status" },
+              "readiness": { "$ref": "#/$defs/readiness" },
+              "aggregate": { "$ref": "#/$defs/progress" }
+            },
+            "not": {
+              "anyOf": [{ "required": ["git"] }, { "required": ["pr"] }]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "repository" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/repositoryData" },
+              "workspace": { "$ref": "#/$defs/repositoryWorkspace" },
+              "git": { "$ref": "#/$defs/repositoryGit" },
+              "status": { "type": "null" },
+              "readiness": { "type": "null" },
+              "aggregate": { "type": "null" }
+            },
+            "not": {
+              "anyOf": [{ "required": ["body"] }, { "required": ["pr"] }]
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "execution-unit" } } },
+          "then": {
+            "properties": {
+              "data": { "$ref": "#/$defs/executionData" },
+              "workspace": { "$ref": "#/$defs/executionWorkspace" },
+              "git": { "$ref": "#/$defs/executionGit" },
+              "pr": { "$ref": "#/$defs/pr" },
+              "status": { "$ref": "#/$defs/status" },
+              "readiness": { "$ref": "#/$defs/readiness" },
+              "aggregate": { "$ref": "#/$defs/progress" }
+            },
+            "not": { "required": ["body"] }
+          }
+        }
+      ]
+    },
+    "repositoryReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "ref"],
+      "properties": {
+        "repo": { "type": "string" },
+        "ref": { "type": "string" }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "dependsOn": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "epicData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticketUrl", "repos", "tasks", "sha256"],
+      "properties": {
+        "ticketUrl": { "type": "string" },
+        "description": { "type": "string" },
+        "repos": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repositoryReference" }
+        },
+        "tasks": { "type": "array", "items": { "$ref": "#/$defs/dependency" } },
+        "sha256": { "type": "string" }
+      }
+    },
+    "singleTaskData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ticketUrl",
+        "repo",
+        "branch",
+        "base",
+        "pr",
+        "status",
+        "sha256"
+      ],
+      "properties": {
+        "ticketUrl": { "type": ["string", "null"] },
+        "description": { "type": "string" },
+        "epic": { "type": "string" },
+        "repo": { "type": "string" },
+        "repos": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repositoryReference" }
+        },
+        "branch": { "type": "string" },
+        "base": { "type": "string" },
+        "pr": { "type": ["string", "null"] },
+        "status": { "$ref": "#/$defs/status" },
+        "sha256": { "type": "string" }
+      }
+    },
+    "multiTaskData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticketUrl", "phases", "sha256"],
+      "properties": {
+        "ticketUrl": { "type": ["string", "null"] },
+        "description": { "type": "string" },
+        "epic": { "type": "string" },
+        "phases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "sha256": { "type": "string" }
+      }
+    },
+    "phaseData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "branch", "base", "pr", "status", "sha256"],
+      "properties": {
+        "description": { "type": "string" },
+        "repo": { "type": "string" },
+        "repos": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repositoryReference" }
+        },
+        "branch": { "type": "string" },
+        "base": { "type": "string" },
+        "pr": { "type": ["string", "null"] },
+        "status": { "$ref": "#/$defs/status" },
+        "sha256": { "type": "string" }
+      }
+    },
+    "executionData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["taskId", "repo", "branch", "base", "pr", "status"],
+      "properties": {
+        "taskId": { "type": "string" },
+        "phaseId": { "type": "string" },
+        "ticketUrl": { "type": ["string", "null"] },
+        "epic": { "type": "string" },
+        "description": { "type": "string" },
+        "repo": { "type": "string" },
+        "repos": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repositoryReference" }
+        },
+        "branch": { "type": "string" },
+        "base": { "type": "string" },
+        "pr": { "type": ["string", "null"] },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    },
+    "repositoryData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias"],
+      "properties": { "alias": { "type": "string" } }
+    },
+    "documentWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["documentPath", "directory"],
+      "properties": {
+        "documentPath": { "type": "string" },
+        "directory": { "type": "string" }
+      }
+    },
+    "repositoryWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "target"],
+      "properties": {
+        "path": { "type": "string" },
+        "target": { "type": ["string", "null"] }
+      }
+    },
+    "executionWorkspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["codePath", "checkoutPath", "materialized"],
+      "properties": {
+        "codePath": { "type": "string" },
+        "checkoutPath": { "type": "string" },
+        "materialized": { "type": "boolean" }
+      }
+    },
+    "repositoryGit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "remote", "head", "branch"],
+      "properties": {
+        "kind": { "enum": ["bare", "repository", null] },
+        "remote": { "type": ["string", "null"] },
+        "head": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] }
+      }
+    },
+    "executionGit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch",
+        "base",
+        "branchCommit",
+        "baseCommit",
+        "checkoutCommit",
+        "checkoutBranch",
+        "dirty"
+      ],
+      "properties": {
+        "branch": { "type": "string" },
+        "base": { "type": "string" },
+        "branchCommit": { "type": ["string", "null"] },
+        "baseCommit": { "type": ["string", "null"] },
+        "checkoutCommit": { "type": ["string", "null"] },
+        "checkoutBranch": { "type": ["string", "null"] },
+        "dirty": { "type": ["boolean", "null"] }
+      }
+    },
+    "pr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "state"],
+          "properties": {
+            "url": { "type": "null" },
+            "state": { "const": "none" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "state"],
+          "properties": {
+            "url": { "type": "string" },
+            "state": { "const": "unavailable" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "recordedUrl",
+            "number",
+            "state",
+            "title",
+            "isDraft",
+            "headRefName",
+            "baseRefName",
+            "url"
+          ],
+          "properties": {
+            "recordedUrl": { "type": "string" },
+            "number": { "type": "number" },
+            "state": { "type": "string" },
+            "title": { "type": "string" },
+            "isDraft": { "type": "boolean" },
+            "headRefName": { "type": "string" },
+            "baseRefName": { "type": "string" },
+            "url": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "from", "to"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["owns", "depends_on", "writes", "references"] },
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      }
+    }
+  }
+}

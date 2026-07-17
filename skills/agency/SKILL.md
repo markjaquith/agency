@@ -203,6 +203,12 @@ Follow these invariants:
 Commands that print Agency-owned results accept `--json` for machine-readable
 output, including mutations, entity inspection, status, validation, and PR creation.
 
+Use `agency graph --json` to load the complete, versioned workbase graph without
+walking directories. Filter it with repeatable `--status`, `--repository`, and
+`--kind` options or with `--ready`/`--blocked`. Add durable prose and observational
+details explicitly with `--include bodies|workspace|git|pr`. For large workbases,
+`--jsonl` streams equivalent versioned metadata, node, edge, and end records.
+
 - Multi-phase task frontmatter owns the phase dependency graph.
 - Epic frontmatter owns the child-task dependency graph.
 - `pr` is either a GitHub PR URL string or `null`.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { access, realpath } from "node:fs/promises"
+import { access, mkdir, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir } from "./test-utils"
 
@@ -159,6 +159,7 @@ describe("CLI", () => {
 			["status", "Usage: agency status"],
 			["validate", "Usage: agency validate"],
 			["context", "Usage: agency context"],
+			["graph", "Usage: agency graph"],
 		] as const) {
 			const result = await runCli([command, "--help"])
 			expect(result.exitCode).toBe(0)
@@ -221,6 +222,69 @@ describe("CLI", () => {
 		).toEqual([await realpath(root)])
 	})
 
+	test("exports equivalent JSON and JSONL graph contracts", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		expect((await runCli(["init", root])).exitCode).toBe(0)
+		await mkdir(join(root, "repos/agency"), { recursive: true })
+		await mkdir(join(root, "tasks/example"), { recursive: true })
+		await Bun.write(
+			join(root, "tasks/example/TASK.md"),
+			`---
+ticketUrl: null
+repo: agency
+branch: feat/example
+base: main
+pr: null
+status: open
+---
+
+# Example
+`,
+		)
+
+		const json = parseJson(
+			await runCli(
+				["graph", "--json", "--include", "bodies", "--kind", "task"],
+				root,
+			),
+		)
+		expect(json).toMatchObject({
+			version: 1,
+			includes: ["bodies"],
+			nodes: [
+				{ id: "task:example", body: expect.stringContaining("# Example") },
+			],
+			edges: [],
+		})
+
+		const streamed = await runCli(
+			["graph", "--jsonl", "--include", "bodies", "--kind", "task"],
+			root,
+		)
+		expect(streamed.exitCode).toBe(0)
+		expect(streamed.stderr).toBe("")
+		const records = streamed.stdout
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line))
+		expect(records.map((record) => record.type)).toEqual([
+			"meta",
+			"node",
+			"end",
+		])
+		const reconstructed = {
+			...records[0].graph,
+			nodes: records
+				.filter((record) => record.type === "node")
+				.map((record) => record.node),
+			edges: records
+				.filter((record) => record.type === "edge")
+				.map((record) => record.edge),
+		}
+		expect(reconstructed).toEqual(json)
+	})
+
 	test("lets JSON override silent and disables interactive task input", async () => {
 		const root = await createTempDir()
 		tempDirs.push(root)
@@ -243,6 +307,24 @@ describe("CLI", () => {
 
 		const version = await runCli(["status", "--version", "--json"])
 		expect(parseJson(version)).toEqual({ version: "0.0.0-development" })
+
+		const jsonlHelp = await runCli(["graph", "--help", "--jsonl"])
+		expect(parseJson(jsonlHelp)).toContain("Usage: agency graph")
+
+		const invalidJsonl = await runCli([
+			"graph",
+			"--jsonl",
+			"--include",
+			"secrets",
+		])
+		expect(invalidJsonl.exitCode).toBe(1)
+		expect(invalidJsonl.stderr).toBe("")
+		expect(invalidJsonl.stdout.trim().split("\n")).toHaveLength(1)
+		expect(JSON.parse(invalidJsonl.stdout)).toMatchObject({
+			version: 1,
+			ok: false,
+			error: { code: "CLI_USAGE" },
+		})
 	})
 
 	test("runs a multi-phase domain workflow through subprocesses", async () => {

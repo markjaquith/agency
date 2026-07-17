@@ -9,6 +9,7 @@ import { work, help as workHelp } from "./src/commands/work"
 import { status, help as statusHelp } from "./src/commands/status"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
+import { graph, help as graphHelp } from "./src/commands/graph"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
 import { phase, help as phaseHelp } from "./src/commands/phase"
@@ -30,6 +31,7 @@ import { PullRequestService } from "./src/services/PullRequestService"
 import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
+import { GraphService } from "./src/services/GraphService"
 import {
 	collectCommandResult,
 	errorEnvelope,
@@ -50,6 +52,7 @@ const CliLayer = Layer.mergeAll(
 	ArchiveService.Default,
 	IntegrationService.Default,
 	ContextService.Default,
+	GraphService.Default,
 )
 
 /**
@@ -333,6 +336,28 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	graph: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(graphHelp)
+				return
+			}
+			await runCommand(
+				graph({
+					json: options.json,
+					jsonl: options.jsonl,
+					ready: options.ready,
+					blocked: options.blocked,
+					statuses: options.status,
+					repositories: options.repository,
+					kinds: options.kind,
+					include: options.include,
+					silent: options.silent,
+					verbose: options.verbose,
+				}),
+			)
+		},
+	},
 }
 
 function showMainHelp() {
@@ -355,6 +380,7 @@ Commands:
   status                 Show status for the current workbase
   validate [path]        Validate a workbase
   context [target]       Return complete target context
+  graph                  Export the complete workbase graph
 
 Global Options:
   -h, --help             Show help for a command
@@ -373,7 +399,9 @@ For more information about a command, run:
 	`)
 }
 
-const machineMode = process.argv.slice(2).includes("--json")
+const machineMode = process.argv
+	.slice(2)
+	.some((argument) => argument === "--json" || argument === "--jsonl")
 
 try {
 	const args = process.argv.slice(2)
@@ -401,11 +429,13 @@ try {
 		!values.json &&
 		!values["no-input"] &&
 		Boolean(process.stdin.isTTY && process.stderr.isTTY)
-	if (values.json) {
+	if (values.json || (values.jsonl && values.help)) {
 		const result = await collectCommandResult(() =>
 			command.run(commandArgs, { ...values, inputAllowed }),
 		)
 		writeEnvelope(successEnvelope(result))
+	} else if (values.jsonl) {
+		await command.run(commandArgs, { ...values, inputAllowed: false })
 	} else {
 		await command.run(commandArgs, { ...values, inputAllowed })
 	}

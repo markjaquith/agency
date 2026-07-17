@@ -255,6 +255,32 @@ Complete output is the default. Pass `--compact` explicitly to omit document
 prose and low-level Git details while retaining identity, hashes, authority,
 paths, graph state, materialization state, and validation warnings.
 
+### Workbase Graph
+
+`agency graph --json` exports the complete workbase as graph contract version 1.
+Nodes use stable IDs (`epic:<id>`, `task:<id>`, `phase:<task>/<phase>`,
+`repository:<alias>`, and `execution-unit:<kind>/<id>`). Typed edges are `owns`,
+`depends_on`, `writes`, and `references`.
+
+Every work node includes status, readiness, blockers, reverse dependents, and
+aggregate progress. Only `done` satisfies a dependency. The graph summary counts
+the statuses of all execution units, independent of filters.
+
+```text
+agency graph [--json | --jsonl] [--ready | --blocked]
+  [--status <status>...] [--repository <alias>...] [--kind <kind>...]
+  [--include <bodies|workspace|git|pr>...]
+```
+
+Filters are applied after graph state is computed. Returned edges always have
+both endpoints in the filtered node set. Durable frontmatter and document hashes
+are always present; prose, absolute workspace paths, Git inspection, and live PR
+inspection are opt-in include layers.
+
+`--jsonl` emits a versioned `meta` record, one record per node and edge, then an
+`end` record with counts. Combining the metadata with the streamed node and edge
+records reconstructs the same result as `--json`.
+
 ### Workbase and Repositories
 
 ```text
@@ -275,7 +301,7 @@ repository. Alias names are then used by all documents and commands.
 
 Commands that print Agency-owned results accept `--json`, including initialization,
 integration inspection/sync, repository mutations, entity creation/list/show,
-status, validation, and PR creation.
+status, validation, graph export, and PR creation.
 
 ### Epics
 
@@ -477,14 +503,16 @@ recovery action. Version 1 defines these codes:
 | `ARCHIVE_ERROR`           | Archive operation failed                                 |
 | `WORKTREE_ERROR`          | Worktree operation failed                                |
 | `PULL_REQUEST_ERROR`      | Pull request operation failed                            |
+| `GRAPH_ERROR`             | Workbase graph construction failed                       |
 | `PROCESS_ERROR`           | A child process failed and may be retried                |
 | `PROTOCOL_OUTPUT_ERROR`   | A command violated the machine output contract           |
 | `COMMAND_FAILED`          | An otherwise unclassified command failure                |
 
 The Effect schemas are exported from `@markjaquith/agency` and
-`@markjaquith/agency/protocol`. The distributable JSON Schema is exported as
-`@markjaquith/agency/schemas/agency-envelope-v1.json`. Representative payloads
-are exported as `@markjaquith/agency/fixtures/protocol/success.json` and
+`@markjaquith/agency/protocol`. The distributable JSON Schemas are exported as
+`@markjaquith/agency/schemas/agency-envelope-v1.json` and
+`@markjaquith/agency/schemas/agency-graph-v1.json`. Representative envelope
+payloads are exported as `@markjaquith/agency/fixtures/protocol/success.json` and
 `@markjaquith/agency/fixtures/protocol/error.json`.
 
 ## Agent Skill
