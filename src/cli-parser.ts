@@ -804,6 +804,16 @@ const commands = {
 			conflicts: viewConflicts,
 		},
 	},
+	doctor: {
+		usage: "agency doctor [--json]",
+		options: outputOptions,
+		command: {
+			usage: "agency doctor [--json]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["json"],
+		},
+	},
 	validate: {
 		usage: "agency validate [path] [--json] [--no-input]",
 		options: {

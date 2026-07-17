@@ -19,6 +19,7 @@ import { ClaimService } from "./services/ClaimService"
 import { SyncService } from "./services/SyncService"
 import { ReadinessService } from "./services/ReadinessService"
 import { GraphMutationService } from "./services/GraphMutationService"
+import { DoctorService } from "./services/DoctorService"
 
 export const createTempDir = () => mkdtemp(join(tmpdir(), "agency-test-"))
 
@@ -42,6 +43,7 @@ const TestLayer = Layer.mergeAll(
 	SyncService.Default,
 	ReadinessService.Default,
 	GraphMutationService.Default,
+	DoctorService.Default,
 )
 
 export async function runTestEffect<A, E>(

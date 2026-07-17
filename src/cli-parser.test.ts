@@ -123,6 +123,7 @@ describe("strict CLI parsing", () => {
 
 	test("parses addressable resource maintenance commands", () => {
 		for (const args of [
+			["doctor", "--json"],
 			["repo", "show", "agency", "--json"],
 			["repo", "fetch", "agency"],
 			["repo", "remove", "agency"],

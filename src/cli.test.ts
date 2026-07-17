@@ -935,6 +935,15 @@ status: open
 			valid: true,
 			issues: [],
 		})
+		const doctor = parseJson(await runCli(["doctor", "--json"], root))
+		expect(doctor).toMatchObject({
+			version: 1,
+			root: workbaseRoot,
+			checks: expect.arrayContaining([
+				expect.objectContaining({ id: "tool.git", status: "pass" }),
+				expect.objectContaining({ id: "workbase.validation", status: "pass" }),
+			]),
+		})
 
 		const validation = parseJson(
 			await runCli(["validate", root, "--json"], parent),

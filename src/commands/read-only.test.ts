@@ -14,6 +14,7 @@ import { validate } from "./validate"
 import { context } from "./context"
 import { graph } from "./graph"
 import { next } from "./next"
+import { doctor } from "./doctor"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -147,6 +148,7 @@ status: open
 		)
 		await runTestEffect(graph({ cwd: root, silent: true }))
 		await runTestEffect(next({ cwd: root, silent: true }))
+		await runTestEffect(doctor({ cwd: root, silent: true }))
 
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(
