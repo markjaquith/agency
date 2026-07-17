@@ -342,8 +342,11 @@ conditions remain visible in `warnings` or `unresolved` with a suggested action.
 
 ```text
 agency init [path] [--json]
-agency workbase add <path> [--json]
+agency workbase add <path> [--name <name>] [--json]
 agency workbase list [--json]
+agency workbase remove <id|name|path> [--json]
+agency workbase prune [--json]
+agency workbase default [<id|name> | --clear] [--json]
 agency integration status [--json]
 agency integration sync [--json]
 agency repo add <alias> <remote> [--json]
@@ -353,6 +356,9 @@ agency repo list [--json]
 
 Registered workbases are stored in
 `$XDG_CONFIG_HOME/agency/workbases.json` (or `~/.config/agency/workbases.json`).
+Each registration has a stable ID and may have a unique name. A default workbase
+is used when the current directory is outside every workbase. `prune` removes
+registrations whose workbase configuration no longer exists.
 `repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
 repository. Alias names are then used by all documents and commands.
 
@@ -404,9 +410,17 @@ agency task create <id> --multi-phase
 
 Agency never prompts when `--no-input` is set or stdin/stderr are not TTYs.
 `--json` also disables prompts and selectors, even when a TTY is available.
-Commands with explicit inputs continue normally. `task new` fails immediately;
-`work` requires an explicit directory, task ID, or `--epic` and must run from a
-workbase; `validate` requires an explicit path or must run from a workbase.
+Commands with explicit inputs continue normally. `--workbase <id|name|path>`
+selects a workbase directly; `--cwd <path>` performs the same inference Agency
+would perform from that directory. These options are mutually exclusive and take
+precedence over ambient cwd and the configured default.
+
+Targeted commands accept `--epic`, `--task`, and `--phase` where those entity
+kinds apply. A phase selector requires a task selector. Entity selectors cannot
+be mixed with positional target IDs, and an epic selector cannot be mixed with
+task or phase selectors. This makes commands such as
+`agency phase status done --task ship --phase release --workbase primary --no-input`
+fully independent of process cwd and prompts.
 
 Inspect tasks:
 

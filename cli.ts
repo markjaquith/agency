@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { Effect, Either, Layer } from "effect"
+import { join, resolve } from "node:path"
 import { parseCli } from "./src/cli-parser"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
@@ -72,11 +73,9 @@ const CliLayer = Layer.mergeAll(
 /**
  * Run a command Effect with all services provided
  */
-async function runCommand<E>(
-	effect: Effect.Effect<void, E, any>,
-): Promise<void> {
+async function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
 	const providedEffect = Effect.provide(effect, CliLayer) as Effect.Effect<
-		void,
+		A,
 		E,
 		never
 	>
@@ -103,7 +102,43 @@ async function runCommand<E>(
 		),
 	)
 	if (Either.isLeft(result)) throw result.left
+	return result.right
 }
+
+const runCommand = <E>(effect: Effect.Effect<void, E, any>) => runEffect(effect)
+
+const resolveInvocationCwd = (
+	commandName: string,
+	options: Record<string, any>,
+) =>
+	runEffect(
+		Effect.gen(function* () {
+			if (
+				options.help ||
+				commandName === "init" ||
+				commandName === "workbase"
+			) {
+				return resolve(options.cwd ?? process.cwd())
+			}
+			const workbases = yield* WorkbaseService
+			if (options.workbase) {
+				return yield* workbases.resolveRegistered(options.workbase)
+			}
+			if (options.cwd) {
+				const selectedCwd = resolve(options.cwd)
+				yield* workbases.discover(selectedCwd)
+				return selectedCwd
+			}
+			return yield* workbases.discover(process.cwd()).pipe(
+				Effect.as(process.cwd()),
+				Effect.catchTag("WorkbaseNotFoundError", () =>
+					workbases
+						.getDefault()
+						.pipe(Effect.map((entry) => entry?.path ?? process.cwd())),
+				),
+			)
+		}),
+	)
 
 // Read version from package.json
 const packageJson = await Bun.file(
@@ -129,6 +164,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -146,6 +182,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -164,6 +201,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -180,6 +218,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -200,6 +239,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -220,6 +260,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -241,6 +282,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -258,6 +300,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -273,8 +316,11 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					json: options.json,
+					name: options.name,
+					clear: options.clear,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -291,6 +337,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -308,6 +355,7 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					json: options.json,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -334,6 +382,7 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					inputAllowed: options.inputAllowed,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -357,6 +406,9 @@ const commands: Record<string, Command> = {
 					claude: options.claude,
 					force: options.force,
 					inputAllowed: options.inputAllowed,
+					cwd: options.cwd,
+					taskId: options.task,
+					phaseId: options.phase,
 				}),
 			)
 		},
@@ -385,6 +437,7 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					json: options.json,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -402,6 +455,7 @@ const commands: Record<string, Command> = {
 					verbose: options.verbose,
 					json: options.json,
 					inputAllowed: options.inputAllowed,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -414,11 +468,18 @@ const commands: Record<string, Command> = {
 			}
 			await runCommand(
 				context({
-					target: args[0],
+					target: options.epic
+						? join("epics", options.epic)
+						: options.phase
+							? join("tasks", options.task, "phases", options.phase)
+							: options.task
+								? join("tasks", options.task)
+								: args[0],
 					compact: options.compact,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -441,6 +502,7 @@ const commands: Record<string, Command> = {
 					include: options.include,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -458,6 +520,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
@@ -497,6 +560,8 @@ Global Options:
   -s, --silent           Suppress output messages
   -v, --verbose          Show verbose output including detailed debugging info
   --no-input             Never open an interactive prompt or selector
+  --workbase <selector>  Use a registered workbase ID, name, or path
+  --cwd <path>           Resolve context from this directory
 
 Examples:
   agency init                         # Initialize the current directory
@@ -538,15 +603,16 @@ try {
 		!values.json &&
 		!values["no-input"] &&
 		Boolean(process.stdin.isTTY && process.stderr.isTTY)
+	const cwd = await resolveInvocationCwd(commandName, values)
 	if (values.json || (values.jsonl && values.help)) {
 		const result = await collectCommandResult(() =>
-			command.run(commandArgs, { ...values, inputAllowed }),
+			command.run(commandArgs, { ...values, cwd, inputAllowed }),
 		)
 		writeEnvelope(successEnvelope(result))
 	} else if (values.jsonl) {
-		await command.run(commandArgs, { ...values, inputAllowed: false })
+		await command.run(commandArgs, { ...values, cwd, inputAllowed: false })
 	} else {
-		await command.run(commandArgs, { ...values, inputAllowed })
+		await command.run(commandArgs, { ...values, cwd, inputAllowed })
 	}
 } catch (error) {
 	if (machineMode) {

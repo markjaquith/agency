@@ -26,4 +26,7 @@ defaults to the current directory and may be an entity path or task ID.
 Options:
   --json              Output a versioned machine result
   --compact           Omit prose bodies and low-level Git details
+  --epic <id>         Select an epic
+  --task <id>         Select a task
+  --phase <id>        Select a phase together with --task
 `

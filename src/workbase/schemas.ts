@@ -54,9 +54,21 @@ export const WorkbaseConfig = Schema.Struct({
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 })
 
-export const WorkbaseRegistry = Schema.Struct({
+export const LegacyWorkbaseRegistry = Schema.Struct({
 	version: Schema.Literal(1),
 	workbases: Schema.Array(NonEmptyString),
+})
+
+export const WorkbaseRegistration = Schema.Struct({
+	id: EntityId,
+	name: Schema.optional(EntityId),
+	path: NonEmptyString,
+})
+
+export const WorkbaseRegistry = Schema.Struct({
+	version: Schema.Literal(2),
+	workbases: Schema.Array(WorkbaseRegistration),
+	defaultId: Schema.optional(EntityId),
 })
 
 export const Dependency = Schema.Struct({
@@ -107,6 +119,9 @@ export const PhaseFrontmatter = Schema.Struct({
 
 export type WorkbaseConfig = Schema.Schema.Type<typeof WorkbaseConfig>
 export type WorkbaseRegistry = Schema.Schema.Type<typeof WorkbaseRegistry>
+export type WorkbaseRegistration = Schema.Schema.Type<
+	typeof WorkbaseRegistration
+>
 export type Dependency = Schema.Schema.Type<typeof Dependency>
 export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>

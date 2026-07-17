@@ -98,6 +98,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 					})
 				: Effect.succeed("/workbase"),
 		listRegistered: () => Effect.succeed(options.registeredWorkbases ?? []),
+		getDefault: () => Effect.succeed(undefined),
 		loadConfig: () =>
 			Effect.succeed({
 				root: "/workbase",

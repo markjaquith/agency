@@ -25,6 +25,14 @@ const commonOptions = {
 	silent: { type: "boolean", short: "s" },
 	verbose: { type: "boolean", short: "v" },
 	"no-input": { type: "boolean" },
+	workbase: { type: "string" },
+	cwd: { type: "string" },
+} satisfies OptionConfig
+
+const entitySelectorOptions = {
+	epic: { type: "string" },
+	task: { type: "string" },
+	phase: { type: "string" },
 } satisfies OptionConfig
 
 const outputOptions = {
@@ -86,20 +94,43 @@ const commands = {
 		},
 	},
 	workbase: {
-		usage: "agency workbase <add|list>",
-		options: outputOptions,
+		usage: "agency workbase <add|list|remove|prune|default>",
+		options: {
+			...outputOptions,
+			name: { type: "string" },
+			clear: { type: "boolean" },
+		},
 		subcommands: {
 			add: {
 				usage: "agency workbase add <path> [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json"],
+				options: ["json", "name"],
 			},
 			list: {
 				usage: "agency workbase list [--json]",
 				minArgs: 0,
 				maxArgs: 0,
 				options: ["json"],
+			},
+			remove: {
+				usage: "agency workbase remove <selector> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["json"],
+			},
+			prune: {
+				usage: "agency workbase prune [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["json"],
+			},
+			default: {
+				usage: "agency workbase default [selector | --clear] [--json]",
+				minArgs: 0,
+				maxArgs: 1,
+				options: ["json", "clear"],
+				conflicts: [["clear", "$positional"]],
 			},
 		},
 	},
@@ -147,7 +178,7 @@ const commands = {
 	},
 	epic: {
 		usage: "agency epic <create|list|show>",
-		options: createOptions,
+		options: { ...createOptions, epic: { type: "string" } },
 		subcommands: {
 			create: {
 				usage:
@@ -168,13 +199,13 @@ const commands = {
 				usage: "agency epic show <id> [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json"],
+				options: ["json", "epic"],
 			},
 		},
 	},
 	task: {
 		usage: "agency task <new|create|list|show|status>",
-		options: taskCreateOptions,
+		options: { ...taskCreateOptions, task: { type: "string" } },
 		subcommands: {
 			new: {
 				usage: "agency task new [id] [options]",
@@ -221,19 +252,23 @@ const commands = {
 				usage: "agency task show <id> [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json"],
+				options: ["json", "task"],
 			},
 			status: {
 				usage: "agency task status <id> <status> [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json"],
+				options: ["json", "task"],
 			},
 		},
 	},
 	phase: {
 		usage: "agency phase <create|list|show|status>",
-		options: phaseCreateOptions,
+		options: {
+			...phaseCreateOptions,
+			task: { type: "string" },
+			phase: { type: "string" },
+		},
 		subcommands: {
 			create: {
 				usage:
@@ -249,6 +284,8 @@ const commands = {
 					"depends-on",
 					"first-phase",
 					"json",
+					"task",
+					"phase",
 				],
 				required: ["repo", "branch", "base"],
 				repeatable: ["reference", "depends-on"],
@@ -257,25 +294,29 @@ const commands = {
 				usage: "agency phase list <task-id> [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json"],
+				options: ["json", "task"],
 			},
 			show: {
 				usage: "agency phase show <task-id> <phase-id> [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json"],
+				options: ["json", "task", "phase"],
 			},
 			status: {
 				usage: "agency phase status <task-id> <phase-id> <status> [--json]",
 				minArgs: 3,
 				maxArgs: 3,
-				options: ["json"],
+				options: ["json", "task", "phase"],
 			},
 		},
 	},
 	claim: {
 		usage: "agency claim <task-id> [phase-id] [options]",
-		options: claimOptions,
+		options: {
+			...claimOptions,
+			task: { type: "string" },
+			phase: { type: "string" },
+		},
 		command: {
 			usage:
 				"agency claim <task-id> [phase-id] --claimant <id> --runner <id> --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]",
@@ -288,19 +329,25 @@ const commands = {
 				"revision",
 				"expires-at",
 				"json",
+				"task",
+				"phase",
 			],
 			required: ["claimant", "runner", "session-id", "revision"],
 		},
 	},
 	release: {
 		usage: "agency release <task-id> [phase-id] [options]",
-		options: ownedClaimOptions,
+		options: {
+			...ownedClaimOptions,
+			task: { type: "string" },
+			phase: { type: "string" },
+		},
 		command: {
 			usage:
 				"agency release <task-id> [phase-id] --session-id <id> --revision <sha256> [--json]",
 			minArgs: 1,
 			maxArgs: 2,
-			options: ["session-id", "revision", "json"],
+			options: ["session-id", "revision", "json", "task", "phase"],
 			required: ["session-id", "revision"],
 		},
 	},
@@ -309,13 +356,15 @@ const commands = {
 		options: {
 			...ownedClaimOptions,
 			outcome: { type: "string" },
+			task: { type: "string" },
+			phase: { type: "string" },
 		},
 		command: {
 			usage:
 				"agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [--json]",
 			minArgs: 1,
 			maxArgs: 2,
-			options: ["session-id", "revision", "outcome", "json"],
+			options: ["session-id", "revision", "outcome", "json", "task", "phase"],
 			required: ["session-id", "revision", "outcome"],
 		},
 	},
@@ -336,25 +385,25 @@ const commands = {
 	},
 	archive: {
 		usage: "agency archive <epic|task|phase>",
-		options: outputOptions,
+		options: { ...outputOptions, ...entitySelectorOptions },
 		subcommands: {
 			epic: {
 				usage: "agency archive epic <epic-id> [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json"],
+				options: ["json", "epic"],
 			},
 			task: {
 				usage: "agency archive task <task-id> [--json]",
 				minArgs: 1,
 				maxArgs: 1,
-				options: ["json"],
+				options: ["json", "task"],
 			},
 			phase: {
 				usage: "agency archive phase <task-id> <phase-id> [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json"],
+				options: ["json", "task", "phase"],
 			},
 		},
 	},
@@ -363,9 +412,9 @@ const commands = {
 			"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
+			...entitySelectorOptions,
 			json: { type: "boolean" },
 			"dry-run": { type: "boolean" },
-			epic: { type: "string" },
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
 			force: { type: "boolean" },
@@ -375,7 +424,16 @@ const commands = {
 				"agency work [<directory-or-task-id> | --epic <epic-id>] | agency work prepare [target] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
-			options: ["json", "dry-run", "epic", "opencode", "claude", "force"],
+			options: [
+				"json",
+				"dry-run",
+				"epic",
+				"task",
+				"phase",
+				"opencode",
+				"claude",
+				"force",
+			],
 			conflicts: [
 				["opencode", "claude"],
 				["epic", "$positional"],
@@ -388,6 +446,8 @@ const commands = {
 			...outputOptions,
 			draft: { type: "boolean" },
 			force: { type: "boolean" },
+			task: { type: "string" },
+			phase: { type: "string" },
 		},
 		subcommands: {
 			create: {
@@ -395,7 +455,7 @@ const commands = {
 					"agency pr create <task-id> [phase-id] [--draft] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["draft", "force", "json"],
+				options: ["draft", "force", "json", "task", "phase"],
 			},
 		},
 	},
@@ -438,13 +498,14 @@ const commands = {
 		usage: "agency context [target] [--json] [--compact]",
 		options: {
 			...outputOptions,
+			...entitySelectorOptions,
 			compact: { type: "boolean" },
 		},
 		command: {
 			usage: "agency context [target] [--json] [--compact]",
 			minArgs: 0,
 			maxArgs: 1,
-			options: ["json", "compact"],
+			options: ["json", "compact", "epic", "task", "phase"],
 		},
 	},
 	graph: {
@@ -495,6 +556,7 @@ const preCommandOptions = new Set([
 	"-v",
 	"--no-input",
 ])
+const preCommandValueOptions = new Set(["--workbase", "--cwd"])
 
 export interface ParsedCli {
 	readonly commandName?: keyof typeof commands
@@ -523,8 +585,22 @@ const usageError = (message: string, usage: string) =>
 const optionLabel = (name: string) => `--${name}`
 
 function findCommandIndex(args: readonly string[]) {
-	for (const [index, argument] of args.entries()) {
+	for (let index = 0; index < args.length; index++) {
+		const argument = args[index]!
 		if (!argument.startsWith("-")) return index
+		if (argument.startsWith("--workbase=") || argument.startsWith("--cwd=")) {
+			continue
+		}
+		if (preCommandValueOptions.has(argument)) {
+			if (args[index + 1] === undefined) {
+				throw usageError(
+					`Option '${argument}' expects a value.`,
+					"agency <command> [options]",
+				)
+			}
+			index++
+			continue
+		}
 		if (!preCommandOptions.has(argument) && !/^-[hVsv]+$/.test(argument)) {
 			throw usageError(
 				`Unknown option '${argument}'.`,
@@ -533,6 +609,87 @@ function findCommandIndex(args: readonly string[]) {
 		}
 	}
 	return -1
+}
+
+const targetSlots = (
+	commandName: string,
+	subcommand: string | undefined,
+): readonly ("epic" | "task" | "phase")[] => {
+	if (commandName === "epic" && subcommand === "show") return ["epic"]
+	if (commandName === "task" && ["show", "status"].includes(subcommand ?? ""))
+		return ["task"]
+	if (commandName === "phase")
+		return subcommand === "list" ? ["task"] : ["task", "phase"]
+	if (["claim", "release", "finish"].includes(commandName))
+		return ["task", "phase"]
+	if (commandName === "archive")
+		return subcommand === "epic"
+			? ["epic"]
+			: subcommand === "task"
+				? ["task"]
+				: ["task", "phase"]
+	if (commandName === "pr" && subcommand === "create") return ["task", "phase"]
+	return []
+}
+
+function applyEntitySelectors(
+	commandName: string,
+	subcommand: string | undefined,
+	positionals: readonly string[],
+	values: ParsedCli["values"],
+	spec: LeafCommand,
+) {
+	const supplied = ["epic", "task", "phase"].filter(
+		(name) => values[name] !== undefined,
+	)
+	if (supplied.length === 0) return [...positionals]
+	if (values.phase !== undefined && values.task === undefined) {
+		throw usageError("Option '--phase' requires '--task'.", spec.usage)
+	}
+	if (values.epic !== undefined && (values.task || values.phase)) {
+		throw usageError(
+			"Option '--epic' cannot be combined with '--task' or '--phase'.",
+			spec.usage,
+		)
+	}
+	if (commandName === "work" || commandName === "context") {
+		if (
+			positionals.length >
+			(commandName === "work" && positionals[0] === "prepare" ? 1 : 0)
+		) {
+			throw usageError(
+				"Entity selector options cannot be combined with a positional target.",
+				spec.usage,
+			)
+		}
+		return [...positionals]
+	}
+
+	const slots = targetSlots(commandName, subcommand)
+	const selectedSlots = slots.filter((slot) => values[slot] !== undefined)
+	if (selectedSlots.length === 0) return [...positionals]
+	const trailingCount = spec.maxArgs - slots.length
+	if (positionals.length > trailingCount) {
+		throw usageError(
+			"Entity selector options cannot be combined with positional target IDs.",
+			spec.usage,
+		)
+	}
+	const requiredSlots = slots.slice(0, spec.minArgs - trailingCount)
+	for (const slot of requiredSlots) {
+		if (values[slot] === undefined) {
+			throw usageError(
+				`Option '--${slot}' is required with explicit selectors.`,
+				spec.usage,
+			)
+		}
+	}
+	return [
+		...slots.flatMap((slot) =>
+			typeof values[slot] === "string" ? [values[slot] as string] : [],
+		),
+		...positionals,
+	]
 }
 
 function assertNoDuplicateOptions(
@@ -674,7 +831,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		throw usageError(message, definition.usage)
 	}
 
-	const commandPositionals = definition.subcommands
+	let commandPositionals = definition.subcommands
 		? parsed.positionals.slice(1)
 		: parsed.positionals
 	const allowed = new Set([...commonOptionNames, ...(spec.options ?? [])])
@@ -694,6 +851,20 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			spec.usage,
 		)
 	}
+	for (const selector of ["workbase", "cwd", "epic", "task", "phase"]) {
+		if (parsed.values[selector] === "") {
+			throw usageError(
+				`Option '--${selector}' requires a non-empty value.`,
+				spec.usage,
+			)
+		}
+	}
+	if (parsed.values.workbase && parsed.values.cwd) {
+		throw usageError(
+			"Options '--workbase' and '--cwd' cannot be combined.",
+			spec.usage,
+		)
+	}
 	if (parsed.values.version) {
 		return {
 			commandName: commandName as keyof typeof commands,
@@ -708,6 +879,14 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			values: parsed.values,
 		}
 	}
+
+	commandPositionals = applyEntitySelectors(
+		commandName,
+		subcommand,
+		commandPositionals,
+		parsed.values,
+		spec,
+	)
 
 	if (
 		commandPositionals.length < spec.minArgs ||
@@ -782,7 +961,9 @@ export function parseCli(args: readonly string[]): ParsedCli {
 
 	return {
 		commandName: commandName as keyof typeof commands,
-		args: parsed.positionals,
+		args: definition.subcommands
+			? [subcommand!, ...commandPositionals]
+			: commandPositionals,
 		values: parsed.values,
 	}
 }

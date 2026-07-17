@@ -60,12 +60,18 @@ agency init [path]
 agency integration sync
 ```
 
-Register known workbases so `agency work` can select one when run elsewhere:
+Register and name known workbases so commands can select one from anywhere:
 
 ```bash
-agency workbase add <path>
+agency workbase add <path> [--name <name>]
 agency workbase list
+agency workbase default [<id|name> | --clear]
+agency workbase remove <id|name|path>
+agency workbase prune
 ```
+
+Use `--workbase <id|name|path>` to bypass cwd inference, or `--cwd <path>` to
+infer context from a specific directory. The options are mutually exclusive.
 
 ## Repository Aliases
 
@@ -261,8 +267,8 @@ Use `--json` when diagnostics will be consumed programmatically. Resolve all
 validation errors before materializing worktrees or creating PRs. Validation
 checks schemas, aliases, backlinks, phase directories, duplicate references,
 duplicate writable branch ownership, unknown dependencies, and dependency cycles.
-Outside a workbase, omitting path opens the registered-workbase picker.
-With `--no-input` or without a TTY, pass a path or run from a workbase instead.
+Outside a workbase, Agency uses the configured default or opens the registered
+workbase picker. With `--no-input` or without a TTY, pass `--workbase` or `--cwd`.
 
 ## Worktrees And Agent Launch
 
@@ -270,6 +276,7 @@ With `--no-input` or without a TTY, pass a path or run from a workbase instead.
 agency work
 agency work <directory>
 agency work --epic <epic-id>
+agency work --task <task-id> [--phase <phase-id>] --workbase <selector>
 ```
 
 Use `--opencode` or `--claude` to require a specific agent. This command fetches
@@ -278,8 +285,8 @@ replaces the current process with the selected agent. With no directory it opens
 an `fzf` picker containing the workbase hierarchy. Pass `.`, or another
 directory, to infer the nearest epic, task, or phase.
 Outside a workbase, it first opens a picker containing registered workbases.
-With `--no-input` or without a TTY, run from a workbase and provide an explicit
-directory, task ID, or `--epic` so no picker is needed.
+With `--no-input` or without a TTY, provide an explicit workbase or cwd and an
+`--epic`, `--task`, or `--task` plus `--phase` selector so no picker is needed.
 
 Epic and multi-phase task targets are orchestration sessions launched beside
 their documents. Single-phase tasks and phases are execution sessions launched

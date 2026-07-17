@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { resolve } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorkbaseService } from "../services/WorkbaseService"
 import { createLoggers } from "../utils/effect"
@@ -11,8 +12,9 @@ export const init = (options: InitOptions = {}) =>
 	Effect.gen(function* () {
 		const workbase = yield* WorkbaseService
 		const { log } = createLoggers(options)
+		const cwd = options.cwd ?? process.cwd()
 		const root = yield* workbase.initialize(
-			options.path ?? options.cwd ?? process.cwd(),
+			options.path ? resolve(cwd, options.path) : cwd,
 		)
 		log(
 			options.json

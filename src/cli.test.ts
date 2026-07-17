@@ -217,6 +217,15 @@ describe("CLI", () => {
 		await expect(access(root)).rejects.toThrow()
 	})
 
+	test("resolves relative init paths from explicit cwd", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const result = parseJson(
+			await runCli(["init", "child", "--cwd", parent, "--json"], projectRoot),
+		)
+		expect(result.root).toBe(join(parent, "child"))
+	})
+
 	test("refuses guided input without a TTY or with --no-input", async () => {
 		for (const args of [
 			["task", "new"],
@@ -349,12 +358,93 @@ describe("CLI", () => {
 		).toEqual({
 			root,
 		})
-		expect(
-			parseJson(await runCli(["workbase", "add", root, "--json"], parent, env)),
-		).toEqual({ path: await realpath(root) })
+		const registration = parseJson(
+			await runCli(
+				[
+					"workbase",
+					"add",
+					"workbase",
+					"--cwd",
+					parent,
+					"--name",
+					"primary",
+					"--json",
+				],
+				projectRoot,
+				env,
+			),
+		)
+		expect(registration).toMatchObject({
+			name: "primary",
+			path: await realpath(root),
+		})
 		expect(
 			parseJson(await runCli(["workbase", "list", "--json"], parent, env)),
-		).toEqual([await realpath(root)])
+		).toEqual({ workbases: [registration] })
+
+		await mkdir(join(root, "repos", "agency"), { recursive: true })
+		parseJson(
+			await runCli(
+				[
+					"task",
+					"create",
+					"explicit",
+					"--repo",
+					"agency",
+					"--workbase",
+					"primary",
+					"--no-input",
+					"--json",
+				],
+				parent,
+				env,
+			),
+		)
+		const shown = parseJson(
+			await runCli(
+				[
+					"task",
+					"show",
+					"--task",
+					"explicit",
+					"--workbase",
+					registration.id,
+					"--no-input",
+					"--json",
+				],
+				parent,
+				env,
+			),
+		)
+		expect(shown.id).toBe("explicit")
+		const inferred = parseJson(
+			await runCli(
+				["context", "--cwd", join(root, "tasks", "explicit"), "--json"],
+				projectRoot,
+				env,
+			),
+		)
+		expect(inferred.target).toMatchObject({
+			kind: "task",
+			taskId: "explicit",
+		})
+
+		parseJson(
+			await runCli(["workbase", "default", "primary", "--json"], parent, env),
+		)
+		expect(
+			parseJson(await runCli(["task", "list", "--json"], parent, env)),
+		).toHaveLength(1)
+		const explicitOutside = await runCli(
+			["task", "list", "--cwd", parent, "--json"],
+			projectRoot,
+			env,
+		)
+		expect(explicitOutside.exitCode).toBe(1)
+		expect(explicitOutside.stderr).toBe("")
+		expect(JSON.parse(explicitOutside.stdout).error.message).toContain(
+			"No Agency workbase found from",
+		)
 	})
 
 	test("exports equivalent JSON and JSONL graph contracts", async () => {

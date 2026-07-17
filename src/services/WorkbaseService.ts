@@ -6,7 +6,9 @@ import { dirname, join, relative, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { parseFrontmatter } from "../workbase/frontmatter"
 import {
+	EntityId,
 	EpicFrontmatter,
+	LegacyWorkbaseRegistry,
 	PhaseFrontmatter,
 	TaskFrontmatter,
 	WorkbaseConfig,
@@ -15,6 +17,8 @@ import {
 	type EpicFrontmatter as EpicData,
 	type PhaseFrontmatter as PhaseData,
 	type TaskFrontmatter as TaskData,
+	type WorkbaseRegistry as WorkbaseRegistryData,
+	type WorkbaseRegistration,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
 
@@ -81,12 +85,17 @@ const registryPath = (configDirectory?: string) =>
 		"workbases.json",
 	)
 
+const registrationId = (path: string) =>
+	`wb-${new Bun.CryptoHasher("sha256").update(path).digest("hex").slice(0, 12)}`
+
+const emptyRegistry: WorkbaseRegistryData = { version: 2, workbases: [] }
+
 const readRegistry = (configDirectory?: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const path = registryPath(configDirectory)
 		if (!(yield* fs.exists(path))) {
-			return { path, registry: { version: 1, workbases: [] } as const }
+			return { path, registry: emptyRegistry }
 		}
 
 		const content = yield* fs.readFile(path)
@@ -102,13 +111,37 @@ const readRegistry = (configDirectory?: string) =>
 		}
 
 		const decoded = decode(WorkbaseRegistry, input)
-		if (!decoded.success) {
+		if (decoded.success) return { path, registry: decoded.value }
+
+		const legacy = decode(LegacyWorkbaseRegistry, input)
+		if (!legacy.success) {
 			return yield* new WorkbaseRegistryError({
 				path,
 				message: `Invalid workbase registry in ${path}:\n${decoded.error}`,
 			})
 		}
-		return { path, registry: decoded.value }
+		const registry: WorkbaseRegistryData = {
+			version: 2 as const,
+			workbases: legacy.value.workbases.map((workbasePath) => ({
+				id: registrationId(workbasePath),
+				path: workbasePath,
+			})),
+		}
+		return { path, registry }
+	})
+
+const writeRegistry = (
+	path: string,
+	registry: {
+		readonly version: 2
+		readonly workbases: readonly WorkbaseRegistration[]
+		readonly defaultId?: string
+	},
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		yield* fs.createDirectory(dirname(path))
+		yield* fs.writeJSON(path, registry)
 	})
 
 const findCycles = (nodes: readonly Dependency[]): readonly string[] => {
@@ -285,26 +318,195 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					return { root, config: decoded.value }
 				}),
 
-			register: (startPath: string, configDirectory?: string) =>
+			register: (startPath: string, configDirectory?: string, name?: string) =>
 				Effect.gen(function* () {
 					const service = yield* WorkbaseService
 					const fs = yield* FileSystemService
 					const discovered = yield* service.discover(startPath)
 					const root = yield* fs.realPath(discovered)
 					const { path, registry } = yield* readRegistry(configDirectory)
-					if (registry.workbases.includes(root)) return root
-
-					yield* fs.createDirectory(dirname(path))
-					yield* fs.writeJSON(path, {
-						version: 1,
-						workbases: [...registry.workbases, root],
-					})
-					return root
+					if (name !== undefined) {
+						const decodedName = decode(EntityId, name)
+						if (!decodedName.success) {
+							return yield* new WorkbaseRegistryError({
+								path,
+								message: `Invalid workbase name '${name}': names must contain only letters, numbers, dots, underscores, and hyphens`,
+							})
+						}
+					}
+					const named = name
+						? registry.workbases.find(
+								(entry) =>
+									(entry.name === name && entry.path !== root) ||
+									entry.id === name,
+							)
+						: undefined
+					if (named) {
+						return yield* new WorkbaseRegistryError({
+							path,
+							message: `Workbase name '${name}' is already registered for ${named.path}`,
+						})
+					}
+					const existing = registry.workbases.find(
+						(entry) => entry.path === root,
+					)
+					const registration = {
+						id: existing?.id ?? registrationId(root),
+						...(name
+							? { name }
+							: existing?.name
+								? { name: existing.name }
+								: {}),
+						path: root,
+					}
+					const idNameCollision = registry.workbases.find(
+						(entry) => entry.name === registration.id && entry.path !== root,
+					)
+					if (idNameCollision) {
+						return yield* new WorkbaseRegistryError({
+							path,
+							message: `Workbase ID '${registration.id}' conflicts with the registered name for ${idNameCollision.path}`,
+						})
+					}
+					const workbases = existing
+						? registry.workbases.map((entry) =>
+								entry.id === existing.id ? registration : entry,
+							)
+						: [...registry.workbases, registration]
+					yield* writeRegistry(path, { ...registry, workbases })
+					return registration
 				}),
 
 			listRegistered: (configDirectory?: string) =>
 				readRegistry(configDirectory).pipe(
-					Effect.map(({ registry }) => registry.workbases),
+					Effect.map(({ registry }) =>
+						registry.workbases.map((entry) => entry.path),
+					),
+				),
+
+			listRegistrations: (configDirectory?: string) =>
+				readRegistry(configDirectory).pipe(
+					Effect.map(({ registry }) => ({
+						workbases: registry.workbases,
+						defaultId: registry.defaultId,
+					})),
+				),
+
+			resolveRegistered: (
+				selector: string,
+				configDirectory?: string,
+				basePath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const fs = yield* FileSystemService
+					const { path, registry } = yield* readRegistry(configDirectory)
+					const candidatePath = resolve(basePath, selector)
+					const direct =
+						registry.workbases.find((entry) => entry.id === selector) ??
+						registry.workbases.find((entry) => entry.name === selector) ??
+						registry.workbases.find((entry) => entry.path === candidatePath)
+					if (direct) return direct.path
+					if (yield* fs.exists(candidatePath))
+						return yield* service.discover(candidatePath)
+					return yield* new WorkbaseRegistryError({
+						path,
+						message: `Unknown workbase selector '${selector}'`,
+					})
+				}),
+
+			removeRegistered: (
+				selector: string,
+				configDirectory?: string,
+				basePath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const { path, registry } = yield* readRegistry(configDirectory)
+					const candidatePath = resolve(basePath, selector)
+					const canonicalCandidate = (yield* fs.exists(candidatePath))
+						? yield* fs.realPath(candidatePath)
+						: candidatePath
+					const entry =
+						registry.workbases.find((item) => item.id === selector) ??
+						registry.workbases.find((item) => item.name === selector) ??
+						registry.workbases.find((item) => item.path === canonicalCandidate)
+					if (!entry) {
+						return yield* new WorkbaseRegistryError({
+							path,
+							message: `Unknown workbase selector '${selector}'`,
+						})
+					}
+					const workbases = registry.workbases.filter(
+						(item) => item.id !== entry.id,
+					)
+					const next = {
+						version: 2 as const,
+						workbases,
+						...(registry.defaultId && registry.defaultId !== entry.id
+							? { defaultId: registry.defaultId }
+							: {}),
+					}
+					yield* writeRegistry(path, next)
+					return entry
+				}),
+
+			pruneRegistered: (configDirectory?: string) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const { path, registry } = yield* readRegistry(configDirectory)
+					const kept: WorkbaseRegistration[] = []
+					const removed: WorkbaseRegistration[] = []
+					for (const entry of registry.workbases) {
+						if (yield* fs.exists(join(entry.path, "agency.json")))
+							kept.push(entry)
+						else removed.push(entry)
+					}
+					const defaultId = kept.some(
+						(entry) => entry.id === registry.defaultId,
+					)
+						? registry.defaultId
+						: undefined
+					yield* writeRegistry(path, {
+						version: 2,
+						workbases: kept,
+						...(defaultId ? { defaultId } : {}),
+					})
+					return removed
+				}),
+
+			setDefault: (selector: string | null, configDirectory?: string) =>
+				Effect.gen(function* () {
+					const { path, registry } = yield* readRegistry(configDirectory)
+					if (selector === null) {
+						yield* writeRegistry(path, {
+							version: 2,
+							workbases: registry.workbases,
+						})
+						return null
+					}
+					const entry = registry.workbases.find(
+						(item) => item.id === selector || item.name === selector,
+					)
+					if (!entry) {
+						return yield* new WorkbaseRegistryError({
+							path,
+							message: `Unknown registered workbase selector '${selector}'`,
+						})
+					}
+					yield* writeRegistry(path, {
+						version: 2,
+						workbases: registry.workbases,
+						defaultId: entry.id,
+					})
+					return entry
+				}),
+
+			getDefault: (configDirectory?: string) =>
+				readRegistry(configDirectory).pipe(
+					Effect.map(({ registry }) =>
+						registry.workbases.find((entry) => entry.id === registry.defaultId),
+					),
 				),
 
 			validate: (startPath: string = process.cwd()) =>
