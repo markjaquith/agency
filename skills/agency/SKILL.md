@@ -108,7 +108,9 @@ Epic task ordering and dependencies live in `EPIC.md`. Creating a task with
 ## Create Single-Phase Tasks
 
 For guided creation, run `agency task new`. It prompts for text input, uses fzf
-for known choices, and allows optional inputs to be skipped.
+for known choices, and allows optional inputs to be skipped. It requires a TTY
+and fails when `--no-input` is set. `task create` never prompts and is the command
+to use from agents and scripts.
 
 ```bash
 agency task create <id> \
@@ -241,6 +243,7 @@ validation errors before materializing worktrees or creating PRs. Validation
 checks schemas, aliases, backlinks, phase directories, duplicate references,
 duplicate writable branch ownership, unknown dependencies, and dependency cycles.
 Outside a workbase, omitting path opens the registered-workbase picker.
+With `--no-input` or without a TTY, pass a path or run from a workbase instead.
 
 ## Worktrees And Agent Launch
 
@@ -256,6 +259,8 @@ replaces the current process with the selected agent. With no directory it opens
 an `fzf` picker containing the workbase hierarchy. Pass `.`, or another
 directory, to infer the nearest epic, task, or phase.
 Outside a workbase, it first opens a picker containing registered workbases.
+With `--no-input` or without a TTY, run from a workbase and provide an explicit
+directory, task ID, or `--epic` so no picker is needed.
 
 Epic and multi-phase task targets are orchestration sessions launched beside
 their documents. Single-phase tasks and phases are execution sessions launched

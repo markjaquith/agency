@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { parseArgs } from "util"
 import { Effect, Either, Layer } from "effect"
+import { parseCli } from "./src/cli-parser"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, help as prHelp } from "./src/commands/pr"
@@ -229,6 +229,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					inputAllowed: options.inputAllowed,
 				}),
 			)
 		},
@@ -239,12 +240,6 @@ const commands: Record<string, Command> = {
 				console.log(workHelp)
 				return
 			}
-			if (args.length > 1) {
-				throw new Error(
-					"Usage: agency work [<directory-or-task-id> | --epic <epic-id>]",
-				)
-			}
-
 			await runCommand(
 				work({
 					directory: args[0],
@@ -253,6 +248,7 @@ const commands: Record<string, Command> = {
 					verbose: options.verbose,
 					opencode: options.opencode,
 					claude: options.claude,
+					inputAllowed: options.inputAllowed,
 				}),
 			)
 		},
@@ -284,6 +280,7 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					json: options.json,
+					inputAllowed: options.inputAllowed,
 				}),
 			)
 		},
@@ -314,6 +311,7 @@ Global Options:
   -V, --version          Show version number
   -s, --silent           Suppress output messages
   -v, --verbose          Show verbose output including detailed debugging info
+  --no-input             Never open an interactive prompt or selector
 
 Examples:
   agency init                         # Initialize the current directory
@@ -327,29 +325,7 @@ For more information about a command, run:
 
 try {
 	const args = process.argv.slice(2)
-	const { values, positionals } = parseArgs({
-		args,
-		options: {
-			help: {
-				type: "boolean",
-				short: "h",
-			},
-			version: {
-				type: "boolean",
-				short: "V",
-			},
-			silent: {
-				type: "boolean",
-				short: "s",
-			},
-			verbose: {
-				type: "boolean",
-				short: "v",
-			},
-		},
-		strict: false,
-		allowPositionals: true,
-	})
+	const { commandName, args: commandArgs, values } = parseCli(args)
 
 	// Handle global flags
 	if (values.version) {
@@ -358,80 +334,16 @@ try {
 	}
 
 	// Get command
-	const commandName = positionals[0]
-
 	// Show help if no command
 	if (!commandName) {
 		showMainHelp()
 		process.exit(values.help ? 0 : 1)
 	}
 
-	// Check if command exists
-	const command = commands[commandName]
-	if (!command) {
-		console.error(`Error: Unknown command '${commandName}'`)
-		console.error("\nRun 'agency --help' for usage information.")
-		process.exit(1)
-	}
-
-	const commandIndex = args.indexOf(commandName)
-	const commandArgs = [
-		...args.slice(0, commandIndex),
-		...args.slice(commandIndex + 1),
-	]
-	const { values: cmdValues, positionals: cmdPositionals } = parseArgs({
-		args: commandArgs,
-		options: {
-			help: {
-				type: "boolean",
-				short: "h",
-			},
-			silent: {
-				type: "boolean",
-				short: "s",
-			},
-			verbose: {
-				type: "boolean",
-				short: "v",
-			},
-			branch: {
-				type: "string",
-			},
-			json: {
-				type: "boolean",
-			},
-			"ticket-url": {
-				type: "string",
-			},
-			description: {
-				type: "string",
-			},
-			repo: {
-				type: "string",
-				multiple: true,
-			},
-			reference: {
-				type: "string",
-				multiple: true,
-			},
-			epic: { type: "string" },
-			base: { type: "string" },
-			"multi-phase": { type: "boolean" },
-			"depends-on": { type: "string", multiple: true },
-			"first-phase": { type: "string" },
-			draft: { type: "boolean" },
-			opencode: {
-				type: "boolean",
-			},
-			claude: {
-				type: "boolean",
-			},
-		},
-		strict: false,
-		allowPositionals: true,
-	})
-
-	await command.run(cmdPositionals, cmdValues)
+	const command = commands[commandName]!
+	const inputAllowed =
+		!values["no-input"] && Boolean(process.stdin.isTTY && process.stderr.isTTY)
+	await command.run(commandArgs, { ...values, inputAllowed })
 } catch (error) {
 	if (error instanceof Error) {
 		let message = error.message

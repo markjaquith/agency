@@ -329,6 +329,36 @@ describe("work command", () => {
 		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath)
 	})
 
+	test("requires an explicit target when input is disabled", async () => {
+		const harness = createHarness()
+
+		await expect(
+			harness.run({
+				cwd: "/workbase",
+				opencode: true,
+				inputAllowed: false,
+			}),
+		).rejects.toThrow("provide a directory, task ID, or --epic")
+		expect(harness.events).toEqual([])
+	})
+
+	test("runs an explicit target when input is disabled", async () => {
+		const harness = createHarness({ existingDirectories: [] })
+
+		await harness.run({
+			cwd: "/workbase",
+			directory: "example",
+			opencode: true,
+			inputAllowed: false,
+		})
+
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
+	})
+
 	test("selects a registered workbase when local discovery fails", async () => {
 		const harness = createHarness({
 			outsideWorkbase: true,
@@ -353,6 +383,24 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
+	})
+
+	test("does not select a registered workbase when input is disabled", async () => {
+		const harness = createHarness({
+			outsideWorkbase: true,
+			registeredWorkbases: ["/workbase"],
+			existingDirectories: [],
+		})
+
+		await expect(
+			harness.run({
+				cwd: "/outside",
+				directory: "example",
+				opencode: true,
+				inputAllowed: false,
+			}),
+		).rejects.toThrow("provide an explicit path or run Agency from a workbase")
+		expect(harness.events).toEqual([])
 	})
 
 	test("explains how to register a workbase when none are known", async () => {

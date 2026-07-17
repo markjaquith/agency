@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { realpath } from "node:fs/promises"
+import { access, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir } from "./test-utils"
 
@@ -67,7 +67,8 @@ describe("CLI", () => {
 		const unknown = await runCli(["unknown"])
 		expect(unknown.exitCode).toBe(1)
 		expect(unknown.stdout).toBe("")
-		expect(unknown.stderr).toContain("Error: Unknown command 'unknown'")
+		expect(unknown.stderr).toContain("Unknown command 'unknown'")
+		expect(unknown.stderr).toContain("Usage: agency <command> [options]")
 
 		const cwd = await createTempDir()
 		tempDirs.push(cwd)
@@ -76,6 +77,29 @@ describe("CLI", () => {
 		expect(taggedError.stdout).toBe("")
 		expect(taggedError.stderr).toContain("ⓘ No Agency workbase found from")
 		expect(taggedError.stderr).not.toContain("An error has occurred")
+	})
+
+	test("rejects malformed input before running a command", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const root = join(parent, "workbase")
+		const result = await runCli(["init", root, "extra"])
+
+		expect(result.exitCode).toBe(1)
+		expect(result.stderr).toContain("Usage: agency init [path] [--json]")
+		await expect(access(root)).rejects.toThrow()
+	})
+
+	test("refuses guided input without a TTY or with --no-input", async () => {
+		for (const args of [
+			["task", "new"],
+			["task", "new", "example", "--no-input"],
+		]) {
+			const result = await runCli(args)
+			expect(result.exitCode).toBe(1)
+			expect(result.stderr).toContain("task new requires interactive input")
+			expect(result.stderr).toContain("agency task create")
+		}
 	})
 
 	test("routes command help and global options on either side of commands", async () => {

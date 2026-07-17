@@ -84,7 +84,8 @@ export const work = (
 			? yield* fs.isDirectory(directoryPath)
 			: false
 		const startPath = isDirectory && directoryPath ? directoryPath : cwd
-		const root = yield* resolveWorkbase(startPath, log, pickBase)
+		const inputAllowed = options.inputAllowed ?? true
+		const root = yield* resolveWorkbase(startPath, log, pickBase, inputAllowed)
 		if (!root) return
 
 		let target: WorkTarget | null = null
@@ -148,6 +149,13 @@ export const work = (
 		}
 
 		if (!target) {
+			if (!inputAllowed) {
+				return yield* Effect.fail(
+					new Error(
+						"Work target selection requires interactive input; provide a directory, task ID, or --epic <id>",
+					),
+				)
+			}
 			const epicRecords = yield* epics.list(root)
 			const taskRecords = yield* tasks.list(root)
 			const phaseRecords = []
@@ -247,4 +255,8 @@ Options:
   --epic <id>         Work on an epic
   --opencode           Require OpenCode
   --claude             Require Claude Code
+  --no-input          Never open an interactive selector
+
+Without interactive input, provide a directory, task ID, or --epic and run the
+command from a workbase. Workbase and target selection otherwise fail.
 `

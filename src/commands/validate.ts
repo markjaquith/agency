@@ -27,7 +27,12 @@ export const validate = (
 		const startPath = options.path ?? options.cwd ?? process.cwd()
 		const root = options.path
 			? yield* workbase.discover(startPath)
-			: yield* resolveWorkbase(startPath, log, pick)
+			: yield* resolveWorkbase(
+					startPath,
+					log,
+					pick,
+					options.inputAllowed ?? true,
+				)
 		if (!root) return
 		const report = yield* workbase.validate(root)
 
@@ -61,4 +66,8 @@ graphs. The current or selected registered workbase is used when path is omitted
 
 Options:
   --json              Output the validation report as JSON
+  --no-input          Never open an interactive workbase selector
+
+When interactive input is unavailable, pass a path or run this command from a
+workbase. Registered-workbase selection otherwise fails.
 `
