@@ -10,12 +10,24 @@ import {
 	formatMarkdownDocument,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
+import type { PullRequestRecord } from "../workbase/schemas"
+import {
+	normalizePullRequestRecord,
+	parsePullRequestRecord,
+	recordFromGitHubUrl,
+	resolveDeliveryCommand,
+} from "../workbase/delivery-command"
 
 class PullRequestError extends Data.TaggedError("PullRequestError")<{
 	readonly message: string
 }> {}
 
-const PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/
+const repositoryFromRemote = (remote: string) =>
+	remote
+		.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
+		.replace(/^[^:]+:/, "")
+		.replace(/\.git\/?$/, "")
+		.replace(/\/$/, "")
 
 interface PullRequestOptions extends BaseCommandOptions {
 	readonly force?: boolean
@@ -25,25 +37,20 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 	"PullRequestService",
 	{
 		sync: () => ({
-			setUrl: (
+			setRecord: (
 				taskId: string,
 				phaseId: string | undefined,
-				url: string,
+				record: PullRequestRecord,
 				startPath: string = process.cwd(),
 			) =>
 				Effect.gen(function* () {
-					if (!PR_URL.test(url)) {
-						return yield* new PullRequestError({
-							message: `Invalid GitHub pull request URL: ${url}`,
-						})
-					}
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(taskId, root)
-					const record =
+					const target =
 						"phases" in task.data
 							? phaseId
 								? yield* phases.show(taskId, phaseId, root)
@@ -51,13 +58,30 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 										message: `Task '${taskId}' requires a phase ID`,
 									})
 							: task
-					const parsed = yield* parseFrontmatter(record.content, record.path)
-					const data = { ...record.data, pr: url }
+					const parsed = yield* parseFrontmatter(target.content, target.path)
 					yield* fs.writeFile(
-						record.path,
-						formatMarkdownDocument(data, parsed.body),
+						target.path,
+						formatMarkdownDocument({ ...target.data, pr: record }, parsed.body),
 					)
-					return url
+					return record.url
+				}),
+
+			setUrl: (
+				taskId: string,
+				phaseId: string | undefined,
+				url: string,
+				startPath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const service = yield* PullRequestService
+					const record = yield* Effect.try({
+						try: () => recordFromGitHubUrl(url),
+						catch: (cause) =>
+							new PullRequestError({
+								message: cause instanceof Error ? cause.message : String(cause),
+							}),
+					})
+					return yield* service.setRecord(taskId, phaseId, record, startPath)
 				}),
 
 			create: (
@@ -74,6 +98,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					const phases = yield* PhaseService
 					const worktrees = yield* WorktreeService
 					const readiness = yield* ReadinessService
+					const workbase = yield* WorkbaseService
 					yield* readiness.guard(
 						"pr",
 						taskId,
@@ -92,6 +117,8 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						"phases" in task.data
 							? (yield* phases.show(taskId, phaseId!, workspace.root)).data
 							: task.data
+					const { config } = yield* workbase.loadConfig(workspace.root)
+					const remote = config.delivery?.remote ?? "origin"
 
 					const status = yield* fs.runCommand(
 						["git", "-C", workspace.writablePath, "status", "--porcelain"],
@@ -115,7 +142,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 							workspace.writablePath,
 							"push",
 							"--set-upstream",
-							"origin",
+							remote,
 							execution.branch,
 						],
 						{ captureOutput: true },
@@ -126,33 +153,83 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						})
 					}
 
-					const args = [
-						"gh",
-						"pr",
-						"create",
-						"--fill",
-						"--base",
-						execution.base,
-					]
-					if (draft) args.push("--draft")
-					const created = yield* fs.runCommand(args, {
+					const remoteResult = yield* fs.runCommand(
+						["git", "-C", workspace.writablePath, "remote", "get-url", remote],
+						{ captureOutput: true },
+					)
+					if (remoteResult.exitCode !== 0) {
+						return yield* new PullRequestError({
+							message: `Failed to inspect delivery remote '${remote}': ${remoteResult.stderr}`,
+						})
+					}
+					const repository = repositoryFromRemote(remoteResult.stdout.trim())
+					const resolved = config.delivery
+						? resolveDeliveryCommand(config.delivery, "create", {
+								repository,
+								branch: execution.branch,
+								base: execution.base,
+								draft: String(draft),
+								url: "",
+								identifier: "",
+							})
+						: {
+								argv: [
+									"gh",
+									"pr",
+									"create",
+									"--fill",
+									"--base",
+									execution.base,
+									...(draft ? ["--draft"] : []),
+								],
+								environment: {},
+							}
+					const created = yield* fs.runCommand(resolved.argv, {
 						cwd: workspace.writablePath,
 						captureOutput: true,
+						env: resolved.environment,
 					})
 					if (created.exitCode !== 0) {
 						return yield* new PullRequestError({
 							message: `Failed to create pull request: ${created.stderr}`,
 						})
 					}
-					const url = created.stdout
-						.split(/\s+/)
-						.find((value) => PR_URL.test(value))
-					if (!url) {
+					const record = yield* Effect.try({
+						try: () => {
+							if (config.delivery) return parsePullRequestRecord(created.stdout)
+							const url = created.stdout.split(/\s+/).find((value) => {
+								try {
+									recordFromGitHubUrl(value)
+									return true
+								} catch {
+									return false
+								}
+							})
+							if (!url)
+								throw new Error("GitHub CLI did not return a pull request URL")
+							return { ...normalizePullRequestRecord(url), draft }
+						},
+						catch: (cause) =>
+							new PullRequestError({
+								message: cause instanceof Error ? cause.message : String(cause),
+							}),
+					})
+					if (
+						config.delivery &&
+						(record.provider !== config.delivery.provider ||
+							record.repository.toLowerCase() !== repository.toLowerCase())
+					) {
 						return yield* new PullRequestError({
-							message: "GitHub CLI did not return a pull request URL",
+							message:
+								"Delivery provider returned a record for the wrong provider or repository",
 						})
 					}
-					return yield* service.setUrl(taskId, phaseId, url, workspace.root)
+					return yield* service.setRecord(
+						taskId,
+						phaseId,
+						record,
+						workspace.root,
+					)
 				}),
 		}),
 	},

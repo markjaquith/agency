@@ -23,6 +23,7 @@ import {
 	PhaseFrontmatter,
 	TaskFrontmatter,
 	type ClaimRecord,
+	type PullRequestRecord,
 	type PhaseFrontmatter as PhaseData,
 	type TaskFrontmatter as TaskData,
 } from "../workbase/schemas"
@@ -98,7 +99,7 @@ interface ReconcileInput {
 	readonly taskId: string
 	readonly phaseId?: string
 	readonly revision: string
-	readonly pr?: string
+	readonly pr?: string | PullRequestRecord
 	readonly status?: "done"
 }
 
@@ -341,7 +342,11 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 
 			reconcile: (input: ReconcileInput, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
-					if (input.pr !== undefined && !PR_URL.test(input.pr)) {
+					if (
+						typeof input.pr === "string" &&
+						input.pr !== undefined &&
+						!PR_URL.test(input.pr)
+					) {
 						return yield* new ClaimError({
 							message: `Invalid GitHub pull request URL: ${input.pr}`,
 						})

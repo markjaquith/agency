@@ -176,9 +176,103 @@ JSON
 		)
 		expect(task.data).toMatchObject({
 			status: "done",
-			pr: "https://github.com/example/agency/pull/42",
+			pr: {
+				provider: "github",
+				repository: "example/agency",
+				identifier: "42",
+				url: "https://github.com/example/agency/pull/42",
+				state: "merged",
+				draft: false,
+				merged: true,
+			},
 			claim: { state: "released", sessionId: "session-1" },
 		})
+	})
+
+	test("queries and records a configured delivery provider", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "custom",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/custom",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("custom", undefined, root),
+				),
+			),
+		)
+		await git(
+			[
+				"remote",
+				"set-url",
+				"origin",
+				"https://forge.example/example/agency.git",
+			],
+			join(root, "repos/agency"),
+		)
+		const callPath = join(root, "query-call.json")
+		const record = {
+			provider: "forge",
+			repository: "example/agency",
+			identifier: "17",
+			url: "https://forge.example/example/agency/pulls/17",
+			state: "open",
+			draft: false,
+			merged: false,
+		} as const
+		await Bun.write(
+			join(root, "bin", "deliver"),
+			`#!/usr/bin/env bun
+await Bun.write(${JSON.stringify(callPath)}, JSON.stringify({ args: Bun.argv.slice(2), base: process.env.DELIVERY_BASE }))
+process.stdout.write(${JSON.stringify(JSON.stringify(record))})
+`,
+		)
+		await chmod(join(root, "bin", "deliver"), 0o755)
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				delivery: {
+					provider: "forge",
+					createCommand: ["deliver", "create"],
+					queryCommand: ["deliver", "query", "{repository}", "{branch}"],
+					environment: { DELIVERY_BASE: "{base}" },
+				},
+			}),
+		)
+
+		const result = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(result.changes).toContainEqual(
+			expect.objectContaining({ kind: "record-pr", target: "task:custom" }),
+		)
+		expect(await Bun.file(callPath).json()).toEqual({
+			args: ["query", "example/agency", "feat/custom"],
+			base: "main",
+		})
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("custom", root)),
+			),
+		)
+		expect("pr" in task.data && task.data.pr).toEqual(record)
 	})
 
 	test("materializes missing workspaces but leaves branch conflicts unresolved", async () => {

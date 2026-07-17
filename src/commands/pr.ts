@@ -33,8 +33,8 @@ export const pr = (options: PrOptions) =>
 export const help = `
 Usage: agency pr create <task-id> [phase-id]
 
-Push the execution branch, create a GitHub pull request, and update its
-task or phase document.
+Push the execution branch, create a pull request with the delivery provider,
+and update its task or phase document.
 
 Options:
   --draft             Create a draft pull request

@@ -187,7 +187,12 @@ process.exit(${exitCode})
 				Effect.flatMap((service) => service.show("example", root)),
 			),
 		)
-		expect("pr" in task.data && task.data.pr).toBe(url)
+		expect("pr" in task.data && task.data.pr).toMatchObject({
+			provider: "github",
+			repository: "markjaquith/agency",
+			identifier: "123",
+			url,
+		})
 	})
 
 	test("rejects non-GitHub PR URLs", async () => {
@@ -228,7 +233,8 @@ process.exit(${exitCode})
 			cwd: await realpath(join(root, "tasks", "example", "code", "agency")),
 		})
 		const updated = await Bun.file(taskPath).text()
-		expect(updated).toContain("pr: https://github.com/example/agency/pull/42")
+		expect(updated).toContain("pr:\n  provider: github")
+		expect(updated).toContain("url: https://github.com/example/agency/pull/42")
 		expect(updated.endsWith(`${body}\n`)).toBe(true)
 	})
 
@@ -315,7 +321,7 @@ process.exit(${exitCode})
 		await createPullRequest("multi", "implementation")
 
 		expect(await Bun.file(taskPath).text()).toBe(originalTask)
-		expect(await Bun.file(phasePath).text()).toContain(`pr: ${url}`)
+		expect(await Bun.file(phasePath).text()).toContain(`url: ${url}`)
 		await expectRemoteBranch("task/multi-implementation")
 	})
 
@@ -400,7 +406,88 @@ process.exit(${exitCode})
 				Effect.flatMap((service) => service.show("example", root)),
 			),
 		)
-		expect("pr" in task.data && task.data.pr).toBe(url)
+		expect("pr" in task.data && task.data.pr).toMatchObject({ url })
+	})
+
+	test("uses a configured remote and argv provider", async () => {
+		await createTask()
+		await requireCommand(
+			["git", "remote", "rename", "origin", "upstream"],
+			join(root, "repos", "agency"),
+		)
+		const callPath = join(root, "delivery-call.json")
+		const providerRecord = {
+			provider: "forge",
+			repository: remotePath.replace(/\.git$/, ""),
+			identifier: "17",
+			url: "https://forge.example/example/agency/pulls/17",
+			state: "open",
+			draft: false,
+			merged: false,
+		} as const
+		await Bun.write(
+			join(root, "bin", "deliver"),
+			`#!/usr/bin/env bun
+await Bun.write(${JSON.stringify(callPath)}, JSON.stringify({ args: Bun.argv.slice(2), base: process.env.DELIVERY_BASE }))
+process.stdout.write(${JSON.stringify(JSON.stringify(providerRecord))})
+`,
+		)
+		await chmod(join(root, "bin", "deliver"), 0o755)
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				delivery: {
+					provider: "forge",
+					remote: "upstream",
+					createCommand: ["deliver", "create", "{repository}", "{branch}"],
+					queryCommand: ["deliver", "query", "{identifier}"],
+					environment: { DELIVERY_BASE: "{base}" },
+				},
+			}),
+		)
+
+		expect(await createPullRequest()).toBe(providerRecord.url)
+		expect(await Bun.file(callPath).json()).toEqual({
+			args: ["create", remotePath.replace(/\.git$/, ""), "task/example"],
+			base: "main",
+		})
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect("pr" in task.data && task.data.pr).toEqual(providerRecord)
+	})
+
+	test("does not persist malformed provider output", async () => {
+		await createTask()
+		await Bun.write(
+			join(root, "bin", "deliver"),
+			"#!/usr/bin/env bun\nprocess.stdout.write('{}')\n",
+		)
+		await chmod(join(root, "bin", "deliver"), 0o755)
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				delivery: {
+					provider: "forge",
+					createCommand: ["deliver", "create"],
+					queryCommand: ["deliver", "query"],
+				},
+			}),
+		)
+
+		await expect(createPullRequest()).rejects.toThrow(
+			"Delivery provider did not return a valid pull request record",
+		)
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect("pr" in task.data && task.data.pr).toBeNull()
 	})
 
 	test("reports git status failure before push or gh", async () => {

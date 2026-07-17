@@ -3,6 +3,7 @@ import { Data, Effect, Either } from "effect"
 import { join, relative, resolve, sep } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
+import { normalizePullRequestRecord } from "../workbase/delivery-command"
 import { RepositoryService } from "./RepositoryService"
 import { aggregateProgress, readinessState } from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
@@ -857,10 +858,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 									references: referenceCheckouts,
 									warnings: inspectionWarnings,
 								},
-						pr: {
-							url: executionData?.pr ?? null,
-							state: executionData?.pr ? "recorded" : "none",
-						},
+						pr: executionData?.pr
+							? normalizePullRequestRecord(executionData.pr)
+							: { url: null, state: "none" },
 						validation: {
 							valid: validation.valid,
 							warnings: validation.issues,

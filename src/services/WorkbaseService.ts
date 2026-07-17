@@ -22,6 +22,7 @@ import {
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
 import { validateRunners } from "../workbase/runner-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
+import { validateDelivery } from "../workbase/delivery-command"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -246,6 +247,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								}
 								try {
 									validateRunners(decoded.value.runners)
+									validateDelivery(decoded.value.delivery)
 								} catch (cause) {
 									return yield* new WorkbaseConfigError({
 										path: configPath,

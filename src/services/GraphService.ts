@@ -20,6 +20,7 @@ import {
 	readinessState,
 } from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
+import { normalizePullRequestRecord } from "../workbase/delivery-command"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
@@ -683,17 +684,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 								if (!data.pr) {
 									result.pr = { url: null, state: "none" }
 								} else {
-									const detail = yield* run(fs, [
-										"gh",
-										"pr",
-										"view",
-										data.pr,
-										"--json",
-										"number,state,title,isDraft,headRefName,baseRefName,url",
-									])
-									result.pr = detail
-										? { ...JSON.parse(detail), recordedUrl: data.pr }
-										: { url: data.pr, state: "unavailable" }
+									result.pr = normalizePullRequestRecord(data.pr)
 								}
 							}
 							return result
