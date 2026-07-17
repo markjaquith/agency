@@ -166,6 +166,68 @@ describe("CLI", () => {
 		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
 	})
 
+	test("routes graph mutations through structured output", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		await mkdir(join(root, "repos", "agency"), { recursive: true })
+		parseJson(
+			await runCli(
+				[
+					"epic",
+					"create",
+					"delivery",
+					"--ticket-url",
+					"https://example.com/delivery",
+					"--repo",
+					"agency:main",
+					"--json",
+				],
+				root,
+			),
+		)
+		for (const id of ["first", "second"]) {
+			parseJson(
+				await runCli(
+					[
+						"task",
+						"create",
+						id,
+						"--repo",
+						"agency",
+						"--epic",
+						"delivery",
+						"--json",
+					],
+					root,
+				),
+			)
+		}
+
+		const updated = parseJson(
+			await runCli(
+				["task", "update", "second", "--description", "Revised", "--json"],
+				root,
+			),
+		)
+		expect(updated).toMatchObject({
+			operation: "task.update",
+			entity: { kind: "task", id: "second" },
+			validation: { valid: true, scope: ["tasks/second/TASK.md"] },
+		})
+
+		const dependency = parseJson(
+			await runCli(
+				["task", "dependency", "add", "second", "first", "--json"],
+				root,
+			),
+		)
+		expect(dependency).toMatchObject({
+			operation: "task.dependency.add",
+			changedPaths: ["epics/delivery/EPIC.md"],
+		})
+	})
+
 	test("emits one versioned error envelope for usage and command failures", async () => {
 		const usage = await runCli(["unknown", "--json"])
 		expect(usage.exitCode).toBe(1)

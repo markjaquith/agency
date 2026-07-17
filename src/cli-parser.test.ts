@@ -387,7 +387,51 @@ describe("strict CLI parsing", () => {
 		)
 		expectUsageError(
 			["task", "crate"],
-			"agency task <new|create|list|show|status>",
+			"agency task <new|create|list|show|status|update|rename|move|dependency>",
+		)
+	})
+
+	test("parses graph mutation commands and rejects unsafe ambiguity", () => {
+		expect(
+			parseCli([
+				"task",
+				"update",
+				"example",
+				"--description",
+				"Revised",
+				"--reference",
+				"docs:main",
+				"--reference",
+				"api:main",
+				"--clear-pr",
+			]),
+		).toMatchObject({
+			args: ["update", "example"],
+			values: {
+				description: "Revised",
+				reference: ["docs:main", "api:main"],
+				"clear-pr": true,
+			},
+		})
+		expect(
+			parseCli(["task", "move", "example", "--no-epic"]).values,
+		).toMatchObject({
+			"no-epic": true,
+		})
+		expect(parseCli(["phase", "rename", "task", "old", "new"]).args).toEqual([
+			"rename",
+			"task",
+			"old",
+			"new",
+		])
+		expect(() => parseCli(["task", "update", "example"])).toThrow(
+			"At least one update option",
+		)
+		expect(() =>
+			parseCli(["task", "move", "example", "--epic", "one", "--no-epic"]),
+		).toThrow("cannot be combined")
+		expect(() => parseCli(["task", "dependency", "replace", "a", "b"])).toThrow(
+			"must be 'add' or 'remove'",
 		)
 	})
 

@@ -5,15 +5,20 @@ import { createLoggers } from "../utils/effect"
 import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
+import { GraphMutationService } from "../services/GraphMutationService"
 
 interface PhaseOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
 	readonly description?: string
+	readonly clearDescription?: boolean
 	readonly repo?: string
 	readonly references?: readonly string[]
 	readonly branch?: string
 	readonly base?: string
+	readonly clearReferences?: boolean
+	readonly prUrl?: string
+	readonly clearPr?: boolean
 	readonly dependsOn?: readonly string[]
 	readonly firstPhase?: string
 	readonly json?: boolean
@@ -27,6 +32,7 @@ interface PhaseOptions extends BaseCommandOptions {
 export const phase = (options: PhaseOptions) =>
 	Effect.gen(function* () {
 		const phases = yield* PhaseService
+		const mutations = yield* GraphMutationService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const [taskId, phaseId] = options.args
@@ -153,10 +159,84 @@ export const phase = (options: PhaseOptions) =>
 				)
 				return
 			}
+			case "update": {
+				if (!taskId || !phaseId) {
+					return yield* Effect.fail(
+						new Error("Task ID and phase ID are required"),
+					)
+				}
+				const output = yield* mutations.updatePhase(
+					taskId,
+					phaseId,
+					{
+						description: options.clearDescription ? null : options.description,
+						repo: options.repo,
+						repos: options.clearReferences
+							? null
+							: options.references === undefined
+								? undefined
+								: parseRepositoryReferences(options.references),
+						branch: options.branch,
+						base: options.base,
+						pr: options.clearPr ? null : options.prUrl,
+					},
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Updated phase '${phaseId}'`,
+				)
+				return
+			}
+			case "rename": {
+				const newId = options.args[2]
+				if (!taskId || !phaseId || !newId) {
+					return yield* Effect.fail(
+						new Error("Task ID, phase ID, and new ID are required"),
+					)
+				}
+				const output = yield* mutations.renamePhase(taskId, phaseId, newId, cwd)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Renamed phase '${phaseId}' to '${newId}'`,
+				)
+				return
+			}
+			case "dependency": {
+				const [operation, dependencyTaskId, dependencyPhaseId, dependencyId] =
+					options.args
+				if (
+					(operation !== "add" && operation !== "remove") ||
+					!dependencyTaskId ||
+					!dependencyPhaseId ||
+					!dependencyId
+				) {
+					return yield* Effect.fail(
+						new Error(
+							"Usage: agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>",
+						),
+					)
+				}
+				const output = yield* mutations.mutatePhaseDependency(
+					operation,
+					dependencyTaskId,
+					dependencyPhaseId,
+					dependencyId,
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `${operation === "add" ? "Added" : "Removed"} dependency '${dependencyId}' ${operation === "add" ? "to" : "from"} phase '${dependencyPhaseId}'`,
+				)
+				return
+			}
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available: create, list, show, status",
+						"Subcommand is required. Available: create, list, show, status, update, rename, dependency",
 					),
 				)
 		}
@@ -171,6 +251,11 @@ Subcommands:
   show <task> <phase>   Show a phase
   status <task> <phase> <status>
                         Set open, done, or dropped
+  update <task> <phase> Update phase metadata
+  rename <task> <phase> <new-id>
+                        Rename a phase and update dependencies
+  dependency <operation> <task> <phase> <dependency>
+                        Add or remove a phase dependency
 
 Create options:
   --description <text>  Short description of the phase
@@ -181,6 +266,14 @@ Create options:
   --base <name>         Base branch
   --depends-on <id>     Phase dependency; repeatable
   --first-phase <id>    Existing execution phase ID when converting a task
+
+Update options:
+  --description <text> / --clear-description
+  --repo <alias>        Replace the writable repository
+  --reference <alias>:<ref> / --clear-references
+  --branch <name>       Replace the working branch
+  --base <name>         Replace the base branch
+  --pr-url <url> / --clear-pr
 
 Options:
   --json                Output results as JSON
