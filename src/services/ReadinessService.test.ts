@@ -187,6 +187,53 @@ describe("ReadinessService", () => {
 		})
 	})
 
+	test("returns ready target IDs and guards structural work targets", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+
+		const readyIds = await service((readiness) =>
+			readiness.getReadyWorkTargetIds(root),
+		)
+		expect([...readyIds].sort()).toEqual([
+			"epic:delivery",
+			"execution-unit:phase/ship/implement",
+			"phase:ship/implement",
+			"task:ship",
+		])
+		await service((readiness) =>
+			readiness.guardWorkTarget("phase:ship/implement", root),
+		)
+
+		const blocked = await service((readiness) =>
+			Effect.either(readiness.guardWorkTarget("phase:ship/verify", root)),
+		)
+		expect(blocked).toMatchObject({
+			_tag: "Left",
+			left: {
+				_tag: "ExecutionGuardError",
+				action: "work",
+				target: "phase:ship/verify",
+				status: "open",
+				blockedBy: ["phase:ship/implement"],
+			},
+		})
+
+		const missing = await service((readiness) =>
+			Effect.either(readiness.guardWorkTarget("task:missing", root)),
+		)
+		expect(missing).toMatchObject({
+			_tag: "Left",
+			left: {
+				_tag: "ExecutionGuardError",
+				target: "task:missing",
+				blockers: [],
+			},
+		})
+		await service((readiness) =>
+			readiness.guardWorkTarget("task:missing", root, true),
+		)
+	})
+
 	test("uses the same readiness for work and PR guards", async () => {
 		const root = await createWorkbase()
 		roots.push(root)
