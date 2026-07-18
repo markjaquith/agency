@@ -358,6 +358,18 @@ const commands: Record<string, Command> = {
 				console.log(workbaseHelp)
 				return
 			}
+			if (args[0] === "init") {
+				await runCommand(
+					init({
+						path: args[1],
+						json: options.json,
+						silent: options.silent,
+						verbose: options.verbose,
+						cwd: options.cwd,
+					}),
+				)
+				return
+			}
 			await runCommand(
 				workbase({
 					subcommand: args[0],

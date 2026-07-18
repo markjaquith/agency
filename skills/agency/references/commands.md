@@ -33,7 +33,8 @@ observational unless `--apply` is explicit.
 ## Workbase And Repositories
 
 ```text
-agency init [path] [--json]
+agency workbase init [path] [--json]
+agency init [path] [--json] # Alias
 agency workbase add <path> [--name <name>] [--json]
 agency workbase list [--json]
 agency workbase show <id|name|path> [--json]

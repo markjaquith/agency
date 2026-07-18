@@ -284,7 +284,7 @@ owning `TASK.md`. Stable IDs do not encode ordering in directory names.
 ## Quick Start
 
 ```bash
-agency init ~/work
+agency workbase init ~/work
 cd ~/work
 
 agency repo add frontend git@github.com:example/frontend.git
@@ -381,7 +381,8 @@ conditions remain visible in `warnings` or `unresolved` with a suggested action.
 ### Workbase and Repositories
 
 ```text
-agency init [path] [--json]
+agency workbase init [path] [--json]
+agency init [path] [--json] # Alias
 agency workbase add <path> [--name <name>] [--json]
 agency workbase list [--json]
 agency workbase show <id|name|path> [--json]
