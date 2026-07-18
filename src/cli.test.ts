@@ -550,6 +550,22 @@ describe("CLI", () => {
 			kind: "task",
 			taskId: "explicit",
 		})
+		const nextByCwd = parseJson(
+			await runCli(
+				["next", "--cwd", root, "--select", "--json"],
+				projectRoot,
+				env,
+			),
+		)
+		expect(nextByCwd.selected.key).toBe("task/explicit")
+		const nextByRegistration = parseJson(
+			await runCli(
+				["next", "--workbase", "primary", "--select", "--json"],
+				projectRoot,
+				env,
+			),
+		)
+		expect(nextByRegistration.selected.key).toBe("task/explicit")
 
 		parseJson(
 			await runCli(["workbase", "default", "primary", "--json"], parent, env),

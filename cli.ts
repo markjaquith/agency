@@ -514,6 +514,7 @@ const commands: Record<string, Command> = {
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
+					cwd: options.cwd,
 				}),
 			)
 		},
