@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { access, mkdir, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
@@ -7,6 +7,9 @@ import { cleanupTempDir, createTempDir } from "./test-utils"
 
 const projectRoot = join(import.meta.dir, "..")
 const cliPath = join(projectRoot, "cli.ts")
+const isolatedConfigHome = await createTempDir()
+
+afterAll(() => cleanupTempDir(isolatedConfigHome))
 
 interface CliResult {
 	exitCode: number
@@ -21,7 +24,11 @@ async function runCli(
 ): Promise<CliResult> {
 	const subprocess = Bun.spawn([process.execPath, cliPath, ...args], {
 		cwd,
-		env: env ? { ...process.env, ...env } : undefined,
+		env: {
+			...process.env,
+			XDG_CONFIG_HOME: isolatedConfigHome,
+			...env,
+		},
 		stdout: "pipe",
 		stderr: "pipe",
 	})
