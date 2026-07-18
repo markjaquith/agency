@@ -53,6 +53,34 @@ describe("machine protocol", () => {
 		).rejects.toThrow("more than one result")
 	})
 
+	test("restores collection state after a command throws", async () => {
+		const originalLog = console.log
+		await expect(
+			collectCommandResult(async () => {
+				emitCommandResult("partial")
+				throw new Error("command failed")
+			}),
+		).rejects.toThrow("command failed")
+		expect(console.log).toBe(originalLog)
+
+		await expect(
+			collectCommandResult(async () => {
+				emitCommandResult("recovered")
+			}),
+		).resolves.toBe("recovered")
+	})
+
+	test("rejects nested result collectors without disrupting the outer one", async () => {
+		const result = await collectCommandResult(async () => {
+			await expect(collectCommandResult(async () => {})).rejects.toThrow(
+				"already active",
+			)
+			emitCommandResult("outer")
+		})
+
+		expect(result).toBe("outer")
+	})
+
 	test("normalizes unknown failures into stable error details", () => {
 		expect(errorEnvelope(new Error("boom"))).toEqual({
 			version: 1,
@@ -67,14 +95,15 @@ describe("machine protocol", () => {
 	})
 
 	test("preserves relevant fields from classified errors", () => {
-		expect(
-			errorEnvelope({
-				_tag: "ValidationFailedError",
-				message: "invalid workbase",
-				root: "/work/agency",
-				issues: [{ path: "TASK.md", message: "invalid status" }],
-			}),
-		).toMatchObject({
+		const validation = errorEnvelope({
+			_tag: "ValidationFailedError",
+			message: "invalid workbase",
+			cause: new Error("private cause"),
+			optional: undefined,
+			root: "/work/agency",
+			issues: [{ path: "TASK.md", message: "invalid status" }],
+		})
+		expect(validation).toMatchObject({
 			error: {
 				code: "VALIDATION_FAILED",
 				fields: {
@@ -83,6 +112,10 @@ describe("machine protocol", () => {
 				},
 			},
 		})
+		expect(Object.keys(validation.error.fields).sort()).toEqual([
+			"issues",
+			"root",
+		])
 		expect(
 			errorEnvelope({
 				_tag: "ClaimConflictError",
