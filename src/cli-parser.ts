@@ -127,13 +127,19 @@ const commands = {
 		},
 	},
 	workbase: {
-		usage: "agency workbase <add|list|show|name|remove|prune|default>",
+		usage: "agency workbase <init|add|list|show|name|remove|prune|default>",
 		options: {
 			...outputOptions,
 			name: { type: "string" },
 			clear: { type: "boolean" },
 		},
 		subcommands: {
+			init: {
+				usage: "agency workbase init [path] [--json]",
+				minArgs: 0,
+				maxArgs: 1,
+				options: ["json"],
+			},
 			add: {
 				usage: "agency workbase add <path> [--json]",
 				minArgs: 1,

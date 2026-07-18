@@ -139,6 +139,7 @@ describe("strict CLI parsing", () => {
 			["repo", "remote", "agency", "https://example.com/repo.git"],
 			["repo", "verify", "agency"],
 			["workbase", "show", "primary", "--json"],
+			["workbase", "init", "new-workbase", "--json"],
 			["workbase", "name", "primary", "renamed"],
 			["workbase", "name", "primary", "--clear"],
 		]) {
@@ -164,6 +165,7 @@ describe("strict CLI parsing", () => {
 	test("enforces exact maximum positional arity for every leaf command", () => {
 		for (const [args, usage] of [
 			[["init", "one", "two"], "agency init"],
+			[["workbase", "init", "one", "two"], "agency workbase init"],
 			[["workbase", "add", "one", "two"], "agency workbase add"],
 			[["workbase", "list", "extra"], "agency workbase list"],
 			[["integration", "status", "extra"], "agency integration status"],

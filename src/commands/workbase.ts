@@ -151,7 +151,7 @@ export const workbase = (options: WorkbaseOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available: add, list, show, name, remove, prune, default",
+						"Subcommand is required. Available: init, add, list, show, name, remove, prune, default",
 					),
 				)
 		}
@@ -161,6 +161,7 @@ export const help = `
 Usage: agency workbase <subcommand>
 
 Subcommands:
+  init [path]       Initialize an Agency workbase
   add <path>        Register an Agency workbase
   list              List registered workbases
   show <selector>   Show a registered workbase
