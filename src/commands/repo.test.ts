@@ -120,5 +120,14 @@ describe("repo command", () => {
 		)
 
 		expect(await Bun.file(join(target, ".git/HEAD")).exists()).toBe(true)
+		expect(await Bun.file(join(root, "repos/linked")).exists()).toBe(false)
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				repo({ subcommand: "list", args: [], cwd: root, json: true }),
+			),
+		)
+		expect(
+			JSON.parse(logs[0]!).map(({ alias }: { alias: string }) => alias),
+		).toEqual(["agency"])
 	})
 })

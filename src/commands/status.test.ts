@@ -58,6 +58,25 @@ describe("status command", () => {
 				silent: true,
 			}),
 		)
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["finished"],
+				repo: "agency",
+				branch: "feat/finished",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["finished", "done"],
+				cwd: root,
+				silent: true,
+			}),
+		)
 
 		const logs = await captureLogs(() =>
 			runTestEffect(
@@ -71,6 +90,7 @@ describe("status command", () => {
 		expect(logs.at(-1)).toContain(
 			"task  example  -       open    ready      agency        feat/example  absent  absent",
 		)
+		expect(logs.at(-1)).not.toContain("finished")
 	})
 
 	test("reports validation issues without requiring a decodable graph", async () => {

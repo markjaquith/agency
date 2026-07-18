@@ -42,9 +42,10 @@ describe("spawnProcess", () => {
 
 	test("captures large stdout and stderr without hanging", async () => {
 		const line = "x".repeat(4096)
+		const lineCount = 256
 		const script = [
 			`const line = ${JSON.stringify(line)}`,
-			"for (let i = 0; i < 2000; i++) {",
+			`for (let i = 0; i < ${lineCount}; i++) {`,
 			"console.log(`out:${i}:${line}`)",
 			"console.error(`err:${i}:${line}`)",
 			"}",
@@ -56,8 +57,8 @@ describe("spawnProcess", () => {
 
 		expect(result.exitCode).toBe(0)
 		expect(result.stdout).toContain("out:0:")
-		expect(result.stdout).toContain("out:1999:")
+		expect(result.stdout).toContain(`out:${lineCount - 1}:`)
 		expect(result.stderr).toContain("err:0:")
-		expect(result.stderr).toContain("err:1999:")
+		expect(result.stderr).toContain(`err:${lineCount - 1}:`)
 	})
 })

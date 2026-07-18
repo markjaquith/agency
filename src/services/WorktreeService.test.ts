@@ -26,8 +26,16 @@ const git = async (args: string[], cwd?: string) => {
 describe("WorktreeService", () => {
 	let root: string
 	let source: string
+	let effectRepositoryInitialized: boolean
+
+	const ensureEffectRepository = async () => {
+		if (effectRepositoryInitialized) return
+		await git(["clone", "--bare", source, join(root, "repos/effect")])
+		effectRepositoryInitialized = true
+	}
 
 	beforeEach(async () => {
+		effectRepositoryInitialized = false
 		root = await createTempDir()
 		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
 		source = join(root, "source")
@@ -40,12 +48,12 @@ describe("WorktreeService", () => {
 		await git(["-c", "commit.gpgsign=false", "commit", "-m", "initial"], source)
 		await mkdir(join(root, "repos"), { recursive: true })
 		await git(["clone", "--bare", source, join(root, "repos/agency")])
-		await git(["clone", "--bare", source, join(root, "repos/effect")])
 	})
 
 	afterEach(async () => cleanupTempDir(root))
 
 	test("materializes writable and reference worktrees", async () => {
+		await ensureEffectRepository()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -127,6 +135,7 @@ describe("WorktreeService", () => {
 	})
 
 	test("reuses an immutable reference checkout without fetching", async () => {
+		await ensureEffectRepository()
 		const commit = new TextDecoder()
 			.decode(
 				Bun.spawnSync(
@@ -393,7 +402,7 @@ describe("WorktreeService", () => {
 						{
 							id: "single",
 							ticketUrl: "https://example.com/task",
-							repo: "effect",
+							repo: "agency",
 							branch: "task/single",
 							base: "main",
 						},
@@ -760,6 +769,7 @@ pr: null
 	})
 
 	test("fetches a moving ref before checking a reused reference checkout", async () => {
+		await ensureEffectRepository()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -801,6 +811,7 @@ pr: null
 	})
 
 	test("rejects a reference checkout attached to a branch", async () => {
+		await ensureEffectRepository()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -858,6 +869,7 @@ pr: null
 	})
 
 	test("removes worktrees without deleting branches", async () => {
+		await ensureEffectRepository()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -924,6 +936,7 @@ pr: null
 	})
 
 	test("reports dry-run fetch and worktree changes without mutating", async () => {
+		await ensureEffectRepository()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -983,6 +996,7 @@ pr: null
 	})
 
 	test("dry-run resolves a reference that exists only on the remote", async () => {
+		await ensureEffectRepository()
 		await git(["checkout", "-b", "remote-only"], source)
 		await Bun.write(join(source, "remote.txt"), "remote\n")
 		await git(["add", "remote.txt"], source)
@@ -1316,6 +1330,7 @@ pr: null
 	})
 
 	test("dry-runs and rebuilds every clean declared checkout", async () => {
+		await ensureEffectRepository()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
