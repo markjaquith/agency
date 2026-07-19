@@ -21,6 +21,10 @@ import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
+import {
+	RepositoryService,
+	type RepositorySetupResult,
+} from "./RepositoryService"
 
 class SyncError extends Data.TaggedError("SyncError")<{
 	readonly message: string
@@ -93,6 +97,7 @@ interface SyncResult {
 	readonly warnings: readonly SyncNotice[]
 	readonly unresolved: readonly SyncNotice[]
 	readonly executions: readonly ExecutionSyncState[]
+	readonly repositories: RepositorySetupResult
 }
 
 const parseWorktrees = (output: string): RegisteredWorktree[] => {
@@ -150,6 +155,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const phases = yield* PhaseService
 				const worktrees = yield* WorktreeService
 				const claims = yield* ClaimService
+				const repositories = yield* RepositoryService
 				const { root, config } = yield* workbase.loadConfig(options.cwd)
 				const validation = yield* workbase.validate(root)
 				if (!validation.valid) {
@@ -159,12 +165,24 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							.join("\n"),
 					})
 				}
+				const repositorySetup = yield* repositories.setup({
+					cwd: root,
+					apply: options.apply === true,
+				})
 
 				const apply = options.apply === true
 				const now = options.now ?? new Date()
 				const changes: SyncChange[] = []
 				const warnings: SyncNotice[] = []
 				const unresolved: SyncNotice[] = []
+				for (const issue of repositorySetup.unresolved) {
+					unresolved.push({
+						kind: `repository-${issue.state}`,
+						target: `repository:${issue.alias}`,
+						message: issue.message,
+						action: issue.action,
+					})
+				}
 				const executions: ExecutionSyncState[] = []
 				const runExternal = (
 					args: readonly string[],
@@ -240,7 +258,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								kind: "missing-repository",
 								target: record.key,
 								message: `Repository alias '${checkout.repo}' is missing`,
-								action: "Restore or relink the repository alias",
+								action: "Run 'agency repo setup --apply' or relink the alias",
 							})
 							workspaceConflict = true
 							continue
@@ -822,6 +840,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					warnings,
 					unresolved,
 					executions,
+					repositories: repositorySetup,
 				} satisfies SyncResult
 			}),
 	}),

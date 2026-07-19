@@ -140,7 +140,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					})
 				}
 				for (const alias of referencedRepos) {
-					if (!(yield* fs.exists(join(root, "repos", alias)))) {
+					if (!(yield* workbase.hasRepositoryAlias(alias, root))) {
 						return yield* new TaskError({
 							message: `Unknown repository alias '${alias}'`,
 						})

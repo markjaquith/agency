@@ -27,6 +27,23 @@ Use `repo add <alias> <remote>` instead when Agency should create and manage a
 bare clone from a remote. Initialization and repository registration require
 explicit user intent.
 
+## Restore A Workbase On A New Machine
+
+After cloning the tracked workbase, inspect repository setup before applying it:
+
+```bash
+agency repo setup --dry-run --json
+agency repo setup --apply --json
+agency validate
+agency doctor --json
+```
+
+Apply clones only declared missing repositories. It does not overwrite linked
+checkouts, repair invalid paths, or choose between drifted remotes. Resolve those
+states explicitly, then rerun setup. A machine may replace an unused managed
+clone with `repo link`; the portable declaration remains available to every
+other machine.
+
 ## Inspect A Target
 
 ```bash

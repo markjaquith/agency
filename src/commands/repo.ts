@@ -7,6 +7,8 @@ interface RepoOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args: readonly string[]
 	readonly json?: boolean
+	readonly apply?: boolean
+	readonly dryRun?: boolean
 }
 
 const requireArg = (args: readonly string[], index: number, usage: string) =>
@@ -19,6 +21,27 @@ export const repo = (options: RepoOptions) =>
 		const cwd = options.cwd ?? process.cwd()
 
 		switch (options.subcommand) {
+			case "setup": {
+				const result = yield* repositories.setup({
+					cwd,
+					apply: options.apply === true,
+				})
+				if (options.json) {
+					log(JSON.stringify(result, null, 2))
+					return
+				}
+				if (result.actions.length === 0) log("Repository setup is current")
+				for (const action of result.actions) {
+					log(
+						`${action.status === "applied" ? "Applied" : "Planned"} ${action.kind} '${action.alias}' from ${action.remote}`,
+					)
+				}
+				for (const issue of result.unresolved) {
+					log(`Unresolved '${issue.alias}': ${issue.message}. ${issue.action}`)
+				}
+				return
+			}
+
 			case "add": {
 				const [alias, remote] = options.args
 				if (!alias || !remote) {
@@ -58,8 +81,9 @@ export const repo = (options: RepoOptions) =>
 					return
 				}
 				for (const item of items) {
-					const detail = item.target ?? item.remote ?? item.path
-					log(`${item.alias}\t${item.kind}\t${detail}`)
+					const detail =
+						item.target ?? item.remote ?? item.declaredRemote ?? item.path
+					log(`${item.alias}\t${item.states.join(",")}\t${detail}`)
 				}
 				return
 			}
@@ -74,7 +98,7 @@ export const repo = (options: RepoOptions) =>
 				log(
 					options.json
 						? JSON.stringify(item, null, 2)
-						: `${item.alias}\t${item.kind}\t${item.target ?? item.remote ?? item.path}`,
+						: `${item.alias}\t${item.states.join(",")}\t${item.target ?? item.remote ?? item.declaredRemote ?? item.path}`,
 				)
 				return
 			}
@@ -136,7 +160,7 @@ export const repo = (options: RepoOptions) =>
 				log(
 					options.json
 						? JSON.stringify(item, null, 2)
-						: (item.remote ?? "No origin remote configured"),
+						: (item.declaredRemote ?? "No portable remote declared"),
 				)
 				return
 			}
@@ -163,7 +187,7 @@ export const repo = (options: RepoOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available subcommands: add, link, list, show, fetch, remove, unlink, rename, remote, verify",
+						"Subcommand is required. Available subcommands: setup, add, link, list, show, fetch, remove, unlink, rename, remote, verify",
 					),
 				)
 		}
@@ -173,17 +197,20 @@ export const help = `
 Usage: agency repo <subcommand>
 
 Subcommands:
+  setup                 Plan or apply portable repository setup
   add <alias> <remote>  Create a bare clone
   link <alias> <path>   Link an existing Git repository
   list                  List repository aliases
   show <alias>          Show a repository alias
   fetch <alias>         Fetch and prune a repository
-  remove <alias>        Remove an unused repository alias
-  unlink <alias>        Remove an unused linked alias
+  remove <alias>        Remove a declaration and local materialization
+  unlink <alias>        Remove only this machine's linked checkout
   rename <old> <new>    Rename an unused repository alias
-  remote <alias> [url]  Show or update the origin remote
+	remote <alias> [url]  Show or update the portable remote declaration
   verify <alias>        Verify repository operation
 
 Options:
+  --dry-run             Report setup changes without applying them (default)
+  --apply               Apply safe setup changes
   --json                Output repository aliases as JSON
 `

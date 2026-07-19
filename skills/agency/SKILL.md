@@ -10,9 +10,10 @@ compatibility: Requires the agency CLI and Git. Agent launch requires OpenCode, 
 
 # Agency
 
-Agency keeps plans and lifecycle state in durable Markdown documents. Git
-checkouts under `code/` are materialized local state. Treat the documents as the
-source of truth and Agency commands as the safe way to mutate their structure.
+Agency keeps plans and lifecycle state in durable Markdown documents and keeps
+portable repository aliases in `agency.json`. Bare repositories under `repos/`
+and Git checkouts under `code/` are ignored local materializations. Treat tracked
+workbase state as authoritative and Agency commands as the safe mutation path.
 
 ## Start With Context
 
@@ -47,6 +48,8 @@ output or editing documents.
 ## Mental Model
 
 - A **workbase** contains durable epics, tasks, phases, and repository aliases.
+- A repository declaration stores an alias and credential-free canonical fetch
+  remote; local bare clones and linked checkouts are replaceable machine state.
 - An **epic** coordinates tasks. It may inspect repositories but never writes code.
 - A **task** is one durable outcome. It is either an execution unit itself or a
   container for phases.
@@ -67,6 +70,7 @@ Require explicit user intent before:
 
 - initializing a workbase;
 - adding, linking, renaming, or removing a repository alias;
+- applying repository setup or sync changes;
 - launching another agent with `agency work` from an active agent session;
 - creating a pull request;
 - archiving, restoring, dropping, or reopening work; or
@@ -81,6 +85,8 @@ independently meaningful tasks need coordination.
 - Keep task-wide decisions in `TASK.md` and phase delivery details in `PHASE.md`.
 - Never write through plural `repos` references.
 - Never edit bare repositories or repository symlinks under `repos/`.
+- Never persist local paths, symlink targets, worktrees, or credentials as
+  repository remotes.
 - Never manually create, move, or remove generated `code/` worktrees.
 - Never invent IDs, revisions, PR URLs, dependency completion, or checkout state.
 - Preserve parent backlinks and dependency declarations; use Agency mutations

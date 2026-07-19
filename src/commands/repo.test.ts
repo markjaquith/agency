@@ -23,7 +23,7 @@ describe("repo command", () => {
 	test("requires a subcommand", async () => {
 		await expect(
 			runTestEffect(repo({ args: [], silent: true })),
-		).rejects.toThrow("Available subcommands: add, link, list")
+		).rejects.toThrow("Available subcommands: setup, add, link, list")
 	})
 
 	test("requires add arguments", async () => {
@@ -47,7 +47,9 @@ describe("repo command", () => {
 				path: join(root, "repos/agency"),
 				kind: "repository",
 				remote: null,
+				declaredRemote: null,
 				target: null,
+				states: ["materialized", "invalid"],
 			},
 		])
 	})
@@ -75,6 +77,19 @@ describe("repo command", () => {
 			stderr: "ignore",
 		})
 		expect(await git.exited).toBe(0)
+		const remote = Bun.spawn(
+			[
+				"git",
+				"-C",
+				target,
+				"remote",
+				"add",
+				"origin",
+				"https://example.com/linked.git",
+			],
+			{ stdout: "ignore", stderr: "ignore" },
+		)
+		expect(await remote.exited).toBe(0)
 
 		const logs = await captureLogs(() =>
 			runTestEffect(
@@ -101,6 +116,19 @@ describe("repo command", () => {
 			stderr: "ignore",
 		})
 		expect(await git.exited).toBe(0)
+		const remote = Bun.spawn(
+			[
+				"git",
+				"-C",
+				target,
+				"remote",
+				"add",
+				"origin",
+				"https://example.com/unlink.git",
+			],
+			{ stdout: "ignore", stderr: "ignore" },
+		)
+		expect(await remote.exited).toBe(0)
 		await runTestEffect(
 			repo({
 				subcommand: "link",
@@ -128,6 +156,34 @@ describe("repo command", () => {
 		)
 		expect(
 			JSON.parse(logs[0]!).map(({ alias }: { alias: string }) => alias),
-		).toEqual(["agency"])
+		).toEqual(["agency", "linked"])
+	})
+
+	test("reports setup plans as JSON without mutating", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					missing: { remote: "https://example.com/missing.git" },
+				},
+			}),
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				repo({ subcommand: "setup", args: [], cwd: root, json: true }),
+			),
+		)
+		const result = JSON.parse(logs[0]!)
+		expect(result.mode).toBe("dry-run")
+		expect(result.actions).toEqual([
+			{
+				kind: "materialize",
+				alias: "missing",
+				remote: "https://example.com/missing.git",
+				status: "planned",
+			},
+		])
+		expect(await Bun.file(join(root, "repos/missing")).exists()).toBe(false)
 	})
 })

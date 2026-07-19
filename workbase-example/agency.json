@@ -1,5 +1,13 @@
 {
   "version": 2,
+  "repositories": {
+    "agency": {
+      "remote": "https://github.com/markjaquith/agency.git"
+    },
+    "effect": {
+      "remote": "https://github.com/Effect-TS/effect.git"
+    }
+  },
   "worktreeCreateCommand": [
     "wt",
     "-C",

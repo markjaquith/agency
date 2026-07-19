@@ -41,11 +41,53 @@ async function runCli(
 }
 
 function parseJson(result: CliResult) {
-	expect(result.exitCode).toBe(0)
+	expect(result.exitCode, JSON.stringify(result)).toBe(0)
 	expect(result.stderr).toBe("")
 	const envelope = JSON.parse(result.stdout)
 	expect(envelope).toMatchObject({ version: 1, ok: true })
 	return envelope.result
+}
+
+async function runGit(args: string[]) {
+	const subprocess = Bun.spawn(["git", ...args], {
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	const [exitCode, stdout, stderr] = await Promise.all([
+		subprocess.exited,
+		new Response(subprocess.stdout).text(),
+		new Response(subprocess.stderr).text(),
+	])
+	if (exitCode !== 0) throw new Error(stderr)
+	return stdout
+}
+
+async function startGitDaemon(basePath: string) {
+	const port = 20000 + Math.floor(Math.random() * 20000)
+	const process = Bun.spawn(
+		[
+			"git",
+			"daemon",
+			"--reuseaddr",
+			"--export-all",
+			`--base-path=${basePath}`,
+			"--listen=127.0.0.1",
+			`--port=${port}`,
+			basePath,
+		],
+		{ stdout: "pipe", stderr: "pipe" },
+	)
+	const remote = `git://127.0.0.1:${port}/source.git`
+	for (let attempt = 0; attempt < 40; attempt++) {
+		const probe = Bun.spawn(["git", "ls-remote", remote], {
+			stdout: "ignore",
+			stderr: "ignore",
+		})
+		if ((await probe.exited) === 0) return { process, remote }
+		await Bun.sleep(25)
+	}
+	process.kill()
+	throw new Error("Git daemon did not start")
 }
 
 describe("CLI", () => {
@@ -685,11 +727,23 @@ status: open
 			["config", "user.name", "Test"],
 			["add", "README.md"],
 			["-c", "commit.gpgsign=false", "commit", "-m", "initial"],
+			["remote", "add", "origin", source],
 		]) {
 			expect(Bun.spawnSync(["git", "-C", source, ...args]).exitCode).toBe(0)
 		}
 
 		parseJson(await runCli(["init", root, "--json"], parent))
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency-tests/source.git",
+					},
+				},
+			}),
+		)
 		parseJson(await runCli(["repo", "link", "agency", source, "--json"], root))
 		parseJson(
 			await runCli(
@@ -812,6 +866,14 @@ status: open
 			stderr: "pipe",
 		})
 		expect(await git.exited).toBe(0)
+		await runGit([
+			"-C",
+			source,
+			"remote",
+			"add",
+			"origin",
+			"https://example.com/agency-tests/source.git",
+		])
 
 		expect(parseJson(await runCli(["init", root, "--json"]))).toEqual({
 			root,
@@ -1003,5 +1065,122 @@ status: open
 			phaseCount: 3,
 			valid: true,
 		})
+	}, 30_000)
+
+	test("restores portable repositories in a fresh workbase clone", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const sourceWorktree = join(parent, "source-worktree")
+		const source = join(parent, "source.git")
+		const root = join(parent, "workbase")
+		const restored = join(parent, "restored")
+
+		await runGit(["init", "--initial-branch=main", sourceWorktree])
+		await Bun.write(join(sourceWorktree, "README.md"), "portable\n")
+		await runGit([
+			"-C",
+			sourceWorktree,
+			"config",
+			"user.email",
+			"test@example.com",
+		])
+		await runGit(["-C", sourceWorktree, "config", "user.name", "Test"])
+		await runGit(["-C", sourceWorktree, "add", "README.md"])
+		await runGit([
+			"-C",
+			sourceWorktree,
+			"-c",
+			"commit.gpgsign=false",
+			"commit",
+			"-m",
+			"initial",
+		])
+		await runGit(["clone", "--bare", sourceWorktree, source])
+		const daemon = await startGitDaemon(parent)
+
+		try {
+			parseJson(await runCli(["init", root, "--json"], parent))
+			parseJson(
+				await runCli(["repo", "add", "agency", daemon.remote, "--json"], root),
+			)
+			parseJson(
+				await runCli(
+					[
+						"task",
+						"create",
+						"portable",
+						"--repo",
+						"agency",
+						"--branch",
+						"feat/portable",
+						"--base",
+						"main",
+						"--json",
+					],
+					root,
+				),
+			)
+
+			await runGit(["init", "--initial-branch=main", root])
+			await runGit(["-C", root, "config", "user.email", "test@example.com"])
+			await runGit(["-C", root, "config", "user.name", "Test"])
+			await runGit(["-C", root, "add", "."])
+			await runGit([
+				"-C",
+				root,
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"-m",
+				"portable workbase",
+			])
+			const tracked = await runGit(["-C", root, "ls-files"])
+			expect(tracked).toContain("agency.json")
+			expect(tracked).not.toContain("repos/agency")
+
+			await runGit(["clone", root, restored])
+			const planned = parseJson(
+				await runCli(["repo", "setup", "--dry-run", "--json"], restored),
+			)
+			expect(planned.actions).toEqual([
+				expect.objectContaining({
+					alias: "agency",
+					kind: "materialize",
+					status: "planned",
+				}),
+			])
+			expect(await Bun.file(join(restored, "repos/agency/HEAD")).exists()).toBe(
+				false,
+			)
+
+			const applied = parseJson(
+				await runCli(["repo", "setup", "--apply", "--json"], restored),
+			)
+			expect(applied.actions[0]).toMatchObject({
+				alias: "agency",
+				status: "applied",
+			})
+			expect(await Bun.file(join(restored, "repos/agency/HEAD")).exists()).toBe(
+				true,
+			)
+
+			const prepared = parseJson(
+				await runCli(["work", "prepare", "portable", "--json"], restored),
+			)
+			expect(prepared.checkouts).toEqual([
+				expect.objectContaining({
+					repo: "agency",
+					action: "created",
+				}),
+			])
+			expect(
+				await Bun.file(
+					join(restored, "tasks/portable/code/agency/README.md"),
+				).text(),
+			).toBe("portable\n")
+		} finally {
+			daemon.process.kill()
+			await daemon.process.exited
+		}
 	}, 30_000)
 })

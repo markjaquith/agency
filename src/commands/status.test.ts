@@ -41,7 +41,9 @@ describe("status command", () => {
 				path: join(root, "repos/agency"),
 				kind: "repository",
 				remote: null,
+				declaredRemote: null,
 				target: null,
+				states: ["materialized", "invalid"],
 			},
 		])
 	})

@@ -197,13 +197,20 @@ export class GraphService extends Effect.Service<GraphService>()(
 						}
 					}
 
-					const repositoryRecords: RepositoryRecord[] = []
+					const repositoryRecords = new Map<string, RepositoryRecord>()
 					const reposPath = join(root, "repos")
+					for (const alias of Object.keys(config.repositories ?? {}).sort()) {
+						repositoryRecords.set(alias, {
+							alias,
+							path: join(reposPath, alias),
+							target: null,
+						})
+					}
 					if (yield* fs.isDirectory(reposPath)) {
 						for (const entry of (yield* fs.readDirectory(reposPath))
-							.filter((item) => item.isDirectory || item.isSymlink)
+							.filter((item) => !item.name.startsWith(".agency-"))
 							.sort((a, b) => a.name.localeCompare(b.name))) {
-							repositoryRecords.push({
+							repositoryRecords.set(entry.name, {
 								alias: entry.name,
 								path: join(reposPath, entry.name),
 								target: entry.isSymlink
@@ -760,7 +767,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 							...(yield* executionDetails(phase.path, phase.data)),
 						})
 					}
-					for (const repository of repositoryRecords) {
+					for (const repository of [...repositoryRecords.values()].sort(
+						(a, b) => a.alias.localeCompare(b.alias),
+					)) {
 						nodes.push({
 							id: repositoryNodeId(repository.alias),
 							kind: "repository",

@@ -414,6 +414,8 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					json: options.json,
+					dryRun: options["dry-run"],
+					apply: options.apply,
 					cwd: options.cwd,
 				}),
 			)
