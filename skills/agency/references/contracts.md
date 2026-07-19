@@ -17,7 +17,7 @@ contains:
   and read-only references;
 - `workspace`: code path, materialization and registration state, commits, and
   inspection warnings;
-- `pr`: recorded URL and state; and
+- `pr`: recorded provider-neutral pull request identity and state; and
 - `validation`: validity and issues.
 
 Compact context retains identity, revisions, authority, paths, graph state,
@@ -98,9 +98,11 @@ status: open
 ```
 
 `ticketUrl` belongs to tasks and epics, not phases. `description` is optional but
-must be non-empty when present. `pr` is a GitHub PR URL or `null`. Status is
-`open`, `working`, `delegated`, `done`, or `dropped`; `delegated` is readable
-legacy state but cannot be newly assigned.
+must be non-empty when present. `pr` is `null`, a legacy GitHub PR URL, or a
+provider-neutral record containing `provider`, `repository`, `identifier`, `url`,
+`state`, `draft`, and `merged`. New PR creation writes the structured record.
+Status is `open`, `working`, `delegated`, `done`, or `dropped`; `delegated` is
+readable legacy state but cannot be newly assigned.
 
 ## Structural Invariants
 
@@ -244,18 +246,18 @@ mutations recheck every affected file while holding the graph mutation lock.
 
 ## Selectors And Projections
 
-`--workbase <id|name|path>` selects a registered workbase. `--cwd <path>` asks
-Agency to perform target inference as if invoked there. They are mutually
-exclusive. Targeted commands accept `--epic`, `--task`, and `--phase` where
-applicable; phase requires task, and entity selectors cannot be combined with a
-positional target ID. Non-target positional values, such as a status outcome,
-remain valid where the command syntax requires them.
+`--workbase <id|name|path>` selects a registered workbase by ID, name, or path;
+an existing path may also resolve an unregistered workbase directly. `--cwd
+<path>` asks Agency to perform target inference as if invoked there. They are
+mutually exclusive. Targeted commands accept `--epic`, `--task`, and `--phase`
+where applicable; phase requires task, and entity selectors cannot be combined
+with a positional target ID. Non-target positional values, such as a status
+outcome, remain valid where the command syntax requires them.
 
 `--json`, `--no-input`, and non-TTY execution disable interactive prompts and
-selection. Supply every required value or explicit entity selector. The current
-`next` implementation uses the process cwd even when global `--cwd` or
-`--workbase` parses successfully; run `next --json` from the intended workbase
-until that routing gap is fixed.
+selection. Supply every required value or explicit entity selector. Global
+`--cwd` and `--workbase` selectors apply to `next` as they do to other discovery
+commands.
 
 Context defaults to the `complete` projection. `--compact` omits prose and
 low-level Git details but retains identity, document hashes, authority, paths,
@@ -273,10 +275,11 @@ node set.
   and `claim` does not enforce dependency readiness. Inspect readiness, then
   claim with the observed revision and handle conflicts.
 - There is no `assign` command, remote queue, scheduler, heartbeat, claim renewal,
-  runner monitor, or cancellation API. `work` can claim and launch one local
-  configured runner, but it is a process-launching, non-JSON flow rather than a
-  machine assignment API. External orchestrators claim with claimant and runner
-  IDs, then manage their runner themselves.
+  runner monitor, or cancellation API. For an execution unit, `work` can claim
+  and launch one local built-in or configured runner, but it is a
+  process-launching, non-JSON flow rather than a machine assignment API. External
+  orchestrators claim with claimant and runner IDs, then manage their runner
+  themselves.
 - Agency does not edit code, create commits, run repository checks, wait for PR
   checks, merge PRs, or verify that a requested completion condition is true.
   `finish` records the caller's asserted outcome after ownership checks.
