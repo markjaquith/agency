@@ -1,257 +1,121 @@
-# Bun
+# Agency
 
-Default to using Bun instead of Node.js.
+Agency is a Bun-based TypeScript CLI for managing agentic work across
+repositories. Durable epics, tasks, and phases live in a version 2 workbase;
+repository aliases and managed execution worktrees provide local code access.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Bun automatically loads .env, so don't use dotenv.
+Use `README.md` and `agency <command> --help` as the source of truth for the
+current command surface. Do not duplicate the complete command inventory here.
 
-## APIs
+## Tooling
 
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+Use Bun for this repository:
+
+- `bun install` installs dependencies.
+- `bun run build` builds the CLI.
+- `bun run format` formats the repository; `bun run format:check` verifies it.
+- `bunx tsc --noEmit` checks TypeScript.
+- `bun run knip` checks for unused production code.
+- `bun link` installs the development CLI globally.
+
+Run TypeScript files and package scripts with Bun rather than introducing a
+second runtime or package manager.
 
 ## Testing
 
-Use `bun test` to run tests.
-
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
-```
-
-**IMPORTANT: Never run `bun test` without specifying a file!** The full test suite takes 2+ minutes and will likely time out or fail. Always run tests for individual files:
+Tests use `bun:test`. During development, run the specific affected test file:
 
 ```sh
-# Good - run a specific test file
 bun test src/commands/init.test.ts
-
-# Bad - never do this
-bun test
 ```
 
-The tests create real Git repositories and run actual Git commands. Frontmatter
-tests are fast; worktree and repository tests are slower.
+Do not run bare `bun test`. The tests create real Git repositories and execute
+real Git commands, so the unpartitioned suite is slow. Use `bun run test` only
+when intentionally running the repository's full parallel test suite.
 
-**Important:** Tests should not produce extraneous output. When using `verboseLog` or similar logging in implementation code, ensure that the logger respects the `silent` and `verbose` options passed through the command options. Helper functions should accept and forward these options to `createLoggers()` to prevent unwanted output during test runs.
+Frontmatter and other in-process tests are fast. Repository and worktree tests
+are comparatively expensive.
 
-# Agency
-
-Agency is a CLI for managing agentic work across repositories. Durable epics,
-tasks, and phases live in a workbase, while repository aliases and execution
-worktrees provide local code access.
+Tests must not produce incidental output. Commands and helpers that log should
+accept and forward `silent`, `verbose`, and `json` options to `createLoggers()`.
 
 ## Architecture
 
-The codebase uses Effect TS for type-safe, composable error handling and dependency injection. The architecture follows these patterns:
+The codebase uses Effect for dependency injection, typed failures, and command
+composition.
 
-### Services
+- Core capabilities are `Effect.Service` implementations under `src/services/`.
+- Commands under `src/commands/` return Effects and obtain capabilities by
+  yielding services.
+- Services use specific `Data.TaggedError` types for expected failure modes.
+- The CLI assembles service layers and owns final human or machine rendering.
+- External, durable, configuration, frontmatter, and machine-protocol data is
+  runtime-validated with `@effect/schema`.
 
-Core functionality is organized into Effect services that provide clean interfaces and typed error handling:
+Keep domain logic in services rather than CLI argument handling. Prefer using an
+existing service over adding direct filesystem, process, Git, or GitHub access
+to a command.
 
-- **WorkbaseService**: Workbase discovery and structural validation
-- **RepositoryService**: Bare repository and symlink alias management
-- **EpicService**, **TaskService**, **PhaseService**: Domain document operations
-- **WorktreeService**: Execution worktree materialization
-- **PullRequestService**: GitHub PR creation and frontmatter updates
-- **FileSystemService**: File and subprocess operations
+### Files And Processes
 
-### Error Handling
+Service code should use `FileSystemService` for filesystem and subprocess work.
+Low-level process execution belongs in `spawnProcess`; do not introduce another
+subprocess library or an independent command runner.
 
-Services use tagged error types for specific failure modes:
+The existing filesystem service intentionally uses both Bun and Node filesystem
+APIs. Follow the local abstraction instead of enforcing one API everywhere.
 
-```typescript
-export class GitError extends Data.TaggedError("GitError")<{
-	message: string
-	cause?: unknown
-}> {}
+### Domain Model
 
-export class ConfigError extends Data.TaggedError("ConfigError")<{
-	message: string
-	cause?: unknown
-}> {}
+The principal durable model is:
+
+- A workbase contains repository aliases, epics, tasks, phases, and generated
+  execution worktrees.
+- An epic groups dependent work but is not itself an execution unit.
+- A single-phase task is an execution unit; a multi-phase task contains phase
+  execution units.
+- Claims coordinate revision-guarded execution ownership.
+- Context, graph, readiness, and sync services expose and reconcile workbase
+  state.
+- Pull-request delivery is provider-aware; GitHub is the default, not a required
+  implementation assumption.
+
+Structural mutations should preserve document relationships, revisions, and
+transactional rollback behavior. Use the existing graph and lifecycle services
+rather than editing related documents or worktrees ad hoc.
+
+## Errors And Output
+
+Commands and services should fail with descriptive errors; they should not call
+`console.error()` to render command failures. The CLI owns presentation:
+
+- Human mode formats failures for the terminal.
+- JSON and JSONL modes emit structured protocol envelopes or records.
+
+Do not add output that bypasses this distinction. When adding a tagged error,
+consider whether `src/protocol.ts` needs a stable machine error-code mapping.
+
+Use `createLoggers()` for normal command output. Ensure `silent` suppresses
+ordinary and verbose output, `verbose` controls diagnostics, and `json` routes
+results through the machine-output collector.
+
+## Contributions
+
+Commit subjects follow Conventional Commits:
+
+```text
+<type>(<optional-scope>): <description>
 ```
 
-### Schema Validation
+Use one of `feat`, `fix`, `refactor`, `test`, `chore`, `docs`, `style`, `perf`,
+or `ci`. Put breaking-change details in a `BREAKING CHANGE:` commit body.
+Semantic release runs from `main`; do not edit versions or add changesets
+manually.
 
-All data types are validated using @effect/schema for runtime type safety:
+Before committing code, run the focused tests for the changed behavior and
+`bun run format`. Run `bun run pushable` when a full local verification is
+warranted.
 
-```typescript
-import { Schema } from "@effect/schema"
-
-export const WorkbaseConfig = Schema.Struct({
-	version: Schema.Literal(2),
-})
-```
-
-### Command Pattern
-
-Commands follow a consistent Effect-based pattern:
-
-```typescript
-export const command = (options) =>
-	Effect.gen(function* () {
-		const service = yield* ServiceName
-		// ... implementation
-	})
-```
-
-## Commands
-
-- `agency workbase init [path]` (`agency init [path]`): Initialize a workbase.
-- `agency integration status|sync`: Inspect or synchronize managed agent files.
-- `agency repo add|link|list|show|fetch|remove|unlink|rename|remote|verify`: Manage repository aliases.
-- `agency epic create|list|show`: Manage epics.
-- `agency task new|create|list|show|status`: Manage tasks.
-- `agency phase create|list|show|status`: Manage task phases.
-- `agency claim|release|finish`: Coordinate revision-guarded execution ownership.
-- `agency archive list|show|epic|task|phase`: Browse or archive work items.
-- `agency restore epic|task|phase`: Restore archived work with graph preflight.
-- `agency work [<directory> | --epic <epic>]`: Launch an orchestration or execution agent.
-- `agency worktree list|inspect|prepare|remove|rebuild|repair`: Inspect and maintain managed worktrees.
-- `agency status`: Show workbase status.
-- `agency doctor`: Diagnose tools, integrations, repositories, refs, worktrees, permissions, and managed-file drift.
-- `agency validate`: Validate workbase documents and relationships.
-- `agency next`: List or select graph-ready execution units.
-- `agency pr create <task> [phase]`: Create and record a GitHub PR.
-
-## Error Handling
-
-Commands should throw errors with descriptive messages. The CLI handler (cli.ts) is responsible for displaying errors to the user with the "ⓘ" prefix. Commands should NOT call console.error() directly - they should just throw Error objects with clear messages.
-
-Example:
-
-```typescript
-// In command file - DON'T do this:
-console.error("ⓘ Not in a git repository")
-throw new Error("Not in a git repository")
-
-// Instead, do this:
-throw new Error(
-	"Not in a git repository. Please run this command inside a git repo.",
-)
-```
-
-The CLI handler will catch the error and display: `ⓘ Not in a git repository. Please run this command inside a git repo.`
-
-## Commit Messages
-
-All commits must follow the [Conventional Commits](https://www.conventionalcommits.org/) format:
-
-```
-<type>(<scope>): <description>
-```
-
-**Types:**
-
-- `feat`: A new feature
-- `fix`: A bug fix
-- `refactor`: Code changes that neither fix a bug nor add a feature
-- `test`: Adding or updating tests
-- `chore`: Maintenance tasks (dependencies, tooling, etc.)
-- `docs`: Documentation changes
-- `style`: Code style changes (formatting, missing semicolons, etc.)
-- `perf`: Performance improvements
-- `ci`: CI/CD configuration changes
-
-**Scope (optional):** The area of the codebase affected (e.g., `cli`, `task`, `repo`, `validate`)
-
-**Examples:**
-
-- `feat(task): add task filtering`
-- `fix(init): handle an existing workbase`
-- `test: add tests for phase validation`
-- `chore: update dependencies`
-
-**Breaking Changes:**
-
-For breaking changes, put "BREAKING CHANGE: {change}" in the commit body (not on the first line).
-
-**Skip Release:**
-
-For changes that don't affect the code (e.g., documentation, tests), add `[skip release]` in the commit body to prevent a new release.
-
-## Commit Message Validation
-
-The repository has validation scripts:
-
-- `scripts/check-commit-msg` - Validates commit messages locally
-- GitHub Actions workflow validates PR titles
-
-## Releases
-
-This project uses [semantic-release](https://semantic-release.gitbook.io/semantic-release/) for automated versioning and changelog generation. Releases are triggered automatically on merge to `main` based on conventional commit messages:
-
-- `feat:` commits trigger a **minor** version bump
-- `fix:` commits trigger a **patch** version bump
-- `feat!:` or commits with `BREAKING CHANGE:` trigger a **major** version bump
-
-No manual versioning or changeset files are required.
-
-## Installing Development Version
-
-To install the development version of this CLI tool globally:
-
-```sh
-bun link
-```
-
-This registers the package so the `agency` command is available system-wide. After running `bun link`, you can use the `agency` command from anywhere.
-
-**Note:** Do NOT use `bun i -g .` as it causes a dependency loop error in Bun.
-
-## Formatting before committing
-
-Before committing changes, run the following command to format the code:
-
-```sh
-bun format > /dev/null
-```
-
-## Help Documentation Policy
-
-Keep help text concise and focused. Avoid verbose examples that demonstrate standard CLI patterns.
-
-**Guidelines:**
-
-1. **Don't show standard flag examples** - Flags like `--help`, `--silent`, `--verbose`, and `--version` are self-explanatory and don't need examples
-2. **Limit examples to 1-3 per command** - Show only the most common use cases that demonstrate core functionality
-3. **Avoid redundancy** - If a flag is documented in the Options section, don't also show it in every example
-4. **Focus on what's unique** - Examples should demonstrate the command's specific behavior, not generic CLI usage
-
-**Bad (too verbose):**
-
-```
-Examples:
-  agency task list
-  agency task list --silent
-  agency task list --verbose
-  agency task --help
-```
-
-**Good (concise):**
-
-```
-Example:
-  agency task list
-```
-
-**When to show options in examples:**
-
-- Command-specific flags that change behavior significantly (e.g., `--multi-phase`, `--draft`)
-- Non-obvious flag combinations
-- Flags that users commonly need (e.g., setting a base branch)
-
-**Review checklist when adding help text:**
-
-- [ ] Does each example demonstrate unique functionality?
-- [ ] Have I removed examples for `--help`, `--silent`, `--verbose`, `--version`?
-- [ ] Are there more than 3 examples? (If yes, can I reduce it?)
-- [ ] Would a user understand the command with fewer examples?
+Keep CLI help concise. Document options once, omit examples for standard global
+flags, and include no more than a few examples that demonstrate behavior unique
+to the command.
