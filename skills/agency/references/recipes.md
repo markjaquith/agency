@@ -2,13 +2,30 @@
 
 For an entity target, run `agency context . --json` before selecting a recipe.
 At the workbase root, use `agency next --json` or `agency graph --json` to choose
-a target, then inspect that explicit target with `agency context <target> --json`.
+a target, then inspect it with explicit `--epic`, `--task`, and `--phase`
+selectors or its returned document path. Graph node keys such as `task/<id>` and
+`phase/<task>/<phase>` are not positional context targets.
 
 The machine-orchestration forms in the inspect-through-recover recipes are
 captured in `fixtures/protocol/orchestration-recipes.json` and tested against the
 real CLI parser. Their lifecycle behavior is covered by CLI and service fixtures.
 Replace angle-bracket placeholders with values from context or a prior machine
 result; never scrape them from human output.
+
+## Initialize A Workbase
+
+For an existing local checkout, initialize the workbase and link the repository:
+
+```bash
+agency init <workbase-path>
+agency --workbase <workbase-path> repo link <alias> <repository-path>
+agency validate <workbase-path>
+agency --workbase <workbase-path> repo verify <alias>
+```
+
+Use `repo add <alias> <remote>` instead when Agency should create and manage a
+bare clone from a remote. Initialization and repository registration require
+explicit user intent.
 
 ## Inspect A Target
 
@@ -53,9 +70,9 @@ agency validate
 agency work tasks/checkout/phases/api
 ```
 
-`agency work` is intentionally last: it checks readiness, materializes
-worktrees, creates a claim, marks the execution unit working, and launches the
-runner.
+`agency work` is intentionally last: it synchronizes managed integration files,
+checks readiness, materializes worktrees, creates a claim, marks this execution
+unit working, and launches the runner.
 
 ## Active Agent: Execute Assigned Work
 
@@ -63,8 +80,10 @@ runner.
 agency context . --json
 ```
 
-1. Verify context reports the expected execution target, no blockers, valid
-   structure, and the current checkout as `authority.writable.checkoutPath`.
+1. Verify context reports the expected execution target, valid structure, the
+   current checkout as `authority.writable.checkoutPath`, and a claim owned by
+   the current session. Reject dependency or validation blockers and conflicting
+   claims; the owned unit's `working` status blocker is expected.
 2. Read `TASK.md`, and `PHASE.md` for phase work.
 3. Implement only in the writable checkout; treat all reference checkouts as
    read-only.
@@ -160,11 +179,12 @@ agency validate
 agency pr create checkout ui --json
 ```
 
-The writable worktree must be clean. Agency pushes the declared branch, invokes
-the configured delivery provider's create command or falls back to
-`gh pr create --fill`, and records the returned URL. Do not manually write a URL
-if creation fails. A PR being open is not equivalent to completion when the
-assigned outcome requires merge.
+Agency materializes a missing workspace, then requires the writable worktree to
+be clean. It pushes the declared branch, invokes the configured delivery
+provider's create command or falls back to `gh pr create --fill`, and records the
+returned pull request record. Do not manually write a URL or record if creation
+fails. A PR being open is not equivalent to completion when the assigned outcome
+requires merge.
 
 Agency does not create commits, run tests, wait for checks, merge the PR, or
 verify completion. Those remain orchestrator responsibilities.
@@ -214,6 +234,7 @@ agency restore phase checkout ui --dry-run --json
 agency restore phase checkout ui
 ```
 
-Archive only terminal work and only with explicit intent. Agency preserves the
+As an operating policy, archive only terminal work and only with explicit intent;
+the CLI also permits safe archival of nonterminal work. Agency preserves the
 branch and lifecycle provenance while enforcing graph, worktree, and destination
 safety. Never move archived directories by hand.

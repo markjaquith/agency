@@ -1,7 +1,8 @@
 # Agency Command Reference
 
-Use this reference after `agency context . --json` identifies the target. Run
-`agency <command> --help` for the exact options supported by the installed CLI.
+Use this reference after `agency context . --json` identifies the target. The
+forms below are exact for this Agency release. Run `agency <command> --help` when
+using an option not shown here or when the installed CLI version differs.
 Commands that return Agency-owned data accept `--json` unless noted otherwise.
 
 ## Discovery And Health
@@ -27,8 +28,9 @@ applying filters. `doctor` discovers required tools, integrations, repositories,
 refs, worktrees, permissions, drift, and optional runner capabilities. `sync` is
 observational unless `--apply` is explicit.
 
-`next` currently resolves only the process cwd. Although global `--cwd` and
-`--workbase` are accepted by the parser, run `next` from the intended workbase.
+Where `[filters]` appears, use repeatable `--status <status>` and `--repository
+<alias>`, plus `--ready` or `--blocked` and `--pr` or `--no-pr`. Each pair is
+mutually exclusive.
 
 ## Workbase And Repositories
 
@@ -131,7 +133,8 @@ worktrees when needed, preserve branches, and retain lifecycle provenance.
 ## Worktrees, Launch, And Pull Requests
 
 ```text
-agency work [<directory> | --epic <id>] [--runner <name>] [--print-command]
+agency work [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]]
+  [--runner <name> | --opencode | --claude] [--print-command] [--force]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree list [--json]
 agency worktree inspect <task-id> [phase-id] [--json]
@@ -142,17 +145,23 @@ agency worktree repair <task-id> [phase-id] [--dry-run] [--json]
 agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 ```
 
-`work` is a launch flow, not an active-agent step. `work prepare` materializes
-without launching or changing status. Destructive remove and rebuild operations
-refuse dirty or conflicting state. Conservative repair may correct registration
-while preserving dirty files, but never discards changes. `pr create` requires a
-clean writable checkout, pushes the declared branch, invokes the configured
-delivery provider or falls back to `gh pr create --fill`, and records the
-returned URL.
+`work` is a launch flow, not an active-agent step. It synchronizes managed
+integration files before launch. Execution targets are materialized and claimed;
+epics and multi-phase tasks launch in orchestration context without those steps.
+`--print-command` suppresses only the final launch, so execution targets are still
+materialized and claimed before the command is printed. `work prepare`
+materializes without launching or changing status. Destructive remove and
+rebuild operations refuse dirty or conflicting state. Conservative repair may
+correct registration while preserving dirty files, but never discards changes.
+`pr create` materializes a missing workspace, requires the resulting writable
+checkout to be clean, pushes the declared branch, invokes the configured delivery
+provider or falls back to `gh pr create --fill`, and records the returned pull
+request record.
 
 ## Noninteractive Selection
 
-Use global `--workbase <id|name|path>` outside a workbase, or `--cwd <path>` to
+Use global `--workbase <id|name|path>` outside a workbase. A path may identify a
+registered workbase or an existing workbase directly. Use `--cwd <path>` to
 perform cwd inference elsewhere. Targeted commands accept `--epic`, `--task`,
 and, with a task, `--phase`. `--json`, `--no-input`, or non-TTY execution disables
 prompts; provide all selectors and required inputs explicitly.

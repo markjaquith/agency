@@ -5,7 +5,7 @@ description: >
   and pull requests. Use when inspecting or changing Agency-managed work,
   coordinating dependencies, launching agents, or finishing an execution unit.
 license: MIT
-compatibility: Requires the agency CLI and Git. Agent launch requires a configured runner; GitHub pull requests require gh.
+compatibility: Requires the agency CLI and Git. Agent launch requires OpenCode, Claude, or a configured runner; default GitHub delivery requires gh.
 ---
 
 # Agency
@@ -27,8 +27,9 @@ readiness, write authority, checkout state, PR state, and validation warnings.
 Use its paths and IDs instead of inferring them from the process cwd.
 
 At the workbase root, context cannot infer one entity from `.`. Use
-`agency next --json` or `agency graph --json` to choose a target, then pass that
-target to `agency context <target> --json`.
+`agency next --json` or `agency graph --json` to choose a target, then inspect it
+with explicit `--epic`, `--task`, and `--phase` selectors or its returned document
+path. Do not pass a graph node key as a positional context target.
 
 For broader orchestration, load the graph and discover available capabilities:
 
@@ -52,8 +53,9 @@ output or editing documents.
 - A **phase** is one execution unit within a multi-phase task, normally one PR.
 - An **execution unit** has exactly one writable `repo`, optional read-only
   `repos`, one branch, one base, and one recorded PR value.
-- `open` is available, `working` is actively owned, and `done` or `dropped` is
-  terminal. Only `done` satisfies a dependency.
+- `open` is eligible for readiness evaluation, `working` is actively owned, and
+  `done` or `dropped` is terminal. An open unit may still be blocked; only `done`
+  satisfies a dependency.
 
 The `authority` returned by context is decisive. Write only through
 `authority.writable.checkoutPath`. Every entry in `authority.references` is
@@ -84,8 +86,7 @@ independently meaningful tasks need coordination.
 - Preserve parent backlinks and dependency declarations; use Agency mutations
   instead of hand-editing structural frontmatter.
 - Run `agency validate` before worktree or PR operations and after structural edits.
-- Do not bypass dirty-worktree, active-claim, revision, readiness, or failed-check
-  protections.
+- Do not bypass dirty-worktree, active-claim, revision, or readiness protections.
 
 ## Operating Protocol
 
@@ -94,8 +95,9 @@ independently meaningful tasks need coordination.
 1. Run `agency context . --json`.
 2. Confirm `target`, `graph.readiness`, `authority`, `workspace`, and `validation`.
 3. Read the returned task and phase document paths for prose requirements.
-4. Stop on validation errors, blockers, an unexpected writable repository, or a
-   conflicting active owner.
+4. Stop on validation errors, dependency blockers, an unexpected writable
+   repository, or a conflicting active owner. For an active agent, a `working`
+   status blocker is expected only when the current session owns the claim.
 
 ### Work
 
@@ -119,9 +121,11 @@ independently meaningful tasks need coordination.
 
 ## Human Launch vs Active Agent
 
-`agency work` is a human/orchestrator launch flow. It selects work, checks
-readiness, materializes managed checkouts, claims the execution unit, marks it
-working, and starts the configured runner.
+`agency work` is a human/orchestrator launch flow. It first reconciles managed
+integration files, then selects work and checks readiness. For an execution unit,
+it materializes managed checkouts, claims the unit, marks it working, and starts
+the selected built-in or configured runner. Epic and multi-phase task launches
+start in orchestration context without materializing or claiming execution work.
 
 An agent already running in an Agency checkout must not call `agency work` to
 start itself again. It should inspect context, perform the assigned work, and
