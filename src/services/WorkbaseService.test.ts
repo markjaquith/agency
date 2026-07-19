@@ -41,6 +41,38 @@ describe("WorkbaseService", () => {
 		).toBe(false)
 	})
 
+	test("treats declared but missing repositories as valid aliases", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: { remote: "https://example.com/agency.git" },
+				},
+			}),
+		)
+		await write(
+			root,
+			"tasks/portable/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: task/portable
+base: main
+pr: null
+---
+`,
+		)
+
+		const report = await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.validate(root))),
+		)
+
+		expect(report.valid).toBe(true)
+		expect(report.issues).toEqual([])
+	})
+
 	test("registers canonical workbase paths without duplicates", async () => {
 		const workbaseRoot = join(root, "workbase")
 		const nested = join(workbaseRoot, "nested")

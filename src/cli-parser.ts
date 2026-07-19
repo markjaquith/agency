@@ -205,9 +205,20 @@ const commands = {
 	},
 	repo: {
 		usage:
-			"agency repo <add|link|list|show|fetch|remove|unlink|rename|remote|verify>",
-		options: outputOptions,
+			"agency repo <setup|add|link|list|show|fetch|remove|unlink|rename|remote|verify>",
+		options: {
+			...outputOptions,
+			"dry-run": { type: "boolean" },
+			apply: { type: "boolean" },
+		},
 		subcommands: {
+			setup: {
+				usage: "agency repo setup [--dry-run | --apply] [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["dry-run", "apply", "json"],
+				conflicts: [["dry-run", "apply"]],
+			},
 			add: {
 				usage: "agency repo add <alias> <remote> [--json]",
 				minArgs: 2,

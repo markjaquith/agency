@@ -13,6 +13,19 @@ export const EntityId = NonEmptyString.pipe(Schema.pattern(IdPattern))
 
 export const RepositoryAlias = NonEmptyString.pipe(Schema.pattern(IdPattern))
 
+// Portable declarations must be usable after cloning the workbase elsewhere.
+// Local paths, file URLs, and credential-bearing HTTP URLs are intentionally
+// excluded; SSH usernames are identities and remain supported.
+export const RepositoryRemote = NonEmptyString.pipe(
+	Schema.pattern(
+		/^(?!-)(?![a-zA-Z]:[\\/])(?!https?:\/\/[^/@\s]+@)(?![a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]*@)(?:(?:https?|ssh|git):\/\/[^\s?#]+|(?![^\s]*::)(?:[^@\s/:]+@)?[a-zA-Z0-9_.][^@\s/:]*:(?!\/\/)[^\s?#]+)$/,
+	),
+)
+
+export const RepositoryDeclaration = Schema.Struct({
+	remote: RepositoryRemote,
+})
+
 export const RepositoryReference = Schema.Struct({
 	repo: RepositoryAlias,
 	ref: NonEmptyString,
@@ -73,6 +86,9 @@ const DeliveryProvider = Schema.Struct({
 
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
+	repositories: Schema.optional(
+		Schema.Record({ key: RepositoryAlias, value: RepositoryDeclaration }),
+	),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	runners: Schema.optional(
@@ -160,6 +176,9 @@ export type WorkbaseRegistration = Schema.Schema.Type<
 >
 export type Dependency = Schema.Schema.Type<typeof Dependency>
 export type RepositoryReference = Schema.Schema.Type<typeof RepositoryReference>
+export type RepositoryDeclaration = Schema.Schema.Type<
+	typeof RepositoryDeclaration
+>
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
 export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
 export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>

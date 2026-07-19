@@ -44,8 +44,8 @@ workbase/
   AGENTS.md                # managed workbase instructions
   .opencode/
     opencode.jsonc         # managed task and epic references
-  agency.json
-  repos/
+  agency.json              # tracked config and portable repository declarations
+  repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
     backend/
   epics/
@@ -82,8 +82,27 @@ external-directory access, so Agency does not add blanket permission rules that
 could hide missing tool permissions. References provide context and never expand
 the write authority reported by `agency context`.
 
-Repository metadata comes directly from Git under `repos/{alias}`. Workbase
-configuration may provide a custom writable-worktree creation command.
+Repository aliases and canonical fetch remotes are declared in tracked
+`agency.json`; local bare clones and symlinks remain ignored under
+`repos/{alias}`. A declaration contains no local path, symlink target, checkout,
+or credential:
+
+```json
+{
+	"version": 2,
+	"repositories": {
+		"frontend": {
+			"remote": "git@example.com:team/frontend.git"
+		}
+	}
+}
+```
+
+Existing version 2 workbases without `repositories` remain valid. Run
+`agency repo setup` to preview deterministic adoption of legacy local aliases;
+`agency repo setup --apply` writes declarations only when a portable origin is
+unambiguous. Workbase configuration may also provide a custom writable-worktree
+creation command.
 
 ### Custom Worktree Command
 
@@ -298,6 +317,15 @@ agency work tasks/refresh-copy
 agency pr create refresh-copy
 ```
 
+After cloning an existing workbase on another machine, restore its declared
+repositories before preparing work:
+
+```bash
+agency repo setup --dry-run
+agency repo setup --apply
+agency validate
+```
+
 ## Commands
 
 ### Target Context
@@ -361,22 +389,27 @@ materializing or pushing. Blocked, done, and dropped targets are rejected unless
 
 ### Reconciliation
 
-`agency sync` compares every execution declaration with local branch and worktree
-registration, writable and reference checkout dirtiness, resolved reference
-commits, claim expiry, and GitHub pull request and merge state. It reports
+`agency sync` first compares portable repository declarations with local
+materializations, then compares every execution declaration with local branch
+and worktree registration, checkout dirtiness, resolved reference commits, claim
+expiry, and pull request and merge state. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default and `--dry-run` modes are observational.
 
 `agency sync --apply` performs only these safe transitions:
 
+- materialize declared but missing repositories from their canonical remotes;
+- adopt legacy materializations only when they have an unambiguous portable origin;
 - materialize missing checkouts when no registration, branch, or path conflicts;
 - release an active claim only after its declared expiry has passed;
 - record a single PR whose head and base match the declaration; and
 - mark work done after its authoritative PR is merged and no active claim remains.
 
-Apply never modifies dirty checkouts, moves worktrees, switches branches, resets
-reference commits, chooses among multiple PRs, or bypasses active claims. Those
-conditions remain visible in `warnings` or `unresolved` with a suggested action.
+Apply never overwrites linked or invalid repositories, repairs remote drift,
+modifies dirty checkouts, moves worktrees, switches branches, resets reference
+commits, chooses among conflicting remotes or PRs, or bypasses active claims.
+Those conditions remain visible in `warnings` or `unresolved` with a suggested
+action.
 
 ### Workbase and Repositories
 
@@ -393,6 +426,7 @@ agency workbase prune [--json]
 agency workbase default [<id|name|path> | --clear] [--json]
 agency integration status [--json]
 agency integration sync [--json]
+agency repo setup [--dry-run | --apply] [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
 agency repo list [--json]
@@ -404,6 +438,22 @@ agency repo rename <alias> <new-alias> [--json]
 agency repo remote <alias> [remote] [--json]
 agency repo verify <alias> [--json]
 ```
+
+Repository JSON output exposes state facets rather than hiding partial setup:
+`declared`, `materialized`, `linked`, `missing`, `invalid`, and
+`remote-drifted`. A normal bare clone is declared and materialized; a local
+checkout is declared and linked; a fresh workbase clone is declared and missing
+until setup is applied.
+
+`repo add`, `link`, `remote`, `rename`, and `remove` update the portable
+declaration transactionally with local state. `repo remove` removes both the
+declaration and an unused local materialization. `repo unlink` removes only this
+machine's symlink and retains the declaration, leaving an actionable missing
+state. Linking a local checkout over an unused managed clone likewise retains the
+portable remote for other machines. `repo remote` updates managed clones but
+never mutates an external linked checkout; drift remains visible until that
+checkout is updated explicitly. Credential-bearing URLs, file URLs, and local
+paths are never accepted as declarations.
 
 Registered workbases are stored in
 `$XDG_CONFIG_HOME/agency/workbases.json` (or `~/.config/agency/workbases.json`).

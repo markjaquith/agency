@@ -16,6 +16,11 @@ Use the returned target, document paths and revisions, dependency readiness,
 authority, checkout state, PR state, and validation result. Do not infer these
 from directory names or stale prose.
 
+If context or doctor reports a declared but missing repository, run
+`agency repo setup --dry-run` and obtain explicit approval before
+`agency repo setup --apply`. Missing declared aliases are setup state, not a
+reason to edit `agency.json` or `repos/` by hand.
+
 ## Authority
 
 - An epic or multi-phase task is orchestration context and has no implementation

@@ -23,6 +23,30 @@ contains:
 Compact context retains identity, revisions, authority, paths, graph state,
 materialization, and warnings while omitting prose and low-level Git details.
 
+## Repository Declarations
+
+Tracked `agency.json` may contain portable repository declarations:
+
+```json
+{
+	"version": 2,
+	"repositories": {
+		"frontend": { "remote": "git@example.com:team/frontend.git" }
+	}
+}
+```
+
+Remotes are provider-neutral network Git remotes. Local paths, file URLs, and
+credential-bearing HTTP URLs are invalid. `repos/`, task and phase `code/`, and
+symlink targets are local-only and never part of this contract.
+
+Repository inspection returns `declaredRemote`, the actual local `remote`, and
+orthogonal `states`: `declared`, `materialized`, `linked`, `missing`, `invalid`,
+and `remote-drifted`. Setup JSON contains `mode`, `actions`, `unresolved`, and the
+post-operation `repositories`. Actions are `materialize` or `adopt`, with
+`planned` or `applied` status. Dry-run never mutates. Apply never overwrites a
+link or path and never repairs drift without an explicit remote choice.
+
 ## Frontmatter Shapes
 
 ### Epic
@@ -169,7 +193,7 @@ CLI subprocess output. The Effect schemas are exported by the package and by
 
 Only the envelope and graph result have published JSON Schemas. The envelope's
 `result` is intentionally unconstrained. Context, next, claim, prepare, sync,
-and PR result shapes are exercised by CLI tests but do not have independent
+repository setup, and PR result shapes are exercised by CLI tests but do not have independent
 published schemas.
 
 ### Output And Exit Guarantees

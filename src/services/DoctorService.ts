@@ -295,31 +295,40 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						})
 					}
 					for (const repository of repositoryList) {
-						const verified = yield* fs.runCommand(
-							["git", "-C", repository.path, "rev-parse", "--git-dir"],
-							{ captureOutput: true },
-						)
-						const repositoryValid = verified.exitCode === 0
+						const missing = repository.states.includes("missing")
+						const repositoryValid =
+							!missing && !repository.states.includes("invalid")
 						add({
 							id: `repository.${repository.alias}.valid`,
 							category: "repository",
 							level: "error",
 							status: repositoryValid ? "pass" : "fail",
-							message: repositoryValid
-								? `Repository '${repository.alias}' is a valid Git repository`
-								: `Repository '${repository.alias}' is not a valid Git repository`,
-							remediation: `Run 'agency repo verify ${repository.alias}', then repair or relink the repository.`,
+							message: missing
+								? `Repository '${repository.alias}' is declared but not materialized`
+								: repositoryValid
+									? `Repository '${repository.alias}' is a valid Git repository`
+									: `Repository '${repository.alias}' is not a valid Git repository`,
+							remediation: missing
+								? "Run 'agency repo setup --apply'."
+								: `Run 'agency repo verify ${repository.alias}', then repair or relink the repository.`,
 						})
 						add({
 							id: `repository.${repository.alias}.remote`,
 							category: "repository",
 							level: "warning",
-							status: repository.remote ? "pass" : "fail",
-							message: repository.remote
-								? `Repository '${repository.alias}' origin is ${repository.remote}`
-								: `Repository '${repository.alias}' has no origin remote`,
+							status:
+								repository.declaredRemote &&
+								!repository.states.includes("remote-drifted")
+									? "pass"
+									: "fail",
+							message: repository.states.includes("remote-drifted")
+								? `Repository '${repository.alias}' origin differs from ${repository.declaredRemote}`
+								: repository.declaredRemote
+									? `Repository '${repository.alias}' portable origin is ${repository.declaredRemote}`
+									: `Repository '${repository.alias}' has no portable origin declaration`,
 							remediation: `Run 'agency repo remote ${repository.alias} <url>' to configure origin.`,
 						})
+						if (!repositoryValid) continue
 
 						for (const ref of [...(refs.get(repository.alias) ?? [])].sort()) {
 							const local = yield* fs.runCommand(

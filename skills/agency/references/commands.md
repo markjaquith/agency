@@ -44,6 +44,7 @@ agency workbase name <id|name|path> (<name> | --clear) [--json]
 agency workbase default [<id|name|path> | --clear] [--json]
 agency workbase remove <id|name|path> [--json]
 agency workbase prune [--json]
+agency repo setup [--dry-run | --apply] [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
 agency repo list [--json]
@@ -56,9 +57,15 @@ agency repo remove <alias> [--json]
 agency repo unlink <alias> [--json]
 ```
 
-`repo add` creates a bare clone; `repo link` creates a symlink to an existing
-repository. Removal, unlink, and rename refuse active references or linked
-worktree conflicts.
+`repo setup` defaults to an observational dry-run. Apply clones declared missing
+repositories and adopts legacy materializations only when their portable origin
+is unambiguous. Invalid paths and remote drift remain unresolved.
+
+`repo add` creates a declaration and bare clone. `repo link` creates a local
+symlink while retaining or inferring a credential-free portable remote.
+`repo remove` removes both the declaration and unused local materialization;
+`repo unlink` removes only this machine's symlink and retains the declaration.
+Removal and rename refuse active references or linked worktree conflicts.
 
 ## Epics, Tasks, And Phases
 

@@ -9,7 +9,59 @@ import {
 	WorkStatus,
 	WorkbaseConfig,
 	WorkbaseRegistry,
+	RepositoryRemote,
 } from "./schemas"
+
+describe("portable repository declarations", () => {
+	test("accepts provider-neutral network Git remotes", () => {
+		for (const remote of [
+			"https://example.com/team/repository.git",
+			"ssh://git@example.com/team/repository.git",
+			"git://example.com/team/repository.git",
+			"git@example.com:team/repository.git",
+			"ssh://[2001:db8::1]/team/repository.git",
+		]) {
+			expect(Schema.decodeUnknownSync(RepositoryRemote)(remote)).toBe(remote)
+		}
+	})
+
+	test("rejects local paths, unsupported protocols, and credential-bearing URLs", () => {
+		for (const remote of [
+			"/Users/person/repository.git",
+			"../repository.git",
+			"file:///tmp/repository.git",
+			"https://token@example.com/team/repository.git",
+			"https://user:password@example.com/team/repository.git",
+			"ssh://user:password@example.com/team/repository.git",
+			"ftp://example.com/team/repository.git",
+			"custom://example.com/team/repository.git",
+			"C:/repository.git",
+			"https://example.com/repository.git?token=secret",
+			"ext::printf",
+			"foo::bar",
+			"-host:repository.git",
+			"-oProxyCommand=x@host:repository.git",
+		]) {
+			expect(() => Schema.decodeUnknownSync(RepositoryRemote)(remote)).toThrow()
+		}
+	})
+
+	test("decodes repository declarations in version 2 configs", () => {
+		expect(
+			Schema.decodeUnknownSync(WorkbaseConfig)({
+				version: 2,
+				repositories: {
+					agency: { remote: "https://example.com/agency.git" },
+				},
+			}),
+		).toEqual({
+			version: 2,
+			repositories: {
+				agency: { remote: "https://example.com/agency.git" },
+			},
+		})
+	})
+})
 
 describe("body-of-work descriptions", () => {
 	test("accepts descriptions on epics, tasks, and phases", () => {

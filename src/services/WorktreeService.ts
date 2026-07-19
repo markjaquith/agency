@@ -277,7 +277,7 @@ const inspectExecution = (
 			if (!(yield* fs.exists(repositoryPath))) {
 				conflict(
 					"missing-repository",
-					`Repository alias '${checkout.repo}' does not exist`,
+					`Repository alias '${checkout.repo}' is not materialized; run 'agency repo setup --apply'`,
 				)
 				checkouts.push({
 					repo: checkout.repo,
@@ -654,7 +654,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							const checkoutPath = join(codePath, alias)
 							if (!(yield* fs.exists(repositoryPath))) {
 								return yield* new WorktreeError({
-									message: `Repository alias '${alias}' does not exist`,
+									message: `Repository alias '${alias}' is not materialized; run 'agency repo setup --apply'`,
 								})
 							}
 							const listed = yield* fs.runCommand(
@@ -861,7 +861,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								const checkoutPath = join(codePath, alias)
 								if (!(yield* fs.exists(repositoryPath))) {
 									return yield* new WorktreeError({
-										message: `Repository alias '${alias}' does not exist`,
+										message: `Repository alias '${alias}' is not materialized; run 'agency repo setup --apply'`,
 									})
 								}
 

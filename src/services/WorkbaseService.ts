@@ -323,6 +323,27 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					return { root, config: decoded.value }
 				}),
 
+			repositoryAliases: (startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const fs = yield* FileSystemService
+					const { root, config } = yield* service.loadConfig(startPath)
+					const aliases = new Set(Object.keys(config.repositories ?? {}))
+					const reposPath = join(root, "repos")
+					if (yield* fs.isDirectory(reposPath)) {
+						for (const entry of yield* fs.readDirectory(reposPath)) {
+							if (!entry.name.startsWith(".agency-")) aliases.add(entry.name)
+						}
+					}
+					return [...aliases].sort()
+				}),
+
+			hasRepositoryAlias: (alias: string, startPath: string = process.cwd()) =>
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.repositoryAliases(startPath)),
+					Effect.map((aliases) => aliases.includes(alias)),
+				),
+
 			register: (startPath: string, configDirectory?: string, name?: string) =>
 				Effect.gen(function* () {
 					const service = yield* WorkbaseService
@@ -584,20 +605,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								.sort()
 						})
 
-					const readAliases = Effect.gen(function* () {
-						const reposPath = join(root, "repos")
-						if (!(yield* fs.isDirectory(reposPath))) {
-							return new Set<string>()
-						}
-						const entries = yield* fs.readDirectory(reposPath)
-						return new Set(
-							entries
-								.filter((entry) => entry.isDirectory || entry.isSymlink)
-								.map((entry) => entry.name),
-						)
-					})
-
-					const aliases = yield* readAliases
+					const aliases = new Set(yield* service.repositoryAliases(root))
 
 					const readDocument = <S extends Schema.Schema.AnyNoContext>(
 						path: string,

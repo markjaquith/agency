@@ -309,7 +309,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						"epic metadata",
 					)
 					for (const reference of data.repos) {
-						if (!(yield* fs.exists(join(root, "repos", reference.repo)))) {
+						if (!(yield* workbase.hasRepositoryAlias(reference.repo, root))) {
 							return yield* new GraphMutationError({
 								message: `Unknown repository alias '${reference.repo}'`,
 							})
@@ -420,7 +420,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 							})
 						}
 						for (const alias of aliases) {
-							if (!(yield* fs.exists(join(root, "repos", alias)))) {
+							if (!(yield* workbase.hasRepositoryAlias(alias, root))) {
 								return yield* new GraphMutationError({
 									message: `Unknown repository alias '${alias}'`,
 								})
@@ -538,7 +538,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						})
 					}
 					for (const alias of aliases) {
-						if (!(yield* fs.exists(join(root, "repos", alias)))) {
+						if (!(yield* workbase.hasRepositoryAlias(alias, root))) {
 							return yield* new GraphMutationError({
 								message: `Unknown repository alias '${alias}'`,
 							})

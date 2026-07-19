@@ -68,6 +68,42 @@ JSON
 		await cleanupTempDir(root)
 	})
 
+	test("validates before applying repository setup", async () => {
+		await rm(join(root, "repos/agency"), { recursive: true, force: true })
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: { remote: "https://example.com/agency.git" },
+				},
+			}),
+		)
+		await mkdir(join(root, "tasks/invalid"), { recursive: true })
+		await Bun.write(
+			join(root, "tasks/invalid/TASK.md"),
+			`---
+ticketUrl: null
+repo: unknown
+branch: task/invalid
+base: main
+pr: null
+---
+`,
+		)
+
+		await expect(
+			runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) =>
+						service.reconcile({ cwd: root, apply: true }),
+					),
+				),
+			),
+		).rejects.toThrow("Unknown repository alias 'unknown'")
+		expect(await Bun.file(join(root, "repos/agency")).exists()).toBe(false)
+	})
+
 	test("observes drift without mutation and applies only safe transitions", async () => {
 		await runTestEffect(
 			TaskService.pipe(

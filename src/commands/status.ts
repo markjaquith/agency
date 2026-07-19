@@ -42,6 +42,7 @@ export const status = (options: StatusOptions = {}) =>
 
 		log(`Workbase: ${report.root}`)
 		log(`Repositories: ${repos.length}`)
+		for (const repo of repos) log(`  ${repo.alias}: ${repo.states.join(", ")}`)
 		log(`Epics: ${report.epicCount}`)
 		log(`Tasks: ${report.taskCount}`)
 		log(`Phases: ${report.phaseCount}`)

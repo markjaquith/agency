@@ -174,7 +174,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						})
 					}
 					for (const alias of aliases) {
-						if (!(yield* fs.exists(join(root, "repos", alias)))) {
+						if (!(yield* workbase.hasRepositoryAlias(alias, root))) {
 							return yield* new PhaseError({
 								message: `Unknown repository alias '${alias}'`,
 							})

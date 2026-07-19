@@ -81,7 +81,7 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 				}
 
 				for (const { repo: alias } of data.repos) {
-					if (!(yield* fs.exists(join(root, "repos", alias)))) {
+					if (!(yield* workbase.hasRepositoryAlias(alias, root))) {
 						return yield* new EpicError({
 							message: `Unknown repository alias '${alias}'`,
 						})
