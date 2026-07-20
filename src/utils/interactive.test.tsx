@@ -44,7 +44,7 @@ describe("OpenTUI interaction", () => {
 	test("uses the split-footer renderer contract", () => {
 		expect(interactiveRendererConfig).toMatchObject({
 			screenMode: "split-footer",
-			footerHeight: 4,
+			footerHeight: 5,
 			externalOutputMode: "capture-stdout",
 			clearOnShutdown: false,
 		})
@@ -207,6 +207,26 @@ describe("OpenTUI interaction", () => {
 			setup.mockInput.pressEnter()
 			await setup.waitFor(() => selected !== undefined)
 			expect(selected).toBe("web-two")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("wraps text prompt input onto another line", async () => {
+		const setup = await testRender(
+			() => <InteractiveTextPrompt prompt="Task ID" onDone={() => {}} />,
+			{ width: 16, height: 5 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("alpha beta gamma delta")
+			await setup.flush()
+			const frame = setup.captureCharFrame()
+			expect(frame).toContain("alpha beta")
+			expect(frame).toContain("gamma")
+			expect(frame).toMatch(/alpha beta\s*\ngamma delta/)
 		} finally {
 			setup.renderer.destroy()
 		}

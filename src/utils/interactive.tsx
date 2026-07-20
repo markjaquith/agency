@@ -4,7 +4,7 @@ import {
 	createCliRenderer,
 	type CliRenderer,
 	type CliRendererConfig,
-	type InputRenderable,
+	type TextareaRenderable,
 } from "@opentui/core"
 import { render, useKeyboard, type JSX } from "@opentui/solid"
 import { createMemo, createSignal, For } from "solid-js"
@@ -16,7 +16,7 @@ export interface InteractiveChoice {
 
 export const interactiveRendererConfig = {
 	screenMode: "split-footer",
-	footerHeight: 4,
+	footerHeight: 5,
 	externalOutputMode: "capture-stdout",
 	consoleMode: "disabled",
 	clearOnShutdown: false,
@@ -35,7 +35,7 @@ const isCancel = (key: { name: string; ctrl: boolean }) =>
 	key.name === "escape" || (key.ctrl && key.name === "c")
 
 export const InteractiveTextPrompt = (props: PromptProps<string>) => {
-	let input: InputRenderable | undefined
+	let input: TextareaRenderable | undefined
 	let value = ""
 	useKeyboard((key) => {
 		if (isCancel(key)) {
@@ -53,10 +53,13 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	return (
 		<box flexDirection="column" width="100%" height="100%">
 			<text fg="#7aa2f7">{props.prompt}</text>
-			<input
+			<textarea
 				focused
-				onInput={(next) => {
-					value = next
+				height={2}
+				wrapMode="word"
+				keyBindings={[{ name: "return", action: "submit" }]}
+				onContentChange={() => {
+					value = input?.plainText ?? ""
 				}}
 				ref={(next) => {
 					input = next
@@ -140,7 +143,7 @@ export const fuzzyChoices = (
 }
 
 export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
-	let input: InputRenderable | undefined
+	let input: TextareaRenderable | undefined
 	const [query, setQuery] = createSignal("")
 	const [selected, setSelected] = createSignal(0)
 	const choices = createMemo(() => fuzzyChoices(props.choices, query()))
@@ -195,13 +198,16 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					{props.prompt}
 				</text>
 				<text fg="#7aa2f7">{" > "}</text>
-				<input
+				<textarea
 					focused
 					flexGrow={1}
 					minWidth={8}
+					height={2}
+					wrapMode="word"
 					placeholder="filter"
-					onInput={(next) => {
-						setQuery(next)
+					keyBindings={[{ name: "return", action: "submit" }]}
+					onContentChange={() => {
+						setQuery(input?.plainText ?? "")
 						setSelected(0)
 					}}
 					ref={(next) => {
@@ -266,7 +272,6 @@ async function runInteractive<T>(
 	} finally {
 		if (renderer) {
 			await shutdown(renderer)
-			process.stdout.write("\n")
 		}
 	}
 }
