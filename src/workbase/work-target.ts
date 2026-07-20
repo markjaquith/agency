@@ -13,12 +13,14 @@ export type WorkTarget =
 			readonly taskId: string
 			readonly path: string
 			readonly multiPhase: boolean
+			readonly status?: WorkStatus
 	  }
 	| {
 			readonly kind: "phase"
 			readonly taskId: string
 			readonly phaseId: string
 			readonly path: string
+			readonly status?: WorkStatus
 	  }
 
 interface EpicRecord {
@@ -116,6 +118,7 @@ const taskChoices = (
 				taskId: task.id,
 				path: task.path,
 				multiPhase,
+				status: multiPhase ? undefined : (task.data.status ?? "open"),
 			},
 		},
 	]
@@ -147,6 +150,7 @@ const taskChoices = (
 				taskId: task.id,
 				phaseId: record.id,
 				path: record.path,
+				status: record.data.status ?? "open",
 			},
 		})
 	}
@@ -172,6 +176,7 @@ const taskChoices = (
 				taskId: task.id,
 				phaseId: record.id,
 				path: record.path,
+				status: record.data.status ?? "open",
 			},
 		})
 	}

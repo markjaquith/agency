@@ -71,6 +71,8 @@ interface HarnessOptions {
 	readonly guardError?: Error
 	readonly workTargetIds?: readonly string[]
 	readonly opencodeIntegrationState?: "managed" | "customized"
+	readonly taskStatus?: "open" | "working" | "delegated" | "done" | "dropped"
+	readonly phaseStatus?: "open" | "working" | "delegated" | "done" | "dropped"
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -141,7 +143,12 @@ const createHarness = (options: HarnessOptions = {}) => {
 				path: `/workbase/tasks/${id}/TASK.md`,
 				data: options.multiPhaseTasks?.includes(id)
 					? { phases: [] }
-					: { repo: "agency", branch: `task/${id}`, base: "main" },
+					: {
+							repo: "agency",
+							branch: `task/${id}`,
+							base: "main",
+							status: options.taskStatus ?? "open",
+						},
 			})
 		},
 		list: () => Effect.succeed(options.taskRecords ?? []),
@@ -156,7 +163,12 @@ const createHarness = (options: HarnessOptions = {}) => {
 				taskId,
 				id,
 				path: `/workbase/tasks/${taskId}/phases/${id}/PHASE.md`,
-				data: { repo: "agency", branch: `task/${id}`, base: "main" },
+				data: {
+					repo: "agency",
+					branch: `task/${id}`,
+					base: "main",
+					status: options.phaseStatus ?? "open",
+				},
 			}),
 		list: () => Effect.succeed(options.phaseRecords ?? []),
 		setStatus: (taskId: string, id: string, status: string) => {
@@ -702,6 +714,22 @@ describe("work command", () => {
 		)
 	})
 
+	test("continues existing work with the resume command", async () => {
+		const harness = createHarness({ taskStatus: "working" })
+
+		await harness.run({ taskId: "example", opencode: true, auto: true })
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode",
+			"--continue",
+			"--prompt",
+			"Continue the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(harness.launchEnvironments[0]?.AGENCY_PROMPT).toBe(
+			"Continue the task. Read /workbase/tasks/example/TASK.md.",
+		)
+	})
+
 	test("resumes OpenCode deterministically when a session identity exists", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 		process.env.AGENCY_SESSION_ID = "existing-session"
@@ -722,7 +750,7 @@ describe("work command", () => {
 				"opencode",
 				"--continue",
 				"--prompt",
-				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+				"Continue the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
 			cwd: taskDirectory,
 		})
