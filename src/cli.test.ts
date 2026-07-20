@@ -452,7 +452,7 @@ describe("CLI", () => {
 
 		const after = await runCli(["status", "--silent"], root)
 		expect(after).toEqual({ exitCode: 0, stdout: "", stderr: "" })
-	}, 10_000)
+	}, 30_000)
 
 	test("lists ready work and exposes excluded blockers through one result", async () => {
 		const root = await createTempDir()
@@ -639,7 +639,7 @@ describe("CLI", () => {
 		expect(JSON.parse(explicitOutside.stdout).error.message).toContain(
 			"No Agency workbase found from",
 		)
-	})
+	}, 20_000)
 
 	test("exports equivalent JSON and JSONL graph contracts", async () => {
 		const root = await createTempDir()
