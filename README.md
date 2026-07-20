@@ -37,6 +37,12 @@ For development, run `bun link` from this repository.
 Entity IDs come from directory names. Structured metadata lives in YAML 1.2
 frontmatter; prose below it supplies human and agent context.
 
+New epic, task, and phase documents use the same core prose sections:
+`Outcome` states the intended result, `Plan` describes the current approach, and
+`Important Decisions` preserves consequential choices and their rationale. These
+sections are creation defaults rather than validation requirements, so existing
+and customized documents remain valid.
+
 ## Workbase Layout
 
 ```text

@@ -34,6 +34,9 @@ describe("EpicService", () => {
 
 		expect(created.content).toContain("ticketUrl:")
 		expect(created.content).toContain("tasks: []")
+		expect(created.content).toContain(
+			"# Workspace Orchestration\n\n## Outcome\n\nDescribe the epic outcome.\n\n## Plan\n\nDescribe the current approach.\n\n## Important Decisions\n\nRecord consequential decisions and their rationale.",
+		)
 
 		const records = await runTestEffect(
 			EpicService.pipe(Effect.flatMap((service) => service.list(root))),

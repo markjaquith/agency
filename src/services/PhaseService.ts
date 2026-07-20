@@ -14,6 +14,7 @@ import {
 } from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
+	formatWorkDocumentBody,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
@@ -196,7 +197,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						.join(" ")
 					const content = formatMarkdownDocument(
 						data,
-						`# ${title}\n\nDescribe the phase outcome.`,
+						formatWorkDocumentBody(title, "phase"),
 					)
 
 					if (!isMultiPhase) {
@@ -246,7 +247,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						const firstPhasePath = join(firstDirectory, "PHASE.md")
 						const firstContent = formatMarkdownDocument(
 							firstData,
-							`# ${firstTitle}\n\nDescribe the phase outcome.`,
+							formatWorkDocumentBody(firstTitle, "phase"),
 						)
 						const steps: TransactionStep[] = []
 						if (yield* fs.isDirectory(oldCodePath)) {
