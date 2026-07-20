@@ -213,9 +213,10 @@ without launching the runner.
 
 ### Custom Chooser Command
 
-Interactive selection uses an OpenTUI Solid split footer by default. Arrow keys
-move, Enter selects, and Escape, Ctrl-C, or `q` cancels. To use an external
-chooser instead, configure an argv command in `agency.json`:
+Interactive selection uses an OpenTUI Solid split footer by default. Type to
+fuzzy-filter choices, use arrow keys or Ctrl-N/Ctrl-P to move, press Enter to
+select, and press Escape or Ctrl-C to cancel. To use an external chooser
+instead, configure an argv command in `agency.json`:
 
 ```json
 {

@@ -5,7 +5,7 @@ import {
 	type InputRenderable,
 } from "@opentui/core"
 import { render, useKeyboard, type JSX } from "@opentui/solid"
-import { createSignal, For } from "solid-js"
+import { createMemo, createSignal, For } from "solid-js"
 
 export interface InteractiveChoice {
 	readonly key: string
@@ -72,49 +72,146 @@ interface SelectPromptProps extends PromptProps<string> {
 	readonly choices: readonly InteractiveChoice[]
 }
 
+const isWordBoundary = (value: string, index: number) =>
+	index === 0 || /[\s/_.:-]/.test(value[index - 1]!)
+
+const fuzzyScore = (value: string, query: string) => {
+	const candidate = value.toLowerCase()
+	const needle = query.toLowerCase()
+	let previous = new Float64Array(candidate.length)
+	let current = new Float64Array(candidate.length)
+	previous.fill(Number.NEGATIVE_INFINITY)
+	let bestScore = Number.NEGATIVE_INFINITY
+
+	for (let queryIndex = 0; queryIndex < needle.length; queryIndex++) {
+		current.fill(Number.NEGATIVE_INFINITY)
+		let bestEarlier = Number.NEGATIVE_INFINITY
+		bestScore = Number.NEGATIVE_INFINITY
+		for (let index = 0; index < candidate.length; index++) {
+			if (queryIndex > 0 && index > 0) {
+				bestEarlier = Math.max(bestEarlier, previous[index - 1]! + index - 1)
+			}
+			if (candidate[index] !== needle[queryIndex]) continue
+
+			const boundaryBonus = isWordBoundary(candidate, index) ? 8 : 0
+			if (queryIndex === 0) {
+				current[index] = 10 + boundaryBonus - index
+				bestScore = Math.max(bestScore, current[index]!)
+				continue
+			}
+
+			const contiguous =
+				index > 0 ? previous[index - 1]! + 12 : Number.NEGATIVE_INFINITY
+			const gapped = bestEarlier - index + 1
+			current[index] = Math.max(contiguous, gapped) + 10 + boundaryBonus
+			bestScore = Math.max(bestScore, current[index]!)
+		}
+		if (!Number.isFinite(bestScore)) return null
+		const swap = previous
+		previous = current
+		current = swap
+	}
+
+	return bestScore - candidate.length / 1000
+}
+
+export const fuzzyChoices = (
+	choices: readonly InteractiveChoice[],
+	query: string,
+) => {
+	if (!query) return choices
+	return choices
+		.map((choice, index) => ({
+			choice,
+			index,
+			score: fuzzyScore(choice.label, query),
+		}))
+		.filter(
+			(
+				match,
+			): match is typeof match & {
+				score: number
+			} => match.score !== null,
+		)
+		.sort((left, right) => right.score - left.score || left.index - right.index)
+		.map((match) => match.choice)
+}
+
 export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
+	let input: InputRenderable | undefined
+	const [query, setQuery] = createSignal("")
 	const [selected, setSelected] = createSignal(0)
+	const choices = createMemo(() => fuzzyChoices(props.choices, query()))
+	const move = (offset: -1 | 1) => {
+		const count = choices().length
+		if (count === 0) return
+		setSelected((current) => (current + offset + count) % count)
+	}
 	useKeyboard((key) => {
-		if (isCancel(key) || key.name === "q") {
+		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
 			props.onDone(null)
 			return
 		}
-		if (key.name === "up" || key.name === "k") {
+		if (key.name === "up" || (key.ctrl && key.name === "p")) {
 			key.preventDefault()
-			setSelected((current) =>
-				current === 0 ? props.choices.length - 1 : current - 1,
-			)
+			key.stopPropagation()
+			move(-1)
 			return
 		}
-		if (key.name === "down" || key.name === "j") {
+		if (key.name === "down" || (key.ctrl && key.name === "n")) {
 			key.preventDefault()
-			setSelected((current) => (current + 1) % props.choices.length)
+			key.stopPropagation()
+			move(1)
 			return
 		}
 		if (key.name !== "return") return
 		key.preventDefault()
 		key.stopPropagation()
-		props.onDone(props.choices[selected()]?.key ?? null)
+		const choice = choices()[selected()]
+		if (choice) props.onDone(choice.key)
 	})
 
 	const visible = () => {
 		const start = Math.min(
 			Math.max(selected() - 1, 0),
-			Math.max(props.choices.length - 2, 0),
+			Math.max(choices().length - 2, 0),
 		)
-		return props.choices.slice(start, start + 2).map((choice, offset) => ({
-			choice,
-			index: start + offset,
-		}))
+		return choices()
+			.slice(start, start + 2)
+			.map((choice, offset) => ({
+				choice,
+				index: start + offset,
+			}))
 	}
 
 	return (
 		<box flexDirection="column" width="100%" height="100%">
-			<text fg="#7aa2f7">{props.prompt}</text>
+			<box flexDirection="row" width="100%">
+				<text fg="#7aa2f7" flexShrink={1} wrapMode="none">
+					{props.prompt}
+				</text>
+				<text fg="#7aa2f7">{" > "}</text>
+				<input
+					focused
+					flexGrow={1}
+					minWidth={8}
+					placeholder="filter"
+					onInput={(next) => {
+						setQuery(next)
+						setSelected(0)
+					}}
+					ref={(next) => {
+						input = next
+						queueMicrotask(() => {
+							if (input && !input.isDestroyed) input.focus()
+						})
+					}}
+				/>
+			</box>
 			<box flexDirection="column" height={2}>
-				<For each={visible()}>
+				<For each={visible()} fallback={<text fg="#6c7086">No matches</text>}>
 					{({ choice, index }) => (
 						<text
 							fg={index === selected() ? "#c0caf5" : "#6c7086"}
@@ -126,7 +223,9 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					)}
 				</For>
 			</box>
-			<text fg="#6c7086">up/down navigate | enter select | esc cancel</text>
+			<text fg="#6c7086" wrapMode="none">
+				enter select | esc cancel | ctrl-n/p or arrows
+			</text>
 		</box>
 	)
 }
