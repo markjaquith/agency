@@ -220,6 +220,7 @@ The `opencode` runner additionally receives `OPENCODE_CONFIG` for the workbase's
 managed integration and `OPENCODE_CONFIG_CONTENT` with runtime-only,
 workbase-scoped access and edit rules. These values keep the Git-synced config
 portable while providing whole-workbase read access at every launch location.
+`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
 without launching the runner.
 
