@@ -247,7 +247,7 @@ export const work = (
 			prompt = workspace.phasePath
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
-			launchPath = workspace.writablePath
+			launchPath = dirname(workspace.taskPath)
 		}
 
 		const explicitlyRequested = Boolean(

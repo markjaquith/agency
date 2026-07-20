@@ -45,6 +45,8 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 	operations: [],
 }
 
+const taskDirectory = "/workbase/tasks/example"
+
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
@@ -409,7 +411,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.shownTasks).toEqual(["delivery"])
-		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("treats a positional value as a task ID when it is not a directory", async () => {
@@ -422,7 +424,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.shownTasks).toEqual(["delivery"])
-		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("launches a multi-phase task agent without materializing", async () => {
@@ -467,7 +469,7 @@ describe("work command", () => {
 				"--prompt",
 				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
-			cwd: multiPhaseWorkspace.writablePath,
+			cwd: taskDirectory,
 		})
 		expect(harness.statusUpdates).toEqual([
 			"phase:example:implementation:working",
@@ -484,7 +486,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.events[0]).toBe("materialize")
-		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("selects a target when no directory is provided", async () => {
@@ -517,7 +519,7 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("requires an explicit target when input is disabled", async () => {
@@ -643,7 +645,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("launches OpenCode in the writable checkout with explicit context", async () => {
+	test("launches OpenCode in the task directory with explicit context", async () => {
 		const harness = createHarness()
 
 		await harness.run({ taskId: "example", opencode: true })
@@ -661,7 +663,7 @@ describe("work command", () => {
 					"--prompt",
 					"Start the task. Read /workbase/tasks/example/TASK.md.",
 				],
-				cwd: singlePhaseWorkspace.writablePath,
+				cwd: taskDirectory,
 			},
 		])
 		expect(harness.statusUpdates).toEqual(["task:example:working"])
@@ -692,7 +694,7 @@ describe("work command", () => {
 				"--prompt",
 				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
-			cwd: multiPhaseWorkspace.writablePath,
+			cwd: taskDirectory,
 		})
 	})
 
@@ -721,7 +723,7 @@ describe("work command", () => {
 				"example",
 				"Start the task. Read /workbase/tasks/example/TASK.md.",
 			],
-			cwd: singlePhaseWorkspace.writablePath,
+			cwd: taskDirectory,
 		})
 		expect(harness.launchEnvironments[0]).toMatchObject({
 			AGENCY_RUNNER: "custom",
@@ -759,7 +761,7 @@ describe("work command", () => {
 		const printed = JSON.parse(output.join("\n"))
 
 		expect(harness.launches).toEqual([])
-		expect(printed.cwd).toBe(singlePhaseWorkspace.writablePath)
+		expect(printed.cwd).toBe(taskDirectory)
 		expect(printed.argv).toEqual([
 			"agent",
 			"Start the task. Read /workbase/tasks/example/TASK.md.",
@@ -777,7 +779,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: singlePhaseWorkspace.writablePath,
+			cwd: taskDirectory,
 		})
 	})
 
@@ -801,7 +803,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
-			cwd: singlePhaseWorkspace.writablePath,
+			cwd: taskDirectory,
 		})
 	})
 
@@ -838,7 +840,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching command: opencode --prompt 'Start the task. Read /workbase/tasks/example/TASK.md.' (cwd: /workbase/tasks/example/code/agency)",
+			"Launching command: opencode --prompt 'Start the task. Read /workbase/tasks/example/TASK.md.' (cwd: /workbase/tasks/example)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 

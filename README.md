@@ -695,11 +695,10 @@ conflicting worktrees. Repair is deliberately conservative: it repairs safe Git
 registration issues and materializes missing checkouts, but never switches a
 branch, resets a commit, or discards uncommitted work.
 
-Epic and multi-phase task targets launch orchestration agents beside their
-documents. Single-phase tasks and phases fetch repositories, create or reuse
-worktrees under `code/`, and launch an execution agent in the writable checkout
-with absolute context paths. An explicit directory or `--epic` target bypasses
-the hierarchy chooser.
+Agency launches every agent beside its epic or task document. Single-phase tasks
+and phases first fetch repositories and create or reuse worktrees under `code/`,
+then launch the execution agent from the task directory with absolute context
+paths. An explicit directory or `--epic` target bypasses the hierarchy chooser.
 
 Each writable `(repo, branch)` pair may belong to only one task or phase. Agency
 validation reports duplicate ownership, and `agency work` checks Git's worktree
