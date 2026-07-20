@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
 import {
 	fuzzyChoices,
 	InteractiveSelectPrompt,
@@ -8,6 +11,36 @@ import {
 } from "./interactive"
 
 describe("OpenTUI interaction", () => {
+	test("selects the Solid JSX runtime without the project preload", async () => {
+		const source = await Bun.file(
+			new URL("./interactive.tsx", import.meta.url),
+		).text()
+		const root = await mkdtemp(join(tmpdir(), "agency-interactive-jsx-"))
+		const entrypoint = join(
+			root,
+			"node_modules",
+			"@markjaquith",
+			"agency",
+			"interactive.tsx",
+		)
+		await mkdir(dirname(entrypoint), { recursive: true })
+		await writeFile(entrypoint, source)
+
+		try {
+			const result = await Bun.build({
+				entrypoints: [entrypoint],
+				packages: "external",
+				target: "bun",
+			})
+			expect(result.success).toBeTrue()
+			const output = await result.outputs[0]!.text()
+			expect(output).toContain("@opentui/solid/jsx-dev-runtime")
+			expect(output).not.toContain("react/jsx-dev-runtime")
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
 	test("uses the split-footer renderer contract", () => {
 		expect(interactiveRendererConfig).toMatchObject({
 			screenMode: "split-footer",
