@@ -721,7 +721,7 @@ try {
 	const inputAllowed =
 		!values.json &&
 		!values["no-input"] &&
-		Boolean(process.stdin.isTTY && process.stderr.isTTY)
+		Boolean(process.stdin.isTTY && process.stdout.isTTY)
 	const cwd = await resolveInvocationCwd(commandName, values)
 	if (values.json || (values.jsonl && values.help)) {
 		const result = await collectCommandResult(() =>

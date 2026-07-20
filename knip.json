@@ -2,5 +2,5 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["cli.ts", "index.ts"],
   "ignoreDependencies": [],
-  "ignore": ["src/test-utils.ts", "**/*.test.ts"]
+  "ignore": ["src/test-utils.ts", "**/*.test.ts", "**/*.test.tsx"]
 }

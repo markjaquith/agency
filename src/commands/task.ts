@@ -1,5 +1,4 @@
 import { Effect } from "effect"
-import { createInterface } from "node:readline/promises"
 import type { BaseCommandOptions } from "../utils/command"
 import { TaskService } from "../services/TaskService"
 import { EpicService } from "../services/EpicService"
@@ -51,17 +50,10 @@ const defaultInteraction = (
 ): TaskInteraction => ({
 	text: (prompt) =>
 		Effect.tryPromise({
-			try: async () => {
-				const input = createInterface({
-					input: process.stdin,
-					output: process.stderr,
-				})
-				try {
-					return await input.question(prompt)
-				} finally {
-					input.close()
-				}
-			},
+			try: async () =>
+				(
+					await (await import("../utils/interactive-loader")).loadInteractive()
+				).promptText(prompt),
 			catch: (cause) => new Error("Failed to read task input", { cause }),
 		}),
 	select: (prompt, choices) =>
@@ -157,14 +149,18 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 							),
 						)
 					}
-					const selected = yield* activeInteraction.select(
-						"Writable repository",
-						records.map((record) => record.alias),
-					)
-					if (!selected) {
-						return yield* Effect.fail(new Error("Task creation cancelled"))
+					if (records.length === 1) {
+						repo = records[0]!.alias
+					} else {
+						const selected = yield* activeInteraction.select(
+							"Writable repository",
+							records.map((record) => record.alias),
+						)
+						if (!selected) {
+							return yield* Effect.fail(new Error("Task creation cancelled"))
+						}
+						repo = selected
 					}
-					repo = selected
 				}
 
 				const record = yield* tasks.create(

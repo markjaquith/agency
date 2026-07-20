@@ -213,8 +213,9 @@ without launching the runner.
 
 ### Custom Chooser Command
 
-Interactive selection uses a native numbered chooser by default. To use an
-external chooser, configure an argv command in `agency.json`:
+Interactive selection uses an OpenTUI Solid split footer by default. Arrow keys
+move, Enter selects, and Escape, Ctrl-C, or `q` cancels. To use an external
+chooser instead, configure an argv command in `agency.json`:
 
 ```json
 {
@@ -226,13 +227,14 @@ external chooser, configure an argv command in `agency.json`:
 Agency writes one `key<TAB>label` record per choice to the command's stdin. The
 command must write the selected opaque key or selected record to stdout; commands
 such as `["gum", "filter"]` therefore work without wrappers. Exit codes 1 and
-130, empty stdout, native `q`, and an empty native response cancel selection.
-Other nonzero exits, unknown keys, and invalid native numbers are errors.
+130 or empty stdout cancel external selection. Other nonzero exits and unknown
+keys are errors.
 
-Selectors are opened only when stdin and stderr are terminals and neither
-`--no-input` nor JSON output is active. Labels use color only when stderr is a
-terminal, `TERM` is not `dumb`, and `NO_COLOR` is unset; otherwise selectors use
-plain labels without ANSI styling or icon-font dependencies.
+Selectors are opened only when stdin and stdout are terminals and neither
+`--no-input` nor JSON output is active. External chooser labels use color only
+when stdout is a terminal, `TERM` is not `dumb`, and `NO_COLOR` is unset. The
+native OpenTUI selector uses plain labels without ANSI styling or icon-font
+dependencies.
 
 ## Frontmatter
 
@@ -495,8 +497,9 @@ back-reference.
 
 ### Tasks
 
-Create a task interactively. Text prompts identify optional values, and known
-choices use fzf. This command requires a TTY and fails with `--no-input`:
+Create a task interactively with the OpenTUI Solid footer. When exactly one
+repository is available, Agency selects it without presenting a redundant
+choice. This command requires a TTY and fails with `--no-input`:
 
 ```text
 agency task new [id]
@@ -677,11 +680,10 @@ agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
-`agency work` presents the full hierarchy in `fzf`. Pass a directory, including
-`.` for the current directory, to infer its epic, task, or phase. Outside a
-workbase, Agency first presents the registered workbases, then the selected
-workbase's hierarchy. If `fzf` is not installed, Agency prints the available
-choices and asks for an explicit directory.
+`agency work` presents the full hierarchy in the native OpenTUI selector or the
+configured external chooser. Pass a directory, including `.` for the current
+directory, to infer its epic, task, or phase. Outside a workbase, Agency first
+presents the registered workbases, then the selected workbase's hierarchy.
 
 OpenCode is the default runner, with automatic Claude fallback when neither is
 explicitly selected. `--opencode` and `--claude` remain aliases for requiring

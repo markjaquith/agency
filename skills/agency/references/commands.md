@@ -107,8 +107,9 @@ agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
   [--if-revision <hash>] [--json]
 ```
 
-`task new` is interactive and requires a TTY. Agents and scripts use
-noninteractive `task create`. Mutation commands that accept `--if-revision`
+`task new` uses the OpenTUI Solid footer and requires a TTY. A sole repository is
+selected automatically. Agents and scripts use noninteractive `task create`.
+Mutation commands that accept `--if-revision`
 return a revision conflict instead of overwriting changed documents.
 
 ## Ownership And Lifecycle

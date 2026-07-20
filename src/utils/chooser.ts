@@ -1,5 +1,4 @@
 import { Effect } from "effect"
-import { createInterface } from "node:readline/promises"
 
 export interface Choice<T> {
 	readonly key: string
@@ -35,8 +34,10 @@ export interface ChooserIO {
 	readonly inputIsTTY: boolean
 	readonly outputIsTTY: boolean
 	readonly color: boolean
-	readonly write: (message: string) => void
-	readonly question: (prompt: string) => Promise<string>
+	readonly select: (
+		prompt: string,
+		choices: readonly { readonly key: string; readonly label: string }[],
+	) => Promise<string | null>
 	readonly run: (
 		command: readonly string[],
 		input: string,
@@ -51,22 +52,16 @@ const stripAnsi = (value: string) =>
 
 const defaultIO = (): ChooserIO => ({
 	inputIsTTY: Boolean(process.stdin.isTTY),
-	outputIsTTY: Boolean(process.stderr.isTTY),
+	outputIsTTY: Boolean(process.stdout.isTTY),
 	color:
-		Boolean(process.stderr.isTTY) &&
+		Boolean(process.stdout.isTTY) &&
 		process.env.NO_COLOR === undefined &&
 		process.env.TERM !== "dumb",
-	write: (message) => process.stderr.write(message),
-	question: async (prompt) => {
-		const input = createInterface({
-			input: process.stdin,
-			output: process.stderr,
-		})
-		try {
-			return await input.question(prompt)
-		} finally {
-			input.close()
-		}
+	select: async (prompt, choices) => {
+		const { promptSelect } = await (
+			await import("./interactive-loader")
+		).loadInteractive()
+		return promptSelect(prompt, choices)
 	},
 	run: async (command, input) => {
 		const child = Bun.spawn([...command], {
@@ -173,33 +168,21 @@ const nativeChoice = async <T>(
 			"Interactive selection requires a terminal; provide an explicit value or use --no-input",
 		)
 	}
-	io.write(`${prompt}\n`)
-	for (const [index, choice] of choices.entries()) {
-		io.write(`  ${index + 1}. ${displayLabel(choice, io.color)}\n`)
-	}
-	let answer: string
+	let key: string | null
 	try {
-		answer = (
-			await io.question(`Select [1-${choices.length}] (q to cancel): `)
-		).trim()
+		key = await io.select(
+			prompt,
+			choices.map((choice) => ({
+				key: choice.key,
+				label: displayLabel(choice, false),
+			})),
+		)
 	} catch (cause) {
-		if (cause instanceof Error && cause.name === "AbortError") return null
 		throw new ChooserError("input-unavailable", "Failed to read selection", {
 			cause,
 		})
 	}
-	if (!answer || answer.toLowerCase() === "q") return null
-	if (!/^\d+$/.test(answer)) {
-		throw new ChooserError("invalid-selection", `Invalid selection: ${answer}`)
-	}
-	const selected = choices[Number.parseInt(answer, 10) - 1]
-	if (!selected) {
-		throw new ChooserError(
-			"invalid-selection",
-			`Selection must be between 1 and ${choices.length}`,
-		)
-	}
-	return selected.value
+	return key === null ? null : selectedChoice(key, choices)
 }
 
 export const choose = <T>(

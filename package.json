@@ -58,7 +58,7 @@
     "tag": "latest"
   },
   "scripts": {
-    "test": "find src -name '*.test.ts' -print0 | xargs -0 -n 1 -P 4 bun test",
+    "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | xargs -0 -n 1 -P 4 bun test",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "knip": "knip --production",
@@ -68,7 +68,10 @@
   },
   "dependencies": {
     "@effect/schema": "^0.75.5",
+    "@opentui/core": "0.4.5",
+    "@opentui/solid": "0.4.5",
     "effect": "^3.19.15",
+    "solid-js": "1.9.12",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

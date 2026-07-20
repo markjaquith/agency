@@ -9,43 +9,80 @@ const choices = [
 
 const createIO = (
 	overrides: Partial<ChooserIO> = {},
-): ChooserIO & { readonly writes: string[]; readonly inputs: string[] } => {
-	const writes: string[] = []
+): ChooserIO & {
+	readonly selections: Array<{
+		readonly prompt: string
+		readonly choices: readonly {
+			readonly key: string
+			readonly label: string
+		}[]
+	}>
+	readonly inputs: string[]
+} => {
+	const selections: Array<{
+		readonly prompt: string
+		readonly choices: readonly {
+			readonly key: string
+			readonly label: string
+		}[]
+	}> = []
 	const inputs: string[] = []
 	return {
 		inputIsTTY: true,
 		outputIsTTY: true,
 		color: false,
-		write: (message) => writes.push(message),
-		question: async () => "1",
+		select: async (prompt, choices) => {
+			selections.push({ prompt, choices })
+			return choices[0]?.key ?? null
+		},
 		run: async (_command, input) => {
 			inputs.push(input)
 			return { exitCode: 0, stdout: "first-key\n" }
 		},
 		...overrides,
-		writes,
+		selections,
 		inputs,
 	}
 }
 
 describe("chooser", () => {
-	test("offers a plain-text numbered chooser on a TTY", async () => {
-		const io = createIO({ question: async () => "2" })
+	test("offers plain choices to the native interactive renderer", async () => {
+		let offered:
+			| {
+					readonly prompt: string
+					readonly choices: readonly {
+						readonly key: string
+						readonly label: string
+					}[]
+			  }
+			| undefined
+		const io = createIO({
+			select: async (prompt, offeredChoices) => {
+				offered = { prompt, choices: offeredChoices }
+				return offeredChoices[1]!.key
+			},
+		})
 
 		const result = await Effect.runPromise(
 			choose("Pick one", choices, undefined, io),
 		)
 
 		expect(result).toBe(2)
-		expect(io.writes.join("")).toBe("Pick one\n  1. First\n  2. Second\n")
+		expect(offered).toEqual({
+			prompt: "Pick one",
+			choices: [
+				{ key: "first-key", label: "First" },
+				{ key: "second key", label: "Second" },
+			],
+		})
 	})
 
-	test("preserves colors when enabled", async () => {
+	test("preserves colors for configured external choosers", async () => {
 		const io = createIO({ color: true })
 
-		await Effect.runPromise(choose("Pick one", choices, undefined, io))
+		await Effect.runPromise(choose("Pick one", choices, ["chooser"], io))
 
-		expect(io.writes.join("")).toContain("\x1b[32mFirst\x1b[0m")
+		expect(io.inputs[0]).toContain("\x1b[32mFirst\x1b[0m")
 	})
 
 	test("passes generic records to an external argv command", async () => {
@@ -70,7 +107,7 @@ describe("chooser", () => {
 	})
 
 	test("treats native and external cancellation as no selection", async () => {
-		const native = createIO({ question: async () => "q" })
+		const native = createIO({ select: async () => null })
 		const external = createIO({
 			run: async () => ({ exitCode: 130, stdout: "" }),
 		})
