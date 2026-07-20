@@ -163,7 +163,6 @@ The runner opens without a generated prompt unless `--auto` is set.
 The OpenCode runner receives a runtime managed-config path plus absolute access
 and edit rules scoped to the workbase; none are persisted, and `context` still
 defines write authority.
-The runner opens without a generated prompt unless `--auto` is set.
 `--print-command` materializes execution targets but does not launch or change
 status. `work prepare` materializes without launching or changing status.
 Destructive remove and rebuild operations refuse dirty or conflicting state.
