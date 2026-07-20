@@ -242,15 +242,20 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 
 					const integrationStatus = yield* integrations.status(root)
 					for (const file of integrationStatus.files) {
-						const failed = file.state === "missing" || file.state === "drifted"
+						const failed =
+							file.state === "missing" ||
+							file.state === "drifted" ||
+							(file.name === "opencode" && file.state === "customized")
 						add({
 							id: `integration.file.${file.name}`,
 							category: "integration",
-							level: file.state === "customized" ? "optional" : "warning",
+							level:
+								file.name === "agents" && file.state === "customized"
+									? "optional"
+									: "warning",
 							status: failed ? "fail" : "pass",
-							message: `${file.name} integration file is ${file.state}: ${file.path}`,
-							remediation:
-								"Run 'agency integration sync' to restore managed content.",
+							message: `${file.name} integration file is ${file.state}: ${file.path}. ${file.diagnostic}`,
+							remediation: file.remediation ?? undefined,
 						})
 					}
 

@@ -129,6 +129,28 @@ status: open
 		)
 	})
 
+	test("warns when customized OpenCode config cannot guarantee access", async () => {
+		const custom = '{"references":{}}\n'
+		await write(root, ".opencode/opencode.jsonc", custom)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(doctor({ cwd: root, json: true })),
+		)
+		const check = JSON.parse(logs[0]!).checks.find(
+			(value: { id: string }) => value.id === "integration.file.opencode",
+		)
+
+		expect(check).toMatchObject({
+			level: "warning",
+			status: "fail",
+			message: expect.stringContaining("cannot guarantee whole-workbase"),
+			remediation: expect.stringContaining("global config"),
+		})
+		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
+			custom,
+		)
+	})
+
 	test("is safe when the workbase is read-only", async () => {
 		for (const path of [
 			join(root, "agency.json"),

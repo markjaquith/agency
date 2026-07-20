@@ -17,11 +17,62 @@ interface IntegrationFileStatus {
 	readonly name: "agents" | "opencode"
 	readonly path: string
 	readonly state: IntegrationFileState
+	readonly diagnostic: string
+	readonly remediation: string | null
 }
 
 interface IntegrationSyncFile extends IntegrationFileStatus {
 	readonly changed: boolean
 }
+
+const describe = (
+	name: IntegrationFileStatus["name"],
+	state: IntegrationFileState,
+) => {
+	if (name === "opencode") {
+		if (state === "managed") {
+			return {
+				diagnostic:
+					"Agency's managed OpenCode launch config is ready to provide whole-workbase read access.",
+				remediation: null,
+			}
+		}
+		if (state === "customized") {
+			return {
+				diagnostic:
+					"Agency cannot guarantee whole-workbase read access from this customized OpenCode config.",
+				remediation:
+					"Back up and remove the customized file, run 'agency integration sync', then move any retained custom settings to OpenCode's global config.",
+			}
+		}
+		return {
+			diagnostic:
+				"Agency OpenCode launches cannot load current whole-workbase access.",
+			remediation:
+				"Run 'agency integration sync' to install whole-workbase OpenCode access.",
+		}
+	}
+
+	return state === "missing" || state === "drifted"
+		? {
+				diagnostic: "Managed workbase instructions need synchronization.",
+				remediation:
+					"Run 'agency integration sync' to restore managed instructions.",
+			}
+		: {
+				diagnostic:
+					state === "managed"
+						? "Managed workbase instructions are current."
+						: "Customized workbase instructions are preserved.",
+				remediation: null,
+			}
+}
+
+const fileStatus = (
+	name: IntegrationFileStatus["name"],
+	path: string,
+	state: IntegrationFileState,
+): IntegrationFileStatus => ({ name, path, state, ...describe(name, state) })
 
 const classify = (
 	name: IntegrationFileStatus["name"],
@@ -29,16 +80,16 @@ const classify = (
 	content: string,
 	managed: string,
 	canUpdate: (content: string) => boolean,
-): IntegrationFileStatus => ({
-	name,
-	path,
-	state:
+): IntegrationFileStatus =>
+	fileStatus(
+		name,
+		path,
 		content === managed
 			? "managed"
 			: canUpdate(content)
 				? "drifted"
 				: "customized",
-})
+	)
 
 const inspect = (root: string) =>
 	Effect.gen(function* () {
@@ -51,7 +102,7 @@ const inspect = (root: string) =>
 
 		files.push(
 			(yield* fs.readSymlinkTarget(agentsPath)) !== null
-				? { name: "agents", path: agentsPath, state: "customized" }
+				? fileStatus("agents", agentsPath, "customized")
 				: (yield* fs.exists(agentsPath))
 					? classify(
 							"agents",
@@ -60,15 +111,16 @@ const inspect = (root: string) =>
 							managedWorkbaseAgents,
 							canUpdateManagedWorkbaseAgents,
 						)
-					: { name: "agents", path: agentsPath, state: "missing" },
+					: fileStatus("agents", agentsPath, "missing"),
 		)
 
 		if ((yield* fs.readSymlinkTarget(opencodePath)) !== null) {
-			files.push({
-				name: "opencode",
-				path: opencodePath,
-				state: "customized",
-			})
+			files.push(fileStatus("opencode", opencodePath, "customized"))
+		} else if (
+			(yield* fs.readSymlinkTarget(opencodeJsonPath)) !== null ||
+			(yield* fs.exists(opencodeJsonPath))
+		) {
+			files.push(fileStatus("opencode", opencodeJsonPath, "customized"))
 		} else if (yield* fs.exists(opencodePath)) {
 			files.push(
 				classify(
@@ -79,14 +131,8 @@ const inspect = (root: string) =>
 					canUpdateManagedWorkbaseOpencode,
 				),
 			)
-		} else if (yield* fs.exists(opencodeJsonPath)) {
-			files.push({
-				name: "opencode",
-				path: opencodeJsonPath,
-				state: "customized",
-			})
 		} else {
-			files.push({ name: "opencode", path: opencodePath, state: "missing" })
+			files.push(fileStatus("opencode", opencodePath, "missing"))
 		}
 
 		return files
@@ -123,8 +169,11 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							}
 						}
 						files.push({
-							...status,
-							state: changed ? "managed" : status.state,
+							...fileStatus(
+								status.name,
+								status.path,
+								changed ? "managed" : status.state,
+							),
 							changed,
 						})
 					}

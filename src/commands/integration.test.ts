@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureLogs,
@@ -29,9 +30,28 @@ describe("integration command", () => {
 			root,
 			files: [
 				{ name: "agents", state: "missing" },
-				{ name: "opencode", state: "missing" },
+				{
+					name: "opencode",
+					state: "missing",
+					diagnostic: expect.stringContaining("cannot load"),
+					remediation: expect.stringContaining("integration sync"),
+				},
 			],
 		})
+	})
+
+	test("explains remediation for customized OpenCode config", async () => {
+		await mkdir(join(root, ".opencode"))
+		await Bun.write(
+			join(root, ".opencode", "opencode.json"),
+			'{"model":"test/model"}\n',
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(integration({ subcommand: "status", cwd: root })),
+		)
+
+		expect(logs.join("\n")).toContain("cannot guarantee whole-workbase")
+		expect(logs.join("\n")).toContain("global config")
 	})
 
 	test("explicitly synchronizes integration files", async () => {
