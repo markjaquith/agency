@@ -251,10 +251,10 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				const fs = yield* FileSystemService
 				const service = yield* TaskService
 				const validStatus = yield* decodeStatus(status)
-				if (validStatus === "working" || validStatus === "delegated") {
+				if (validStatus === "delegated") {
 					return yield* new TaskError({
 						message:
-							"Active work and delegation require explicit ownership; use 'agency claim'",
+							"Delegation requires explicit ownership; use 'agency claim'",
 					})
 				}
 				const record = yield* service.show(id, startPath)

@@ -299,11 +299,10 @@ node set.
   and `claim` does not enforce dependency readiness. Inspect readiness, then
   claim with the observed revision and handle conflicts.
 - There is no `assign` command, remote queue, scheduler, heartbeat, claim renewal,
-  runner monitor, or cancellation API. For an execution unit, `work` can claim
-  and launch one local built-in or configured runner, but it is a
-  process-launching, non-JSON flow rather than a machine assignment API. External
-  orchestrators claim with claimant and runner IDs, then manage their runner
-  themselves.
+  runner monitor, or cancellation API. `work` launches one local built-in or
+  configured runner without a claim; it is a process-launching, non-JSON flow
+  rather than a machine assignment API. External orchestrators claim with
+  claimant and runner IDs, then manage their runner themselves.
 - Agency does not edit code, create commits, run repository checks, wait for PR
   checks, merge PRs, or verify that a requested completion condition is true.
   `finish` records the caller's asserted outcome after ownership checks.

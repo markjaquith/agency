@@ -6,7 +6,6 @@ import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
-import { ClaimService } from "../services/ClaimService"
 import { ReadinessService } from "../services/ReadinessService"
 import { IntegrationService } from "../services/IntegrationService"
 import { captureErrors, captureLogs } from "../test-utils"
@@ -68,7 +67,7 @@ interface HarnessOptions {
 	readonly registeredWorkbases?: readonly string[]
 	readonly existingDirectories?: readonly string[]
 	readonly guardError?: Error
-	readonly readyTargetIds?: readonly string[]
+	readonly workTargetIds?: readonly string[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -162,35 +161,11 @@ const createHarness = (options: HarnessOptions = {}) => {
 			return Effect.void
 		},
 	}
-	const claims = {
-		inspect: (taskId: string, phaseId?: string) =>
-			Effect.succeed({
-				target: {
-					kind: phaseId ? "phase" : "task",
-					taskId,
-					phaseId,
-					path: phaseId
-						? `/workbase/tasks/${taskId}/phases/${phaseId}/PHASE.md`
-						: `/workbase/tasks/${taskId}/TASK.md`,
-					label: phaseId ? `phase '${taskId}/${phaseId}'` : `task '${taskId}'`,
-				},
-				revision: "0".repeat(64),
-				data: {},
-			}),
-		claim: (input: { taskId: string; phaseId?: string }) => {
-			statusUpdates.push(
-				input.phaseId
-					? `phase:${input.taskId}:${input.phaseId}:working`
-					: `task:${input.taskId}:working`,
-			)
-			return Effect.succeed({ revision: "1".repeat(64) })
-		},
-	}
 	const readiness = {
-		getReadyWorkTargetIds: () =>
+		getWorkTargetIds: () =>
 			Effect.succeed(
 				new Set(
-					options.readyTargetIds ?? [
+					options.workTargetIds ?? [
 						...(options.epicRecords ?? []).map(
 							(record: any) => `epic:${record.id}`,
 						),
@@ -264,7 +239,6 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(EpicService, epics as never),
 				Effect.provideService(TaskService, tasks as never),
 				Effect.provideService(PhaseService, phases as never),
-				Effect.provideService(ClaimService, claims as never),
 				Effect.provideService(ReadinessService, readiness as never),
 				Effect.provideService(IntegrationService, integrations as never),
 			) as Effect.Effect<void, unknown, never>,
@@ -331,7 +305,7 @@ describe("work command", () => {
 		})
 	})
 
-	test("offers only graph-ready targets to the interactive chooser", async () => {
+	test("offers only launchable targets to the interactive chooser", async () => {
 		const harness = createHarness({
 			taskRecords: [
 				{
@@ -345,7 +319,7 @@ describe("work command", () => {
 					data: { status: "open" },
 				},
 			],
-			readyTargetIds: ["execution-unit:task/ready"],
+			workTargetIds: ["execution-unit:task/ready"],
 		})
 		let labels: readonly string[] = []
 		const pick: PickWorkTarget = (choices) => {
@@ -698,7 +672,7 @@ describe("work command", () => {
 		})
 	})
 
-	test("expands a named runner with shared context and claim identity", async () => {
+	test("expands a named runner with shared context", async () => {
 		const harness = createHarness({
 			available: { codex: true },
 			runners: {
@@ -732,7 +706,7 @@ describe("work command", () => {
 			AGENCY_TARGET: "execution-unit:task/example",
 			AGENCY_TASK_ID: "example",
 			AGENCY_PHASE_ID: "",
-			AGENCY_CLAIM_REVISION: "1".repeat(64),
+			AGENCY_CLAIM_REVISION: "",
 			CUSTOM_TARGET: "execution-unit:task/example",
 		})
 	})
@@ -761,6 +735,7 @@ describe("work command", () => {
 		const printed = JSON.parse(output.join("\n"))
 
 		expect(harness.launches).toEqual([])
+		expect(harness.statusUpdates).toEqual([])
 		expect(printed.cwd).toBe(taskDirectory)
 		expect(printed.argv).toEqual([
 			"agent",

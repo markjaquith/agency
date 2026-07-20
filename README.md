@@ -201,6 +201,7 @@ Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
 `AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
+`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
 without launching the runner.
 
@@ -594,12 +595,13 @@ writing anything.
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Use claims for coordinated ownership and the status subcommands
-for manual lifecycle overrides. The interactive work selector displays status
-markers before execution units. Existing working and delegated work may be
-released to `open` or assigned a terminal outcome. Done and dropped work are
-terminal and may only remain unchanged or transition to open; reopen terminal
-work before changing its outcome.
+before launch. Running `agency work` again can relaunch unclaimed `working` work.
+Use explicit claims only when an external orchestrator needs coordinated
+ownership. The interactive work selector displays status markers before
+execution units. Existing working and delegated work may be released to `open`
+or assigned a terminal outcome. Done and dropped work are terminal and may only
+remain unchanged or transition to open; reopen terminal work before changing its
+outcome.
 
 `delegated` remains readable for existing workbases but cannot be newly assigned.
 Delegation is now explicit: the claimant identifies the orchestrator and the
@@ -633,11 +635,10 @@ frontmatter. Conflicts return the current revision and complete ownership record
 in the machine error envelope rather than overwriting it. Expired claims may be
 replaced with a revision-guarded claim.
 
-`agency work` claims an execution unit before launching its agent. Set
-`AGENCY_CLAIMANT`, `AGENCY_RUNNER`, or `AGENCY_SESSION_ID` to supply orchestrator
-identities; otherwise Agency derives them from the user and process. The selected
-runner name is recorded on the claim. The launched agent receives the normalized
-runner environment documented above for a later release or finish operation.
+`agency work` does not claim execution units. It refuses active explicit claims,
+marks open execution work `working`, and launches the runner. External
+orchestrators use `agency claim`, launch and monitor their runner separately, and
+later call `agency release` or `agency finish`.
 
 ### Archive
 

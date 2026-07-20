@@ -259,7 +259,7 @@ Subcommands:
   list <task>           List task phases
   show <task> <phase>   Show a phase
   status <task> <phase> <status>
-                        Set open, done, or dropped
+                        Set open, working, done, or dropped
   update <task> <phase> Update phase metadata
   rename <task> <phase> <new-id>
                         Rename a phase and update dependencies

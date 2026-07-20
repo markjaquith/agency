@@ -35,8 +35,8 @@ reason to edit `agency.json` or `repos/` by hand.
 
 - Stop on validation errors, dependency blockers, an unexpected writable
   repository, or a conflicting active claim.
-- Do not begin execution without a claim. `agency work` claims before launch;
-  external orchestrators use `agency claim` with the revision from context.
+- `agency work` is the local launch flow and marks execution units `working`
+  without claiming them. External orchestrators claim before launching runners.
 - Do not manually create, move, or remove worktrees under `code/`.
 - Use `agency archive`, rather than moving work item folders manually.
 - Do not edit bare repositories or repository symlinks under `repos/`.
@@ -56,9 +56,9 @@ is open; if merge was requested, merge remains delivery work.
 At each closeout trigger (creating or updating a PR, marking it ready, completing
 a refinement loop, or pausing or handing off completed implementation work):
 
-- Use `agency task status` or `agency phase status` to set the execution unit's
-  current status. Finish an active claim with the current revision via
-  `agency finish`.
+- Finish an active claim with the current revision via `agency finish`.
+  Otherwise use `agency task status` or `agency phase status` to set the
+  execution unit's current status.
 - Refresh durable delivery context in `TASK.md` or `PHASE.md`, including recorded
   PR state, current head, diff summary, and verification results after later
   pushes when those details are maintained there.

@@ -7,7 +7,6 @@ import { WorkbaseService } from "../services/WorkbaseService"
 import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
-import { ClaimService } from "../services/ClaimService"
 import { ReadinessService } from "../services/ReadinessService"
 import { IntegrationService } from "../services/IntegrationService"
 import { createLoggers } from "../utils/effect"
@@ -105,7 +104,6 @@ export const work = (
 		const epics = yield* EpicService
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
-		const claims = yield* ClaimService
 		const readiness = yield* ReadinessService
 		const integrations = yield* IntegrationService
 		const { log, verboseLog } = createLoggers(options)
@@ -204,13 +202,13 @@ export const work = (
 				taskRecords,
 				phaseRecords,
 			)
-			const readyTargetIds = options.force
+			const workTargetIds = options.force
 				? null
-				: yield* readiness.getReadyWorkTargetIds(root)
+				: yield* readiness.getWorkTargetIds(root)
 			const choices = options.force
 				? allChoices
 				: allChoices.filter((choice) =>
-						readyTargetIds!.has(targetNodeId(choice.target)),
+						workTargetIds!.has(targetNodeId(choice.target)),
 					)
 			if (choices.length === 0) {
 				return yield* Effect.fail(
@@ -264,8 +262,7 @@ export const work = (
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 		const resume = process.env.AGENCY_SESSION_ID !== undefined
-		let claimRevision = ""
-		let variables = {
+		const variables = {
 			prompt,
 			workbase: root,
 			target: targetNodeId(target),
@@ -273,7 +270,7 @@ export const work = (
 			phase: target.kind === "phase" ? target.phaseId : "",
 			claimant,
 			sessionId,
-			claimRevision,
+			claimRevision: "",
 		}
 		let resolved = resolveRunnerCommand(
 			runner,
@@ -298,27 +295,6 @@ export const work = (
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
-		if (
-			target.kind === "phase" ||
-			(target.kind === "task" && !target.multiPhase)
-		) {
-			const phaseId = target.kind === "phase" ? target.phaseId : undefined
-			const current = yield* claims.inspect(target.taskId, phaseId, root)
-			const acquired = yield* claims.claim(
-				{
-					taskId: target.taskId,
-					...(phaseId ? { phaseId } : {}),
-					claimant,
-					runner,
-					sessionId,
-					revision: current.revision,
-				},
-				root,
-			)
-			claimRevision = acquired.revision
-		}
-
-		variables = { ...variables, claimRevision }
 		resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
 		cli = resolved.argv[0]!
 		const environment = {
@@ -338,6 +314,11 @@ export const work = (
 				),
 			)
 			return
+		}
+		if (target.kind === "phase") {
+			yield* phases.setStatus(target.taskId, target.phaseId, "working", root)
+		} else if (target.kind === "task" && !target.multiPhase) {
+			yield* tasks.setStatus(target.taskId, "working", root)
 		}
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
