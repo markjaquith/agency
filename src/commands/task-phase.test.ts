@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
+import { Effect } from "effect"
 import {
 	captureLogs,
 	cleanupTempDir,
@@ -197,6 +198,40 @@ describe("task and phase command JSON output", () => {
 				status: "open",
 			},
 		})
+	})
+
+	test("starts work on a newly created phase", async () => {
+		const launches: unknown[] = []
+
+		await runTestEffect(
+			phase(
+				{
+					subcommand: "new",
+					args: ["multi", "immediate"],
+					repo: "agency",
+					branch: "task/immediate",
+					base: "main",
+					work: true,
+					auto: true,
+					cwd: root,
+					silent: true,
+				},
+				(options) =>
+					Effect.sync(() => {
+						launches.push(options)
+						return undefined
+					}),
+			),
+		)
+
+		expect(launches).toEqual([
+			expect.objectContaining({
+				taskId: "multi",
+				phaseId: "immediate",
+				auto: true,
+				cwd: root,
+			}),
+		])
 	})
 
 	test("sets task and phase status", async () => {

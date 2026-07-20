@@ -6,6 +6,7 @@ import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 import { GraphMutationService } from "../services/GraphMutationService"
+import { work as startWork, type StartWork } from "./work"
 
 interface PhaseOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -28,9 +29,11 @@ interface PhaseOptions extends BaseCommandOptions {
 	readonly ready?: boolean
 	readonly blocked?: boolean
 	readonly pr?: boolean
+	readonly work?: boolean
+	readonly auto?: boolean
 }
 
-export const phase = (options: PhaseOptions) =>
+export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 	Effect.gen(function* () {
 		const phases = yield* PhaseService
 		const mutations = yield* GraphMutationService
@@ -39,6 +42,7 @@ export const phase = (options: PhaseOptions) =>
 		const [taskId, phaseId] = options.args
 
 		switch (options.subcommand) {
+			case "new":
 			case "create": {
 				if (
 					!taskId ||
@@ -73,6 +77,17 @@ export const phase = (options: PhaseOptions) =>
 						? JSON.stringify(output, null, 2)
 						: `Created phase '${record.id}' on task '${record.taskId}'`,
 				)
+				if (options.subcommand === "new" && options.work) {
+					yield* work({
+						taskId: record.taskId,
+						phaseId: record.id,
+						auto: options.auto,
+						cwd,
+						inputAllowed: options.inputAllowed,
+						silent: options.silent,
+						verbose: options.verbose,
+					})
+				}
 				return
 			}
 			case "list": {
@@ -245,7 +260,7 @@ export const phase = (options: PhaseOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available: create, list, show, status, update, rename, dependency",
+						"Subcommand is required. Available: new, create, list, show, status, update, rename, dependency",
 					),
 				)
 		}
@@ -255,6 +270,7 @@ export const help = `
 Usage: agency phase <subcommand> <task-id> [phase-id]
 
 Subcommands:
+  new <task> <phase>    Create a phase, optionally starting work
   create <task> <phase> Create a phase
   list <task>           List task phases
   show <task> <phase>   Show a phase
@@ -278,6 +294,8 @@ Create options:
   --base <name>         Base branch
   --depends-on <id>     Phase dependency; repeatable
   --first-phase <id>    Existing execution phase ID when converting a task
+  --work                Start work on the new phase after creating it
+  --auto                Pass --auto to work; requires --work
 
 Update options:
   --description <text> / --clear-description

@@ -10,6 +10,7 @@ import { choose } from "../utils/chooser"
 import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
 import { GraphMutationService } from "../services/GraphMutationService"
+import { work as startWork, type StartWork } from "./work"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -35,6 +36,8 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly ready?: boolean
 	readonly blocked?: boolean
 	readonly pr?: boolean
+	readonly work?: boolean
+	readonly auto?: boolean
 }
 
 export interface TaskInteraction {
@@ -68,7 +71,11 @@ const defaultInteraction = (
 		),
 })
 
-export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
+export const task = (
+	options: TaskOptions,
+	interaction?: TaskInteraction,
+	work: StartWork = startWork,
+) =>
 	Effect.gen(function* () {
 		const tasks = yield* TaskService
 		const epics = yield* EpicService
@@ -183,6 +190,16 @@ export const task = (options: TaskOptions, interaction?: TaskInteraction) =>
 						? JSON.stringify(output, null, 2)
 						: `Created task '${record.id}'`,
 				)
+				if (options.subcommand === "new" && options.work) {
+					yield* work({
+						taskId: record.id,
+						auto: options.auto,
+						cwd,
+						inputAllowed: options.inputAllowed,
+						silent: options.silent,
+						verbose: options.verbose,
+					})
+				}
 				return
 			}
 			case "create": {
@@ -426,6 +443,8 @@ Create options:
   --branch <name>       Working branch (default: task/<id>)
   --base <name>         Base branch (default: main)
   --multi-phase         Create a task container for phases
+  --work                Start work on the new task after creating it
+  --auto                Pass --auto to work; requires --work
 
 Update options:
   --ticket-url <url> / --clear-ticket

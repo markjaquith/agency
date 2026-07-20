@@ -167,4 +167,39 @@ describe("task creation input", () => {
 			),
 		).rejects.toThrow("task new requires interactive input")
 	})
+
+	test("starts work on a newly created task", async () => {
+		const launches: unknown[] = []
+
+		await runTestEffect(
+			task(
+				{
+					subcommand: "new",
+					args: ["immediate"],
+					ticketUrl: "",
+					description: "",
+					multiPhase: false,
+					repo: "agency",
+					work: true,
+					auto: true,
+					cwd: root,
+					silent: true,
+				},
+				undefined,
+				(options) =>
+					Effect.sync(() => {
+						launches.push(options)
+						return undefined
+					}),
+			),
+		)
+
+		expect(launches).toEqual([
+			expect.objectContaining({
+				taskId: "immediate",
+				auto: true,
+				cwd: root,
+			}),
+		])
+	})
 })

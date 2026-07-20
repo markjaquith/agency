@@ -498,6 +498,8 @@ complete Markdown document.
 ### Epics
 
 ```text
+agency epic new <id> --ticket-url <url> [--description <text>]
+  --repo <alias>:<ref> [--repo <alias>:<ref>...] [--work [--auto]]
 agency epic create <id> --ticket-url <url> [--description <text>] [--json]
   --repo <alias>:<ref> [--repo <alias>:<ref>...]
 agency epic list [filters] [--json]
@@ -517,8 +519,12 @@ repository is available, Agency selects it without presenting a redundant
 choice. This command requires a TTY and fails with `--no-input`:
 
 ```text
-agency task new [id]
+agency task new [id] [--work [--auto]]
 ```
+
+`--work` starts work on the newly created entity. Add `--auto` to pass the
+generated context prompt to the selected runner. These launch options are also
+available on `epic new` and `phase new`; they cannot be combined with `--json`.
 
 Create a single-phase task:
 
@@ -590,6 +596,8 @@ phase. Dependencies remain explicit through `--depends-on`.
 ### Phases
 
 ```text
+agency phase new <task-id> <phase-id>
+  --repo <alias> --branch <name> --base <name> [--work [--auto]]
 agency phase create <task-id> <phase-id>
   --repo <alias> --branch <name> --base <name>
   [--description <text>] [--reference <alias>:<ref>...]
