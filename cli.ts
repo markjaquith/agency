@@ -478,6 +478,7 @@ const commands: Record<string, Command> = {
 					opencode: options.opencode,
 					claude: options.claude,
 					runner: options.runner,
+					auto: options.auto,
 					printCommand: options["print-command"],
 					force: options.force,
 					inputAllowed: options.inputAllowed,
@@ -720,7 +721,7 @@ try {
 	const inputAllowed =
 		!values.json &&
 		!values["no-input"] &&
-		Boolean(process.stdin.isTTY && process.stderr.isTTY)
+		Boolean(process.stdin.isTTY && process.stdout.isTTY)
 	const cwd = await resolveInvocationCwd(commandName, values)
 	if (values.json || (values.jsonl && values.help)) {
 		const result = await collectCommandResult(() =>

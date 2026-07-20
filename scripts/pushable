@@ -49,7 +49,7 @@ const tasks: Task[] = [
 		command: "sh",
 		args: [
 			"-c",
-			'find src -name "*.test.ts" -print0 | xargs -0 -n 1 -P 4 bun test',
+			'find src \\( -name "*.test.ts" -o -name "*.test.tsx" \\) -print0 | xargs -0 -n 1 -P 4 bun test',
 		],
 		color: "\x1b[33m",
 	}, // yellow

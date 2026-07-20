@@ -183,7 +183,8 @@ OpenCode and Claude Code are built-in runner presets. Select either preset or a
 configured runner with `agency work --runner <name>`. A launch is fresh unless
 `AGENCY_SESSION_ID` is already set; resumed launches use the runner's
 `resumeCommand` when configured. The built-in presets use `--continue` only for
-resumed launches.
+resumed launches. By default Agency opens the runner without a prompt. `--auto`
+uses its autonomous command and sends the generated task, phase, or epic prompt.
 
 Custom runners are direct argv commands, never shell snippets:
 
@@ -192,8 +193,10 @@ Custom runners are direct argv commands, never shell snippets:
 	"version": 2,
 	"runners": {
 		"custom": {
-			"command": ["my-agent", "--prompt", "{prompt}"],
-			"resumeCommand": ["my-agent", "resume", "{sessionId}", "{prompt}"],
+			"command": ["my-agent"],
+			"autoCommand": ["my-agent", "--prompt", "{prompt}"],
+			"resumeCommand": ["my-agent", "resume", "{sessionId}"],
+			"autoResumeCommand": ["my-agent", "resume", "{sessionId}", "{prompt}"],
 			"environment": { "MY_AGENT_TARGET": "{target}" }
 		}
 	}
@@ -202,24 +205,32 @@ Custom runners are direct argv commands, never shell snippets:
 
 Available placeholders are `{prompt}`, `{workbase}`, `{target}`, `{task}`,
 `{phase}`, `{claimant}`, `{sessionId}`, and `{claimRevision}`. Task and phase
-placeholders are empty when they do not apply. If `resumeCommand` is omitted,
-the fresh command is also used for resumed sessions.
+placeholders are empty when they do not apply. `{prompt}` is empty unless
+`--auto` is set. If `resumeCommand` is omitted, the fresh command is also used
+for resumed sessions. If `autoResumeCommand` is omitted, `autoCommand` is used;
+configured runners without `autoCommand` reject `--auto`.
 
 Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
 `AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
+`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
+`AGENCY_PROMPT` is empty unless `--auto` is set.
 The `opencode` runner additionally receives `OPENCODE_CONFIG` for the workbase's
 managed integration and `OPENCODE_CONFIG_CONTENT` with runtime-only,
 workbase-scoped access and edit rules. These values keep the Git-synced config
 portable while providing whole-workbase read access at every launch location.
+`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
+`AGENCY_PROMPT` is empty unless `--auto` is set.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
 without launching the runner.
 
 ### Custom Chooser Command
 
-Interactive selection uses a native numbered chooser by default. To use an
-external chooser, configure an argv command in `agency.json`:
+Interactive selection uses an OpenTUI Solid split footer by default. Type to
+fuzzy-filter choices, use arrow keys or Ctrl-N/Ctrl-P to move, press Enter to
+select, and press Escape or Ctrl-C to cancel. To use an external chooser
+instead, configure an argv command in `agency.json`:
 
 ```json
 {
@@ -231,13 +242,14 @@ external chooser, configure an argv command in `agency.json`:
 Agency writes one `key<TAB>label` record per choice to the command's stdin. The
 command must write the selected opaque key or selected record to stdout; commands
 such as `["gum", "filter"]` therefore work without wrappers. Exit codes 1 and
-130, empty stdout, native `q`, and an empty native response cancel selection.
-Other nonzero exits, unknown keys, and invalid native numbers are errors.
+130 or empty stdout cancel external selection. Other nonzero exits and unknown
+keys are errors.
 
-Selectors are opened only when stdin and stderr are terminals and neither
-`--no-input` nor JSON output is active. Labels use color only when stderr is a
-terminal, `TERM` is not `dumb`, and `NO_COLOR` is unset; otherwise selectors use
-plain labels without ANSI styling or icon-font dependencies.
+Selectors are opened only when stdin and stdout are terminals and neither
+`--no-input` nor JSON output is active. External chooser labels use color only
+when stdout is a terminal, `TERM` is not `dumb`, and `NO_COLOR` is unset. The
+native OpenTUI selector uses plain labels without ANSI styling or icon-font
+dependencies.
 
 ## Frontmatter
 
@@ -500,8 +512,9 @@ back-reference.
 
 ### Tasks
 
-Create a task interactively. Text prompts identify optional values, and known
-choices use fzf. This command requires a TTY and fails with `--no-input`:
+Create a task interactively with the OpenTUI Solid footer. When exactly one
+repository is available, Agency selects it without presenting a redundant
+choice. This command requires a TTY and fails with `--no-input`:
 
 ```text
 agency task new [id]
@@ -606,12 +619,13 @@ writing anything.
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Use claims for coordinated ownership and the status subcommands
-for manual lifecycle overrides. The interactive work selector displays status
-markers before execution units. Existing working and delegated work may be
-released to `open` or assigned a terminal outcome. Done and dropped work are
-terminal and may only remain unchanged or transition to open; reopen terminal
-work before changing its outcome.
+before launch. Running `agency work` again can relaunch unclaimed `working` work.
+Use explicit claims only when an external orchestrator needs coordinated
+ownership. The interactive work selector displays status markers before
+execution units. Existing working and delegated work may be released to `open`
+or assigned a terminal outcome. Done and dropped work are terminal and may only
+remain unchanged or transition to open; reopen terminal work before changing its
+outcome.
 
 `delegated` remains readable for existing workbases but cannot be newly assigned.
 Delegation is now explicit: the claimant identifies the orchestrator and the
@@ -645,11 +659,10 @@ frontmatter. Conflicts return the current revision and complete ownership record
 in the machine error envelope rather than overwriting it. Expired claims may be
 replaced with a revision-guarded claim.
 
-`agency work` claims an execution unit before launching its agent. Set
-`AGENCY_CLAIMANT`, `AGENCY_RUNNER`, or `AGENCY_SESSION_ID` to supply orchestrator
-identities; otherwise Agency derives them from the user and process. The selected
-runner name is recorded on the claim. The launched agent receives the normalized
-runner environment documented above for a later release or finish operation.
+`agency work` does not claim execution units. It refuses active explicit claims,
+marks open execution work `working`, and launches the runner. External
+orchestrators use `agency claim`, launch and monitor their runner separately, and
+later call `agency release` or `agency finish`.
 
 ### Archive
 
@@ -676,21 +689,21 @@ for restoration. Archived IDs are reserved until restored.
 ### Work and Pull Requests
 
 ```text
-agency work [<directory> | --epic <epic-id>] [--runner <name>] [--print-command]
+agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency pr create <task-id> [phase-id] [--draft] [--json]
 ```
 
-`agency work` presents the full hierarchy in `fzf`. Pass a directory, including
-`.` for the current directory, to infer its epic, task, or phase. Outside a
-workbase, Agency first presents the registered workbases, then the selected
-workbase's hierarchy. If `fzf` is not installed, Agency prints the available
-choices and asks for an explicit directory.
+`agency work` presents the full hierarchy in the native OpenTUI selector or the
+configured external chooser. Pass a directory, including `.` for the current
+directory, to infer its epic, task, or phase. Outside a workbase, Agency first
+presents the registered workbases, then the selected workbase's hierarchy.
 
 OpenCode is the default runner, with automatic Claude fallback when neither is
 explicitly selected. `--opencode` and `--claude` remain aliases for requiring
-their built-in presets.
+their built-in presets. Launches are interactive and promptless by default; use
+`--auto` to send Agency's generated context prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees without launching an agent or changing status.
@@ -707,11 +720,10 @@ conflicting worktrees. Repair is deliberately conservative: it repairs safe Git
 registration issues and materializes missing checkouts, but never switches a
 branch, resets a commit, or discards uncommitted work.
 
-Epic and multi-phase task targets launch orchestration agents beside their
-documents. Single-phase tasks and phases fetch repositories, create or reuse
-worktrees under `code/`, and launch an execution agent in the writable checkout
-with absolute context paths. An explicit directory or `--epic` target bypasses
-the hierarchy chooser.
+Agency launches every agent beside its epic or task document. Single-phase tasks
+and phases first fetch repositories and create or reuse worktrees under `code/`,
+then launch the execution agent from the task directory with absolute context
+paths. An explicit directory or `--epic` target bypasses the hierarchy chooser.
 
 Each writable `(repo, branch)` pair may belong to only one task or phase. Agency
 validation reports duplicate ownership, and `agency work` checks Git's worktree

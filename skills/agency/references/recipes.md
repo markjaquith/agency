@@ -88,10 +88,13 @@ agency work tasks/checkout/phases/api
 ```
 
 `agency work` is intentionally last: it synchronizes managed integration files,
-checks readiness, materializes worktrees, creates a claim, marks this execution
-unit working, and launches the runner. OpenCode receives whole-workbase read
-visibility through runtime-only config and permission values; this does not
-expand the writable checkout reported by `agency context`.
+checks readiness, materializes worktrees, marks this execution unit working
+without a claim, and launches the runner. Run it again to relaunch unclaimed
+working work. The runner opens without a prompt by default; add `--auto` only
+when the generated context prompt should start autonomous execution.
+OpenCode receives whole-workbase read visibility through runtime-only config and
+permission values; this does not expand the writable checkout reported by
+`agency context`.
 
 ## Active Agent: Execute Assigned Work
 
@@ -99,10 +102,9 @@ expand the writable checkout reported by `agency context`.
 agency context . --json
 ```
 
-1. Verify context reports the expected execution target, valid structure, the
-   current checkout as `authority.writable.checkoutPath`, and a claim owned by
-   the current session. Reject dependency or validation blockers and conflicting
-   claims; the owned unit's `working` status blocker is expected.
+1. Verify context reports the expected execution target, valid structure, and
+   the current checkout as `authority.writable.checkoutPath`. Reject dependency
+   or validation blockers and conflicting active claims.
 2. Read `TASK.md`, and `PHASE.md` for phase work.
 3. Implement only in the writable checkout; treat all reference checkouts as
    read-only.
@@ -110,7 +112,8 @@ agency context . --json
 5. Review and commit the diff.
 6. If requested, run `agency validate`, then
    `agency pr create <task-id> [phase-id]`.
-7. Finish the current claim only after its completion condition is true.
+7. Finish an active claim after its completion condition is true; otherwise set
+   the task or phase status directly.
 
 Never invoke `agency work` merely because an execution checkout already exists;
 that would start another agent rather than continue the current assignment.
@@ -145,7 +148,7 @@ worktrees manually.
 ## Assign A Runner
 
 For a human-operated local launch, Agency combines readiness checks, prepare,
-claim, status mutation, and runner launch:
+status mutation, and runner launch without creating a claim:
 
 ```bash
 agency work tasks/checkout/phases/ui --runner opencode

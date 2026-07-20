@@ -301,17 +301,23 @@ describe("task and phase services", () => {
 			),
 		)
 		expect(createdTask.content).toContain("status: open")
-		for (const status of ["working", "delegated"]) {
-			await expect(
-				runTestEffect(
-					TaskService.pipe(
-						Effect.flatMap((service) =>
-							service.setStatus("single-status", status, root),
-						),
+		const workingTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "working", root),
+				),
+			),
+		)
+		expect(workingTask.data.status).toBe("working")
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("single-status", "delegated", root),
 					),
 				),
-			).rejects.toThrow("require explicit ownership")
-		}
+			),
+		).rejects.toThrow("Delegation requires explicit ownership")
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -359,6 +365,14 @@ describe("task and phase services", () => {
 				),
 			),
 		)
+		const workingPhase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("multi-status", "implementation", "working", root),
+				),
+			),
+		)
+		expect(workingPhase.data.status).toBe("working")
 		const phase = await runTestEffect(
 			PhaseService.pipe(
 				Effect.flatMap((service) =>

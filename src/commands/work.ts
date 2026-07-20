@@ -7,7 +7,6 @@ import { WorkbaseService } from "../services/WorkbaseService"
 import { EpicService } from "../services/EpicService"
 import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
-import { ClaimService } from "../services/ClaimService"
 import { ReadinessService } from "../services/ReadinessService"
 import { IntegrationService } from "../services/IntegrationService"
 import { createLoggers } from "../utils/effect"
@@ -39,6 +38,7 @@ interface WorkOptions extends BaseCommandOptions {
 	readonly claude?: boolean
 	readonly runner?: string
 	readonly printCommand?: boolean
+	readonly auto?: boolean
 	readonly force?: boolean
 }
 
@@ -105,7 +105,6 @@ export const work = (
 		const epics = yield* EpicService
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
-		const claims = yield* ClaimService
 		const readiness = yield* ReadinessService
 		const integrations = yield* IntegrationService
 		const { log, verboseLog } = createLoggers(options)
@@ -207,13 +206,13 @@ export const work = (
 				taskRecords,
 				phaseRecords,
 			)
-			const readyTargetIds = options.force
+			const workTargetIds = options.force
 				? null
-				: yield* readiness.getReadyWorkTargetIds(root)
+				: yield* readiness.getWorkTargetIds(root)
 			const choices = options.force
 				? allChoices
 				: allChoices.filter((choice) =>
-						readyTargetIds!.has(targetNodeId(choice.target)),
+						workTargetIds!.has(targetNodeId(choice.target)),
 					)
 			if (choices.length === 0) {
 				return yield* Effect.fail(
@@ -227,6 +226,7 @@ export const work = (
 
 		let prompt: string
 		let launchPath: string
+		let writablePath: string | undefined
 		if (target.kind === "epic") {
 			prompt = `Work on the epic. Read ${target.path}.`
 			launchPath = dirname(target.path)
@@ -250,7 +250,8 @@ export const work = (
 			prompt = workspace.phasePath
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
-			launchPath = workspace.writablePath
+			launchPath = dirname(workspace.taskPath)
+			writablePath = workspace.writablePath
 		}
 
 		const explicitlyRequested = Boolean(
@@ -267,22 +268,22 @@ export const work = (
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 		const resume = process.env.AGENCY_SESSION_ID !== undefined
-		let claimRevision = ""
-		let variables = {
-			prompt,
+		const variables = {
+			prompt: options.auto ? prompt : "",
 			workbase: root,
 			target: targetNodeId(target),
 			task: target.kind === "epic" ? "" : target.taskId,
 			phase: target.kind === "phase" ? target.phaseId : "",
 			claimant,
 			sessionId,
-			claimRevision,
+			claimRevision: "",
 		}
 		let resolved = resolveRunnerCommand(
 			runner,
 			config.runners,
 			variables,
 			resume,
+			options.auto,
 		)
 		let cli = resolved.argv[0]!
 		let available = yield* fs.runCommand(["which", cli], {
@@ -294,35 +295,26 @@ export const work = (
 			runner === "opencode"
 		) {
 			runner = "claude"
-			resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
+			resolved = resolveRunnerCommand(
+				runner,
+				config.runners,
+				variables,
+				resume,
+				options.auto,
+			)
 			cli = resolved.argv[0]!
 			available = yield* fs.runCommand(["which", cli], { captureOutput: true })
 		}
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
-		if (
-			target.kind === "phase" ||
-			(target.kind === "task" && !target.multiPhase)
-		) {
-			const phaseId = target.kind === "phase" ? target.phaseId : undefined
-			const current = yield* claims.inspect(target.taskId, phaseId, root)
-			const acquired = yield* claims.claim(
-				{
-					taskId: target.taskId,
-					...(phaseId ? { phaseId } : {}),
-					claimant,
-					runner,
-					sessionId,
-					revision: current.revision,
-				},
-				root,
-			)
-			claimRevision = acquired.revision
-		}
-
-		variables = { ...variables, claimRevision }
-		resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
+		resolved = resolveRunnerCommand(
+			runner,
+			config.runners,
+			variables,
+			resume,
+			options.auto,
+		)
 		cli = resolved.argv[0]!
 		const environment = {
 			...resolved.environment,
@@ -333,7 +325,17 @@ export const work = (
 			const execution =
 				target.kind === "phase" ||
 				(target.kind === "task" && !target.multiPhase)
-			const edit = { [execution ? "../**" : "*"]: "deny" as const }
+			const edit = execution
+				? {
+						"*": "deny" as const,
+						...Object.fromEntries(
+							[root, launchPath].map((base) => [
+								join(relative(base, writablePath!), "**").split(sep).join("/"),
+								"allow" as const,
+							]),
+						),
+					}
+				: { "*": "deny" as const }
 			environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
 				permission: {
 					external_directory: { [join(root, "**")]: "allow" },
@@ -360,6 +362,11 @@ export const work = (
 				),
 			)
 			return
+		}
+		if (target.kind === "phase") {
+			yield* phases.setStatus(target.taskId, target.phaseId, "working", root)
+		} else if (target.kind === "task" && !target.multiPhase) {
+			yield* tasks.setStatus(target.taskId, "working", root)
 		}
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
@@ -438,7 +445,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 	})
 
 export const help = `
-Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>]
+Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto]
        agency work prepare [target] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
@@ -458,6 +465,7 @@ Options:
   --workbase <target>  Select a workbase by ID, name, or path
   --cwd <path>         Resolve context from a specific directory
   --runner <name>      Select a configured runner or built-in preset
+  --auto               Send the generated context prompt to the runner
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset

@@ -203,6 +203,60 @@ describe("ReadinessService", () => {
 		await service((readiness) =>
 			readiness.guardWorkTarget("phase:ship/implement", root),
 		)
+		expect(
+			[
+				...(await service((readiness) => readiness.getWorkTargetIds(root))),
+			].sort(),
+		).toEqual([...readyIds].sort())
+
+		await write(
+			root,
+			"tasks/ship/phases/implement/PHASE.md",
+			execution("working", "feat/implement"),
+		)
+		const resumableIds = await service((readiness) =>
+			readiness.getWorkTargetIds(root),
+		)
+		expect(resumableIds).toContain("epic:delivery")
+		expect(resumableIds).toContain("task:ship")
+		expect(resumableIds).toContain("execution-unit:phase/ship/implement")
+		await service((readiness) =>
+			readiness.guardWorkTarget("execution-unit:phase/ship/implement", root),
+		)
+
+		await write(
+			root,
+			"tasks/ship/phases/implement/PHASE.md",
+			`---
+repo: agency
+branch: feat/implement
+base: main
+pr: null
+status: working
+claim:
+  claimant: orchestrator
+  runner: opencode
+  sessionId: session-1
+  startedAt: 2026-07-20T00:00:00.000Z
+  targetRevision: ${"a".repeat(64)}
+  state: active
+---
+
+# Execution
+`,
+		)
+		expect(
+			await service((readiness) => readiness.getWorkTargetIds(root)),
+		).not.toContain("execution-unit:phase/ship/implement")
+		await expect(
+			service((readiness) =>
+				readiness.guardWorkTarget(
+					"execution-unit:phase/ship/implement",
+					root,
+					true,
+				),
+			),
+		).rejects.toThrow("active claim")
 
 		const blocked = await service((readiness) =>
 			Effect.either(readiness.guardWorkTarget("phase:ship/verify", root)),

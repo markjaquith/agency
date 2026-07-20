@@ -740,13 +740,14 @@ const commands = {
 	},
 	work: {
 		usage:
-			"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] | agency work prepare [target] [--dry-run] [--json]",
+			"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
 			...entitySelectorOptions,
 			json: { type: "boolean" },
 			"dry-run": { type: "boolean" },
 			runner: { type: "string" },
+			auto: { type: "boolean" },
 			"print-command": { type: "boolean" },
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
@@ -754,7 +755,7 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] | agency work prepare [target] [--dry-run] [--json]",
+				"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: [
@@ -764,6 +765,7 @@ const commands = {
 				"task",
 				"phase",
 				"runner",
+				"auto",
 				"print-command",
 				"opencode",
 				"claude",
@@ -1361,6 +1363,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 					parsed.values.opencode ||
 					parsed.values.claude ||
 					parsed.values.runner ||
+					parsed.values.auto ||
 					parsed.values["print-command"] ||
 					parsed.values.force))
 		) {

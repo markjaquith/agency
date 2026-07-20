@@ -13,7 +13,9 @@ export interface RunnerCommandVariables {
 
 interface RunnerDefinition {
 	readonly command: readonly string[]
+	readonly autoCommand?: readonly string[]
 	readonly resumeCommand?: readonly string[]
+	readonly autoResumeCommand?: readonly string[]
 	readonly environment?: Readonly<Record<string, string>>
 }
 
@@ -30,12 +32,16 @@ const PLACEHOLDERS = new Set<keyof RunnerCommandVariables>([
 
 const BUILTIN_RUNNERS: Readonly<Record<string, RunnerDefinition>> = {
 	opencode: {
-		command: ["opencode", "--prompt", "{prompt}"],
-		resumeCommand: ["opencode", "--continue", "--prompt", "{prompt}"],
+		command: ["opencode"],
+		autoCommand: ["opencode", "--prompt", "{prompt}"],
+		resumeCommand: ["opencode", "--continue"],
+		autoResumeCommand: ["opencode", "--continue", "--prompt", "{prompt}"],
 	},
 	claude: {
-		command: ["claude", "{prompt}"],
-		resumeCommand: ["claude", "--continue", "{prompt}"],
+		command: ["claude"],
+		autoCommand: ["claude", "{prompt}"],
+		resumeCommand: ["claude", "--continue"],
+		autoResumeCommand: ["claude", "--continue", "{prompt}"],
 	},
 }
 
@@ -54,7 +60,9 @@ export const validateRunners = (runners: WorkbaseConfig["runners"]): void => {
 	for (const [name, runner] of Object.entries(runners ?? {})) {
 		for (const value of [
 			...runner.command,
+			...(runner.autoCommand ?? []),
 			...(runner.resumeCommand ?? []),
+			...(runner.autoResumeCommand ?? []),
 			...Object.values(runner.environment ?? {}),
 		]) {
 			validateTemplate(name, value)
@@ -74,14 +82,21 @@ export const resolveRunnerCommand = (
 	configured: WorkbaseConfig["runners"],
 	variables: RunnerCommandVariables,
 	resume: boolean,
+	auto = false,
 ) => {
 	validateRunners(configured)
 	const definition = configured?.[name] ?? BUILTIN_RUNNERS[name]
 	if (!definition) throw new Error(`Unknown runner: ${name}`)
-	const template =
-		resume && definition.resumeCommand
+	const template = auto
+		? resume
+			? (definition.autoResumeCommand ?? definition.autoCommand)
+			: definition.autoCommand
+		: resume && definition.resumeCommand
 			? definition.resumeCommand
 			: definition.command
+	if (!template) {
+		throw new Error(`Runner '${name}' does not support --auto`)
+	}
 	const argv = template.map((argument) => expand(argument, variables))
 	const environment = Object.fromEntries(
 		Object.entries(definition.environment ?? {}).map(([key, value]) => [

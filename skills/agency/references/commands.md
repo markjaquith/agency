@@ -109,8 +109,9 @@ agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
   [--if-revision <hash>] [--json]
 ```
 
-`task new` is interactive and requires a TTY. Agents and scripts use
-noninteractive `task create`. Mutation commands that accept `--if-revision`
+`task new` uses the OpenTUI Solid footer and requires a TTY. A sole repository is
+selected automatically. Agents and scripts use noninteractive `task create`.
+Mutation commands that accept `--if-revision`
 return a revision conflict instead of overwriting changed documents.
 
 ## Ownership And Lifecycle
@@ -143,7 +144,7 @@ worktrees when needed, preserve branches, and retain lifecycle provenance.
 
 ```text
 agency work [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]]
-  [--runner <name> | --opencode | --claude] [--print-command] [--force]
+  [--runner <name> | --opencode | --claude] [--auto] [--print-command] [--force]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree list [--json]
 agency worktree inspect <task-id> [phase-id] [--json]
@@ -154,17 +155,19 @@ agency worktree repair <task-id> [phase-id] [--dry-run] [--json]
 agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 ```
 
-`work` is a launch flow, not an active-agent step. It synchronizes managed
-integration files before launch. Execution targets are materialized and claimed;
-epics and multi-phase tasks launch in orchestration context without those steps.
+`work` is a local launch flow, not an active-agent step. It synchronizes managed
+integration files before launch. Execution targets are materialized and marked
+working without a claim; epics and multi-phase tasks launch in orchestration
+context without those steps. Unclaimed working targets can be launched again.
+The runner opens without a generated prompt unless `--auto` is set.
 The OpenCode runner receives a runtime managed-config path plus absolute access
 and edit rules scoped to the workbase; none are persisted, and `context` still
 defines write authority.
-`--print-command` suppresses only the final launch, so execution targets are still
-materialized and claimed before the command is printed. `work prepare`
-materializes without launching or changing status. Destructive remove and
-rebuild operations refuse dirty or conflicting state. Conservative repair may
-correct registration while preserving dirty files, but never discards changes.
+`--print-command` materializes execution targets but does not launch or change
+status. `work prepare` materializes without launching or changing status.
+Destructive remove and rebuild operations refuse dirty or conflicting state.
+Conservative repair may correct registration while preserving dirty files, but
+never discards changes.
 `pr create` materializes a missing workspace, requires the resulting writable
 checkout to be clean, pushes the declared branch, invokes the configured delivery
 provider or falls back to `gh pr create --fill`, and records the returned pull
@@ -178,6 +181,6 @@ perform cwd inference elsewhere. Targeted commands accept `--epic`, `--task`,
 and, with a task, `--phase`. `--json`, `--no-input`, or non-TTY execution disables
 prompts; provide all selectors and required inputs explicitly.
 
-Selectors are only a resolution mechanism; they do not make discovery and claim
-atomic. There is no `assign` command. Use `work` for a local human launch, or use
-`claim` and manage an external runner separately.
+Selectors are only a resolution mechanism. There is no `assign` command. Use
+`work` for a local human launch, or use `claim` and manage an external runner
+separately.

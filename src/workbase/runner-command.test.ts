@@ -18,15 +18,27 @@ const variables = {
 }
 
 describe("runner commands", () => {
-	test("uses deterministic fresh and resume commands for built-in presets", () => {
+	test("uses promptless interactive commands for built-in presets", () => {
 		expect(
 			resolveRunnerCommand("opencode", undefined, variables, false).argv,
-		).toEqual(["opencode", "--prompt", "Read the task."])
+		).toEqual(["opencode"])
 		expect(
 			resolveRunnerCommand("opencode", undefined, variables, true).argv,
-		).toEqual(["opencode", "--continue", "--prompt", "Read the task."])
+		).toEqual(["opencode", "--continue"])
 		expect(
 			resolveRunnerCommand("claude", undefined, variables, true).argv,
+		).toEqual(["claude", "--continue"])
+	})
+
+	test("uses autonomous commands when a prompt is requested", () => {
+		expect(
+			resolveRunnerCommand("opencode", undefined, variables, false, true).argv,
+		).toEqual(["opencode", "--prompt", "Read the task."])
+		expect(
+			resolveRunnerCommand("opencode", undefined, variables, true, true).argv,
+		).toEqual(["opencode", "--continue", "--prompt", "Read the task."])
+		expect(
+			resolveRunnerCommand("claude", undefined, variables, true, true).argv,
 		).toEqual(["claude", "--continue", "Read the task."])
 	})
 
@@ -35,12 +47,14 @@ describe("runner commands", () => {
 			"custom",
 			{
 				custom: {
-					command: ["agent", "--target={target}", "{prompt}"],
+					command: ["agent"],
+					autoCommand: ["agent", "--target={target}", "{prompt}"],
 					environment: { CUSTOM_SESSION: "{sessionId}" },
 				},
 			},
 			variables,
 			false,
+			true,
 		)
 
 		expect(resolved).toEqual({
@@ -51,6 +65,18 @@ describe("runner commands", () => {
 			],
 			environment: { CUSTOM_SESSION: "session-1" },
 		})
+	})
+
+	test("rejects --auto for configured runners without an auto command", () => {
+		expect(() =>
+			resolveRunnerCommand(
+				"custom",
+				{ custom: { command: ["agent"] } },
+				variables,
+				false,
+				true,
+			),
+		).toThrow("Runner 'custom' does not support --auto")
 	})
 
 	test("rejects unknown placeholders", () => {

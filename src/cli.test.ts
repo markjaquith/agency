@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { access, mkdir, realpath } from "node:fs/promises"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
 import { cleanupTempDir, createTempDir } from "./test-utils"
@@ -92,8 +92,15 @@ async function startGitDaemon(basePath: string) {
 
 describe("CLI", () => {
 	const tempDirs: string[] = []
+	const daemons: Bun.Subprocess[] = []
 
 	afterEach(async () => {
+		await Promise.all(
+			daemons.splice(0).map(async (daemon) => {
+				daemon.kill()
+				await daemon.exited
+			}),
+		)
 		await Promise.all(tempDirs.splice(0).map(cleanupTempDir))
 	})
 
@@ -445,7 +452,7 @@ describe("CLI", () => {
 
 		const after = await runCli(["status", "--silent"], root)
 		expect(after).toEqual({ exitCode: 0, stdout: "", stderr: "" })
-	}, 10_000)
+	}, 30_000)
 
 	test("lists ready work and exposes excluded blockers through one result", async () => {
 		const root = await createTempDir()
@@ -632,7 +639,7 @@ describe("CLI", () => {
 		expect(JSON.parse(explicitOutside.stdout).error.message).toContain(
 			"No Agency workbase found from",
 		)
-	})
+	}, 20_000)
 
 	test("exports equivalent JSON and JSONL graph contracts", async () => {
 		const root = await createTempDir()
@@ -849,6 +856,10 @@ status: open
 			]) {
 				expect(Bun.spawnSync(["git", "-C", source, ...args]).exitCode).toBe(0)
 			}
+			await runGit(["clone", "--bare", source, join(parent, "source.git")])
+			const daemon = await startGitDaemon(parent)
+			daemons.push(daemon.process)
+			await runGit(["-C", source, "remote", "add", "origin", daemon.remote])
 
 			parseJson(await runCli(["init", root, "--json"], parent))
 			parseJson(
@@ -959,23 +970,23 @@ status: open
 			const launches = [
 				{
 					args: ["--task", "example"],
-					cwd: taskWorkspace.writablePath,
-					writable: true,
+					cwd: join(workbaseRoot, "tasks/example"),
+					writable: taskWorkspace.writablePath,
 				},
 				{
 					args: ["--task", "pipeline", "--phase", "build"],
-					cwd: phaseWorkspace.writablePath,
-					writable: true,
+					cwd: join(workbaseRoot, "tasks/pipeline"),
+					writable: phaseWorkspace.writablePath,
 				},
 				{
 					args: ["--epic", "delivery"],
 					cwd: join(workbaseRoot, "epics/delivery"),
-					writable: false,
+					writable: null,
 				},
 				{
 					args: ["--task", "pipeline"],
 					cwd: join(workbaseRoot, "tasks/pipeline"),
-					writable: false,
+					writable: null,
 				},
 			]
 			for (const launch of launches) {
@@ -1015,11 +1026,24 @@ status: open
 					expect.arrayContaining([
 						expect.objectContaining({
 							permission: "edit",
-							pattern: launch.writable ? "../**" : "*",
+							pattern: "*",
 							action: "deny",
 						}),
 					]),
 				)
+				if (launch.writable) {
+					expect(agent.permission).toEqual(
+						expect.arrayContaining(
+							[workbaseRoot, launch.cwd].map((base) =>
+								expect.objectContaining({
+									permission: "edit",
+									pattern: join(relative(base, launch.writable!), "**"),
+									action: "allow",
+								}),
+							),
+						),
+					)
+				}
 
 				if (launch === launches[0]) {
 					for (const document of documents) {

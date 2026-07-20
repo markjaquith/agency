@@ -76,7 +76,8 @@ describe("IntegrationService", () => {
 
 		expect(body).toContain("agency context . --json")
 		expect(body).toContain("authority.writable.checkoutPath")
-		expect(body).toContain("Do not begin execution without a claim")
+		expect(body).toContain("`agency work` is the local launch flow")
+		expect(body).toContain("External orchestrators claim before launching")
 		expect(body).toContain("Run `agency validate`")
 		expect(body).toContain("only with explicit user intent")
 		expect(body).toContain("An execution unit is `working`")

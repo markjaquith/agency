@@ -171,12 +171,34 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 								] as const,
 						),
 						...Object.entries(config.runners ?? {}).flatMap(([name, runner]) =>
+							runner.autoCommand
+								? [
+										[
+											`integration.runner.${name}.auto`,
+											runner.autoCommand,
+											`Configured runner '${name}' auto`,
+										] as const,
+									]
+								: [],
+						),
+						...Object.entries(config.runners ?? {}).flatMap(([name, runner]) =>
 							runner.resumeCommand
 								? [
 										[
 											`integration.runner.${name}.resume`,
 											runner.resumeCommand,
 											`Configured runner '${name}' resume`,
+										] as const,
+									]
+								: [],
+						),
+						...Object.entries(config.runners ?? {}).flatMap(([name, runner]) =>
+							runner.autoResumeCommand
+								? [
+										[
+											`integration.runner.${name}.auto-resume`,
+											runner.autoResumeCommand,
+											`Configured runner '${name}' auto resume`,
 										] as const,
 									]
 								: [],

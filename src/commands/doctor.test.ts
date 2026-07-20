@@ -39,7 +39,12 @@ describe("doctor command", () => {
 			"agency.json",
 			JSON.stringify({
 				version: 2,
-				runners: { missing: { command: ["definitely-not-installed"] } },
+				runners: {
+					missing: {
+						command: ["definitely-not-installed"],
+						autoCommand: ["also-not-installed", "{prompt}"],
+					},
+				},
 			}),
 		)
 		await mkdir(join(root, "repos"), { recursive: true })
@@ -83,6 +88,11 @@ status: open
 				}),
 				expect.objectContaining({
 					id: "integration.runner.missing",
+					level: "error",
+					status: "fail",
+				}),
+				expect.objectContaining({
+					id: "integration.runner.missing.auto",
 					level: "error",
 					status: "fail",
 				}),

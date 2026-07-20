@@ -136,14 +136,16 @@ describe("runner configuration", () => {
 			version: 2,
 			runners: {
 				custom: {
-					command: ["agent", "{prompt}"],
+					command: ["agent"],
+					autoCommand: ["agent", "{prompt}"],
 					resumeCommand: ["agent", "resume", "{sessionId}"],
+					autoResumeCommand: ["agent", "resume", "{sessionId}", "{prompt}"],
 					environment: { CUSTOM_TARGET: "{target}" },
 				},
 			},
 		})
 
-		expect(config.runners?.custom?.command).toEqual(["agent", "{prompt}"])
+		expect(config.runners?.custom?.autoCommand).toEqual(["agent", "{prompt}"])
 	})
 
 	test("rejects shell strings in place of argv arrays", () => {

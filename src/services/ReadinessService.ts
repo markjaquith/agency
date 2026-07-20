@@ -46,6 +46,23 @@ const executionNodeId = (taskId: string, phaseId?: string) =>
 		? `execution-unit:phase/${taskId}/${phaseId}`
 		: `execution-unit:task/${taskId}`
 
+const hasActiveClaim = (node: GraphNode) =>
+	node.kind !== "epic" &&
+	node.kind !== "repository" &&
+	"claim" in node.data &&
+	node.data.claim?.state === "active"
+
+const isResumableWork = (node: GraphNode) =>
+	node.kind !== "repository" &&
+	node.status === "working" &&
+	!hasActiveClaim(node) &&
+	node.readiness.blockers.every((blocker) => blocker.kind !== "validation")
+
+const isWorkTarget = (node: GraphNode) =>
+	node.kind !== "repository" &&
+	!hasActiveClaim(node) &&
+	(node.readiness.ready || isResumableWork(node))
+
 const itemFor = (
 	node: ExecutionNode,
 	graph: AgencyGraph,
@@ -126,6 +143,15 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 					)
 				}),
 
+			getWorkTargetIds: (cwd: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const graphs = yield* GraphService
+					const graph = yield* graphs.get({ cwd })
+					return new Set(
+						graph.nodes.filter(isWorkTarget).map((node) => node.id),
+					)
+				}),
+
 			getNext: (cwd: string = process.cwd(), select = false) =>
 				Effect.gen(function* () {
 					const graphs = yield* GraphService
@@ -150,11 +176,11 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 				override = false,
 			) =>
 				Effect.gen(function* () {
-					if (override) return
 					const graphs = yield* GraphService
 					const graph = yield* graphs.get({ cwd })
 					const node = graph.nodes.find((candidate) => candidate.id === target)
 					if (!node || !node.readiness) {
+						if (override) return
 						return yield* new ExecutionGuardError({
 							message: `Work target '${target}' was not found in the work graph.`,
 							action: "work",
@@ -164,7 +190,18 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 							blockers: [],
 						})
 					}
-					if (!node.readiness.ready) {
+					if (hasActiveClaim(node)) {
+						return yield* new ExecutionGuardError({
+							message: `Cannot work on '${node.key}': it has an active claim. Use agency release or agency finish first.`,
+							action: "work",
+							target,
+							status: node.status!,
+							blockedBy: node.readiness!.blockedBy,
+							blockers: node.readiness!.blockers,
+						})
+					}
+					if (override) return
+					if (!node.readiness.ready && !isResumableWork(node)) {
 						const item = {
 							key: node.key,
 							status: node.status!,

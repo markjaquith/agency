@@ -474,10 +474,10 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					const fs = yield* FileSystemService
 					const service = yield* PhaseService
 					const validStatus = yield* decodeStatus(status)
-					if (validStatus === "working" || validStatus === "delegated") {
+					if (validStatus === "delegated") {
 						return yield* new PhaseError({
 							message:
-								"Active work and delegation require explicit ownership; use 'agency claim'",
+								"Delegation requires explicit ownership; use 'agency claim'",
 						})
 					}
 					const record = yield* service.show(taskId, id, startPath)

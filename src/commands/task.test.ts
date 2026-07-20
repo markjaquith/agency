@@ -61,8 +61,41 @@ describe("task creation input", () => {
 			"Description (optional): ",
 			"Parent epic: (none),delivery",
 			"Task type: single-phase,multi-phase",
-			"Writable repository: agency",
 		])
+	})
+
+	test("asks for a repository only when more than one is available", async () => {
+		await mkdir(join(root, "repos/web"), { recursive: true })
+		const prompts: string[] = []
+		const interaction: TaskInteraction = {
+			text: () => Effect.fail(new Error("unexpected text prompt")),
+			select: (prompt, choices) => {
+				prompts.push(`${prompt}: ${choices.join(",")}`)
+				return Effect.succeed(prompt === "Task type" ? "single-phase" : "web")
+			},
+		}
+
+		await runTestEffect(
+			task(
+				{
+					subcommand: "new",
+					args: ["multi-repo"],
+					ticketUrl: "",
+					description: "",
+					cwd: root,
+					silent: true,
+				},
+				interaction,
+			),
+		)
+
+		expect(prompts).toEqual([
+			"Task type: single-phase,multi-phase",
+			"Writable repository: agency,web",
+		])
+		expect(
+			await Bun.file(join(root, "tasks/multi-repo/TASK.md")).text(),
+		).toContain("repo: web")
 	})
 
 	test("keeps scripted creation non-interactive and permits no ticket URL", async () => {
