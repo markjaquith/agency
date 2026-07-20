@@ -81,3 +81,20 @@ export const parseFrontmatter = (content: string, path: string) =>
 
 export const formatMarkdownDocument = (data: object, body: string) =>
 	`---\n${stringify(data, { lineWidth: 0 }).trimEnd()}\n---\n\n${body.trim()}\n`
+
+export const formatWorkDocumentBody = (
+	title: string,
+	kind: "epic" | "task" | "phase",
+) => `# ${title}
+
+## Outcome
+
+Describe the ${kind} outcome.
+
+## Plan
+
+Describe the current approach.
+
+## Important Decisions
+
+Record consequential decisions and their rationale.`

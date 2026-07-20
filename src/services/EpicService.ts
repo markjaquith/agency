@@ -10,6 +10,7 @@ import {
 } from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
+	formatWorkDocumentBody,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { documentRevision } from "../workbase/document-revision"
@@ -95,7 +96,7 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 					.join(" ")
 				const content = formatMarkdownDocument(
 					data,
-					`# ${title}\n\nDescribe the epic outcome.`,
+					formatWorkDocumentBody(title, "epic"),
 				)
 				yield* fs.writeFile(path, content)
 				return {

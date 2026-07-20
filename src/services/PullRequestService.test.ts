@@ -220,7 +220,10 @@ process.exit(${exitCode})
 		const original = await Bun.file(taskPath).text()
 		await Bun.write(
 			taskPath,
-			original.replace("# Example\n\nDescribe the task outcome.", body),
+			original.replace(
+				"# Example\n\n## Outcome\n\nDescribe the task outcome.\n\n## Plan\n\nDescribe the current approach.\n\n## Important Decisions\n\nRecord consequential decisions and their rationale.",
+				body,
+			),
 		)
 		const url = "https://github.com/example/agency/pull/42"
 		await writeFakeGh({ stdout: `${url}\n` })
