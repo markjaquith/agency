@@ -45,10 +45,13 @@ describe("spawnProcess", () => {
 		const lineCount = 256
 		const script = [
 			`const line = ${JSON.stringify(line)}`,
-			`for (let i = 0; i < ${lineCount}; i++) {`,
-			"console.log(`out:${i}:${line}`)",
-			"console.error(`err:${i}:${line}`)",
-			"}",
+			`const indexes = Array.from({ length: ${lineCount} }, (_, i) => i)`,
+			"const stdout = indexes.map((i) => `out:${i}:${line}`).join(`\n`)",
+			"const stderr = indexes.map((i) => `err:${i}:${line}`).join(`\n`)",
+			"const write = (stream, output) => new Promise((resolve, reject) => {",
+			"stream.write(output, (error) => error ? reject(error) : resolve())",
+			"})",
+			"await Promise.all([write(process.stdout, stdout), write(process.stderr, stderr)])",
 		].join("\n")
 
 		const result = await Effect.runPromise(

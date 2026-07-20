@@ -138,6 +138,7 @@ export const work = (
 					taskId: task.id,
 					phaseId: phase.id,
 					path: phase.path,
+					status: phase.data.status,
 				}
 			} else {
 				target = {
@@ -145,6 +146,7 @@ export const work = (
 					taskId: task.id,
 					path: task.path,
 					multiPhase: "phases" in task.data,
+					status: "phases" in task.data ? undefined : task.data.status,
 				}
 			}
 		} else if (options.directory && !isDirectory) {
@@ -154,6 +156,7 @@ export const work = (
 				taskId: task.id,
 				path: task.path,
 				multiPhase: "phases" in task.data,
+				status: "phases" in task.data ? undefined : task.data.status,
 			}
 		} else if (directoryPath) {
 			const path = relative(root, startPath)
@@ -173,6 +176,7 @@ export const work = (
 						taskId: task.id,
 						phaseId: phase.id,
 						path: phase.path,
+						status: phase.data.status,
 					}
 				} else {
 					target = {
@@ -180,6 +184,7 @@ export const work = (
 						taskId: task.id,
 						path: task.path,
 						multiPhase: "phases" in task.data,
+						status: "phases" in task.data ? undefined : task.data.status,
 					}
 				}
 			}
@@ -224,6 +229,11 @@ export const work = (
 		}
 		yield* readiness.guardWorkTarget(targetNodeId(target), root, options.force)
 
+		const continuing =
+			target.kind !== "epic" &&
+			!(target.kind === "task" && target.multiPhase) &&
+			(process.env.AGENCY_SESSION_ID !== undefined ||
+				(target.status !== undefined && target.status !== "open"))
 		let prompt: string
 		let launchPath: string
 		let writablePath: string | undefined
@@ -247,9 +257,10 @@ export const work = (
 						Effect.sync(() => progress.fail("Workspace preparation failed")),
 					),
 				)
+			const action = continuing ? "Continue" : "Start"
 			prompt = workspace.phasePath
-				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
-				: `Start the task. Read ${workspace.taskPath}.`
+				? `${action} the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
+				: `${action} the task. Read ${workspace.taskPath}.`
 			launchPath = dirname(workspace.taskPath)
 			writablePath = workspace.writablePath
 		}
@@ -267,7 +278,9 @@ export const work = (
 		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
-		const resume = process.env.AGENCY_SESSION_ID !== undefined
+		const resume =
+			process.env.AGENCY_SESSION_ID !== undefined ||
+			(Boolean(options.auto) && continuing)
 		const variables = {
 			prompt: options.auto ? prompt : "",
 			workbase: root,
