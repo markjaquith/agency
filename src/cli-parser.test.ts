@@ -453,16 +453,26 @@ describe("strict CLI parsing", () => {
 
 	test("accepts runner selection and command inspection for work", () => {
 		expect(
-			parseCli(["work", "example", "--runner", "custom", "--print-command"]),
+			parseCli([
+				"work",
+				"example",
+				"--runner",
+				"custom",
+				"--auto",
+				"--print-command",
+			]),
 		).toMatchObject({
 			commandName: "work",
 			args: ["example"],
-			values: { runner: "custom", "print-command": true },
+			values: { runner: "custom", auto: true, "print-command": true },
 		})
 		expect(() =>
 			parseCli(["work", "example", "--runner", "custom", "--claude"]),
 		).toThrow("cannot be combined")
 		expect(() => parseCli(["work", "prepare", "--print-command"])).toThrow(
+			"cannot be combined",
+		)
+		expect(() => parseCli(["work", "prepare", "--auto"])).toThrow(
 			"cannot be combined",
 		)
 	})

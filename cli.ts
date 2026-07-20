@@ -478,6 +478,7 @@ const commands: Record<string, Command> = {
 					opencode: options.opencode,
 					claude: options.claude,
 					runner: options.runner,
+					auto: options.auto,
 					printCommand: options["print-command"],
 					force: options.force,
 					inputAllowed: options.inputAllowed,

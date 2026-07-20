@@ -175,7 +175,8 @@ OpenCode and Claude Code are built-in runner presets. Select either preset or a
 configured runner with `agency work --runner <name>`. A launch is fresh unless
 `AGENCY_SESSION_ID` is already set; resumed launches use the runner's
 `resumeCommand` when configured. The built-in presets use `--continue` only for
-resumed launches.
+resumed launches. By default Agency opens the runner without a prompt. `--auto`
+uses its autonomous command and sends the generated task, phase, or epic prompt.
 
 Custom runners are direct argv commands, never shell snippets:
 
@@ -184,8 +185,10 @@ Custom runners are direct argv commands, never shell snippets:
 	"version": 2,
 	"runners": {
 		"custom": {
-			"command": ["my-agent", "--prompt", "{prompt}"],
-			"resumeCommand": ["my-agent", "resume", "{sessionId}", "{prompt}"],
+			"command": ["my-agent"],
+			"autoCommand": ["my-agent", "--prompt", "{prompt}"],
+			"resumeCommand": ["my-agent", "resume", "{sessionId}"],
+			"autoResumeCommand": ["my-agent", "resume", "{sessionId}", "{prompt}"],
 			"environment": { "MY_AGENT_TARGET": "{target}" }
 		}
 	}
@@ -194,14 +197,17 @@ Custom runners are direct argv commands, never shell snippets:
 
 Available placeholders are `{prompt}`, `{workbase}`, `{target}`, `{task}`,
 `{phase}`, `{claimant}`, `{sessionId}`, and `{claimRevision}`. Task and phase
-placeholders are empty when they do not apply. If `resumeCommand` is omitted,
-the fresh command is also used for resumed sessions.
+placeholders are empty when they do not apply. `{prompt}` is empty unless
+`--auto` is set. If `resumeCommand` is omitted, the fresh command is also used
+for resumed sessions. If `autoResumeCommand` is omitted, `autoCommand` is used;
+configured runners without `autoCommand` reject `--auto`.
 
 Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
 `AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
+`AGENCY_PROMPT` is empty unless `--auto` is set.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
 without launching the runner.
 
@@ -665,7 +671,7 @@ for restoration. Archived IDs are reserved until restored.
 ### Work and Pull Requests
 
 ```text
-agency work [<directory> | --epic <epic-id>] [--runner <name>] [--print-command]
+agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency pr create <task-id> [phase-id] [--draft] [--json]
@@ -679,7 +685,8 @@ choices and asks for an explicit directory.
 
 OpenCode is the default runner, with automatic Claude fallback when neither is
 explicitly selected. `--opencode` and `--claude` remain aliases for requiring
-their built-in presets.
+their built-in presets. Launches are interactive and promptless by default; use
+`--auto` to send Agency's generated context prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees without launching an agent or changing status.

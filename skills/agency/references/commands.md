@@ -141,7 +141,7 @@ worktrees when needed, preserve branches, and retain lifecycle provenance.
 
 ```text
 agency work [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]]
-  [--runner <name> | --opencode | --claude] [--print-command] [--force]
+  [--runner <name> | --opencode | --claude] [--auto] [--print-command] [--force]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree list [--json]
 agency worktree inspect <task-id> [phase-id] [--json]
@@ -156,6 +156,7 @@ agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 integration files before launch. Execution targets are materialized and marked
 working without a claim; epics and multi-phase tasks launch in orchestration
 context without those steps. Unclaimed working targets can be launched again.
+The runner opens without a generated prompt unless `--auto` is set.
 `--print-command` materializes execution targets but does not launch or change
 status. `work prepare` materializes without launching or changing status.
 Destructive remove and rebuild operations refuse dirty or conflicting state.

@@ -38,6 +38,7 @@ interface WorkOptions extends BaseCommandOptions {
 	readonly claude?: boolean
 	readonly runner?: string
 	readonly printCommand?: boolean
+	readonly auto?: boolean
 	readonly force?: boolean
 }
 
@@ -263,7 +264,7 @@ export const work = (
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 		const resume = process.env.AGENCY_SESSION_ID !== undefined
 		const variables = {
-			prompt,
+			prompt: options.auto ? prompt : "",
 			workbase: root,
 			target: targetNodeId(target),
 			task: target.kind === "epic" ? "" : target.taskId,
@@ -277,6 +278,7 @@ export const work = (
 			config.runners,
 			variables,
 			resume,
+			options.auto,
 		)
 		let cli = resolved.argv[0]!
 		let available = yield* fs.runCommand(["which", cli], {
@@ -288,14 +290,26 @@ export const work = (
 			runner === "opencode"
 		) {
 			runner = "claude"
-			resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
+			resolved = resolveRunnerCommand(
+				runner,
+				config.runners,
+				variables,
+				resume,
+				options.auto,
+			)
 			cli = resolved.argv[0]!
 			available = yield* fs.runCommand(["which", cli], { captureOutput: true })
 		}
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
-		resolved = resolveRunnerCommand(runner, config.runners, variables, resume)
+		resolved = resolveRunnerCommand(
+			runner,
+			config.runners,
+			variables,
+			resume,
+			options.auto,
+		)
 		cli = resolved.argv[0]!
 		const environment = {
 			...resolved.environment,
@@ -397,7 +411,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 	})
 
 export const help = `
-Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>]
+Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto]
        agency work prepare [target] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
@@ -416,6 +430,7 @@ Options:
   --workbase <target>  Select a workbase by ID, name, or path
   --cwd <path>         Resolve context from a specific directory
   --runner <name>      Select a configured runner or built-in preset
+  --auto               Send the generated context prompt to the runner
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset

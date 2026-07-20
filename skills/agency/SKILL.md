@@ -131,7 +131,8 @@ independently meaningful tasks need coordination.
 files, then selects work and checks readiness. For an execution unit, it
 materializes managed checkouts, marks it working without a claim, and starts the
 selected built-in or configured runner. Epic and multi-phase task launches start
-in orchestration context without materializing execution work.
+in orchestration context without materializing execution work. The runner opens
+without a prompt unless the human explicitly selects `--auto`.
 
 An agent already running in an Agency checkout must not call `agency work` to
 start itself again. It should inspect context, perform the assigned work, and

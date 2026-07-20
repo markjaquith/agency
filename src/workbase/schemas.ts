@@ -96,7 +96,11 @@ export const WorkbaseConfig = Schema.Struct({
 			key: EntityId,
 			value: Schema.Struct({
 				command: Schema.NonEmptyArray(NonEmptyString),
+				autoCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 				resumeCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
+				autoResumeCommand: Schema.optional(
+					Schema.NonEmptyArray(NonEmptyString),
+				),
 				environment: Schema.optional(
 					Schema.Record({ key: EnvironmentName, value: Schema.String }),
 				),

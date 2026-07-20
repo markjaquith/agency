@@ -90,7 +90,8 @@ agency work tasks/checkout/phases/api
 `agency work` is intentionally last: it synchronizes managed integration files,
 checks readiness, materializes worktrees, marks this execution unit working
 without a claim, and launches the runner. Run it again to relaunch unclaimed
-working work.
+working work. The runner opens without a prompt by default; add `--auto` only
+when the generated context prompt should start autonomous execution.
 
 ## Active Agent: Execute Assigned Work
 

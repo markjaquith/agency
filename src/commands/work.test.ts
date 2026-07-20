@@ -55,7 +55,9 @@ interface HarnessOptions {
 		string,
 		{
 			command: readonly [string, ...string[]]
+			autoCommand?: readonly [string, ...string[]]
 			resumeCommand?: readonly [string, ...string[]]
+			autoResumeCommand?: readonly [string, ...string[]]
 			environment?: Record<string, string>
 		}
 	>
@@ -359,6 +361,7 @@ describe("work command", () => {
 			cwd: "/workbase/epics/delivery",
 			directory: ".",
 			opencode: true,
+			auto: true,
 		})
 
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
@@ -408,6 +411,7 @@ describe("work command", () => {
 			cwd: "/workbase/tasks/delivery",
 			directory: ".",
 			opencode: true,
+			auto: true,
 		})
 
 		expect(harness.events).toEqual(["probe:opencode", "launch:opencode"])
@@ -429,6 +433,7 @@ describe("work command", () => {
 			cwd: "/workbase/tasks/example/phases/implementation/code/agency/src",
 			directory: ".",
 			opencode: true,
+			auto: true,
 		})
 
 		expect(harness.events).toEqual([
@@ -632,19 +637,31 @@ describe("work command", () => {
 		expect(harness.launches).toEqual([
 			{
 				cli: "opencode",
-				args: [
-					"opencode",
-					"--prompt",
-					"Start the task. Read /workbase/tasks/example/TASK.md.",
-				],
+				args: ["opencode"],
 				cwd: taskDirectory,
 			},
 		])
+		expect(harness.launchEnvironments[0]?.AGENCY_PROMPT).toBe("")
 		expect(harness.statusUpdates).toEqual(["task:example:working"])
 		expect(harness.progressUpdates).toEqual([
 			"start:Preparing workspace...",
 			"succeed:Workspace ready",
 		])
+	})
+
+	test("sends the generated prompt only with --auto", async () => {
+		const harness = createHarness()
+
+		await harness.run({ taskId: "example", opencode: true, auto: true })
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode",
+			"--prompt",
+			"Start the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(harness.launchEnvironments[0]?.AGENCY_PROMPT).toBe(
+			"Start the task. Read /workbase/tasks/example/TASK.md.",
+		)
 	})
 
 	test("resumes OpenCode deterministically when a session identity exists", async () => {
@@ -655,6 +672,7 @@ describe("work command", () => {
 				taskId: "example",
 				phaseId: "implementation",
 				opencode: true,
+				auto: true,
 			})
 		} finally {
 			delete process.env.AGENCY_SESSION_ID
@@ -677,7 +695,8 @@ describe("work command", () => {
 			available: { codex: true },
 			runners: {
 				custom: {
-					command: ["codex", "--task", "{task}", "{prompt}"],
+					command: ["codex"],
+					autoCommand: ["codex", "--task", "{task}", "{prompt}"],
 					environment: {
 						CUSTOM_TARGET: "{target}",
 						AGENCY_TARGET: "cannot-override",
@@ -686,7 +705,7 @@ describe("work command", () => {
 			},
 		})
 
-		await harness.run({ taskId: "example", runner: "custom" })
+		await harness.run({ taskId: "example", runner: "custom", auto: true })
 
 		expect(harness.probes).toEqual(["codex"])
 		expect(harness.launches[0]).toEqual({
@@ -716,7 +735,8 @@ describe("work command", () => {
 			available: { agent: true },
 			runners: {
 				custom: {
-					command: ["agent", "{prompt}"],
+					command: ["agent"],
+					autoCommand: ["agent", "{prompt}"],
 					environment: {
 						VISIBLE: "{task}",
 						API_TOKEN: "do-not-print",
@@ -737,10 +757,8 @@ describe("work command", () => {
 		expect(harness.launches).toEqual([])
 		expect(harness.statusUpdates).toEqual([])
 		expect(printed.cwd).toBe(taskDirectory)
-		expect(printed.argv).toEqual([
-			"agent",
-			"Start the task. Read /workbase/tasks/example/TASK.md.",
-		])
+		expect(printed.argv).toEqual(["agent"])
+		expect(printed.environment.AGENCY_PROMPT).toBe("")
 		expect(printed.environment.VISIBLE).toBe("example")
 		expect(printed.environment.API_TOKEN).toBeUndefined()
 	})
@@ -753,7 +771,7 @@ describe("work command", () => {
 		expect(harness.probes).toEqual(["opencode", "claude"])
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
-			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
+			args: ["claude"],
 			cwd: taskDirectory,
 		})
 	})
@@ -777,7 +795,7 @@ describe("work command", () => {
 		expect(harness.probes).toEqual(["claude"])
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
-			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
+			args: ["claude"],
 			cwd: taskDirectory,
 		})
 	})
@@ -815,7 +833,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching command: opencode --prompt 'Start the task. Read /workbase/tasks/example/TASK.md.' (cwd: /workbase/tasks/example)",
+			"Launching command: opencode (cwd: /workbase/tasks/example)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
