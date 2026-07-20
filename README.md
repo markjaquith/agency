@@ -37,13 +37,19 @@ For development, run `bun link` from this repository.
 Entity IDs come from directory names. Structured metadata lives in YAML 1.2
 frontmatter; prose below it supplies human and agent context.
 
+New epic, task, and phase documents use the same core prose sections:
+`Outcome` states the intended result, `Plan` describes the current approach, and
+`Important Decisions` preserves consequential choices and their rationale. These
+sections are creation defaults rather than validation requirements, so existing
+and customized documents remain valid.
+
 ## Workbase Layout
 
 ```text
 workbase/
   AGENTS.md                # managed workbase instructions
   .opencode/
-    opencode.jsonc         # managed task and epic references
+    opencode.jsonc         # managed whole-workbase reference
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
@@ -76,11 +82,13 @@ Agency keeps discovery and other observational commands read-only. Run
 files or refresh checksum-safe managed files. Customized files are reported but
 never overwritten.
 
-The OpenCode config advertises only the task and epic directories as documented
-references. OpenCode automatically grants those references scoped
-external-directory access, so Agency does not add blanket permission rules that
-could hide missing tool permissions. References provide context and never expand
-the write authority reported by `agency context`.
+The OpenCode config advertises the complete workbase as one portable relative
+reference. `agency work` sets `OPENCODE_CONFIG` to the managed file and injects
+runtime-only absolute rules that allow external access across the workbase while
+denying edits outside the execution unit's writable checkout. This makes the
+config effective from nested task and phase Git checkouts without persisting a
+machine-specific path or granting access outside the workbase. Bash and Agency
+operations must still follow the write authority reported by `agency context`.
 
 Repository aliases and canonical fetch remotes are declared in tracked
 `agency.json`; local bare clones and symlinks remain ignored under
@@ -208,6 +216,10 @@ Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
 environment is added without overriding these normalized values.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
+The `opencode` runner additionally receives `OPENCODE_CONFIG` for the workbase's
+managed integration and `OPENCODE_CONFIG_CONTENT` with runtime-only,
+workbase-scoped access and edit rules. These values keep the Git-synced config
+portable while providing whole-workbase read access at every launch location.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
 without launching the runner.
 

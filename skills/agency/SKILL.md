@@ -127,12 +127,17 @@ independently meaningful tasks need coordination.
 
 ## Human Launch vs Active Agent
 
-`agency work` is a human launch flow. It first reconciles managed integration
-files, then selects work and checks readiness. For an execution unit, it
-materializes managed checkouts, marks it working without a claim, and starts the
-selected built-in or configured runner. Epic and multi-phase task launches start
-in orchestration context without materializing execution work. The runner opens
-without a prompt unless the human explicitly selects `--auto`.
+`agency work` is a human/orchestrator launch flow. It first reconciles managed
+integration files, then selects work and checks readiness. For an execution unit,
+it materializes managed checkouts, marks it working without a claim, and starts
+the selected built-in or configured runner. Epic and multi-phase task launches
+start in orchestration context without materializing execution work. The runner
+opens without a prompt unless the human explicitly selects `--auto`.
+OpenCode launches expose the managed config file and inject runtime-only access
+rules scoped to the workbase. These grant visibility from orchestration
+directories and nested execution checkouts while denying direct edits outside
+the writable checkout. They do not make the Git-synced config machine-specific
+or replace write authority from `agency context`.
 
 An agent already running in an Agency checkout must not call `agency work` to
 start itself again. It should inspect context, perform the assigned work, and

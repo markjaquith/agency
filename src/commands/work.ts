@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorktreeService } from "../services/WorktreeService"
 import { FileSystemService } from "../services/FileSystemService"
@@ -119,7 +119,10 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
-		yield* integrations.sync(root)
+		const integration = yield* integrations.sync(root)
+		const managedOpencode = integration.files.some(
+			(file) => file.name === "opencode" && file.state === "managed",
+		)
 		const { config } = yield* workbase.loadConfig(root)
 
 		let target: WorkTarget | null = null
@@ -223,6 +226,7 @@ export const work = (
 
 		let prompt: string
 		let launchPath: string
+		let writablePath: string | undefined
 		if (target.kind === "epic") {
 			prompt = `Work on the epic. Read ${target.path}.`
 			launchPath = dirname(target.path)
@@ -247,6 +251,7 @@ export const work = (
 				? `Start the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `Start the task. Read ${workspace.taskPath}.`
 			launchPath = dirname(workspace.taskPath)
+			writablePath = workspace.writablePath
 		}
 
 		const explicitlyRequested = Boolean(
@@ -314,6 +319,35 @@ export const work = (
 		const environment = {
 			...resolved.environment,
 			...runnerEnvironment(runner, variables),
+		}
+		if (runner === "opencode" && managedOpencode) {
+			environment.OPENCODE_CONFIG = join(root, ".opencode", "opencode.jsonc")
+			const execution =
+				target.kind === "phase" ||
+				(target.kind === "task" && !target.multiPhase)
+			const edit = execution
+				? {
+						"*": "deny" as const,
+						...Object.fromEntries(
+							[root, launchPath].map((base) => [
+								join(relative(base, writablePath!), "**").split(sep).join("/"),
+								"allow" as const,
+							]),
+						),
+					}
+				: { "*": "deny" as const }
+			environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+				permission: {
+					external_directory: { [join(root, "**")]: "allow" },
+					edit,
+				},
+				agent: {
+					build: { permission: { edit } },
+					plan: { permission: { edit } },
+					general: { permission: { edit } },
+					explore: { permission: { edit } },
+				},
+			})
 		}
 		if (options.printCommand) {
 			log(
@@ -417,7 +451,8 @@ Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>]
 Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
 ID. Use '.' for the current directory. Outside a workbase, select a registered
-workbase first.
+workbase first. OpenCode launches receive whole-workbase read access through the
+runtime environment; Agency context remains authoritative for writes.
 
 The prepare subcommand resolves and materializes an execution workspace without
 launching an agent or changing lifecycle status. --dry-run reports planned Git

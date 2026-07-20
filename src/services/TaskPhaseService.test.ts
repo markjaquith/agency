@@ -33,7 +33,7 @@ describe("task and phase services", () => {
 				),
 			),
 		)
-		await runTestEffect(
+		const createdTask = await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
 					service.create(
@@ -50,6 +50,9 @@ describe("task and phase services", () => {
 					),
 				),
 			),
+		)
+		expect(createdTask.content).toContain(
+			"# Task One\n\n## Outcome\n\nDescribe the task outcome.\n\n## Plan\n\nDescribe the current approach.\n\n## Important Decisions\n\nRecord consequential decisions and their rationale.",
 		)
 
 		const epic = await runTestEffect(
@@ -159,6 +162,14 @@ describe("task and phase services", () => {
 			),
 		)
 		expect(phases.map((phase) => phase.id)).toEqual(["first", "second"])
+		const firstPhase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) => service.show("multi", "first", root)),
+			),
+		)
+		expect(firstPhase.content).toContain(
+			"# First\n\n## Outcome\n\nDescribe the phase outcome.\n\n## Plan\n\nDescribe the current approach.\n\n## Important Decisions\n\nRecord consequential decisions and their rationale.",
+		)
 	})
 
 	test("converts a single-phase task when the existing phase ID is provided", async () => {
@@ -243,7 +254,9 @@ describe("task and phase services", () => {
 				{ id: "extra", dependsOn: ["implementation"] },
 			],
 		})
-		expect(task.content).toContain("Describe the task outcome.")
+		expect(task.content).toContain(
+			"## Outcome\n\nDescribe the task outcome.\n\n## Plan\n\nDescribe the current approach.\n\n## Important Decisions",
+		)
 
 		const firstPhase = await runTestEffect(
 			PhaseService.pipe(

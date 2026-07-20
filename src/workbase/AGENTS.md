@@ -73,4 +73,7 @@ creates these files, and `agency work` reconciles them before launching an agent
 
 OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
-`agency context`.
+`agency context`. Agency launches expose the managed OpenCode config file at
+runtime and inject absolute access rules scoped to this workbase. Direct edits
+remain denied outside the writable checkout, and no machine-specific path is
+stored in the Git-synced config.

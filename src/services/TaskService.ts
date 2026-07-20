@@ -13,6 +13,7 @@ import {
 } from "../workbase/schemas"
 import {
 	formatMarkdownDocument,
+	formatWorkDocumentBody,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
@@ -163,7 +164,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					.join(" ")
 				const content = formatMarkdownDocument(
 					data,
-					`# ${title}\n\nDescribe the task outcome.`,
+					formatWorkDocumentBody(title, "task"),
 				)
 				const writes: {
 					path: string

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { access, mkdir, realpath } from "node:fs/promises"
-import { join } from "node:path"
+import { join, relative } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
 import { cleanupTempDir, createTempDir } from "./test-utils"
@@ -92,8 +92,15 @@ async function startGitDaemon(basePath: string) {
 
 describe("CLI", () => {
 	const tempDirs: string[] = []
+	const daemons: Bun.Subprocess[] = []
 
 	afterEach(async () => {
+		await Promise.all(
+			daemons.splice(0).map(async (daemon) => {
+				daemon.kill()
+				await daemon.exited
+			}),
+		)
 		await Promise.all(tempDirs.splice(0).map(cleanupTempDir))
 	})
 
@@ -828,6 +835,240 @@ status: open
 			await Bun.file(join(root, "tasks/example/code/agency/README.md")).text(),
 		).toBe("example\n")
 	})
+
+	test.skipIf(Bun.which("opencode") === null)(
+		"provides effective whole-workbase OpenCode access from every launch topology",
+		async () => {
+			const parent = await createTempDir()
+			tempDirs.push(parent)
+			const root = join(parent, "workbase")
+			const source = join(parent, "source")
+			expect(
+				Bun.spawnSync(["git", "init", "--initial-branch=main", source])
+					.exitCode,
+			).toBe(0)
+			await Bun.write(join(source, "README.md"), "example\n")
+			for (const args of [
+				["config", "user.email", "test@example.com"],
+				["config", "user.name", "Test"],
+				["add", "README.md"],
+				["-c", "commit.gpgsign=false", "commit", "-m", "initial"],
+			]) {
+				expect(Bun.spawnSync(["git", "-C", source, ...args]).exitCode).toBe(0)
+			}
+			await runGit(["clone", "--bare", source, join(parent, "source.git")])
+			const daemon = await startGitDaemon(parent)
+			daemons.push(daemon.process)
+			await runGit(["-C", source, "remote", "add", "origin", daemon.remote])
+
+			parseJson(await runCli(["init", root, "--json"], parent))
+			parseJson(
+				await runCli(["repo", "link", "agency", source, "--json"], root),
+			)
+			parseJson(
+				await runCli(
+					[
+						"epic",
+						"create",
+						"delivery",
+						"--ticket-url",
+						"https://example.com/delivery",
+						"--repo",
+						"agency:main",
+						"--json",
+					],
+					root,
+				),
+			)
+			for (const [id, branch] of [
+				["example", "feat/example"],
+				["sibling", "feat/sibling"],
+			] as const) {
+				parseJson(
+					await runCli(
+						[
+							"task",
+							"create",
+							id,
+							"--repo",
+							"agency",
+							"--branch",
+							branch,
+							"--base",
+							"main",
+							"--epic",
+							"delivery",
+							"--json",
+						],
+						root,
+					),
+				)
+			}
+			parseJson(
+				await runCli(
+					["task", "create", "pipeline", "--multi-phase", "--json"],
+					root,
+				),
+			)
+			parseJson(
+				await runCli(
+					[
+						"phase",
+						"create",
+						"pipeline",
+						"build",
+						"--repo",
+						"agency",
+						"--branch",
+						"feat/pipeline-build",
+						"--base",
+						"main",
+						"--json",
+					],
+					root,
+				),
+			)
+
+			const taskWorkspace = parseJson(
+				await runCli(["work", "prepare", "example", "--json"], root),
+			)
+			const phaseWorkspace = parseJson(
+				await runCli(
+					[
+						"work",
+						"prepare",
+						"--task",
+						"pipeline",
+						"--phase",
+						"build",
+						"--json",
+					],
+					root,
+				),
+			)
+			const synced = parseJson(
+				await runCli(["integration", "sync", "--json"], root),
+			)
+			expect(
+				synced.files.every((file: { changed: boolean }) => !file.changed),
+			).toBe(true)
+
+			const workbaseRoot = await realpath(root)
+			const config = await Bun.file(
+				join(workbaseRoot, ".opencode/opencode.jsonc"),
+			).text()
+			expect(config).not.toContain(workbaseRoot)
+			const documents = [
+				join(workbaseRoot, "tasks/example/TASK.md"),
+				join(workbaseRoot, "epics/delivery/EPIC.md"),
+				join(workbaseRoot, "tasks/sibling/TASK.md"),
+			]
+			for (const document of documents) {
+				expect(await Bun.file(document).exists()).toBe(true)
+			}
+
+			const launches = [
+				{
+					args: ["--task", "example"],
+					cwd: join(workbaseRoot, "tasks/example"),
+					writable: taskWorkspace.writablePath,
+				},
+				{
+					args: ["--task", "pipeline", "--phase", "build"],
+					cwd: join(workbaseRoot, "tasks/pipeline"),
+					writable: phaseWorkspace.writablePath,
+				},
+				{
+					args: ["--epic", "delivery"],
+					cwd: join(workbaseRoot, "epics/delivery"),
+					writable: null,
+				},
+				{
+					args: ["--task", "pipeline"],
+					cwd: join(workbaseRoot, "tasks/pipeline"),
+					writable: null,
+				},
+			]
+			for (const launch of launches) {
+				const printed = await runCli(
+					["work", ...launch.args, "--opencode", "--print-command", "--force"],
+					root,
+				)
+				expect(printed.exitCode).toBe(0)
+				expect(printed.stderr).toBe("")
+				const contract = JSON.parse(printed.stdout)
+				expect(contract.cwd).toBe(launch.cwd)
+				expect(contract.environment.OPENCODE_CONFIG).toBe(
+					join(workbaseRoot, ".opencode/opencode.jsonc"),
+				)
+				const environment = {
+					...process.env,
+					...contract.environment,
+					XDG_CONFIG_HOME: isolatedConfigHome,
+					OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+				}
+				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
+					cwd: contract.cwd,
+					env: environment,
+				})
+				expect(probe.exitCode).toBe(0)
+				const agent = JSON.parse(probe.stdout.toString())
+				expect(agent.permission).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							permission: "external_directory",
+							pattern: join(workbaseRoot, "**"),
+							action: "allow",
+						}),
+					]),
+				)
+				expect(agent.permission).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							permission: "edit",
+							pattern: "*",
+							action: "deny",
+						}),
+					]),
+				)
+				if (launch.writable) {
+					expect(agent.permission).toEqual(
+						expect.arrayContaining(
+							[workbaseRoot, launch.cwd].map((base) =>
+								expect.objectContaining({
+									permission: "edit",
+									pattern: join(relative(base, launch.writable!), "**"),
+									action: "allow",
+								}),
+							),
+						),
+					)
+				}
+
+				if (launch === launches[0]) {
+					for (const document of documents) {
+						const read = Bun.spawnSync(
+							[
+								"opencode",
+								"debug",
+								"agent",
+								"build",
+								"--tool",
+								"read",
+								"--params",
+								JSON.stringify({ filePath: document }),
+							],
+							{ cwd: contract.cwd, env: environment },
+						)
+						expect(read.exitCode).toBe(0)
+						const result = JSON.parse(read.stdout.toString())
+						expect(result.result.output).toContain(`<path>${document}</path>`)
+					}
+				}
+			}
+		},
+		30_000,
+	)
 
 	test("envelopes help and version output in machine mode", async () => {
 		const help = await runCli(["status", "--help", "--json"])
