@@ -6,6 +6,7 @@ import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 import { GraphMutationService } from "../services/GraphMutationService"
+import { work as startWork, type StartWork } from "./work"
 
 interface EpicOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -21,9 +22,11 @@ interface EpicOptions extends BaseCommandOptions {
 	readonly ready?: boolean
 	readonly blocked?: boolean
 	readonly pr?: boolean
+	readonly work?: boolean
+	readonly auto?: boolean
 }
 
-export const epic = (options: EpicOptions) =>
+export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 	Effect.gen(function* () {
 		const epics = yield* EpicService
 		const mutations = yield* GraphMutationService
@@ -31,6 +34,7 @@ export const epic = (options: EpicOptions) =>
 		const cwd = options.cwd ?? process.cwd()
 
 		switch (options.subcommand) {
+			case "new":
 			case "create": {
 				const id = options.args[0]
 				if (!id || !options.ticketUrl || !options.repos?.length) {
@@ -53,6 +57,16 @@ export const epic = (options: EpicOptions) =>
 						? JSON.stringify(output, null, 2)
 						: `Created epic '${record.id}'`,
 				)
+				if (options.subcommand === "new" && options.work) {
+					yield* work({
+						epicId: record.id,
+						auto: options.auto,
+						cwd,
+						inputAllowed: options.inputAllowed,
+						silent: options.silent,
+						verbose: options.verbose,
+					})
+				}
 				return
 			}
 
@@ -157,7 +171,7 @@ export const epic = (options: EpicOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available subcommands: create, list, show, update, rename",
+						"Subcommand is required. Available subcommands: new, create, list, show, update, rename",
 					),
 				)
 		}
@@ -167,6 +181,7 @@ export const help = `
 Usage: agency epic <subcommand>
 
 Subcommands:
+  new <id>              Create an epic, optionally starting work
   create <id>           Create an epic
   list                  List epics
   show <id>             Show an epic
@@ -177,6 +192,8 @@ Create options:
   --ticket-url <url>    External ticket URL
   --description <text>  Short description of the epic
   --repo <alias>:<ref>  Read-only repository reference; repeatable
+  --work                Start work on the new epic after creating it
+  --auto                Pass --auto to work; requires --work
 
 Update options:
   --ticket-url <url>    Replace the external ticket URL

@@ -70,6 +70,11 @@ const createOptions = {
 	repo: { type: "string", multiple: true },
 } satisfies OptionConfig
 
+const newWorkOptions = {
+	work: { type: "boolean" },
+	auto: { type: "boolean" },
+} satisfies OptionConfig
+
 const taskCreateOptions = {
 	...createOptions,
 	reference: { type: "string", multiple: true },
@@ -282,14 +287,25 @@ const commands = {
 		},
 	},
 	epic: {
-		usage: "agency epic <create|list|show|update|rename>",
+		usage: "agency epic <new|create|list|show|update|rename>",
 		options: {
 			...createOptions,
+			...newWorkOptions,
 			...viewOptions,
 			...mutationOptions,
 			epic: { type: "string" },
 		},
 		subcommands: {
+			new: {
+				usage:
+					"agency epic new <id> --ticket-url <url> --repo <alias>:<ref> [--repo <alias>:<ref>...] [--work [--auto]]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["ticket-url", "description", "repo", "work", "auto", "json"],
+				required: ["ticket-url", "repo"],
+				repeatable: ["repo"],
+				conflicts: [["work", "json"]],
+			},
 			create: {
 				usage:
 					"agency epic create <id> --ticket-url <url> --repo <alias>:<ref> [--repo <alias>:<ref>...]",
@@ -341,6 +357,7 @@ const commands = {
 			"agency task <new|create|list|show|status|update|rename|move|dependency>",
 		options: {
 			...taskCreateOptions,
+			...newWorkOptions,
 			...viewOptions,
 			...mutationOptions,
 			"pr-url": { type: "string" },
@@ -348,7 +365,7 @@ const commands = {
 		},
 		subcommands: {
 			new: {
-				usage: "agency task new [id] [options]",
+				usage: "agency task new [id] [options] [--work [--auto]]",
 				minArgs: 0,
 				maxArgs: 1,
 				options: [
@@ -360,9 +377,12 @@ const commands = {
 					"branch",
 					"base",
 					"multi-phase",
+					"work",
+					"auto",
 					"json",
 				],
 				repeatable: ["reference"],
+				conflicts: [["work", "json"]],
 			},
 			create: {
 				usage:
@@ -452,9 +472,11 @@ const commands = {
 		},
 	},
 	phase: {
-		usage: "agency phase <create|list|show|status|update|rename|dependency>",
+		usage:
+			"agency phase <new|create|list|show|status|update|rename|dependency>",
 		options: {
 			...phaseCreateOptions,
+			...newWorkOptions,
 			...viewOptions,
 			...mutationOptions,
 			"pr-url": { type: "string" },
@@ -462,6 +484,29 @@ const commands = {
 			phase: { type: "string" },
 		},
 		subcommands: {
+			new: {
+				usage:
+					"agency phase new <task-id> <phase-id> --repo <alias> --branch <name> --base <name> [options] [--work [--auto]]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: [
+					"description",
+					"repo",
+					"reference",
+					"branch",
+					"base",
+					"depends-on",
+					"first-phase",
+					"work",
+					"auto",
+					"json",
+					"task",
+					"phase",
+				],
+				required: ["repo", "branch", "base"],
+				repeatable: ["reference", "depends-on"],
+				conflicts: [["work", "json"]],
+			},
 			create: {
 				usage:
 					"agency phase create <task-id> <phase-id> --repo <alias> --branch <name> --base <name> [options]",
@@ -1294,6 +1339,14 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		(subcommand === "new" || subcommand === "create")
 	) {
 		validateTaskCreate(parsed.values, spec, subcommand === "create")
+	}
+	if (
+		["epic", "task", "phase"].includes(commandName) &&
+		subcommand === "new" &&
+		parsed.values.auto &&
+		!parsed.values.work
+	) {
+		throw usageError("Option '--auto' requires '--work'.", spec.usage)
 	}
 	if (["task", "phase"].includes(commandName) && subcommand === "dependency") {
 		if (!["add", "remove"].includes(commandPositionals[0] ?? "")) {

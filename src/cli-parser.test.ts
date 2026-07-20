@@ -477,6 +477,56 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
+	test("accepts work launch options on new entities", () => {
+		expect(
+			parseCli(["task", "new", "example", "--work", "--auto"]),
+		).toMatchObject({
+			commandName: "task",
+			args: ["new", "example"],
+			values: { work: true, auto: true },
+		})
+		expect(
+			parseCli([
+				"epic",
+				"new",
+				"delivery",
+				"--ticket-url",
+				"https://example.com/delivery",
+				"--repo",
+				"agency:main",
+				"--work",
+			]),
+		).toMatchObject({ commandName: "epic", args: ["new", "delivery"] })
+		expect(
+			parseCli([
+				"phase",
+				"new",
+				"delivery",
+				"implementation",
+				"--repo",
+				"agency",
+				"--branch",
+				"task/implementation",
+				"--base",
+				"main",
+				"--work",
+			]),
+		).toMatchObject({
+			commandName: "phase",
+			args: ["new", "delivery", "implementation"],
+		})
+		expect(() => parseCli(["task", "new", "example", "--auto"])).toThrow(
+			"Option '--auto' requires '--work'",
+		)
+		expect(() =>
+			parseCli(["task", "new", "example", "--work", "--json"]),
+		).toThrow("cannot be combined")
+		expectUsageError(
+			["task", "create", "example", "--repo", "agency", "--work"],
+			"agency task create",
+		)
+	})
+
 	test("accepts repeatable graph filters and rejects output conflicts", () => {
 		expect(
 			parseCli([

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
+import { Effect } from "effect"
 import {
 	captureLogs,
 	cleanupTempDir,
@@ -130,5 +131,37 @@ describe("epic command", () => {
 		)
 		expect(logs[0]).toContain("example  open    waiting    agency")
 		expect(logs[0]).not.toMatch(/[\u{e000}-\u{f8ff}]/u)
+	})
+
+	test("starts work on a newly created epic", async () => {
+		const launches: unknown[] = []
+
+		await runTestEffect(
+			epic(
+				{
+					subcommand: "new",
+					args: ["immediate"],
+					ticketUrl: "https://example.com/immediate",
+					repos: ["agency:main"],
+					work: true,
+					auto: true,
+					cwd: root,
+					silent: true,
+				},
+				(options) =>
+					Effect.sync(() => {
+						launches.push(options)
+						return undefined
+					}),
+			),
+		)
+
+		expect(launches).toEqual([
+			expect.objectContaining({
+				epicId: "immediate",
+				auto: true,
+				cwd: root,
+			}),
+		])
 	})
 })

@@ -29,7 +29,7 @@ import {
 	runnerEnvironment,
 } from "../workbase/runner-command"
 
-interface WorkOptions extends BaseCommandOptions {
+export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
 	readonly taskId?: string
 	readonly phaseId?: string
@@ -41,6 +41,8 @@ interface WorkOptions extends BaseCommandOptions {
 	readonly auto?: boolean
 	readonly force?: boolean
 }
+
+export type StartWork = (options: WorkOptions) => ReturnType<typeof work>
 
 type LaunchAgent = (
 	cli: string,
