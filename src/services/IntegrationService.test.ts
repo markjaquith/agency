@@ -97,30 +97,55 @@ describe("IntegrationService", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.references).toEqual({
-			tasks: {
-				path: "../tasks",
+			workbase: {
+				path: "..",
 				description:
-					"Agency task definitions and execution context; authority still comes from agency context",
-			},
-			epics: {
-				path: "../epics",
-				description:
-					"Agency epic definitions and orchestration context; no implementation write authority",
+					"Complete Agency workbase context; write authority still comes only from agency context",
 			},
 		})
-		expect(config.permission).toEqual({
-			external_directory: { "../**": "allow" },
-		})
+		expect(config.permission).toBeUndefined()
+		expect(managedBody(managedWorkbaseOpencode)).not.toContain(process.cwd())
 	})
 
 	test("treats an existing JSON OpenCode config as customized", async () => {
 		await write(root, ".opencode/opencode.json", '{"model":"test/model"}\n')
 
 		const result = await status(root)
-		expect(result.files[1]).toEqual({
+		expect(result.files[1]).toMatchObject({
 			name: "opencode",
 			path: join(root, ".opencode/opencode.json"),
 			state: "customized",
+			diagnostic: expect.stringContaining("cannot guarantee"),
+			remediation: expect.stringContaining("global config"),
+		})
+	})
+
+	test("treats a JSON config beside managed JSONC as customized", async () => {
+		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
+		await write(root, ".opencode/opencode.json", '{"model":"test/model"}\n')
+
+		const result = await status(root)
+		expect(result.files[1]).toMatchObject({
+			name: "opencode",
+			path: join(root, ".opencode/opencode.json"),
+			state: "customized",
+		})
+	})
+
+	test("reports actionable whole-workbase access diagnostics", async () => {
+		let result = await status(root)
+		expect(result.files[1]).toMatchObject({
+			state: "missing",
+			diagnostic: expect.stringContaining("cannot load"),
+			remediation: expect.stringContaining("integration sync"),
+		})
+
+		await write(root, ".opencode/opencode.jsonc", '{"model":"test/model"}\n')
+		result = await status(root)
+		expect(result.files[1]).toMatchObject({
+			state: "customized",
+			diagnostic: expect.stringContaining("cannot guarantee"),
+			remediation: expect.stringContaining("global config"),
 		})
 	})
 

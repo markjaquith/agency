@@ -67,6 +67,7 @@ interface HarnessOptions {
 	readonly existingDirectories?: readonly string[]
 	readonly guardError?: Error
 	readonly readyTargetIds?: readonly string[]
+	readonly opencodeIntegrationState?: "managed" | "customized"
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -215,7 +216,15 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const integrations = {
 		sync: () => {
 			integrationSyncs += 1
-			return Effect.succeed({ root: "/workbase", files: [] })
+			return Effect.succeed({
+				root: "/workbase",
+				files: [
+					{
+						name: "opencode",
+						state: options.opencodeIntegrationState ?? "managed",
+					},
+				],
+			})
 		},
 	}
 	const fs = {
@@ -395,6 +404,23 @@ describe("work command", () => {
 			],
 			cwd: "/workbase/epics/delivery",
 		})
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBe(
+			"/workbase/.opencode/opencode.jsonc",
+		)
+		expect(
+			JSON.parse(harness.launchEnvironments[0]!.OPENCODE_CONFIG_CONTENT!),
+		).toEqual({
+			permission: {
+				external_directory: { "/workbase/**": "allow" },
+				edit: { "*": "deny" },
+			},
+			agent: {
+				build: { permission: { edit: { "*": "deny" } } },
+				plan: { permission: { edit: { "*": "deny" } } },
+				general: { permission: { edit: { "*": "deny" } } },
+				explore: { permission: { edit: { "*": "deny" } } },
+			},
+		})
 	})
 
 	test("resolves an existing positional path before treating it as a task ID", async () => {
@@ -444,6 +470,9 @@ describe("work command", () => {
 			],
 			cwd: "/workbase/tasks/delivery",
 		})
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBe(
+			"/workbase/.opencode/opencode.jsonc",
+		)
 	})
 
 	test("infers a phase from a nested checkout directory", async () => {
@@ -472,6 +501,9 @@ describe("work command", () => {
 		expect(harness.statusUpdates).toEqual([
 			"phase:example:implementation:working",
 		])
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBe(
+			"/workbase/.opencode/opencode.jsonc",
+		)
 	})
 
 	test("infers a single-phase task from a nested checkout directory", async () => {
@@ -485,6 +517,9 @@ describe("work command", () => {
 
 		expect(harness.events[0]).toBe("materialize")
 		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath)
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBe(
+			"/workbase/.opencode/opencode.jsonc",
+		)
 	})
 
 	test("selects a target when no directory is provided", async () => {
@@ -665,6 +700,9 @@ describe("work command", () => {
 			},
 		])
 		expect(harness.statusUpdates).toEqual(["task:example:working"])
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBe(
+			"/workbase/.opencode/opencode.jsonc",
+		)
 		expect(harness.progressUpdates).toEqual([
 			"start:Preparing workspace...",
 			"succeed:Workspace ready",
@@ -768,6 +806,40 @@ describe("work command", () => {
 		expect(printed.environment.API_TOKEN).toBeUndefined()
 	})
 
+	test("prints the runtime OpenCode integration config", async () => {
+		const harness = createHarness()
+		const output = await captureLogs(() =>
+			harness.run({ taskId: "example", opencode: true, printCommand: true }),
+		)
+		const printed = JSON.parse(output.join("\n"))
+
+		expect(printed.environment.OPENCODE_CONFIG).toBe(
+			"/workbase/.opencode/opencode.jsonc",
+		)
+		expect(JSON.parse(printed.environment.OPENCODE_CONFIG_CONTENT)).toEqual({
+			permission: {
+				external_directory: { "/workbase/**": "allow" },
+				edit: { "../**": "deny" },
+			},
+			agent: {
+				build: { permission: { edit: { "../**": "deny" } } },
+				plan: { permission: { edit: { "../**": "deny" } } },
+				general: { permission: { edit: { "../**": "deny" } } },
+				explore: { permission: { edit: { "../**": "deny" } } },
+			},
+		})
+	})
+
+	test("does not override customized OpenCode access policy", async () => {
+		const harness = createHarness({ opencodeIntegrationState: "customized" })
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
+		expect(
+			harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT,
+		).toBeUndefined()
+	})
+
 	test("automatically falls back to Claude", async () => {
 		const harness = createHarness({ available: { opencode: false } })
 
@@ -779,6 +851,7 @@ describe("work command", () => {
 			args: ["claude", "Start the task. Read /workbase/tasks/example/TASK.md."],
 			cwd: singlePhaseWorkspace.writablePath,
 		})
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
 	})
 
 	test("does not fall back when OpenCode is explicitly required", async () => {

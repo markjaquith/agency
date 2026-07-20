@@ -26,7 +26,9 @@ checkout descendants, or a task ID. Complete output includes prose and Git
 details; `--compact` intentionally omits them. `graph` computes readiness before
 applying filters. `doctor` discovers required tools, integrations, repositories,
 refs, worktrees, permissions, drift, and optional runner capabilities. `sync` is
-observational unless `--apply` is explicit.
+observational unless `--apply` is explicit. Integration status includes safe
+remediation when customized OpenCode config prevents Agency from guaranteeing
+whole-workbase access.
 
 Where `[filters]` appears, use repeatable `--status <status>` and `--repository
 <alias>`, plus `--ready` or `--blocked` and `--pr` or `--no-pr`. Each pair is
@@ -155,6 +157,9 @@ agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 `work` is a launch flow, not an active-agent step. It synchronizes managed
 integration files before launch. Execution targets are materialized and claimed;
 epics and multi-phase tasks launch in orchestration context without those steps.
+The OpenCode runner receives a runtime managed-config path plus absolute access
+and edit rules scoped to the workbase; none are persisted, and `context` still
+defines write authority.
 `--print-command` suppresses only the final launch, so execution targets are still
 materialized and claimed before the command is printed. `work prepare`
 materializes without launching or changing status. Destructive remove and

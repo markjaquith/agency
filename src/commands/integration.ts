@@ -22,7 +22,8 @@ export const integration = (options: IntegrationOptions) =>
 					return
 				}
 				for (const file of result.files) {
-					log(`${file.name}\t${file.state}\t${file.path}`)
+					log(`${file.name}\t${file.state}\t${file.path}\t${file.diagnostic}`)
+					if (file.remediation) log(`  Remediation: ${file.remediation}`)
 				}
 				return
 			}
@@ -35,8 +36,9 @@ export const integration = (options: IntegrationOptions) =>
 				}
 				for (const file of result.files) {
 					log(
-						`${file.name}\t${file.changed ? "synced" : file.state}\t${file.path}`,
+						`${file.name}\t${file.changed ? "synced" : file.state}\t${file.path}\t${file.diagnostic}`,
 					)
+					if (file.remediation) log(`  Remediation: ${file.remediation}`)
 				}
 				return
 			}
@@ -51,10 +53,12 @@ export const integration = (options: IntegrationOptions) =>
 export const help = `
 Usage: agency integration <subcommand>
 
-Inspect or explicitly synchronize managed agent integration files.
+Inspect or explicitly synchronize managed agent integration files. OpenCode
+launches load the managed file at runtime to provide whole-workbase read
+access without changing Agency write authority.
 
 Subcommands:
-  status  Report managed, customized, missing, and drifted files
+  status  Report file state, access diagnostics, and safe remediation
   sync    Create or update checksum-safe managed files
 
 Options:

@@ -89,7 +89,9 @@ agency work tasks/checkout/phases/api
 
 `agency work` is intentionally last: it synchronizes managed integration files,
 checks readiness, materializes worktrees, creates a claim, marks this execution
-unit working, and launches the runner.
+unit working, and launches the runner. OpenCode receives whole-workbase read
+visibility through runtime-only config and permission values; this does not
+expand the writable checkout reported by `agency context`.
 
 ## Active Agent: Execute Assigned Work
 

@@ -38,9 +38,10 @@ describe("init command", () => {
 			join(root, ".opencode/opencode.jsonc"),
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
-		expect(config.permission.external_directory).toEqual({
-			"../**": "allow",
+		expect(config.references).toEqual({
+			workbase: expect.objectContaining({ path: ".." }),
 		})
+		expect(config.permission).toBeUndefined()
 	})
 
 	test("preserves existing gitignore entries", async () => {

@@ -11,20 +11,10 @@ const body = () =>
 		{
 			$schema: "https://opencode.ai/config.json",
 			references: {
-				tasks: {
-					path: "../tasks",
+				workbase: {
+					path: "..",
 					description:
-						"Agency task definitions and execution context; authority still comes from agency context",
-				},
-				epics: {
-					path: "../epics",
-					description:
-						"Agency epic definitions and orchestration context; no implementation write authority",
-				},
-			},
-			permission: {
-				external_directory: {
-					"../**": "allow",
+						"Complete Agency workbase context; write authority still comes only from agency context",
 				},
 			},
 		},

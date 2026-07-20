@@ -132,6 +132,11 @@ integration files, then selects work and checks readiness. For an execution unit
 it materializes managed checkouts, claims the unit, marks it working, and starts
 the selected built-in or configured runner. Epic and multi-phase task launches
 start in orchestration context without materializing or claiming execution work.
+OpenCode launches expose the managed config file and inject runtime-only access
+rules scoped to the workbase. These grant visibility from orchestration
+directories and nested execution checkouts while denying direct edits outside
+the writable checkout. They do not make the Git-synced config machine-specific
+or replace write authority from `agency context`.
 
 An agent already running in an Agency checkout must not call `agency work` to
 start itself again. It should inspect context, perform the assigned work, and
