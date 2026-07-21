@@ -122,7 +122,10 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
-		yield* integrations.sync(root)
+		const integration = yield* integrations.sync(root)
+		const managedOpencode = integration.files.some(
+			(file) => file.name === "opencode" && file.state === "managed",
+		)
 		const { config } = yield* workbase.loadConfig(root)
 
 		let target: WorkTarget | null = null
@@ -330,6 +333,13 @@ export const work = (
 		const environment = {
 			...resolved.environment,
 			...runnerEnvironment(runner, variables),
+		}
+		if (runner === "opencode" && managedOpencode) {
+			environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+				permission: {
+					external_directory: { [join(root, "*")]: "allow" },
+				},
+			})
 		}
 		if (options.printCommand) {
 			log(

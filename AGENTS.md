@@ -33,6 +33,9 @@ Do not run bare `bun test`. The tests create real Git repositories and execute
 real Git commands, so the unpartitioned suite is slow. Use `bun run test` only
 when intentionally running the repository's full parallel test suite.
 
+The OpenCode launch integration test is excluded from the default suite because
+it starts OpenCode repeatedly. Run it explicitly with `bun run test:opencode`.
+
 Frontmatter and other in-process tests are fast. Repository and worktree tests
 are comparatively expensive.
 

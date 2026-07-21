@@ -403,6 +403,13 @@ describe("strict CLI parsing", () => {
 			values: { json: true, compact: true },
 		})
 		expectUsageError(["status", "--compact"], "agency status")
+		expect(parseCli(["context", ".", "--json", "--full"])).toMatchObject({
+			commandName: "context",
+			args: ["."],
+			values: { json: true, full: true },
+		})
+		expectUsageError(["context", ".", "--compact", "--full"], "agency context")
+		expectUsageError(["status", "--full"], "agency status")
 	})
 
 	test("accepts work preparation options only for the prepare subcommand", () => {

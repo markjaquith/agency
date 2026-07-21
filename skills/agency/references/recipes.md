@@ -184,15 +184,17 @@ agency release checkout ui --session-id session-123 \
 
 ## Finish Verified Work
 
-Only after the assigned completion condition is true:
+After the claimed run completes successfully:
 
 ```bash
 agency finish checkout ui --session-id session-123 \
   --revision <current-sha256> --outcome done --json
 ```
 
-Do not substitute `phase status done` for `finish` when an active claim exists;
-`finish` preserves ownership history and revision safety.
+Do not substitute a phase status mutation for `finish`; `finish` preserves
+ownership history and revision safety. A `done` claim outcome leaves unmerged
+execution work `working`. After the authoritative pull request merges, use
+`agency sync --apply` to reconcile the execution unit to `done`.
 
 ## Create A Pull Request
 
@@ -239,8 +241,9 @@ agency worktree repair <task-id> [phase-id] --dry-run --json
 
 Use `agency sync --apply` only with explicit user intent. It may safely
 materialize an unconflicted missing checkout, release an expired claim, record a
-single matching PR, or mark work done after its authoritative PR merged and no
-claim remains. It never modifies dirty checkouts, switches branches, resets
+single matching PR, refresh recorded PR state and mergeability, or mark work done
+after its authoritative PR merged and no claim remains. It never modifies dirty
+checkouts, switches branches, resets
 references, chooses among PRs, or bypasses active claims.
 
 For a worktree-specific issue, use `worktree repair --dry-run` before repair.

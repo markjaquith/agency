@@ -5,6 +5,10 @@ import { mkdir, stat, symlink, unlink, utimes } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { managedWorkbaseAgents } from "../workbase/agents-file"
+import {
+	canUpdateManagedWorkbaseOpencodeCommand,
+	managedWorkbaseOpencodeCommand,
+} from "../workbase/opencode-command-file"
 import { managedWorkbaseOpencode } from "../workbase/opencode-file"
 import { IntegrationService } from "./IntegrationService"
 
@@ -46,12 +50,19 @@ describe("IntegrationService", () => {
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"missing",
 			"missing",
+			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
 		await write(root, ".agency/AGENTS.md", managedWorkbaseAgents)
 		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
+		await write(
+			root,
+			".opencode/command/agency.md",
+			managedWorkbaseOpencodeCommand,
+		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
+			"managed",
 			"managed",
 			"managed",
 		])
@@ -68,7 +79,38 @@ describe("IntegrationService", () => {
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"customized",
 			"drifted",
+			"missing",
 		])
+	})
+
+	test("generates a positional OpenCode command for Agency workflows", () => {
+		expect(managedWorkbaseOpencodeCommand).toContain(
+			"description: Operate Agency work",
+		)
+		expect(managedWorkbaseOpencodeCommand).toContain("Workflow: `$1`")
+		expect(managedWorkbaseOpencodeCommand).toContain("Optional target: `$2`")
+		expect(managedWorkbaseOpencodeCommand).toContain(
+			"Complete request: `$ARGUMENTS`",
+		)
+		for (const workflow of [
+			"start",
+			"status",
+			"next",
+			"validate",
+			"finish",
+			"help",
+		]) {
+			expect(managedWorkbaseOpencodeCommand).toContain(`- \`${workflow}\`:`)
+		}
+		expect(managedWorkbaseOpencodeCommand).toContain("Never run `agency work`")
+		expect(
+			canUpdateManagedWorkbaseOpencodeCommand(managedWorkbaseOpencodeCommand),
+		).toBe(true)
+		expect(
+			canUpdateManagedWorkbaseOpencodeCommand(
+				managedWorkbaseOpencodeCommand.replace("Workflow: `$1`", "Workflow"),
+			),
+		).toBe(false)
 	})
 
 	test("generates context-first safety and execution closeout guidance", () => {
@@ -80,24 +122,56 @@ describe("IntegrationService", () => {
 		expect(body).toContain("External orchestrators claim before launching")
 		expect(body).toContain("Run `agency validate`")
 		expect(body).toContain("only with explicit user intent")
-		expect(body).toContain("An execution unit is `working`")
+		expect(body).toContain("An execution unit remains `working`")
 		expect(body).toContain("It becomes `done`")
-		expect(body).toContain("solely because its PR")
+		expect(body).toContain("Do not mark committed")
 		expect(body).toContain("creating or updating a PR")
 		expect(body).toContain("marking it ready")
 		expect(body).toMatch(/completing\s+a refinement loop/)
 		expect(body).toContain("pausing or handing off")
-		expect(body).toContain("`agency task status` or `agency phase status`")
+		expect(body).toContain("`agency finish`")
+		expect(body).toContain("`agency sync --apply`")
 		expect(body).toContain("`TASK.md` or `PHASE.md`")
 		expect(body).toContain("PR state, current head, diff summary")
 		expect(body).toContain("Run `agency validate` before reporting completion")
 		expect(body).toContain("agency integration status")
+		expect(body).toContain(".opencode/command/agency.md")
 	})
 
-	test("grants OpenCode access to the complete workbase", () => {
+	test("configures Agency agents with complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
+		expect(config.agent).toEqual({
+			agency: {
+				description:
+					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
+				mode: "subagent",
+				prompt: expect.stringContaining("agency context . --json"),
+			},
+			plan: {
+				disable: true,
+			},
+			"agency-plan": {
+				description:
+					"Agency planning mode. May edit only Agency planning documents.",
+				mode: "primary",
+				prompt: expect.stringContaining("You are in Agency Plan mode"),
+				permission: {
+					question: "allow",
+					edit: {
+						"*": "deny",
+						"tasks/*/TASK.md": "allow",
+						"tasks/*/phases/*/PHASE.md": "allow",
+						"epics/*/EPIC.md": "allow",
+					},
+				},
+			},
+		})
+		expect(config.agent.agency.model).toBeUndefined()
+		expect(config.agent.agency.permission).toBeUndefined()
+		expect(config.agent.agency.hidden).toBeUndefined()
+		expect(config.agent.agency.steps).toBeUndefined()
 		expect(config.references).toEqual({
 			workbase: {
 				path: "..",
@@ -166,6 +240,7 @@ describe("IntegrationService", () => {
 		expect(first.files).toMatchObject([
 			{ name: "agents", state: "customized", changed: false },
 			{ name: "opencode", state: "managed", changed: true },
+			{ name: "opencode-command", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
@@ -176,6 +251,9 @@ describe("IntegrationService", () => {
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
 			managedWorkbaseOpencode,
 		)
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).text(),
+		).toBe(managedWorkbaseOpencodeCommand)
 
 		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
@@ -186,6 +264,34 @@ describe("IntegrationService", () => {
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
 		)
+	})
+
+	test("preserves user-owned OpenCode commands at either supported path", async () => {
+		const custom = "---\ndescription: Custom Agency command\n---\n\nCustom.\n"
+		await write(root, ".opencode/commands/agency.md", custom)
+
+		let result = await sync(root)
+		expect(result.files[2]).toMatchObject({
+			name: "opencode-command",
+			path: join(root, ".opencode/commands/agency.md"),
+			state: "customized",
+			changed: false,
+		})
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(false)
+
+		await unlink(join(root, ".opencode/commands/agency.md"))
+		await write(root, ".opencode/command/agency.md", custom)
+		result = await sync(root)
+		expect(result.files[2]).toMatchObject({
+			path: join(root, ".opencode/command/agency.md"),
+			state: "customized",
+			changed: false,
+		})
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).text(),
+		).toBe(custom)
 	})
 
 	test("migrates checksum-valid root instructions", async () => {

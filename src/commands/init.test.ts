@@ -40,10 +40,32 @@ describe("init command", () => {
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
+		expect(config.agent.agency).toMatchObject({
+			description: expect.stringContaining("Agency workbase orchestration"),
+			mode: "subagent",
+			prompt: expect.stringContaining("agency context . --json"),
+		})
+		expect(config.agent.plan).toEqual({ disable: true })
+		expect(config.agent["agency-plan"]).toMatchObject({
+			mode: "primary",
+			permission: {
+				edit: {
+					"*": "deny",
+					"tasks/*/TASK.md": "allow",
+					"tasks/*/phases/*/PHASE.md": "allow",
+					"epics/*/EPIC.md": "allow",
+				},
+			},
+		})
 		expect(config.references).toEqual({
 			workbase: expect.objectContaining({ path: ".." }),
 		})
 		expect(config.permission).toBeUndefined()
+		const command = await Bun.file(
+			join(root, ".opencode/command/agency.md"),
+		).text()
+		expect(command).toContain("Workflow: `$1`")
+		expect(command).toContain("Optional target: `$2`")
 	})
 
 	test("preserves existing gitignore entries", async () => {

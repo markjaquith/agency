@@ -8,9 +8,11 @@ names; they are not duplicated in frontmatter.
 `agency context . --json` returns a versioned success envelope whose result
 contains:
 
-- `projection`: `complete` or explicitly requested `compact`;
+- `projection`: `compact` for root discovery by default, otherwise `complete`
+  unless compact entity context was explicitly requested;
 - `workbase`: root, config path, and config version;
-- `target`: resolved epic, task, or phase identity;
+- `target`: resolved workbase, epic, task, or phase identity;
+- `discovery`: at the workbase root, all valid epic, task, and phase documents;
 - `documents`: ancestor frontmatter, paths, SHA-256 revisions, and prose;
 - `graph`: parent, dependencies, dependents, readiness blockers, and progress;
 - `authority`: `orchestration` or `execution`, one writable checkout or none,
@@ -124,7 +126,9 @@ status: open
 `ticketUrl` belongs to tasks and epics, not phases. `description` is optional but
 must be non-empty when present. `pr` is `null`, a legacy GitHub PR URL, or a
 provider-neutral record containing `provider`, `repository`, `identifier`, `url`,
-`state`, `draft`, and `merged`. New PR creation writes the structured record.
+`state`, `draft`, `merged`, and optional `mergeable`. Mergeability is `true`,
+`false`, or `null` when the provider cannot determine it. New PR creation writes
+the structured record.
 Status is `open`, `working`, `delegated`, `done`, or `dropped`; `delegated` is
 readable legacy state but cannot be newly assigned.
 
@@ -133,6 +137,8 @@ readable legacy state but cannot be newly assigned.
 - An execution unit has one writable `repo`; plural `repos` are read-only
   `{ repo, ref }` entries and cannot repeat the writable alias.
 - A writable `(repo, branch)` pair belongs to exactly one active execution unit.
+- `done` represents an authoritative merged pull request and is reconciled by
+  `agency sync --apply`; committed or review-ready work remains `working`.
 - Only `done` satisfies dependencies. `dropped` is terminal but blocks dependents.
 - Epic task dependencies live in `EPIC.md`; phase dependencies live in `TASK.md`.
 - IDs remain stable; use `dependsOn`, not numeric directory prefixes, for order.
@@ -283,9 +289,11 @@ selection. Supply every required value or explicit entity selector. Global
 `--cwd` and `--workbase` selectors apply to `next` as they do to other discovery
 commands.
 
-Context defaults to the `complete` projection. `--compact` omits prose and
-low-level Git details but retains identity, document hashes, authority, paths,
-graph state, materialization, and validation warnings.
+At a workbase root, context defaults to a compact discovery catalog of epics,
+tasks, and phases, includes no writable authority, and provides a hint for
+requesting `--full`. Entity context defaults to the `complete` projection.
+`--compact` omits prose and low-level Git details but retains identity, document
+hashes, authority, paths, graph state, materialization, and validation warnings.
 
 Graph projections are opt-in with repeatable
 `--include <bodies|workspace|git|pr>`. Filters such as `--ready`, `--blocked`,

@@ -318,22 +318,23 @@ describe("task and phase services", () => {
 				),
 			),
 		).rejects.toThrow("Delegation requires explicit ownership")
-		await runTestEffect(
-			TaskService.pipe(
-				Effect.flatMap((service) =>
-					service.setStatus("single-status", "done", root),
-				),
-			),
-		)
 		await expect(
 			runTestEffect(
 				TaskService.pipe(
 					Effect.flatMap((service) =>
-						service.setStatus("single-status", "dropped", root),
+						service.setStatus("single-status", "done", root),
 					),
 				),
 			),
-		).rejects.toThrow("reopen it first")
+		).rejects.toThrow("authoritative pull request is merged")
+		const droppedTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "dropped", root),
+				),
+			),
+		)
+		expect(droppedTask.data.status).toBe("dropped")
 
 		await runTestEffect(
 			TaskService.pipe(
@@ -389,7 +390,7 @@ describe("task and phase services", () => {
 					),
 				),
 			),
-		).rejects.toThrow("reopen it first")
+		).rejects.toThrow("authoritative pull request is merged")
 		await runTestEffect(
 			PhaseService.pipe(
 				Effect.flatMap((service) =>
@@ -397,17 +398,15 @@ describe("task and phase services", () => {
 				),
 			),
 		)
-		expect(
-			(
-				await runTestEffect(
-					PhaseService.pipe(
-						Effect.flatMap((service) =>
-							service.setStatus("multi-status", "implementation", "done", root),
-						),
+		await expect(
+			runTestEffect(
+				PhaseService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("multi-status", "implementation", "done", root),
 					),
-				)
-			).data.status,
-		).toBe("done")
+				),
+			),
+		).rejects.toThrow("authoritative pull request is merged")
 		await expect(
 			runTestEffect(
 				TaskService.pipe(

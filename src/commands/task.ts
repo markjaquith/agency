@@ -423,7 +423,7 @@ Subcommands:
   create <id>           Create a task without prompting
   list                  List tasks
   show <id>             Show a task
-  status <id> <status>  Set open, working, done, or dropped
+  status <id> <status>  Set open, working, or dropped
   update <id>           Update task metadata
   rename <id> <new-id>  Rename a task and update graph references
   move <id>             Move a task with --epic or --no-epic

@@ -538,7 +538,11 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 									outcome: input.outcome,
 								}
 								return {
-									data: { ...data, status: input.outcome, claim },
+									data: {
+										...data,
+										status: input.outcome === "done" ? "working" : "dropped",
+										claim,
+									},
 									claim,
 								}
 							},

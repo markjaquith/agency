@@ -45,7 +45,7 @@ interface ValidationIssue {
 	readonly message: string
 }
 
-interface ValidationReport {
+export interface ValidationReport {
 	readonly root: string
 	readonly issues: readonly ValidationIssue[]
 	readonly epicCount: number
@@ -634,34 +634,64 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							return decoded.value
 						})
 
-					for (const id of yield* readDirectories(join(root, "epics"))) {
-						const path = join(root, "epics", id, "EPIC.md")
-						const data = yield* readDocument(path, EpicFrontmatter)
-						if (data) {
-							epics.set(id, { id, path, data })
-						}
+					const epicIds = yield* readDirectories(join(root, "epics"))
+					const epicDocuments = yield* Effect.all(
+						epicIds.map((id) =>
+							Effect.gen(function* () {
+								const path = join(root, "epics", id, "EPIC.md")
+								const data = yield* readDocument(path, EpicFrontmatter)
+								return data ? { id, path, data } : null
+							}),
+						),
+						{ concurrency: "unbounded" },
+					)
+					for (const document of epicDocuments) {
+						if (document) epics.set(document.id, document)
 					}
 
-					for (const id of yield* readDirectories(join(root, "tasks"))) {
-						const taskPath = join(root, "tasks", id)
-						const path = join(taskPath, "TASK.md")
-						const data = yield* readDocument(path, TaskFrontmatter)
-						if (data) {
-							tasks.set(id, { id, path, data })
-						}
-
-						for (const phaseId of yield* readDirectories(
-							join(taskPath, "phases"),
-						)) {
-							const phasePath = join(taskPath, "phases", phaseId, "PHASE.md")
-							const phase = yield* readDocument(phasePath, PhaseFrontmatter)
-							if (phase) {
-								phases.set(`${id}/${phaseId}`, {
-									id: phaseId,
-									path: phasePath,
-									data: phase,
-								})
-							}
+					const taskIds = yield* readDirectories(join(root, "tasks"))
+					const taskDocuments = yield* Effect.all(
+						taskIds.map((id) =>
+							Effect.gen(function* () {
+								const taskPath = join(root, "tasks", id)
+								const path = join(taskPath, "TASK.md")
+								const data = yield* readDocument(path, TaskFrontmatter)
+								const phaseIds = yield* readDirectories(
+									join(taskPath, "phases"),
+								)
+								const taskPhases = yield* Effect.all(
+									phaseIds.map((phaseId) =>
+										Effect.gen(function* () {
+											const phasePath = join(
+												taskPath,
+												"phases",
+												phaseId,
+												"PHASE.md",
+											)
+											const phase = yield* readDocument(
+												phasePath,
+												PhaseFrontmatter,
+											)
+											return phase
+												? { id: phaseId, path: phasePath, data: phase }
+												: null
+										}),
+									),
+									{ concurrency: "unbounded" },
+								)
+								return {
+									id,
+									task: data ? { id, path, data } : null,
+									phases: taskPhases,
+								}
+							}),
+						),
+						{ concurrency: "unbounded" },
+					)
+					for (const documents of taskDocuments) {
+						if (documents.task) tasks.set(documents.id, documents.task)
+						for (const phase of documents.phases) {
+							if (phase) phases.set(`${documents.id}/${phase.id}`, phase)
 						}
 					}
 
