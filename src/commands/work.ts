@@ -12,6 +12,7 @@ import { IntegrationService } from "../services/IntegrationService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
 import { createProgress, type Progress } from "../utils/progress"
+import { isTerminalStatus } from "../readiness"
 import {
 	buildWorkTargetChoices,
 	pickWorkTarget,
@@ -379,9 +380,53 @@ export const work = (
 			return
 		}
 		if (target.kind === "phase") {
+			const previousStatus = (yield* phases.show(
+				target.taskId,
+				target.phaseId,
+				root,
+			)).data.status
+			if (options.force && isTerminalStatus(previousStatus)) {
+				yield* phases.setStatus(target.taskId, target.phaseId, "open", root)
+			}
 			yield* phases.setStatus(target.taskId, target.phaseId, "working", root)
+			if (options.force && isTerminalStatus(previousStatus)) {
+				const result = {
+					target: `phase/${target.taskId}/${target.phaseId}`,
+					reopened: true,
+					previousStatus,
+					status: "working",
+				}
+				log(
+					options.json
+						? JSON.stringify(result)
+						: `Reopened ${result.target} from ${previousStatus} as working`,
+				)
+			}
 		} else if (target.kind === "task" && !target.multiPhase) {
+			const task = yield* tasks.show(target.taskId, root)
+			if ("phases" in task.data) {
+				return yield* Effect.fail(
+					new Error(`Task '${target.taskId}' is not an execution unit`),
+				)
+			}
+			const previousStatus = task.data.status
+			if (options.force && isTerminalStatus(previousStatus)) {
+				yield* tasks.setStatus(target.taskId, "open", root)
+			}
 			yield* tasks.setStatus(target.taskId, "working", root)
+			if (options.force && isTerminalStatus(previousStatus)) {
+				const result = {
+					target: `task/${target.taskId}`,
+					reopened: true,
+					previousStatus,
+					status: "working",
+				}
+				log(
+					options.json
+						? JSON.stringify(result)
+						: `Reopened ${result.target} from ${previousStatus} as working`,
+				)
+			}
 		}
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
@@ -484,7 +529,7 @@ Options:
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset
-  --force              Override readiness and terminal-state guards
+  --force              Override readiness; reopen terminal execution units
   --no-input           Never open an interactive selector
 
 Without interactive input, provide an explicit workbase or cwd and an entity

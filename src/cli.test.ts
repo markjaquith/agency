@@ -862,6 +862,19 @@ status: open
 			await runGit(["-C", source, "remote", "add", "origin", daemon.remote])
 
 			parseJson(await runCli(["init", root, "--json"], parent))
+			const agencyConfigPath = join(root, "agency.json")
+			const agencyConfig = JSON.parse(await Bun.file(agencyConfigPath).text())
+			await Bun.write(
+				agencyConfigPath,
+				`${JSON.stringify(
+					{
+						...agencyConfig,
+						runners: { noop: { command: ["true"] } },
+					},
+					null,
+					2,
+				)}\n`,
+			)
 			parseJson(
 				await runCli(["repo", "link", "agency", source, "--json"], root),
 			)
@@ -1066,6 +1079,61 @@ status: open
 					}
 				}
 			}
+
+			parseJson(
+				await runCli(["task", "status", "example", "done", "--json"], root),
+			)
+			const blocked = await runCli(
+				["work", "--task", "example", "--runner", "noop"],
+				root,
+			)
+			expect(blocked.exitCode).toBe(1)
+			expect(blocked.stderr).toContain("Task status is done")
+			expect(
+				parseJson(await runCli(["task", "show", "example", "--json"], root))
+					.data.status,
+			).toBe("done")
+
+			const resumedTask = await runCli(
+				["work", "--task", "example", "--runner", "noop", "--force"],
+				root,
+			)
+			expect(resumedTask).toMatchObject({ exitCode: 0, stderr: "" })
+			expect(resumedTask.stdout).toContain(
+				"Reopened task/example from done as working",
+			)
+			expect(
+				parseJson(await runCli(["task", "show", "example", "--json"], root))
+					.data.status,
+			).toBe("working")
+
+			parseJson(
+				await runCli(
+					["phase", "status", "pipeline", "build", "dropped", "--json"],
+					root,
+				),
+			)
+			const resumedPhase = await runCli(
+				[
+					"work",
+					"--task",
+					"pipeline",
+					"--phase",
+					"build",
+					"--runner",
+					"noop",
+					"--force",
+				],
+				root,
+			)
+			expect(resumedPhase).toMatchObject({ exitCode: 0, stderr: "" })
+			expect(resumedPhase.stdout).toContain(
+				"Reopened phase/pipeline/build from dropped as working",
+			)
+			const graph = parseJson(await runCli(["graph", "--json"], root))
+			expect(
+				graph.nodes.find((node: any) => node.id === "task:pipeline").status,
+			).toBe("working")
 		},
 		30_000,
 	)

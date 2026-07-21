@@ -69,10 +69,17 @@ interface HarnessOptions {
 	readonly registeredWorkbases?: readonly string[]
 	readonly existingDirectories?: readonly string[]
 	readonly guardError?: Error
+	readonly launchError?: Error
 	readonly workTargetIds?: readonly string[]
 	readonly opencodeIntegrationState?: "managed" | "customized"
 	readonly taskStatus?: "open" | "working" | "delegated" | "done" | "dropped"
 	readonly phaseStatus?: "open" | "working" | "delegated" | "done" | "dropped"
+	readonly taskStatuses?: Readonly<
+		Record<string, "open" | "working" | "delegated" | "done" | "dropped">
+	>
+	readonly phaseStatuses?: Readonly<
+		Record<string, "open" | "working" | "delegated" | "done" | "dropped">
+	>
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -92,6 +99,8 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const materializeOptions: Array<
 		Parameters<WorktreeService["materialize"]>[3]
 	> = []
+	const taskStatuses = { ...options.taskStatuses }
+	const phaseStatuses = { ...options.phaseStatuses }
 	const worktrees = {
 		materialize: (
 			_taskId: string,
@@ -147,13 +156,19 @@ const createHarness = (options: HarnessOptions = {}) => {
 							repo: "agency",
 							branch: `task/${id}`,
 							base: "main",
-							status: options.taskStatus ?? "open",
+							status: taskStatuses[id] ?? options.taskStatus ?? "open",
 						},
 			})
 		},
 		list: () => Effect.succeed(options.taskRecords ?? []),
 		setStatus: (id: string, status: string) => {
 			statusUpdates.push(`task:${id}:${status}`)
+			taskStatuses[id] = status as
+				| "open"
+				| "working"
+				| "delegated"
+				| "done"
+				| "dropped"
 			return Effect.void
 		},
 	}
@@ -167,12 +182,19 @@ const createHarness = (options: HarnessOptions = {}) => {
 					repo: "agency",
 					branch: `task/${id}`,
 					base: "main",
-					status: options.phaseStatus ?? "open",
+					status:
+						phaseStatuses[`${taskId}/${id}`] ?? options.phaseStatus ?? "open",
 				},
 			}),
 		list: () => Effect.succeed(options.phaseRecords ?? []),
 		setStatus: (taskId: string, id: string, status: string) => {
 			statusUpdates.push(`phase:${taskId}:${id}:${status}`)
+			phaseStatuses[`${taskId}/${id}`] = status as
+				| "open"
+				| "working"
+				| "delegated"
+				| "done"
+				| "dropped"
 			return Effect.void
 		},
 	}
@@ -241,6 +263,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		events.push(`launch:${cli}`)
 		launches.push({ cli, args, cwd })
 		launchEnvironments.push(environment)
+		if (options.launchError) throw options.launchError
 	}
 	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
 	const defaultPickWorkbase: PickWorkbase = () => Effect.succeed(null)
@@ -284,6 +307,8 @@ const createHarness = (options: HarnessOptions = {}) => {
 		launchEnvironments,
 		materializeOptions,
 		statusUpdates,
+		taskStatuses,
+		phaseStatuses,
 		shownTasks,
 		progressUpdates,
 		guards,
@@ -325,6 +350,72 @@ describe("work command", () => {
 		expect(forced.guards[0]).toEqual({
 			target: "execution-unit:task/example",
 			override: true,
+		})
+	})
+
+	test("reopens forced terminal tasks through open before launching as working", async () => {
+		for (const previousStatus of ["done", "dropped"] as const) {
+			const harness = createHarness({
+				taskStatuses: { example: previousStatus },
+			})
+			const output = await captureLogs(() =>
+				harness.run({ taskId: "example", opencode: true, force: true }),
+			)
+
+			expect(harness.statusUpdates).toEqual([
+				"task:example:open",
+				"task:example:working",
+			])
+			expect(harness.taskStatuses.example).toBe("working")
+			expect(output).toEqual([
+				`Reopened task/example from ${previousStatus} as working`,
+			])
+		}
+	})
+
+	test("reopens forced terminal phases through open before launching as working", async () => {
+		for (const previousStatus of ["done", "dropped"] as const) {
+			const harness = createHarness({
+				workspace: multiPhaseWorkspace,
+				multiPhaseTasks: ["example"],
+				phaseStatuses: { "example/implementation": previousStatus },
+			})
+			const output = await captureLogs(() =>
+				harness.run({
+					taskId: "example",
+					phaseId: "implementation",
+					opencode: true,
+					force: true,
+				}),
+			)
+
+			expect(harness.statusUpdates).toEqual([
+				"phase:example:implementation:open",
+				"phase:example:implementation:working",
+			])
+			expect(harness.phaseStatuses["example/implementation"]).toBe("working")
+			expect(output).toEqual([
+				`Reopened phase/example/implementation from ${previousStatus} as working`,
+			])
+		}
+	})
+
+	test("reports a forced reopen as one machine result", async () => {
+		const harness = createHarness({ taskStatuses: { example: "done" } })
+		const output = await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				opencode: true,
+				force: true,
+				json: true,
+			}),
+		)
+
+		expect(JSON.parse(output.join("\n"))).toEqual({
+			target: "task/example",
+			reopened: true,
+			previousStatus: "done",
+			status: "working",
 		})
 	})
 
@@ -425,7 +516,7 @@ describe("work command", () => {
 			opencode: true,
 		})
 
-		expect(harness.shownTasks).toEqual(["delivery"])
+		expect(harness.shownTasks).toEqual(["delivery", "delivery"])
 		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
@@ -438,7 +529,7 @@ describe("work command", () => {
 			opencode: true,
 		})
 
-		expect(harness.shownTasks).toEqual(["delivery"])
+		expect(harness.shownTasks).toEqual(["delivery", "delivery"])
 		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
@@ -829,6 +920,22 @@ describe("work command", () => {
 		expect(printed.environment.API_TOKEN).toBeUndefined()
 	})
 
+	test("does not reopen a forced terminal target in print-only mode", async () => {
+		const harness = createHarness({ taskStatuses: { example: "done" } })
+
+		await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				opencode: true,
+				force: true,
+				printCommand: true,
+			}),
+		)
+
+		expect(harness.statusUpdates).toEqual([])
+		expect(harness.taskStatuses.example).toBe("done")
+	})
+
 	test("prints the runtime OpenCode integration config", async () => {
 		const harness = createHarness()
 		const output = await captureLogs(() =>
@@ -931,6 +1038,35 @@ describe("work command", () => {
 			"start:Preparing workspace...",
 			"fail:Workspace preparation failed",
 		])
+	})
+
+	test("does not reopen a terminal target when preparation fails", async () => {
+		const harness = createHarness({
+			taskStatuses: { example: "dropped" },
+			materializeError: new Error("materialization failed"),
+		})
+
+		await expect(
+			harness.run({ taskId: "example", force: true }),
+		).rejects.toThrow("materialization failed")
+		expect(harness.statusUpdates).toEqual([])
+		expect(harness.taskStatuses.example).toBe("dropped")
+	})
+
+	test("retains working when launch fails after a forced reopen", async () => {
+		const harness = createHarness({
+			taskStatuses: { example: "done" },
+			launchError: new Error("launch failed"),
+		})
+
+		await expect(
+			harness.run({ taskId: "example", force: true, silent: true }),
+		).rejects.toThrow("launch failed")
+		expect(harness.statusUpdates).toEqual([
+			"task:example:open",
+			"task:example:working",
+		])
+		expect(harness.taskStatuses.example).toBe("working")
 	})
 
 	test("respects silent and verbose logging options", async () => {
