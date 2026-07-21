@@ -118,11 +118,12 @@ independently meaningful tasks need coordination.
 
 1. Re-run `agency validate` and repository checks.
 2. Create a PR only when requested: `agency pr create <task> [phase]`.
-3. Record terminal state only when the requested outcome is true. A created PR
-   alone does not make work `done` if completion requires merge.
-4. If the session has a claim, use revision-guarded `agency finish`; otherwise
-   use the task or phase status command. Use `dropped` only for intentionally
-   abandoned work.
+3. Keep committed work `working` while its pull request is open. After the
+   authoritative pull request merges, use `agency sync --apply` to reconcile it
+   to `done`.
+4. If the session has a claim, use revision-guarded `agency finish`; a successful
+   claim outcome closes ownership without marking unmerged work `done`. Use
+   `dropped` only for intentionally abandoned work.
 5. Report the durable status and PR URL. Do not manually remove the worktree.
 
 ## Human Launch vs Active Agent

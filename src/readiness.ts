@@ -5,9 +5,9 @@ export interface ReadinessBlocker {
 }
 
 export const WORK_STATUS_TRANSITIONS = {
-	open: ["open", "working", "delegated", "done", "dropped"],
-	working: ["open", "working", "delegated", "done", "dropped"],
-	delegated: ["open", "working", "delegated", "done", "dropped"],
+	open: ["open", "working", "delegated", "dropped"],
+	working: ["open", "working", "delegated", "dropped"],
+	delegated: ["open", "working", "delegated", "dropped"],
 	done: ["open", "done"],
 	dropped: ["open", "dropped"],
 } as const satisfies Record<WorkStatus, readonly WorkStatus[]>

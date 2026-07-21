@@ -244,6 +244,10 @@ describe("CLI", () => {
 			),
 		)
 		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
+		expect(
+			parseJson(await runCli(["task", "show", "claimed", "--json"], root)).data
+				.status,
+		).toBe("working")
 	})
 
 	test("routes graph mutations through structured output", async () => {
@@ -468,7 +472,7 @@ describe("CLI", () => {
 			)
 		}
 		parseJson(
-			await runCli(["task", "status", "finished", "done", "--json"], root),
+			await runCli(["task", "status", "finished", "dropped", "--json"], root),
 		)
 
 		const human = await runCli(["next"], root)
@@ -482,9 +486,9 @@ describe("CLI", () => {
 		expect(result.excluded).toMatchObject([
 			{
 				key: "task/finished",
-				status: "done",
+				status: "dropped",
 				terminal: true,
-				blockers: [{ kind: "status", reason: "Task status is done" }],
+				blockers: [{ kind: "status", reason: "Task status is dropped" }],
 			},
 		])
 
@@ -496,8 +500,8 @@ describe("CLI", () => {
 			error: {
 				code: "EXECUTION_BLOCKED",
 				fields: {
-					status: "done",
-					blockers: [{ kind: "status", reason: "Task status is done" }],
+					status: "dropped",
+					blockers: [{ kind: "status", reason: "Task status is dropped" }],
 				},
 			},
 		})
@@ -1115,18 +1119,18 @@ status: open
 			}
 
 			parseJson(
-				await runCli(["task", "status", "example", "done", "--json"], root),
+				await runCli(["task", "status", "example", "dropped", "--json"], root),
 			)
 			const blocked = await runCli(
 				["work", "--task", "example", "--runner", "noop"],
 				root,
 			)
 			expect(blocked.exitCode).toBe(1)
-			expect(blocked.stderr).toContain("Task status is done")
+			expect(blocked.stderr).toContain("Task status is dropped")
 			expect(
 				parseJson(await runCli(["task", "show", "example", "--json"], root))
 					.data.status,
-			).toBe("done")
+			).toBe("dropped")
 
 			const resumedTask = await runCli(
 				["work", "--task", "example", "--runner", "noop", "--force"],
@@ -1134,7 +1138,7 @@ status: open
 			)
 			expect(resumedTask).toMatchObject({ exitCode: 0, stderr: "" })
 			expect(resumedTask.stdout).toContain(
-				"Reopened task/example from done as working",
+				"Reopened task/example from dropped as working",
 			)
 			expect(
 				parseJson(await runCli(["task", "show", "example", "--json"], root))

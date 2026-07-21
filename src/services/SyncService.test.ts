@@ -311,6 +311,99 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 		expect("pr" in task.data && task.data.pr).toEqual(record)
 	})
 
+	test("marks a successfully finished claim done only after merge", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "finished-claim",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("finished-claim", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		const initial = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("finished-claim", undefined, root),
+				),
+			),
+		)
+		const claimed = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.claim(
+						{
+							taskId: "finished-claim",
+							claimant: "orchestrator",
+							runner: "agent",
+							sessionId: "session-1",
+							revision: initial.revision,
+						},
+						root,
+					),
+				),
+			),
+		)
+		const finished = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.finish(
+						{
+							taskId: "finished-claim",
+							sessionId: "session-1",
+							revision: claimed.revision,
+							outcome: "done",
+						},
+						root,
+					),
+				),
+			),
+		)
+		expect(finished.data).toMatchObject({
+			status: "working",
+			claim: { state: "finished", outcome: "done" },
+		})
+
+		const synced = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(synced.changes.map((change) => change.kind)).toContain("mark-done")
+		expect(
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) => service.show("finished-claim", root)),
+				),
+			),
+		).toMatchObject({
+			data: {
+				status: "done",
+				claim: { state: "finished", outcome: "done" },
+			},
+		})
+	})
+
 	test("materializes missing workspaces but leaves branch conflicts unresolved", async () => {
 		for (const [id, branch] of [
 			["missing", "feat/missing"],

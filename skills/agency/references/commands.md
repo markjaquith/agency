@@ -87,7 +87,7 @@ agency task create <id> --multi-phase [--ticket-url <url>]
   [--description <text>] [--epic <id>] [--json]
 agency task list [filters] [--json]
 agency task show <id> [--json]
-agency task status <id> <open|done|dropped> [--json]
+agency task status <id> <open|working|dropped> [--json]
 agency task update <id> [metadata options] [--if-revision <hash>] [--json]
 agency task rename <id> <new-id> [--if-revision <hash>] [--json]
 agency task move <id> (--epic <epic-id> | --no-epic)
@@ -100,7 +100,7 @@ agency phase create <task-id> <phase-id> --repo <alias> --branch <name>
   [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
 agency phase list <task-id> [filters] [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|done|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|working|dropped> [--json]
 agency phase update <task-id> <phase-id> [metadata options]
   [--if-revision <hash>] [--json]
 agency phase rename <task-id> <phase-id> <new-id>
