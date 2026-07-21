@@ -50,7 +50,7 @@ describe("integration command", () => {
 			runTestEffect(integration({ subcommand: "status", cwd: root })),
 		)
 
-		expect(logs.join("\n")).toContain("cannot guarantee whole-workbase")
+		expect(logs.join("\n")).toContain("cannot guarantee its instructions")
 		expect(logs.join("\n")).toContain("global config")
 	})
 
@@ -63,7 +63,8 @@ describe("integration command", () => {
 			{ name: "agents", state: "managed", changed: true },
 			{ name: "opencode", state: "managed", changed: true },
 		])
-		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(true)
+		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
 		expect(
 			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
 		).toBe(true)

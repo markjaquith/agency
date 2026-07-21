@@ -114,7 +114,7 @@ status: open
 	test("reports repository, ref, remote, and managed-file failures", async () => {
 		await Bun.$`git -C ${repository} remote remove origin`
 		await Bun.$`git -C ${repository} branch -m other`
-		await write(root, "AGENTS.md", managedAgents("old\n"))
+		await write(root, ".agency/AGENTS.md", managedAgents("old\n"))
 
 		const logs = await captureLogs(() =>
 			runTestEffect(doctor({ cwd: root, json: true })),
@@ -153,7 +153,7 @@ status: open
 		expect(check).toMatchObject({
 			level: "warning",
 			status: "fail",
-			message: expect.stringContaining("cannot guarantee whole-workbase"),
+			message: expect.stringContaining("cannot guarantee its instructions"),
 			remediation: expect.stringContaining("global config"),
 		})
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
@@ -181,6 +181,7 @@ status: open
 		}
 
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 		expect(
 			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
 		).toBe(false)

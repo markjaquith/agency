@@ -33,11 +33,13 @@ describe("init command", () => {
 		expect(await Bun.file(join(root, ".gitignore")).text()).toBe(
 			"/repos/\n/tasks/*/code/\n/tasks/*/phases/*/code/\n",
 		)
-		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(true)
+		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
 		const opencode = await Bun.file(
 			join(root, ".opencode/opencode.jsonc"),
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
+		expect(config.instructions).toEqual([".agency/AGENTS.md"])
 		expect(config.references).toEqual({
 			workbase: expect.objectContaining({ path: ".." }),
 		})

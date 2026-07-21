@@ -33,23 +33,23 @@ const describe = (
 		if (state === "managed") {
 			return {
 				diagnostic:
-					"Agency's managed OpenCode launch config is ready to provide whole-workbase read access.",
+					"Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.",
 				remediation: null,
 			}
 		}
 		if (state === "customized") {
 			return {
 				diagnostic:
-					"Agency cannot guarantee whole-workbase read access from this customized OpenCode config.",
+					"Agency cannot guarantee its instructions or whole-workbase read access from this customized OpenCode config.",
 				remediation:
 					"Back up and remove the customized file, run 'agency integration sync', then move any retained custom settings to OpenCode's global config.",
 			}
 		}
 		return {
 			diagnostic:
-				"Agency OpenCode launches cannot load current whole-workbase access.",
+				"Agency OpenCode launches cannot load current Agency instructions or whole-workbase access.",
 			remediation:
-				"Run 'agency integration sync' to install whole-workbase OpenCode access.",
+				"Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.",
 		}
 	}
 
@@ -94,7 +94,7 @@ const classify = (
 const inspect = (root: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
-		const agentsPath = join(root, "AGENTS.md")
+		const agentsPath = join(root, ".agency", "AGENTS.md")
 		const opencodeDirectory = join(root, ".opencode")
 		const opencodePath = join(opencodeDirectory, "opencode.jsonc")
 		const opencodeJsonPath = join(opencodeDirectory, "opencode.json")
@@ -138,6 +138,18 @@ const inspect = (root: string) =>
 		return files
 	})
 
+const canRemoveLegacyAgents = (root: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const path = join(root, "AGENTS.md")
+		if (
+			(yield* fs.readSymlinkTarget(path)) !== null ||
+			!(yield* fs.exists(path))
+		)
+			return false
+		return canUpdateManagedWorkbaseAgents(yield* fs.readFile(path))
+	})
+
 export class IntegrationService extends Effect.Service<IntegrationService>()(
 	"IntegrationService",
 	{
@@ -155,13 +167,19 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 					const workbase = yield* WorkbaseService
 					const root = yield* workbase.discover(startPath)
 					const statuses = yield* inspect(root)
+					const removeLegacyAgents =
+						statuses.some(
+							(status) =>
+								status.name === "opencode" && status.state !== "customized",
+						) && (yield* canRemoveLegacyAgents(root))
 					const files: IntegrationSyncFile[] = []
 
 					for (const status of statuses) {
-						const changed =
+						const needsWrite =
 							status.state === "missing" || status.state === "drifted"
-						if (changed) {
+						if (needsWrite) {
 							if (status.name === "agents") {
+								yield* fs.createDirectory(join(root, ".agency"))
 								yield* fs.writeFile(status.path, managedWorkbaseAgents)
 							} else {
 								yield* fs.createDirectory(join(root, ".opencode"))
@@ -172,11 +190,14 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							...fileStatus(
 								status.name,
 								status.path,
-								changed ? "managed" : status.state,
+								needsWrite ? "managed" : status.state,
 							),
-							changed,
+							changed:
+								needsWrite || (status.name === "agents" && removeLegacyAgents),
 						})
 					}
+
+					if (removeLegacyAgents) yield* fs.deleteFile(join(root, "AGENTS.md"))
 
 					return { root, files }
 				}),

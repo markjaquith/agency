@@ -47,9 +47,9 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 		])
-		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
-		await write(root, "AGENTS.md", managedWorkbaseAgents)
+		await write(root, ".agency/AGENTS.md", managedWorkbaseAgents)
 		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"managed",
@@ -58,7 +58,7 @@ describe("IntegrationService", () => {
 	})
 
 	test("reports customized and checksum-safe drifted files", async () => {
-		await write(root, "AGENTS.md", "# Custom instructions\n")
+		await write(root, ".agency/AGENTS.md", "# Custom instructions\n")
 		await write(
 			root,
 			".opencode/opencode.jsonc",
@@ -97,6 +97,7 @@ describe("IntegrationService", () => {
 	test("grants OpenCode access to the complete workbase", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
+		expect(config.instructions).toEqual([".agency/AGENTS.md"])
 		expect(config.references).toEqual({
 			workbase: {
 				path: "..",
@@ -151,8 +152,10 @@ describe("IntegrationService", () => {
 	})
 
 	test("syncs missing and drifted files while preserving customized files", async () => {
-		const customAgents = "# Custom instructions\n"
-		await write(root, "AGENTS.md", customAgents)
+		const customRootAgents = "# User-owned workbase instructions\n"
+		const customManagedAgents = "# Customized Agency instructions\n"
+		await write(root, "AGENTS.md", customRootAgents)
+		await write(root, ".agency/AGENTS.md", customManagedAgents)
 		await write(
 			root,
 			".opencode/opencode.jsonc",
@@ -164,14 +167,50 @@ describe("IntegrationService", () => {
 			{ name: "agents", state: "customized", changed: false },
 			{ name: "opencode", state: "managed", changed: true },
 		])
-		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(customAgents)
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
+			customRootAgents,
+		)
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).text()).toBe(
+			customManagedAgents,
+		)
 		expect(await Bun.file(join(root, ".opencode/opencode.jsonc")).text()).toBe(
 			managedWorkbaseOpencode,
 		)
 
-		await unlink(join(root, "AGENTS.md"))
+		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
 		expect(second.files[0]).toMatchObject({ state: "managed", changed: true })
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).text()).toBe(
+			managedWorkbaseAgents,
+		)
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
+			customRootAgents,
+		)
+	})
+
+	test("migrates checksum-valid root instructions", async () => {
+		await write(root, "AGENTS.md", managedWorkbaseAgents)
+
+		const result = await sync(root)
+
+		expect(result.files[0]).toMatchObject({ state: "managed", changed: true })
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).text()).toBe(
+			managedWorkbaseAgents,
+		)
+		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
+	})
+
+	test("preserves legacy instructions when the OpenCode config is customized", async () => {
+		await write(root, "AGENTS.md", managedWorkbaseAgents)
+		await write(root, ".opencode/opencode.json", '{"model":"test/model"}\n')
+
+		const result = await sync(root)
+
+		expect(result.files[0]).toMatchObject({ state: "managed", changed: true })
+		expect(result.files[1]).toMatchObject({
+			state: "customized",
+			changed: false,
+		})
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			managedWorkbaseAgents,
 		)
@@ -198,14 +237,16 @@ describe("IntegrationService", () => {
 			"# Previous Agency instructions\n",
 			" -->",
 		)}User edit\n`
-		await write(root, "AGENTS.md", tampered)
+		await write(root, ".agency/AGENTS.md", tampered)
 
 		const result = await sync(root)
 		expect(result.files[0]).toMatchObject({
 			state: "customized",
 			changed: false,
 		})
-		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(tampered)
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).text()).toBe(
+			tampered,
+		)
 	})
 
 	test("does not overwrite a user-modified OpenCode configuration", async () => {
@@ -228,7 +269,8 @@ describe("IntegrationService", () => {
 	test("does not follow symlinked integration files", async () => {
 		const target = join(root, "custom-agents.md")
 		await Bun.write(target, "# External instructions\n")
-		await symlink(target, join(root, "AGENTS.md"))
+		await mkdir(join(root, ".agency"), { recursive: true })
+		await symlink(target, join(root, ".agency/AGENTS.md"))
 
 		const result = await sync(root)
 		expect(result.files[0]).toMatchObject({

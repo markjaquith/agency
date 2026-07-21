@@ -9,6 +9,7 @@ import {
 	rmdir,
 	stat,
 	symlink,
+	unlink,
 } from "node:fs/promises"
 import { spawnProcess } from "../utils/process"
 
@@ -113,6 +114,16 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					catch: (error) =>
 						new FileSystemError({
 							message: `Failed to write JSON file: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			deleteFile: (path: string) =>
+				Effect.tryPromise({
+					try: () => unlink(path),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to delete file: ${path}`,
 							cause: error,
 						}),
 				}),

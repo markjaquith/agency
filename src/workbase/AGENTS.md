@@ -67,9 +67,13 @@ a refinement loop, or pausing or handing off completed implementation work):
 ## Managed Integration
 
 `agency integration status` reports `managed`, `drifted`, `customized`, or
-`missing` generated files. `agency integration sync` updates only missing or
-checksum-safe drifted files and preserves user-customized files. `agency init`
-creates these files, and `agency work` reconciles them before launching an agent.
+`missing` generated files. Agency keeps these instructions in
+`.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
+The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
+owner and composes with these instructions through OpenCode's normal discovery.
+`agency integration sync` updates only missing or checksum-safe drifted managed
+files and preserves user-customized files. `agency init` creates the managed
+files, and `agency work` reconciles them before launching an agent.
 
 OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
