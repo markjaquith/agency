@@ -92,13 +92,9 @@ preserved as user-owned content.
 
 The OpenCode config loads Agency's hidden instructions in addition to any
 user-owned root `AGENTS.md` and advertises the complete workbase as one portable
-relative reference. `agency work` sets `OPENCODE_CONFIG` to the managed file and
-injects runtime-only absolute rules that allow external access across the
-workbase while denying edits outside the execution unit's writable checkout.
-This makes the config effective from nested task and phase Git checkouts without
-persisting a machine-specific path or granting access outside the workbase. Bash
-and Agency operations must still follow the write authority reported by
-`agency context`.
+reference. OpenCode discovers that config from task and epic launch directories.
+Agents receive whole-workbase visibility from that reference. Bash and Agency
+operations must still follow the write authority reported by `agency context`.
 
 Repository aliases and canonical fetch remotes are declared in tracked
 `agency.json`; local bare clones and symlinks remain ignored under
@@ -226,10 +222,8 @@ Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
 environment is added without overriding these normalized values.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
-The `opencode` runner additionally receives `OPENCODE_CONFIG` for the workbase's
-managed integration and `OPENCODE_CONFIG_CONTENT` with runtime-only,
-workbase-scoped access and edit rules. These values keep the Git-synced config
-portable while providing whole-workbase read access at every launch location.
+The `opencode` runner discovers the managed project config from its task or epic
+working directory; Agency does not inject OpenCode-specific configuration.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
