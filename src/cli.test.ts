@@ -1009,7 +1009,13 @@ status: open
 				const contract = JSON.parse(printed.stdout)
 				expect(contract.cwd).toBe(launch.cwd)
 				expect(contract.environment.OPENCODE_CONFIG).toBeUndefined()
-				expect(contract.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+				expect(
+					JSON.parse(contract.environment.OPENCODE_CONFIG_CONTENT),
+				).toEqual({
+					permission: {
+						external_directory: { [join(workbaseRoot, "*")]: "allow" },
+					},
+				})
 				const environment = {
 					...process.env,
 					...contract.environment,
