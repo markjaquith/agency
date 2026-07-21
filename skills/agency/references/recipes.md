@@ -239,8 +239,9 @@ agency worktree repair <task-id> [phase-id] --dry-run --json
 
 Use `agency sync --apply` only with explicit user intent. It may safely
 materialize an unconflicted missing checkout, release an expired claim, record a
-single matching PR, or mark work done after its authoritative PR merged and no
-claim remains. It never modifies dirty checkouts, switches branches, resets
+single matching PR, refresh recorded PR state and mergeability, or mark work done
+after its authoritative PR merged and no claim remains. It never modifies dirty
+checkouts, switches branches, resets
 references, chooses among PRs, or bypasses active claims.
 
 For a worktree-specific issue, use `worktree repair --dry-run` before repair.

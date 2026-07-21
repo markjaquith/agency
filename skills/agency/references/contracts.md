@@ -124,7 +124,9 @@ status: open
 `ticketUrl` belongs to tasks and epics, not phases. `description` is optional but
 must be non-empty when present. `pr` is `null`, a legacy GitHub PR URL, or a
 provider-neutral record containing `provider`, `repository`, `identifier`, `url`,
-`state`, `draft`, and `merged`. New PR creation writes the structured record.
+`state`, `draft`, `merged`, and optional `mergeable`. Mergeability is `true`,
+`false`, or `null` when the provider cannot determine it. New PR creation writes
+the structured record.
 Status is `open`, `working`, `delegated`, `done`, or `dropped`; `delegated` is
 readable legacy state but cannot be newly assigned.
 
