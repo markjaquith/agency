@@ -28,9 +28,10 @@ const readContext = async (
 	root: string,
 	target: string | undefined,
 	compact = false,
+	full = false,
 ) => {
 	const logs = await captureLogs(() =>
-		runTestEffect(context({ cwd: root, target, compact, json: true })),
+		runTestEffect(context({ cwd: root, target, compact, full, json: true })),
 	)
 	expect(logs).toHaveLength(1)
 	return JSON.parse(logs[0]!)
@@ -267,7 +268,7 @@ status: dropped
 		})
 	})
 
-	test("resolves a bare task ID and rejects a root target", async () => {
+	test("resolves a bare task ID and returns root discovery context", async () => {
 		const task = await readContext(root, "agent-contract")
 		expect(task.target).toMatchObject({
 			kind: "task",
@@ -275,9 +276,43 @@ status: dropped
 		})
 		expect(task.graph.parent).toEqual({ kind: "epic", id: "contract" })
 
-		await expect(readContext(root, ".")).rejects.toThrow(
-			"Cannot infer an Agency target",
-		)
+		const workbase = await readContext(root, ".")
+		expect(workbase).toMatchObject({
+			projection: "compact",
+			workbase: { root, version: 2 },
+			target: { kind: "workbase", path: root },
+			hint: "Run agency context . --full --json to include document prose.",
+			authority: {
+				mode: "orchestration",
+				writable: null,
+				references: [],
+			},
+			validation: { valid: true, warnings: [] },
+		})
+		expect(
+			workbase.discovery.epics.map((item: { id: string }) => item.id),
+		).toEqual(["contract"])
+		expect(
+			workbase.discovery.tasks.map((item: { id: string }) => item.id),
+		).toEqual(["agent-contract", "foundations"])
+		expect(
+			workbase.discovery.phases.map(
+				(item: { taskId: string; id: string }) => `${item.taskId}/${item.id}`,
+			),
+		).toEqual(["agent-contract/context-command", "agent-contract/schema"])
+		expect(workbase.discovery.tasks[0].body).toBeUndefined()
+		expect(workbase.discovery.phases[0].data.status).toBe("open")
+		expect(workbase.discovery.phases[0].sha256).toMatch(/^[a-f0-9]{64}$/)
+	})
+
+	test("includes discovery prose only in full root context", async () => {
+		const workbase = await readContext(root, ".", false, true)
+		expect(workbase.projection).toBe("complete")
+		expect(workbase.hint).toBeNull()
+		expect(workbase.discovery.epics[0].body).toContain("# Contract")
+		expect(workbase.discovery.tasks[0].body).toContain("Task prose.")
+		expect(workbase.discovery.tasks[0].data.phases).toBeDefined()
+		expect(workbase.discovery.phases[0].taskId).toBe("agent-contract")
 	})
 
 	test("resolves bare task IDs from inside another target", async () => {

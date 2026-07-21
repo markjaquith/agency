@@ -601,6 +601,7 @@ const commands: Record<string, Command> = {
 								? join("tasks", options.task)
 								: args[0],
 					compact: options.compact,
+					full: options.full,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
