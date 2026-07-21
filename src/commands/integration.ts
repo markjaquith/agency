@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { relative } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { IntegrationService } from "../services/IntegrationService"
 import { createLoggers } from "../utils/effect"
@@ -6,6 +7,41 @@ import { createLoggers } from "../utils/effect"
 interface IntegrationOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly json?: boolean
+}
+
+interface IntegrationResult {
+	readonly root: string
+	readonly files: readonly {
+		readonly name: "agents" | "opencode" | "opencode-command"
+		readonly path: string
+		readonly state: string
+		readonly diagnostic: string
+		readonly remediation: string | null
+		readonly changed?: boolean
+	}[]
+}
+
+const integrationNames = {
+	agents: "Agent instructions",
+	opencode: "OpenCode config",
+	"opencode-command": "OpenCode /agency command",
+} as const
+
+const logHumanResult = (
+	log: (message: string) => void,
+	subcommand: "status" | "sync",
+	result: IntegrationResult,
+) => {
+	log(`Integration ${subcommand}: ${result.root}`)
+	for (const file of result.files) {
+		log("")
+		log(
+			`${integrationNames[file.name]}: ${file.changed ? "synced" : file.state}`,
+		)
+		log(`  Path: ${relative(result.root, file.path)}`)
+		log(`  ${file.diagnostic}`)
+		if (file.remediation) log(`  Action: ${file.remediation}`)
+	}
 }
 
 export const integration = (options: IntegrationOptions) =>
@@ -21,10 +57,7 @@ export const integration = (options: IntegrationOptions) =>
 					log(JSON.stringify(result, null, 2))
 					return
 				}
-				for (const file of result.files) {
-					log(`${file.name}\t${file.state}\t${file.path}\t${file.diagnostic}`)
-					if (file.remediation) log(`  Remediation: ${file.remediation}`)
-				}
+				logHumanResult(log, "status", result)
 				return
 			}
 
@@ -34,12 +67,7 @@ export const integration = (options: IntegrationOptions) =>
 					log(JSON.stringify(result, null, 2))
 					return
 				}
-				for (const file of result.files) {
-					log(
-						`${file.name}\t${file.changed ? "synced" : file.state}\t${file.path}\t${file.diagnostic}`,
-					)
-					if (file.remediation) log(`  Remediation: ${file.remediation}`)
-				}
+				logHumanResult(log, "sync", result)
 				return
 			}
 

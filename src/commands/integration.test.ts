@@ -59,6 +59,29 @@ describe("integration command", () => {
 		expect(logs.join("\n")).toContain("global config")
 	})
 
+	test("formats integration status for people", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(integration({ subcommand: "status", cwd: root })),
+		)
+
+		expect(logs.join("\n")).toBe(`Integration status: ${root}
+
+Agent instructions: missing
+  Path: .agency/AGENTS.md
+  Managed workbase instructions need synchronization.
+  Action: Run 'agency integration sync' to restore managed instructions.
+
+OpenCode config: missing
+  Path: .opencode/opencode.jsonc
+  Agency OpenCode launches cannot load current Agency instructions or whole-workbase access.
+  Action: Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.
+
+OpenCode /agency command: missing
+  Path: .opencode/command/agency.md
+  The managed OpenCode /agency command needs synchronization.
+  Action: Run 'agency integration sync' to install the managed /agency command.`)
+	})
+
 	test("explicitly synchronizes integration files", async () => {
 		const logs = await captureLogs(() =>
 			runTestEffect(integration({ subcommand: "sync", cwd: root, json: true })),
@@ -77,5 +100,25 @@ describe("integration command", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
 		).toBe(true)
+	})
+
+	test("formats integration sync results for people", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(integration({ subcommand: "sync", cwd: root })),
+		)
+
+		expect(logs.join("\n")).toBe(`Integration sync: ${root}
+
+Agent instructions: synced
+  Path: .agency/AGENTS.md
+  Managed workbase instructions are current.
+
+OpenCode config: synced
+  Path: .opencode/opencode.jsonc
+  Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.
+
+OpenCode /agency command: synced
+  Path: .opencode/command/agency.md
+  Agency's managed OpenCode /agency command is current.`)
 	})
 })
