@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { KeyCodes, type MockInput } from "@opentui/core/testing"
 import { testRender } from "@opentui/solid"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -9,6 +10,34 @@ import {
 	InteractiveTextPrompt,
 	interactiveRendererConfig,
 } from "./interactive"
+
+const submitEditedText = async (
+	edit: (input: MockInput) => void | Promise<void>,
+) => {
+	let submitted: string | null | undefined
+	const setup = await testRender(
+		() => (
+			<InteractiveTextPrompt
+				prompt="Text"
+				onDone={(value) => {
+					submitted = value
+				}}
+			/>
+		),
+		{ width: 60, height: 4 },
+	)
+	try {
+		await setup.renderer.setupTerminal()
+		await setup.renderOnce()
+		await Bun.sleep(0)
+		await edit(setup.mockInput)
+		setup.mockInput.pressEnter()
+		await setup.waitFor(() => submitted !== undefined)
+		return submitted
+	} finally {
+		setup.renderer.destroy()
+	}
+}
 
 describe("OpenTUI interaction", () => {
 	test("selects the Solid JSX runtime without the project preload", async () => {
@@ -109,8 +138,8 @@ describe("OpenTUI interaction", () => {
 		expect(await selectAfter("down")).toBe("web")
 	})
 
-	test("uses printable j, k, and q characters as the fuzzy query", async () => {
-		for (const query of ["j", "k", "q"]) {
+	test("uses printable j, k, q, and ? characters as the fuzzy query", async () => {
+		for (const query of ["j", "k", "q", "?"]) {
 			let selected: string | null | undefined
 			const setup = await testRender(
 				() => (
@@ -138,6 +167,163 @@ describe("OpenTUI interaction", () => {
 			} finally {
 				setup.renderer.destroy()
 			}
+		}
+	})
+
+	test("supports the readline movement and deletion contract", async () => {
+		const cases = [
+			{
+				name: "left arrow",
+				expected: "aXb",
+				edit: async (input: MockInput) => {
+					await input.typeText("ab")
+					input.pressArrow("left")
+					await input.typeText("X")
+				},
+			},
+			{
+				name: "home and end",
+				expected: "XabY",
+				edit: async (input: MockInput) => {
+					await input.typeText("ab")
+					input.pressKey(KeyCodes.HOME)
+					await input.typeText("X")
+					input.pressKey(KeyCodes.END)
+					await input.typeText("Y")
+				},
+			},
+			{
+				name: "backspace and delete",
+				expected: "a",
+				edit: async (input: MockInput) => {
+					await input.typeText("abc")
+					input.pressBackspace()
+					input.pressArrow("left")
+					input.pressKey(KeyCodes.DELETE)
+				},
+			},
+			{
+				name: "ctrl-a and ctrl-e",
+				expected: "XabY",
+				edit: async (input: MockInput) => {
+					await input.typeText("ab")
+					input.pressKey("a", { ctrl: true })
+					await input.typeText("X")
+					input.pressKey("e", { ctrl: true })
+					await input.typeText("Y")
+				},
+			},
+			{
+				name: "ctrl-b and ctrl-f",
+				expected: "aXb",
+				edit: async (input: MockInput) => {
+					await input.typeText("ab")
+					input.pressKey("b", { ctrl: true })
+					input.pressKey("b", { ctrl: true })
+					input.pressKey("f", { ctrl: true })
+					await input.typeText("X")
+				},
+			},
+			{
+				name: "meta-b and meta-f",
+				expected: "one Xtwo",
+				edit: async (input: MockInput) => {
+					await input.typeText("one two")
+					input.pressKey("b", { meta: true })
+					input.pressKey("b", { meta: true })
+					input.pressKey("f", { meta: true })
+					await input.typeText("X")
+				},
+			},
+			{
+				name: "ctrl-u",
+				expected: "c",
+				edit: async (input: MockInput) => {
+					await input.typeText("abc")
+					input.pressArrow("left")
+					input.pressKey("u", { ctrl: true })
+				},
+			},
+			{
+				name: "ctrl-k",
+				expected: "ab",
+				edit: async (input: MockInput) => {
+					await input.typeText("abc")
+					input.pressArrow("left")
+					input.pressKey("k", { ctrl: true })
+				},
+			},
+			{
+				name: "ctrl-w",
+				expected: "one ",
+				edit: async (input: MockInput) => {
+					await input.typeText("one two")
+					input.pressKey("w", { ctrl: true })
+				},
+			},
+			{
+				name: "ctrl-d",
+				expected: "ab",
+				edit: async (input: MockInput) => {
+					await input.typeText("abc")
+					input.pressArrow("left")
+					input.pressKey("d", { ctrl: true })
+				},
+			},
+			{
+				name: "ctrl-h",
+				expected: "ab",
+				edit: async (input: MockInput) => {
+					await input.typeText("abc")
+					input.pressKey("h", { ctrl: true })
+				},
+			},
+		]
+
+		for (const contract of cases) {
+			expect(await submitEditedText(contract.edit), contract.name).toBe(
+				contract.expected,
+			)
+		}
+	})
+
+	test("yanks the most recently killed text in both prompt inputs", async () => {
+		expect(
+			await submitEditedText(async (input) => {
+				await input.typeText("one two")
+				input.pressKey("w", { ctrl: true })
+				input.pressKey("y", { ctrl: true })
+			}),
+		).toBe("one two")
+
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Repository"
+					choices={[
+						{ key: "agency", label: "agency" },
+						{ key: "web", label: "web" },
+					]}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 60, height: 4 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("web")
+			setup.mockInput.pressKey("u", { ctrl: true })
+			setup.mockInput.pressKey("y", { ctrl: true })
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBe("web")
+		} finally {
+			setup.renderer.destroy()
 		}
 	})
 
@@ -227,6 +413,98 @@ describe("OpenTUI interaction", () => {
 			expect(frame).toContain("alpha beta")
 			expect(frame).toContain("gamma")
 			expect(frame).toMatch(/alpha beta\s*\ngamma delta/)
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("keeps empty and single-item list boundaries safe", async () => {
+		let emptyResult: string | null | undefined
+		const empty = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Empty"
+					choices={[]}
+					onDone={(value) => {
+						emptyResult = value
+					}}
+				/>
+			),
+			{ width: 60, height: 4 },
+		)
+		try {
+			await empty.renderer.setupTerminal()
+			await empty.renderOnce()
+			await Bun.sleep(0)
+			empty.mockInput.pressArrow("up")
+			empty.mockInput.pressArrow("down")
+			empty.mockInput.pressKey("p", { ctrl: true })
+			empty.mockInput.pressKey("n", { ctrl: true })
+			empty.mockInput.pressEnter()
+			await Bun.sleep(0)
+			expect(emptyResult).toBeUndefined()
+			expect(empty.captureCharFrame()).toContain("No matches")
+		} finally {
+			empty.renderer.destroy()
+		}
+
+		for (const move of ["up", "down"] as const) {
+			let singleResult: string | null | undefined
+			const single = await testRender(
+				() => (
+					<InteractiveSelectPrompt
+						prompt="Single"
+						choices={[{ key: "one", label: "One" }]}
+						onDone={(value) => {
+							singleResult = value
+						}}
+					/>
+				),
+				{ width: 60, height: 4 },
+			)
+			try {
+				await single.renderer.setupTerminal()
+				await single.renderOnce()
+				await Bun.sleep(0)
+				single.mockInput.pressArrow(move)
+				single.mockInput.pressEnter()
+				await single.waitFor(() => singleResult !== undefined)
+				expect(singleResult).toBe("one")
+			} finally {
+				single.renderer.destroy()
+			}
+		}
+	})
+
+	test("remains usable after a narrow terminal resize", async () => {
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Repository with a long prompt"
+					choices={[
+						{ key: "agency", label: "agency" },
+						{ key: "docs", label: "docs" },
+					]}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 60, height: 4 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			setup.resize(18, 4)
+			await setup.renderOnce()
+			await setup.mockInput.typeText("docs")
+			await setup.renderOnce()
+			expect(setup.captureCharFrame()).toContain("> docs")
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBe("docs")
 		} finally {
 			setup.renderer.destroy()
 		}

@@ -34,9 +34,77 @@ interface PromptProps<T> {
 const isCancel = (key: { name: string; ctrl: boolean }) =>
 	key.name === "escape" || (key.ctrl && key.name === "c")
 
+interface PromptKey {
+	readonly name: string
+	readonly ctrl: boolean
+	preventDefault(): void
+	stopPropagation(): void
+}
+
+const removedText = (before: string, after: string) => {
+	let start = 0
+	while (
+		start < before.length &&
+		start < after.length &&
+		before[start] === after[start]
+	) {
+		start++
+	}
+
+	let end = 0
+	while (
+		before[before.length - end - 1] === after[after.length - end - 1] &&
+		end < before.length - start &&
+		end < after.length - start
+	) {
+		end++
+	}
+
+	return before.slice(start, before.length - end)
+}
+
+const createReadlineEditing = (
+	getInput: () => TextareaRenderable | undefined,
+	onInput?: (value: string) => void,
+) => {
+	let value = ""
+	let killBuffer = ""
+	let beforeKill: string | undefined
+
+	return {
+		get value() {
+			return value
+		},
+		handleInput(next: string) {
+			if (beforeKill !== undefined) {
+				const killed = removedText(beforeKill, next)
+				if (killed) killBuffer = killed
+				beforeKill = undefined
+			}
+			value = next
+			onInput?.(next)
+		},
+		handleKey(key: PromptKey) {
+			const current = getInput()?.plainText
+			if (current !== undefined && current !== value) this.handleInput(current)
+			if (!key.ctrl) return false
+			if (key.name === "y") {
+				key.preventDefault()
+				key.stopPropagation()
+				if (killBuffer) getInput()?.insertText(killBuffer)
+				return true
+			}
+			if (key.name === "u" || key.name === "k" || key.name === "w") {
+				beforeKill = value
+			}
+			return false
+		},
+	}
+}
+
 export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	let input: TextareaRenderable | undefined
-	let value = ""
+	const editing = createReadlineEditing(() => input)
 	useKeyboard((key) => {
 		if (isCancel(key)) {
 			key.preventDefault()
@@ -44,10 +112,11 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			props.onDone(null)
 			return
 		}
+		if (editing.handleKey(key)) return
 		if (key.name !== "return") return
 		key.preventDefault()
 		key.stopPropagation()
-		props.onDone(value)
+		props.onDone(editing.value)
 	})
 
 	return (
@@ -59,7 +128,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 				wrapMode="word"
 				keyBindings={[{ name: "return", action: "submit" }]}
 				onContentChange={() => {
-					value = input?.plainText ?? ""
+					editing.handleInput(input?.plainText ?? "")
 				}}
 				ref={(next) => {
 					input = next
@@ -68,7 +137,9 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 					})
 				}}
 			/>
-			<text fg="#6c7086">enter submit | esc cancel</text>
+			<text fg="#6c7086" wrapMode="none">
+				enter submit | esc cancel | ctrl-y yank
+			</text>
 		</box>
 	)
 }
@@ -145,6 +216,7 @@ export const fuzzyChoices = (
 export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	let input: TextareaRenderable | undefined
 	const [query, setQuery] = createSignal("")
+	const editing = createReadlineEditing(() => input, setQuery)
 	const [selected, setSelected] = createSignal(0)
 	const choices = createMemo(() => fuzzyChoices(props.choices, query()))
 	const move = (offset: -1 | 1) => {
@@ -171,6 +243,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			move(1)
 			return
 		}
+		if (editing.handleKey(key)) return
 		if (key.name !== "return") return
 		key.preventDefault()
 		key.stopPropagation()
@@ -207,7 +280,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					placeholder="filter"
 					keyBindings={[{ name: "return", action: "submit" }]}
 					onContentChange={() => {
-						setQuery(input?.plainText ?? "")
+						editing.handleInput(input?.plainText ?? "")
 						setSelected(0)
 					}}
 					ref={(next) => {
@@ -232,7 +305,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 				</For>
 			</box>
 			<text fg="#6c7086" wrapMode="none">
-				enter select | esc cancel | ctrl-n/p or arrows
+				enter select | esc cancel | arrows/ctrl-n/p | ctrl-y yank
 			</text>
 		</box>
 	)
