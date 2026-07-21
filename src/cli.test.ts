@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { access, mkdir, realpath } from "node:fs/promises"
-import { join, relative } from "node:path"
+import { join } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
 import { cleanupTempDir, createTempDir } from "./test-utils"
@@ -862,6 +862,9 @@ status: open
 			await runGit(["-C", source, "remote", "add", "origin", daemon.remote])
 
 			parseJson(await runCli(["init", root, "--json"], parent))
+			expect(
+				Bun.spawnSync(["git", "init", "--initial-branch=main", root]).exitCode,
+			).toBe(0)
 			const agencyConfigPath = join(root, "agency.json")
 			const agencyConfig = JSON.parse(await Bun.file(agencyConfigPath).text())
 			await Bun.write(
@@ -942,10 +945,8 @@ status: open
 				),
 			)
 
-			const taskWorkspace = parseJson(
-				await runCli(["work", "prepare", "example", "--json"], root),
-			)
-			const phaseWorkspace = parseJson(
+			parseJson(await runCli(["work", "prepare", "example", "--json"], root))
+			parseJson(
 				await runCli(
 					[
 						"work",
@@ -984,22 +985,18 @@ status: open
 				{
 					args: ["--task", "example"],
 					cwd: join(workbaseRoot, "tasks/example"),
-					writable: taskWorkspace.writablePath,
 				},
 				{
 					args: ["--task", "pipeline", "--phase", "build"],
 					cwd: join(workbaseRoot, "tasks/pipeline"),
-					writable: phaseWorkspace.writablePath,
 				},
 				{
 					args: ["--epic", "delivery"],
 					cwd: join(workbaseRoot, "epics/delivery"),
-					writable: null,
 				},
 				{
 					args: ["--task", "pipeline"],
 					cwd: join(workbaseRoot, "tasks/pipeline"),
-					writable: null,
 				},
 			]
 			for (const launch of launches) {
@@ -1011,9 +1008,8 @@ status: open
 				expect(printed.stderr).toBe("")
 				const contract = JSON.parse(printed.stdout)
 				expect(contract.cwd).toBe(launch.cwd)
-				expect(contract.environment.OPENCODE_CONFIG).toBe(
-					join(workbaseRoot, ".opencode/opencode.jsonc"),
-				)
+				expect(contract.environment.OPENCODE_CONFIG).toBeUndefined()
+				expect(contract.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 				const environment = {
 					...process.env,
 					...contract.environment,
@@ -1030,35 +1026,24 @@ status: open
 					expect.arrayContaining([
 						expect.objectContaining({
 							permission: "external_directory",
-							pattern: join(workbaseRoot, "**"),
+							pattern: join(workbaseRoot, "*"),
 							action: "allow",
 						}),
 					]),
 				)
-				expect(agent.permission).toEqual(
-					expect.arrayContaining([
-						expect.objectContaining({
-							permission: "edit",
-							pattern: "*",
-							action: "deny",
-						}),
-					]),
-				)
-				if (launch.writable) {
-					expect(agent.permission).toEqual(
-						expect.arrayContaining(
-							[workbaseRoot, launch.cwd].map((base) =>
-								expect.objectContaining({
-									permission: "edit",
-									pattern: join(relative(base, launch.writable!), "**"),
-									action: "allow",
-								}),
-							),
-						),
-					)
-				}
-
 				if (launch === launches[0]) {
+					const configProbe = Bun.spawnSync(["opencode", "debug", "config"], {
+						cwd: contract.cwd,
+						env: environment,
+					})
+					expect(configProbe.exitCode).toBe(0)
+					expect(JSON.parse(configProbe.stdout.toString()).references).toEqual({
+						workbase: {
+							path: "..",
+							description:
+								"Complete Agency workbase context; write authority still comes only from agency context",
+						},
+					})
 					for (const document of documents) {
 						const read = Bun.spawnSync(
 							[
@@ -1077,6 +1062,55 @@ status: open
 						const result = JSON.parse(read.stdout.toString())
 						expect(result.result.output).toContain(`<path>${document}</path>`)
 					}
+				}
+			}
+
+			const directEnvironment: Record<string, string | undefined> = {
+				...process.env,
+				XDG_CONFIG_HOME: isolatedConfigHome,
+				OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+			}
+			delete directEnvironment.OPENCODE_CONFIG
+			delete directEnvironment.OPENCODE_CONFIG_CONTENT
+			delete directEnvironment.AGENCY_WORKBASE
+			for (const cwd of [
+				join(workbaseRoot, "tasks/example"),
+				join(workbaseRoot, "tasks/pipeline"),
+				join(workbaseRoot, "epics/delivery"),
+			]) {
+				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
+					cwd,
+					env: directEnvironment,
+				})
+				expect(probe.exitCode).toBe(0)
+				const agent = JSON.parse(probe.stdout.toString())
+				expect(agent.permission).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							permission: "external_directory",
+							pattern: join(workbaseRoot, "*"),
+							action: "allow",
+						}),
+					]),
+				)
+				for (const document of documents) {
+					const read = Bun.spawnSync(
+						[
+							"opencode",
+							"debug",
+							"agent",
+							"build",
+							"--tool",
+							"read",
+							"--params",
+							JSON.stringify({ filePath: document }),
+						],
+						{ cwd, env: directEnvironment },
+					)
+					expect(read.exitCode).toBe(0)
+					expect(JSON.parse(read.stdout.toString()).result.output).toContain(
+						`<path>${document}</path>`,
+					)
 				}
 			}
 
@@ -1135,7 +1169,7 @@ status: open
 				graph.nodes.find((node: any) => node.id === "task:pipeline").status,
 			).toBe("working")
 		},
-		30_000,
+		90_000,
 	)
 
 	test("envelopes help and version output in machine mode", async () => {

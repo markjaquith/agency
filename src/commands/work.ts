@@ -122,10 +122,7 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
-		const integration = yield* integrations.sync(root)
-		const managedOpencode = integration.files.some(
-			(file) => file.name === "opencode" && file.state === "managed",
-		)
+		yield* integrations.sync(root)
 		const { config } = yield* workbase.loadConfig(root)
 
 		let target: WorkTarget | null = null
@@ -239,7 +236,6 @@ export const work = (
 				(target.status !== undefined && target.status !== "open"))
 		let prompt: string
 		let launchPath: string
-		let writablePath: string | undefined
 		if (target.kind === "epic") {
 			prompt = `Work on the epic. Read ${target.path}.`
 			launchPath = dirname(target.path)
@@ -265,7 +261,6 @@ export const work = (
 				? `${action} the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `${action} the task. Read ${workspace.taskPath}.`
 			launchPath = dirname(workspace.taskPath)
-			writablePath = workspace.writablePath
 		}
 
 		const explicitlyRequested = Boolean(
@@ -335,35 +330,6 @@ export const work = (
 		const environment = {
 			...resolved.environment,
 			...runnerEnvironment(runner, variables),
-		}
-		if (runner === "opencode" && managedOpencode) {
-			environment.OPENCODE_CONFIG = join(root, ".opencode", "opencode.jsonc")
-			const execution =
-				target.kind === "phase" ||
-				(target.kind === "task" && !target.multiPhase)
-			const edit = execution
-				? {
-						"*": "deny" as const,
-						...Object.fromEntries(
-							[root, launchPath].map((base) => [
-								join(relative(base, writablePath!), "**").split(sep).join("/"),
-								"allow" as const,
-							]),
-						),
-					}
-				: { "*": "deny" as const }
-			environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-				permission: {
-					external_directory: { [join(root, "**")]: "allow" },
-					edit,
-				},
-				agent: {
-					build: { permission: { edit } },
-					plan: { permission: { edit } },
-					general: { permission: { edit } },
-					explore: { permission: { edit } },
-				},
-			})
 		}
 		if (options.printCommand) {
 			log(
