@@ -40,6 +40,18 @@ describe("init command", () => {
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
+		expect(config.agent.plan).toEqual({ disable: true })
+		expect(config.agent["agency-plan"]).toMatchObject({
+			mode: "primary",
+			permission: {
+				edit: {
+					"*": "deny",
+					"tasks/*/TASK.md": "allow",
+					"tasks/*/phases/*/PHASE.md": "allow",
+					"epics/*/EPIC.md": "allow",
+				},
+			},
+		})
 		expect(config.references).toEqual({
 			workbase: expect.objectContaining({ path: ".." }),
 		})

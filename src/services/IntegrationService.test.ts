@@ -138,10 +138,30 @@ describe("IntegrationService", () => {
 		expect(body).toContain(".opencode/command/agency.md")
 	})
 
-	test("grants OpenCode access to the complete workbase", () => {
+	test("configures Agency planning and complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
+		expect(config.agent).toEqual({
+			plan: {
+				disable: true,
+			},
+			"agency-plan": {
+				description:
+					"Agency planning mode. May edit only Agency planning documents.",
+				mode: "primary",
+				prompt: expect.stringContaining("You are in Agency Plan mode"),
+				permission: {
+					question: "allow",
+					edit: {
+						"*": "deny",
+						"tasks/*/TASK.md": "allow",
+						"tasks/*/phases/*/PHASE.md": "allow",
+						"epics/*/EPIC.md": "allow",
+					},
+				},
+			},
+		})
 		expect(config.references).toEqual({
 			workbase: {
 				path: "..",
