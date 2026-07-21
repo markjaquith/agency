@@ -5,13 +5,23 @@ import {
 	type CliRenderer,
 	type CliRendererConfig,
 	type TextareaRenderable,
+	type TextNodeOptions,
 } from "@opentui/core"
-import { render, useKeyboard, type JSX } from "@opentui/solid"
+import {
+	render,
+	useKeyboard,
+	useTerminalDimensions,
+	type JSX,
+} from "@opentui/solid"
 import { createMemo, createSignal, For } from "solid-js"
+import type { ChoiceSegment } from "./chooser"
+import { macchiato } from "./theme"
 
 export interface InteractiveChoice {
 	readonly key: string
 	readonly label: string
+	readonly depth?: number
+	readonly segments?: readonly ChoiceSegment[]
 }
 
 export const interactiveRendererConfig = {
@@ -24,6 +34,12 @@ export const interactiveRendererConfig = {
 	useMouse: false,
 	autoFocus: false,
 	openConsoleOnError: false,
+} satisfies CliRendererConfig
+
+export const interactiveSelectRendererConfig = {
+	...interactiveRendererConfig,
+	screenMode: "alternate-screen",
+	externalOutputMode: "passthrough",
 } satisfies CliRendererConfig
 
 interface PromptProps<T> {
@@ -120,12 +136,22 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	})
 
 	return (
-		<box flexDirection="column" width="100%" height="100%">
-			<text fg="#7aa2f7">{props.prompt}</text>
+		<box
+			flexDirection="column"
+			width="100%"
+			height="100%"
+			backgroundColor={macchiato.base}
+		>
+			<text fg={macchiato.blue}>{props.prompt}</text>
 			<textarea
 				focused
 				height={2}
 				wrapMode="word"
+				backgroundColor={macchiato.mantle}
+				focusedBackgroundColor={macchiato.surface0}
+				textColor={macchiato.text}
+				focusedTextColor={macchiato.text}
+				cursorColor={macchiato.rosewater}
 				keyBindings={[{ name: "return", action: "submit" }]}
 				onContentChange={() => {
 					editing.handleInput(input?.plainText ?? "")
@@ -137,7 +163,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 					})
 				}}
 			/>
-			<text fg="#6c7086" wrapMode="none">
+			<text fg={macchiato.overlay1} wrapMode="none">
 				enter submit | esc cancel | ctrl-y yank
 			</text>
 		</box>
@@ -213,18 +239,72 @@ export const fuzzyChoices = (
 		.map((match) => match.choice)
 }
 
+const choiceDepth = (choice: InteractiveChoice) => choice.depth ?? 0
+
+const hasSibling = (
+	choices: readonly InteractiveChoice[],
+	index: number,
+	direction: -1 | 1,
+) => {
+	const depth = choiceDepth(choices[index]!)
+	for (
+		let siblingIndex = index + direction;
+		siblingIndex >= 0 && siblingIndex < choices.length;
+		siblingIndex += direction
+	) {
+		const siblingDepth = choiceDepth(choices[siblingIndex]!)
+		if (siblingDepth < depth) return false
+		if (siblingDepth === depth) return true
+	}
+	return false
+}
+
+export const hierarchyPrefix = (
+	choices: readonly InteractiveChoice[],
+	index: number,
+) => {
+	const choice = choices[index]
+	if (!choice || choice.depth === undefined) return ""
+	const depth = choiceDepth(choice)
+	let prefix = ""
+	let ancestorIndex = index
+
+	for (let ancestorDepth = depth - 1; ancestorDepth >= 0; ancestorDepth--) {
+		for (ancestorIndex--; ancestorIndex >= 0; ancestorIndex--) {
+			if (choiceDepth(choices[ancestorIndex]!) === ancestorDepth) break
+		}
+		prefix = `${ancestorIndex >= 0 && hasSibling(choices, ancestorIndex, 1) ? "│  " : "   "}${prefix}`
+	}
+
+	const hasPrevious = hasSibling(choices, index, -1)
+	const hasNext = hasSibling(choices, index, 1)
+	return `${prefix}${!hasPrevious && hasNext ? "╭" : hasNext ? "├" : "╰"}─ `
+}
+
 export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	let input: TextareaRenderable | undefined
+	const dimensions = useTerminalDimensions()
 	const [query, setQuery] = createSignal("")
 	const editing = createReadlineEditing(() => input, setQuery)
 	const [selected, setSelected] = createSignal(0)
 	const choices = createMemo(() => fuzzyChoices(props.choices, query()))
+	const displaySegments = (choice: InteractiveChoice) =>
+		choice.segments ?? [{ text: choice.label }]
 	const move = (offset: -1 | 1) => {
 		const count = choices().length
 		if (count === 0) return
 		setSelected((current) => (current + offset + count) % count)
 	}
 	useKeyboard((key) => {
+		if (key.name === "escape" && query()) {
+			key.preventDefault()
+			key.stopPropagation()
+			input?.clear()
+			editing.handleInput("")
+			setQuery("")
+			setSelected(0)
+			return
+		}
 		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -252,25 +332,32 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	})
 
 	const visible = () => {
+		const visibleCount = Math.max(dimensions().height - 3, 1)
 		const start = Math.min(
-			Math.max(selected() - 1, 0),
-			Math.max(choices().length - 2, 0),
+			Math.max(selected() - Math.floor(visibleCount / 2), 0),
+			Math.max(choices().length - visibleCount, 0),
 		)
 		return choices()
-			.slice(start, start + 2)
+			.slice(start, start + visibleCount)
 			.map((choice, offset) => ({
 				choice,
 				index: start + offset,
+				originalIndex: props.choices.indexOf(choice),
 			}))
 	}
 
 	return (
-		<box flexDirection="column" width="100%" height="100%">
+		<box
+			flexDirection="column"
+			width="100%"
+			height="100%"
+			backgroundColor={macchiato.base}
+		>
 			<box flexDirection="row" width="100%">
-				<text fg="#7aa2f7" flexShrink={1} wrapMode="none">
+				<text fg={macchiato.blue} flexShrink={1} wrapMode="none">
 					{props.prompt}
 				</text>
-				<text fg="#7aa2f7">{" > "}</text>
+				<text fg={macchiato.blue}>{" > "}</text>
 				<textarea
 					focused
 					flexGrow={1}
@@ -278,6 +365,12 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					height={2}
 					wrapMode="word"
 					placeholder="filter"
+					placeholderColor={macchiato.overlay0}
+					backgroundColor={macchiato.mantle}
+					focusedBackgroundColor={macchiato.surface0}
+					textColor={macchiato.text}
+					focusedTextColor={macchiato.text}
+					cursorColor={macchiato.rosewater}
 					keyBindings={[{ name: "return", action: "submit" }]}
 					onContentChange={() => {
 						editing.handleInput(input?.plainText ?? "")
@@ -291,21 +384,50 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					}}
 				/>
 			</box>
-			<box flexDirection="column" height={2}>
-				<For each={visible()} fallback={<text fg="#6c7086">No matches</text>}>
-					{({ choice, index }) => (
-						<text
-							fg={index === selected() ? "#c0caf5" : "#6c7086"}
-							wrapMode="none"
+			<box flexDirection="column" flexGrow={1}>
+				<For
+					each={visible()}
+					fallback={<text fg={macchiato.overlay1}>No matches</text>}
+				>
+					{({ choice, index, originalIndex }) => (
+						<box
+							width="100%"
+							height={1}
+							backgroundColor={
+								index === selected() ? macchiato.surface1 : macchiato.base
+							}
 						>
-							{index === selected() ? "> " : "  "}
-							{choice.label}
-						</text>
+							<text
+								fg={index === selected() ? macchiato.text : macchiato.subtext0}
+								bg={index === selected() ? macchiato.surface1 : macchiato.base}
+								wrapMode="none"
+							>
+								<span
+									style={
+										{
+											fg: index === selected() ? macchiato.mauve : undefined,
+										} as TextNodeOptions
+									}
+								>
+									{index === selected() ? "▌ " : "  "}
+								</span>
+								<span style={{ fg: macchiato.overlay1 } as TextNodeOptions}>
+									{query() ? "" : hierarchyPrefix(props.choices, originalIndex)}
+								</span>
+								<For each={displaySegments(choice)}>
+									{(segment) => (
+										<span style={{ fg: segment.color } as TextNodeOptions}>
+											{segment.text}
+										</span>
+									)}
+								</For>
+							</text>
+						</box>
 					)}
 				</For>
 			</box>
-			<text fg="#6c7086" wrapMode="none">
-				enter select | esc cancel | arrows/ctrl-n/p | ctrl-y yank
+			<text fg={macchiato.overlay1} wrapMode="none">
+				enter select | esc clear/cancel | arrows/ctrl-n/p | ctrl-y yank
 			</text>
 		</box>
 	)
@@ -323,6 +445,7 @@ const shutdown = async (renderer: CliRenderer) => {
 
 async function runInteractive<T>(
 	view: (finish: (value: T | null) => void) => JSX.Element,
+	config: CliRendererConfig = interactiveRendererConfig,
 ) {
 	let finish!: (value: T | null) => void
 	let settled = false
@@ -336,7 +459,7 @@ async function runInteractive<T>(
 	let renderer: CliRenderer | undefined
 	try {
 		renderer = await createCliRenderer({
-			...interactiveRendererConfig,
+			...config,
 			onDestroy: () => finish(null),
 		})
 		await render(() => view(finish), renderer)
@@ -361,10 +484,13 @@ export const promptSelect = (
 	prompt: string,
 	choices: readonly InteractiveChoice[],
 ) =>
-	runInteractive<string>((finish) => (
-		<InteractiveSelectPrompt
-			prompt={prompt}
-			choices={choices}
-			onDone={finish}
-		/>
-	))
+	runInteractive<string>(
+		(finish) => (
+			<InteractiveSelectPrompt
+				prompt={prompt}
+				choices={choices}
+				onDone={finish}
+			/>
+		),
+		interactiveSelectRendererConfig,
+	)

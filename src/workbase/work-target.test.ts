@@ -61,14 +61,14 @@ describe("work target choices", () => {
 		)
 
 		expect(choices.map((choice) => choice.label)).toEqual([
-			"\x1b[35m\x1b[0m delivery\x1b[2m - Ship the release\x1b[0m",
-			"  \x1b[36m󰗡\x1b[0m multi",
-			"    \x1b[34m◐\x1b[0m \x1b[33m󰔚\x1b[0m build",
-			"    \x1b[32m✓\x1b[0m \x1b[33m󰔚\x1b[0m verify",
-			"    \x1b[31m⊘\x1b[0m \x1b[33m󰔚\x1b[0m unlisted",
-			"  \x1b[32m✓\x1b[0m \x1b[36m󰗡\x1b[0m single",
-			"\x1b[2m○\x1b[0m \x1b[36m󰗡\x1b[0m standalone\x1b[2m - Independent work\x1b[0m",
-			"\x1b[35m↗\x1b[0m \x1b[36m󰗡\x1b[0m delegated",
+			"\x1b[38;2;198;160;246m\x1b[0m delivery\x1b[2m - Ship the release\x1b[0m",
+			"\x1b[38;2;125;196;228m󰗡\x1b[0m multi",
+			"\x1b[38;2;138;173;244m󰔟\x1b[0m \x1b[38;2;238;212;159m󰔚\x1b[0m build",
+			"\x1b[38;2;166;218;149m󰄬\x1b[0m \x1b[38;2;238;212;159m󰔚\x1b[0m verify",
+			"\x1b[38;2;237;135;150m󰅖\x1b[0m \x1b[38;2;238;212;159m󰔚\x1b[0m unlisted",
+			"\x1b[38;2;166;218;149m󰄬\x1b[0m \x1b[38;2;125;196;228m󰗡\x1b[0m single",
+			"\x1b[38;2;128;135;162m󰄱\x1b[0m \x1b[38;2;125;196;228m󰗡\x1b[0m standalone\x1b[2m - Independent work\x1b[0m",
+			"\x1b[38;2;198;160;246m󰁕\x1b[0m \x1b[38;2;125;196;228m󰗡\x1b[0m delegated",
 		])
 		expect(choices.map((choice) => choice.target.kind)).toEqual([
 			"epic",
@@ -82,13 +82,27 @@ describe("work target choices", () => {
 		])
 		expect(choices.map((choice) => choice.plainLabel)).toEqual([
 			"epic delivery - Ship the release",
-			"  task multi",
-			"    [working] phase build",
-			"    [done] phase verify",
-			"    [dropped] phase unlisted",
-			"  [done] task single",
+			"task multi",
+			"[working] phase build",
+			"[done] phase verify",
+			"[dropped] phase unlisted",
+			"[done] task single",
 			"[open] task standalone - Independent work",
 			"[delegated] task delegated",
+		])
+		expect(choices.map((choice) => choice.depth)).toEqual([
+			0, 1, 2, 2, 2, 1, 0, 0,
+		])
+		expect(choices[0]!.segments).toEqual([
+			{ text: "", color: "#c6a0f6" },
+			{ text: " delivery" },
+			{ text: " - Ship the release", color: "#6e738d" },
+		])
+		expect(choices[2]!.segments).toEqual([
+			{ text: "󰔟", color: "#8aadf4" },
+			{ text: " " },
+			{ text: "󰔚", color: "#eed49f" },
+			{ text: " build" },
 		])
 	})
 })

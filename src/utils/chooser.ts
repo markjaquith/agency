@@ -4,7 +4,14 @@ export interface Choice<T> {
 	readonly key: string
 	readonly label: string
 	readonly plainLabel?: string
+	readonly depth?: number
+	readonly segments?: readonly ChoiceSegment[]
 	readonly value: T
+}
+
+export interface ChoiceSegment {
+	readonly text: string
+	readonly color?: string
 }
 
 export type ChooserErrorReason =
@@ -36,7 +43,12 @@ export interface ChooserIO {
 	readonly color: boolean
 	readonly select: (
 		prompt: string,
-		choices: readonly { readonly key: string; readonly label: string }[],
+		choices: readonly {
+			readonly key: string
+			readonly label: string
+			readonly depth?: number
+			readonly segments?: readonly ChoiceSegment[]
+		}[],
 	) => Promise<string | null>
 	readonly run: (
 		command: readonly string[],
@@ -175,6 +187,8 @@ const nativeChoice = async <T>(
 			choices.map((choice) => ({
 				key: choice.key,
 				label: displayLabel(choice, false),
+				...(choice.depth === undefined ? {} : { depth: choice.depth }),
+				...(choice.segments === undefined ? {} : { segments: choice.segments }),
 			})),
 		)
 	} catch (cause) {
