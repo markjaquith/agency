@@ -138,11 +138,17 @@ describe("IntegrationService", () => {
 		expect(body).toContain(".opencode/command/agency.md")
 	})
 
-	test("configures Agency planning and complete workbase access", () => {
+	test("configures Agency agents with complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
 		expect(config.agent).toEqual({
+			agency: {
+				description:
+					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
+				mode: "subagent",
+				prompt: expect.stringContaining("agency context . --json"),
+			},
 			plan: {
 				disable: true,
 			},
@@ -162,6 +168,10 @@ describe("IntegrationService", () => {
 				},
 			},
 		})
+		expect(config.agent.agency.model).toBeUndefined()
+		expect(config.agent.agency.permission).toBeUndefined()
+		expect(config.agent.agency.hidden).toBeUndefined()
+		expect(config.agent.agency.steps).toBeUndefined()
 		expect(config.references).toEqual({
 			workbase: {
 				path: "..",

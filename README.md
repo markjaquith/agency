@@ -51,7 +51,7 @@ workbase/
   .agency/
     AGENTS.md              # managed Agency instructions
   .opencode/
-    opencode.jsonc         # managed instructions and whole-workbase reference
+    opencode.jsonc         # managed @agency subagent, instructions, and reference
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
@@ -90,13 +90,14 @@ Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
 can load the hidden file. A customized root file, including a symlink, is
 preserved as user-owned content.
 
-The OpenCode config loads Agency's hidden instructions in addition to any
-user-owned root `AGENTS.md`, advertises the complete workbase as one portable
-reference, and replaces the built-in Plan agent with `agency-plan`. That planning
-agent can update `TASK.md`, `PHASE.md`, and `EPIC.md` while other edits remain
-disabled. OpenCode discovers the config from task and epic launch directories.
-Agents receive whole-workbase visibility from that reference. Bash and Agency
-operations must still follow the write authority reported by `agency context`.
+The OpenCode config defines an `@agency` subagent for delegated workbase
+orchestration, loads Agency's hidden instructions in addition to any user-owned
+root `AGENTS.md`, advertises the complete workbase as one portable reference,
+and replaces the built-in Plan agent with `agency-plan`. That planning agent can
+update `TASK.md`, `PHASE.md`, and `EPIC.md` while other edits remain disabled.
+OpenCode discovers the config from task and epic launch directories. Agents
+receive whole-workbase visibility from that reference. Bash and Agency operations
+must still follow the write authority reported by `agency context`.
 
 OpenCode also discovers a managed `/agency` command. Use `/agency status` for a
 read-only current-work summary, `/agency start [target]` to begin or resume work
