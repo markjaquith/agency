@@ -26,6 +26,7 @@ export const status = (options: StatusOptions = {}) =>
 		const executionRows = report.valid
 			? (yield* getWorkViews({
 					cwd,
+					validation: report,
 					statuses: options.statuses,
 					repositories: options.repositories,
 					ready: options.ready,
