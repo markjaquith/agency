@@ -47,9 +47,11 @@ and customized documents remain valid.
 
 ```text
 workbase/
-  AGENTS.md                # managed workbase instructions
+  AGENTS.md                # optional user-owned workbase instructions
+  .agency/
+    AGENTS.md              # managed Agency instructions
   .opencode/
-    opencode.jsonc         # managed whole-workbase reference
+    opencode.jsonc         # managed instructions and whole-workbase reference
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
@@ -77,18 +79,26 @@ workbase/
 ```
 
 Agency keeps discovery and other observational commands read-only. Run
-`agency integration status` to inspect `AGENTS.md` and
+`agency integration status` to inspect `.agency/AGENTS.md` and
 `.opencode/opencode.jsonc`, then `agency integration sync` to create missing
 files or refresh checksum-safe managed files. Customized files are reported but
-never overwritten.
+never overwritten. The root `AGENTS.md` is user-owned and is not inspected or
+modified by Agency.
 
-The OpenCode config advertises the complete workbase as one portable relative
-reference. `agency work` sets `OPENCODE_CONFIG` to the managed file and injects
-runtime-only absolute rules that allow external access across the workbase while
-denying edits outside the execution unit's writable checkout. This makes the
-config effective from nested task and phase Git checkouts without persisting a
-machine-specific path or granting access outside the workbase. Bash and Agency
-operations must still follow the write authority reported by `agency context`.
+When upgrading an existing workbase, synchronization moves a checksum-valid
+Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
+can load the hidden file. A customized root file, including a symlink, is
+preserved as user-owned content.
+
+The OpenCode config loads Agency's hidden instructions in addition to any
+user-owned root `AGENTS.md` and advertises the complete workbase as one portable
+relative reference. `agency work` sets `OPENCODE_CONFIG` to the managed file and
+injects runtime-only absolute rules that allow external access across the
+workbase while denying edits outside the execution unit's writable checkout.
+This makes the config effective from nested task and phase Git checkouts without
+persisting a machine-specific path or granting access outside the workbase. Bash
+and Agency operations must still follow the write authority reported by
+`agency context`.
 
 Repository aliases and canonical fetch remotes are declared in tracked
 `agency.json`; local bare clones and symlinks remain ignored under

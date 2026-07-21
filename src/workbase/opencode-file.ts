@@ -10,6 +10,7 @@ const body = () =>
 	`${JSON.stringify(
 		{
 			$schema: "https://opencode.ai/config.json",
+			instructions: [".agency/AGENTS.md"],
 			references: {
 				workbase: {
 					path: "..",
