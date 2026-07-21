@@ -46,6 +46,7 @@ describe("OpenTUI interaction", () => {
 		const source = await Bun.file(
 			new URL("./interactive.tsx", import.meta.url),
 		).text()
+		const theme = await Bun.file(new URL("./theme.ts", import.meta.url)).text()
 		const root = await mkdtemp(join(tmpdir(), "agency-interactive-jsx-"))
 		const entrypoint = join(
 			root,
@@ -56,6 +57,7 @@ describe("OpenTUI interaction", () => {
 		)
 		await mkdir(dirname(entrypoint), { recursive: true })
 		await writeFile(entrypoint, source)
+		await writeFile(join(dirname(entrypoint), "theme.ts"), theme)
 
 		try {
 			const result = await Bun.build({
@@ -109,17 +111,17 @@ describe("OpenTUI interaction", () => {
 			await Bun.sleep(0)
 
 			let frame = setup.captureCharFrame()
-			for (let index = 0; index < 6; index++) {
+			for (let index = 0; index < 5; index++) {
 				expect(frame).toContain(`choice-${index}`)
 			}
-			expect(frame).not.toContain("choice-6")
+			expect(frame).not.toContain("choice-5")
 
 			for (let index = 0; index < 7; index++) {
 				setup.mockInput.pressArrow("down")
 			}
 			await setup.flush()
 			frame = setup.captureCharFrame()
-			expect(frame).toContain("choice-4")
+			expect(frame).toContain("choice-5")
 			expect(frame).toContain("▌ choice-7")
 			expect(frame).toContain("choice-9")
 
@@ -129,7 +131,7 @@ describe("OpenTUI interaction", () => {
 			expect(frame).not.toContain("choice-5")
 			expect(frame).toContain("choice-6")
 			expect(frame).toContain("▌ choice-7")
-			expect(frame).toContain("choice-8")
+			expect(frame).not.toContain("choice-8")
 			expect(frame).not.toContain("choice-9")
 		} finally {
 			setup.renderer.destroy()
@@ -192,7 +194,7 @@ describe("OpenTUI interaction", () => {
 					onDone={() => undefined}
 				/>
 			),
-			{ width: 40, height: 4 },
+			{ width: 40, height: 5 },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -218,7 +220,7 @@ describe("OpenTUI interaction", () => {
 
 			setup.mockInput.pressKey("u", { ctrl: true })
 			await setup.flush()
-			setup.resize(32, 4)
+			setup.resize(32, 5)
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).toContain("▌ ╭─ epic delivery")
@@ -240,7 +242,7 @@ describe("OpenTUI interaction", () => {
 					onDone={() => undefined}
 				/>
 			),
-			{ width: 40, height: 4 },
+			{ width: 40, height: 5 },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -340,7 +342,7 @@ describe("OpenTUI interaction", () => {
 					}}
 				/>
 			),
-			{ width: 40, height: 4, kittyKeyboard: true },
+			{ width: 40, height: 5, kittyKeyboard: true },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -770,7 +772,7 @@ describe("OpenTUI interaction", () => {
 			await setup.renderOnce()
 			await setup.mockInput.typeText("docs")
 			await setup.renderOnce()
-			expect(setup.captureCharFrame()).toContain("> docs")
+			expect(setup.captureCharFrame()).toContain("▌ docs")
 			setup.mockInput.pressEnter()
 			await setup.waitFor(() => selected !== undefined)
 			expect(selected).toBe("docs")
