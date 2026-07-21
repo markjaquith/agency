@@ -15,6 +15,7 @@ import {
 } from "@opentui/solid"
 import { createMemo, createSignal, For } from "solid-js"
 import type { ChoiceSegment } from "./chooser"
+import { macchiato } from "./theme"
 
 export interface InteractiveChoice {
 	readonly key: string
@@ -135,12 +136,22 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	})
 
 	return (
-		<box flexDirection="column" width="100%" height="100%">
-			<text fg="#7aa2f7">{props.prompt}</text>
+		<box
+			flexDirection="column"
+			width="100%"
+			height="100%"
+			backgroundColor={macchiato.base}
+		>
+			<text fg={macchiato.blue}>{props.prompt}</text>
 			<textarea
 				focused
 				height={2}
 				wrapMode="word"
+				backgroundColor={macchiato.mantle}
+				focusedBackgroundColor={macchiato.surface0}
+				textColor={macchiato.text}
+				focusedTextColor={macchiato.text}
+				cursorColor={macchiato.rosewater}
 				keyBindings={[{ name: "return", action: "submit" }]}
 				onContentChange={() => {
 					editing.handleInput(input?.plainText ?? "")
@@ -152,7 +163,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 					})
 				}}
 			/>
-			<text fg="#6c7086" wrapMode="none">
+			<text fg={macchiato.overlay1} wrapMode="none">
 				enter submit | esc cancel | ctrl-y yank
 			</text>
 		</box>
@@ -285,6 +296,15 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		setSelected((current) => (current + offset + count) % count)
 	}
 	useKeyboard((key) => {
+		if (key.name === "escape" && query()) {
+			key.preventDefault()
+			key.stopPropagation()
+			input?.clear()
+			editing.handleInput("")
+			setQuery("")
+			setSelected(0)
+			return
+		}
 		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -327,12 +347,17 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	}
 
 	return (
-		<box flexDirection="column" width="100%" height="100%">
+		<box
+			flexDirection="column"
+			width="100%"
+			height="100%"
+			backgroundColor={macchiato.base}
+		>
 			<box flexDirection="row" width="100%">
-				<text fg="#7aa2f7" flexShrink={1} wrapMode="none">
+				<text fg={macchiato.blue} flexShrink={1} wrapMode="none">
 					{props.prompt}
 				</text>
-				<text fg="#7aa2f7">{" > "}</text>
+				<text fg={macchiato.blue}>{" > "}</text>
 				<textarea
 					focused
 					flexGrow={1}
@@ -340,6 +365,12 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					height={2}
 					wrapMode="word"
 					placeholder="filter"
+					placeholderColor={macchiato.overlay0}
+					backgroundColor={macchiato.mantle}
+					focusedBackgroundColor={macchiato.surface0}
+					textColor={macchiato.text}
+					focusedTextColor={macchiato.text}
+					cursorColor={macchiato.rosewater}
 					keyBindings={[{ name: "return", action: "submit" }]}
 					onContentChange={() => {
 						editing.handleInput(input?.plainText ?? "")
@@ -354,27 +385,49 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 				/>
 			</box>
 			<box flexDirection="column" flexGrow={1}>
-				<For each={visible()} fallback={<text fg="#6c7086">No matches</text>}>
+				<For
+					each={visible()}
+					fallback={<text fg={macchiato.overlay1}>No matches</text>}
+				>
 					{({ choice, index, originalIndex }) => (
-						<text
-							fg={index === selected() ? "#c0caf5" : "#6c7086"}
-							wrapMode="none"
+						<box
+							width="100%"
+							height={1}
+							backgroundColor={
+								index === selected() ? macchiato.surface1 : macchiato.base
+							}
 						>
-							{index === selected() ? "> " : "  "}
-							{query() ? "" : hierarchyPrefix(props.choices, originalIndex)}
-							<For each={displaySegments(choice)}>
-								{(segment) => (
-									<span style={{ fg: segment.color } as TextNodeOptions}>
-										{segment.text}
-									</span>
-								)}
-							</For>
-						</text>
+							<text
+								fg={index === selected() ? macchiato.text : macchiato.subtext0}
+								bg={index === selected() ? macchiato.surface1 : macchiato.base}
+								wrapMode="none"
+							>
+								<span
+									style={
+										{
+											fg: index === selected() ? macchiato.mauve : undefined,
+										} as TextNodeOptions
+									}
+								>
+									{index === selected() ? "▌ " : "  "}
+								</span>
+								<span style={{ fg: macchiato.overlay1 } as TextNodeOptions}>
+									{query() ? "" : hierarchyPrefix(props.choices, originalIndex)}
+								</span>
+								<For each={displaySegments(choice)}>
+									{(segment) => (
+										<span style={{ fg: segment.color } as TextNodeOptions}>
+											{segment.text}
+										</span>
+									)}
+								</For>
+							</text>
+						</box>
 					)}
 				</For>
 			</box>
-			<text fg="#6c7086" wrapMode="none">
-				enter select | esc cancel | arrows/ctrl-n/p | ctrl-y yank
+			<text fg={macchiato.overlay1} wrapMode="none">
+				enter select | esc clear/cancel | arrows/ctrl-n/p | ctrl-y yank
 			</text>
 		</box>
 	)

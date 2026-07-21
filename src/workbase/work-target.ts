@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import type { WorkStatus } from "./schemas"
 import { choose, type ChoiceSegment } from "../utils/chooser"
+import { macchiato } from "../utils/theme"
 
 export type WorkTarget =
 	| {
@@ -65,20 +66,20 @@ const statuses: Record<
 	WorkStatus,
 	{ readonly icon: string; readonly color: string }
 > = {
-	open: { icon: "󰄱", color: "#6c7086" },
-	working: { icon: "󰔟", color: "#7aa2f7" },
-	delegated: { icon: "󰁕", color: "#bb9af7" },
-	done: { icon: "󰄬", color: "#9ece6a" },
-	dropped: { icon: "󰅖", color: "#f7768e" },
+	open: { icon: "󰄱", color: macchiato.overlay1 },
+	working: { icon: "󰔟", color: macchiato.blue },
+	delegated: { icon: "󰁕", color: macchiato.mauve },
+	done: { icon: "󰄬", color: macchiato.green },
+	dropped: { icon: "󰅖", color: macchiato.red },
 }
 
 const kinds: Record<
 	WorkTarget["kind"],
 	{ readonly icon: string; readonly color: string }
 > = {
-	epic: { icon: "", color: "#bb9af7" },
-	task: { icon: "󰗡", color: "#7dcfff" },
-	phase: { icon: "󰔚", color: "#e0af68" },
+	epic: { icon: "", color: macchiato.mauve },
+	task: { icon: "󰗡", color: macchiato.sapphire },
+	phase: { icon: "󰔚", color: macchiato.yellow },
 }
 
 const hexToAnsi = (color: string) => {
@@ -115,7 +116,7 @@ const segments = (
 	{ text: ` ${id}` },
 	...(description === undefined
 		? []
-		: [{ text: ` - ${description}`, color: "#6c7086" }]),
+		: [{ text: ` - ${description}`, color: macchiato.overlay0 }]),
 ]
 
 const plainLabel = (

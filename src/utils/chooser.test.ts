@@ -102,7 +102,7 @@ describe("chooser", () => {
 						key: "parent",
 						label: "Parent",
 						depth: 0,
-						segments: [{ text: "P", color: "#bb9af7" }],
+						segments: [{ text: "P", color: "#c6a0f6" }],
 						value: 1,
 					},
 					{ key: "child", label: "Child", depth: 1, value: 2 },
@@ -117,7 +117,7 @@ describe("chooser", () => {
 				key: "parent",
 				label: "Parent",
 				depth: 0,
-				segments: [{ text: "P", color: "#bb9af7" }],
+				segments: [{ text: "P", color: "#c6a0f6" }],
 			},
 			{ key: "child", label: "Child", depth: 1 },
 		])

@@ -1,0 +1,17 @@
+export const macchiato = {
+	rosewater: "#f4dbd6",
+	red: "#ed8796",
+	yellow: "#eed49f",
+	green: "#a6da95",
+	sapphire: "#7dc4e4",
+	blue: "#8aadf4",
+	mauve: "#c6a0f6",
+	text: "#cad3f5",
+	subtext0: "#a5adcb",
+	overlay1: "#8087a2",
+	overlay0: "#6e738d",
+	surface1: "#494d64",
+	surface0: "#363a4f",
+	base: "#24273a",
+	mantle: "#1e2030",
+} as const

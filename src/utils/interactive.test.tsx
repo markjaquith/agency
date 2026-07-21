@@ -120,7 +120,7 @@ describe("OpenTUI interaction", () => {
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).toContain("choice-4")
-			expect(frame).toContain("> choice-7")
+			expect(frame).toContain("▌ choice-7")
 			expect(frame).toContain("choice-9")
 
 			setup.resize(40, 5)
@@ -128,7 +128,7 @@ describe("OpenTUI interaction", () => {
 			frame = setup.captureCharFrame()
 			expect(frame).not.toContain("choice-5")
 			expect(frame).toContain("choice-6")
-			expect(frame).toContain("> choice-7")
+			expect(frame).toContain("▌ choice-7")
 			expect(frame).toContain("choice-8")
 			expect(frame).not.toContain("choice-9")
 		} finally {
@@ -200,19 +200,19 @@ describe("OpenTUI interaction", () => {
 			await Bun.sleep(0)
 
 			let frame = setup.captureCharFrame()
-			expect(frame).toContain("> ╭─ epic delivery")
+			expect(frame).toContain("▌ ╭─ epic delivery")
 			expect(frame).toContain("  │  ╰─ task delivery-child")
 
 			setup.mockInput.pressArrow("down")
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).toContain("  ╭─ epic delivery")
-			expect(frame).toContain("> │  ╰─ task delivery-child")
+			expect(frame).toContain("▌ │  ╰─ task delivery-child")
 
 			await setup.mockInput.typeText("delivery")
 			await setup.flush()
 			frame = setup.captureCharFrame()
-			expect(frame).toContain("> epic delivery")
+			expect(frame).toContain("▌ epic delivery")
 			expect(frame).toContain("  task delivery-child")
 			expect(frame).not.toMatch(/[╭│├╰─]/)
 
@@ -221,8 +221,64 @@ describe("OpenTUI interaction", () => {
 			setup.resize(32, 4)
 			await setup.flush()
 			frame = setup.captureCharFrame()
-			expect(frame).toContain("> ╭─ epic delivery")
+			expect(frame).toContain("▌ ╭─ epic delivery")
 			expect(frame).toContain("  │  ╰─ task delivery-child")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("keeps connectors stable while highlighting the full active row", async () => {
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Work on"
+					choices={[
+						{ key: "agency", label: "agency", depth: 0 },
+						{ key: "web", label: "web", depth: 0 },
+					]}
+					onDone={() => undefined}
+				/>
+			),
+			{ width: 40, height: 4 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+
+			let lines = setup.captureSpans().lines
+			let active = lines.find((line) =>
+				line.spans.some((span) => span.text === "▌ "),
+			)!
+			expect(
+				active.spans.find((span) => span.text === "▌ ")?.fg.toInts(),
+			).toEqual([198, 160, 246, 255])
+			expect(
+				active.spans.find((span) => span.text === "╭─ ")?.fg.toInts(),
+			).toEqual([128, 135, 162, 255])
+			expect(active.spans.map((span) => span.bg.toInts())).toEqual(
+				Array.from({ length: active.spans.length }, () => [73, 77, 100, 255]),
+			)
+
+			setup.mockInput.pressArrow("down")
+			await setup.flush()
+			lines = setup.captureSpans().lines
+			active = lines.find((line) =>
+				line.spans.some((span) => span.text === "▌ "),
+			)!
+			expect(
+				lines
+					.flatMap((line) => line.spans)
+					.find((span) => span.text === "╭─ ")
+					?.fg.toInts(),
+			).toEqual([128, 135, 162, 255])
+			expect(
+				active.spans.find((span) => span.text === "╰─ ")?.fg.toInts(),
+			).toEqual([128, 135, 162, 255])
+			expect(active.spans.map((span) => span.bg.toInts())).toEqual(
+				Array.from({ length: active.spans.length }, () => [73, 77, 100, 255]),
+			)
 		} finally {
 			setup.renderer.destroy()
 		}
@@ -239,9 +295,9 @@ describe("OpenTUI interaction", () => {
 							label: "[done] phase verify",
 							depth: 0,
 							segments: [
-								{ text: "󰄬", color: "#9ece6a" },
+								{ text: "󰄬", color: "#a6da95" },
 								{ text: " " },
-								{ text: "󰔚", color: "#e0af68" },
+								{ text: "󰔚", color: "#eed49f" },
 								{ text: " verify" },
 							],
 						},
@@ -256,14 +312,54 @@ describe("OpenTUI interaction", () => {
 			await setup.renderOnce()
 			await Bun.sleep(0)
 
-			expect(setup.captureCharFrame()).toContain("> ╰─ 󰄬 󰔚 verify")
+			expect(setup.captureCharFrame()).toContain("▌ ╰─ 󰄬 󰔚 verify")
 			const spans = setup.captureSpans().lines.flatMap((line) => line.spans)
 			expect(spans.find((span) => span.text === "󰄬")?.fg.toInts()).toEqual([
-				158, 206, 106, 255,
+				166, 218, 149, 255,
 			])
 			expect(spans.find((span) => span.text === "󰔚")?.fg.toInts()).toEqual([
-				224, 175, 104, 255,
+				238, 212, 159, 255,
 			])
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("clears a non-empty filter before escape cancels", async () => {
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Work on"
+					choices={[
+						{ key: "agency", label: "agency", depth: 0 },
+						{ key: "web", label: "web", depth: 0 },
+					]}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 40, height: 4, kittyKeyboard: true },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("web")
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("▌ web")
+
+			setup.mockInput.pressEscape()
+			await setup.flush()
+			expect(selected).toBeUndefined()
+			const cleared = setup.captureCharFrame()
+			expect(cleared).toContain("▌ ╭─ agency")
+			expect(cleared).toContain("  ╰─ web")
+
+			setup.mockInput.pressEscape()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBeNull()
 		} finally {
 			setup.renderer.destroy()
 		}
