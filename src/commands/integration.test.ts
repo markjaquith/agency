@@ -36,6 +36,11 @@ describe("integration command", () => {
 					diagnostic: expect.stringContaining("cannot load"),
 					remediation: expect.stringContaining("integration sync"),
 				},
+				{
+					name: "opencode-command",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
 			],
 		})
 	})
@@ -62,11 +67,15 @@ describe("integration command", () => {
 		expect(JSON.parse(logs[0]!).files).toMatchObject([
 			{ name: "agents", state: "managed", changed: true },
 			{ name: "opencode", state: "managed", changed: true },
+			{ name: "opencode-command", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
 		expect(
 			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
+		).toBe(true)
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
 		).toBe(true)
 	})
 })

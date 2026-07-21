@@ -514,6 +514,7 @@ describe("CLI", () => {
 		expect(before.files).toMatchObject([
 			{ name: "agents", state: "managed" },
 			{ name: "opencode", state: "managed" },
+			{ name: "opencode-command", state: "managed" },
 		])
 
 		const synced = parseJson(
@@ -522,6 +523,7 @@ describe("CLI", () => {
 		expect(synced.files).toMatchObject([
 			{ name: "agents", state: "managed", changed: false },
 			{ name: "opencode", state: "managed", changed: false },
+			{ name: "opencode-command", state: "managed", changed: false },
 		])
 	})
 

@@ -80,10 +80,10 @@ workbase/
 
 Agency keeps discovery and other observational commands read-only. Run
 `agency integration status` to inspect `.agency/AGENTS.md` and
-`.opencode/opencode.jsonc`, then `agency integration sync` to create missing
-files or refresh checksum-safe managed files. Customized files are reported but
-never overwritten. The root `AGENTS.md` is user-owned and is not inspected or
-modified by Agency.
+`.opencode/opencode.jsonc`, and `.opencode/command/agency.md`, then `agency
+integration sync` to create missing files or refresh checksum-safe managed
+files. Customized files are reported but never overwritten. The root
+`AGENTS.md` is user-owned and is not inspected or modified by Agency.
 
 When upgrading an existing workbase, synchronization moves a checksum-valid
 Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
@@ -95,6 +95,13 @@ user-owned root `AGENTS.md` and advertises the complete workbase as one portable
 reference. OpenCode discovers that config from task and epic launch directories.
 Agents receive whole-workbase visibility from that reference. Bash and Agency
 operations must still follow the write authority reported by `agency context`.
+
+OpenCode also discovers a managed `/agency` command. Use `/agency status` for a
+read-only current-work summary, `/agency start [target]` to begin or resume work
+in the active session, `/agency next` to inspect ready work, `/agency validate`
+to check the workbase, and `/agency finish [target]` for verified closeout. The
+command uses OpenCode positional arguments internally and defaults to the safe
+`status` workflow when no subcommand is supplied.
 
 Repository aliases and canonical fetch remotes are declared in tracked
 `agency.json`; local bare clones and symlinks remain ignored under
