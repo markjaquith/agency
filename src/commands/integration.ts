@@ -12,7 +12,7 @@ interface IntegrationOptions extends BaseCommandOptions {
 interface IntegrationResult {
 	readonly root: string
 	readonly files: readonly {
-		readonly name: "agents" | "opencode"
+		readonly name: "agents" | "opencode" | "opencode-command"
 		readonly path: string
 		readonly state: string
 		readonly diagnostic: string
@@ -24,6 +24,7 @@ interface IntegrationResult {
 const integrationNames = {
 	agents: "Agent instructions",
 	opencode: "OpenCode config",
+	"opencode-command": "OpenCode /agency command",
 } as const
 
 const logHumanResult = (

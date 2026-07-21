@@ -74,7 +74,12 @@ Agent instructions: missing
 OpenCode config: missing
   Path: .opencode/opencode.jsonc
   Agency OpenCode launches cannot load current Agency instructions or whole-workbase access.
-  Action: Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.`)
+  Action: Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.
+
+OpenCode /agency command: missing
+  Path: .opencode/command/agency.md
+  The managed OpenCode /agency command needs synchronization.
+  Action: Run 'agency integration sync' to install the managed /agency command.`)
 	})
 
 	test("explicitly synchronizes integration files", async () => {
@@ -110,6 +115,10 @@ Agent instructions: synced
 
 OpenCode config: synced
   Path: .opencode/opencode.jsonc
-  Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.`)
+  Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.
+
+OpenCode /agency command: synced
+  Path: .opencode/command/agency.md
+  Agency's managed OpenCode /agency command is current.`)
 	})
 })
