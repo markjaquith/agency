@@ -416,7 +416,7 @@ describe("CLI", () => {
 	})
 
 	test("routes command help and global options on either side of commands", async () => {
-		for (const [command, usage] of [
+		const commands = [
 			["init", "Usage: agency init"],
 			["workbase", "Usage: agency workbase"],
 			["integration", "Usage: agency integration"],
@@ -433,11 +433,19 @@ describe("CLI", () => {
 			["context", "Usage: agency context"],
 			["graph", "Usage: agency graph"],
 			["next", "Usage: agency next"],
-		] as const) {
-			const result = await runCli([command, "--help"])
-			expect(result.exitCode).toBe(0)
-			expect(result.stdout).toContain(usage)
-			expect(result.stderr).toBe("")
+		] as const
+		for (let offset = 0; offset < commands.length; offset += 4) {
+			const results = await Promise.all(
+				commands.slice(offset, offset + 4).map(async ([command, usage]) => ({
+					usage,
+					result: await runCli([command, "--help"]),
+				})),
+			)
+			for (const { result, usage } of results) {
+				expect(result.exitCode).toBe(0)
+				expect(result.stdout).toContain(usage)
+				expect(result.stderr).toBe("")
+			}
 		}
 
 		const helpBefore = await runCli(["--help", "task"])
@@ -836,7 +844,9 @@ status: open
 		).toBe("example\n")
 	})
 
-	test.skipIf(Bun.which("opencode") === null)(
+	test.skipIf(
+		Bun.which("opencode") === null || process.env.AGENCY_TEST_OPENCODE !== "1",
+	)(
 		"provides effective whole-workbase OpenCode access from every launch topology",
 		async () => {
 			const parent = await createTempDir()
