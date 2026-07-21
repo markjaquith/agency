@@ -108,6 +108,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 				readonly target?: string
 				readonly cwd?: string
 				readonly compact?: boolean
+				readonly full?: boolean
 			}) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -120,6 +121,103 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const { root, config } = yield* workbase.loadConfig(
 						candidateExists ? candidate : cwd,
 					)
+
+					if (relative(root, candidate) === "") {
+						const compact = !options.full
+						const discover = <S extends Schema.Schema.AnyNoContext>(
+							id: string,
+							path: string,
+							schema: S,
+							extra: Record<string, string> = {},
+						) =>
+							Effect.gen(function* () {
+								if (!(yield* fs.exists(path))) return null
+								const content = yield* fs.readFile(path)
+								const parsed = yield* Effect.either(
+									parseFrontmatter(content, path),
+								)
+								if (Either.isLeft(parsed)) return null
+								const decoded = decode(schema, parsed.right.data)
+								if (!decoded.ok) return null
+								return {
+									...extra,
+									id,
+									path,
+									sha256: documentRevision(content),
+									data: decoded.value,
+									...(compact ? {} : { body: parsed.right.body }),
+								}
+							})
+
+						const epics: unknown[] = []
+						const tasks: unknown[] = []
+						const phases: unknown[] = []
+						const epicRoot = join(root, "epics")
+						if (yield* fs.isDirectory(epicRoot)) {
+							for (const entry of (yield* fs.readDirectory(epicRoot))
+								.filter((item) => item.isDirectory)
+								.sort((a, b) => a.name.localeCompare(b.name))) {
+								const document = yield* discover(
+									entry.name,
+									join(epicRoot, entry.name, "EPIC.md"),
+									EpicFrontmatter,
+								)
+								if (document) epics.push(document)
+							}
+						}
+
+						const taskRoot = join(root, "tasks")
+						if (yield* fs.isDirectory(taskRoot)) {
+							for (const entry of (yield* fs.readDirectory(taskRoot))
+								.filter((item) => item.isDirectory)
+								.sort((a, b) => a.name.localeCompare(b.name))) {
+								const document = yield* discover(
+									entry.name,
+									join(taskRoot, entry.name, "TASK.md"),
+									TaskFrontmatter,
+								)
+								if (document) tasks.push(document)
+
+								const phaseRoot = join(taskRoot, entry.name, "phases")
+								if (!(yield* fs.isDirectory(phaseRoot))) continue
+								for (const phaseEntry of (yield* fs.readDirectory(phaseRoot))
+									.filter((item) => item.isDirectory)
+									.sort((a, b) => a.name.localeCompare(b.name))) {
+									const phase = yield* discover(
+										phaseEntry.name,
+										join(phaseRoot, phaseEntry.name, "PHASE.md"),
+										PhaseFrontmatter,
+										{ taskId: entry.name },
+									)
+									if (phase) phases.push(phase)
+								}
+							}
+						}
+
+						const validation = yield* workbase.validate(root)
+						return {
+							projection: compact ? "compact" : "complete",
+							workbase: {
+								root,
+								configPath: join(root, "agency.json"),
+								version: config.version,
+							},
+							target: { kind: "workbase", path: root },
+							hint: compact
+								? "Run agency context . --full --json to include document prose."
+								: null,
+							discovery: { epics, tasks, phases },
+							authority: {
+								mode: "orchestration",
+								writable: null,
+								references: [],
+							},
+							validation: {
+								valid: validation.valid,
+								warnings: validation.issues,
+							},
+						}
+					}
 
 					const inferTarget = (): Target | null => {
 						if (!candidateExists && !suppliedTarget.includes(sep)) {

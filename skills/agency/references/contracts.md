@@ -8,9 +8,11 @@ names; they are not duplicated in frontmatter.
 `agency context . --json` returns a versioned success envelope whose result
 contains:
 
-- `projection`: `complete` or explicitly requested `compact`;
+- `projection`: `compact` for root discovery by default, otherwise `complete`
+  unless compact entity context was explicitly requested;
 - `workbase`: root, config path, and config version;
-- `target`: resolved epic, task, or phase identity;
+- `target`: resolved workbase, epic, task, or phase identity;
+- `discovery`: at the workbase root, all valid epic, task, and phase documents;
 - `documents`: ancestor frontmatter, paths, SHA-256 revisions, and prose;
 - `graph`: parent, dependencies, dependents, readiness blockers, and progress;
 - `authority`: `orchestration` or `execution`, one writable checkout or none,
@@ -283,9 +285,11 @@ selection. Supply every required value or explicit entity selector. Global
 `--cwd` and `--workbase` selectors apply to `next` as they do to other discovery
 commands.
 
-Context defaults to the `complete` projection. `--compact` omits prose and
-low-level Git details but retains identity, document hashes, authority, paths,
-graph state, materialization, and validation warnings.
+At a workbase root, context defaults to a compact discovery catalog of epics,
+tasks, and phases, includes no writable authority, and provides a hint for
+requesting `--full`. Entity context defaults to the `complete` projection.
+`--compact` omits prose and low-level Git details but retains identity, document
+hashes, authority, paths, graph state, materialization, and validation warnings.
 
 Graph projections are opt-in with repeatable
 `--include <bodies|workspace|git|pr>`. Filters such as `--ready`, `--blocked`,

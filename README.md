@@ -358,10 +358,16 @@ agency validate
 
 ### Target Context
 
-`agency context [target] --json` returns the complete bootstrap context for an
-epic, task, or phase without modifying the workbase or fetching repositories.
-The target defaults to the current directory; entity directories, document
-paths, checkout descendants, and bare task IDs are accepted.
+`agency context [target] --json` returns complete bootstrap context without
+modifying the workbase or fetching repositories. At the workbase root it returns
+a discovery catalog of all epics, tasks, and phases, including frontmatter,
+paths, and document revisions. Elsewhere it returns context for an epic, task,
+or phase. The target defaults to the current directory; entity directories,
+document paths, checkout descendants, and bare task IDs are accepted.
+
+Root discovery is compact by default and includes a hint to run `agency context
+. --full --json` when document prose is needed. Entity context remains complete
+by default. `--compact` explicitly requests compact entity context.
 
 The result includes workbase and target identity, ancestor frontmatter and prose
 with SHA-256 hashes, dependency and readiness state, aggregate status, writable
@@ -369,9 +375,10 @@ and reference authority, local checkout and resolved-commit state, recorded PR
 state, and validation warnings. Only `done` satisfies a dependency; `dropped` is
 terminal but remains a blocker.
 
-Complete output is the default. Pass `--compact` explicitly to omit document
-prose and low-level Git details while retaining identity, hashes, authority,
-paths, graph state, materialization state, and validation warnings.
+Complete output is the default for entity targets. Pass `--compact` explicitly
+to omit document prose and low-level Git details while retaining identity,
+hashes, authority, paths, graph state, materialization state, and validation
+warnings.
 
 ### Workbase Graph
 
