@@ -77,6 +77,53 @@ describe("chooser", () => {
 		})
 	})
 
+	test("passes hierarchy depth only to the native renderer", async () => {
+		let offered: readonly {
+			readonly key: string
+			readonly label: string
+			readonly depth?: number
+			readonly segments?: readonly {
+				readonly text: string
+				readonly color?: string
+			}[]
+		}[] = []
+		const io = createIO({
+			select: async (_prompt, choices) => {
+				offered = choices
+				return choices[0]!.key
+			},
+		})
+
+		await Effect.runPromise(
+			choose(
+				"Pick one",
+				[
+					{
+						key: "parent",
+						label: "Parent",
+						depth: 0,
+						segments: [{ text: "P", color: "#bb9af7" }],
+						value: 1,
+					},
+					{ key: "child", label: "Child", depth: 1, value: 2 },
+				],
+				undefined,
+				io,
+			),
+		)
+
+		expect(offered).toEqual([
+			{
+				key: "parent",
+				label: "Parent",
+				depth: 0,
+				segments: [{ text: "P", color: "#bb9af7" }],
+			},
+			{ key: "child", label: "Child", depth: 1 },
+		])
+		expect(io.inputs).toEqual([])
+	})
+
 	test("preserves colors for configured external choosers", async () => {
 		const io = createIO({ color: true })
 

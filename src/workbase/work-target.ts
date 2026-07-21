@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import type { WorkStatus } from "./schemas"
-import { choose } from "../utils/chooser"
+import { choose, type ChoiceSegment } from "../utils/chooser"
 
 export type WorkTarget =
 	| {
@@ -56,58 +56,98 @@ interface PhaseRecord {
 export interface WorkTargetChoice {
 	readonly label: string
 	readonly plainLabel: string
+	readonly depth: number
+	readonly segments: readonly ChoiceSegment[]
 	readonly target: WorkTarget
 }
 
-const statusIcons: Record<WorkStatus, string> = {
-	open: "\x1b[2m○\x1b[0m",
-	working: "\x1b[34m◐\x1b[0m",
-	delegated: "\x1b[35m↗\x1b[0m",
-	done: "\x1b[32m✓\x1b[0m",
-	dropped: "\x1b[31m⊘\x1b[0m",
+const statuses: Record<
+	WorkStatus,
+	{ readonly icon: string; readonly color: string }
+> = {
+	open: { icon: "󰄱", color: "#6c7086" },
+	working: { icon: "󰔟", color: "#7aa2f7" },
+	delegated: { icon: "󰁕", color: "#bb9af7" },
+	done: { icon: "󰄬", color: "#9ece6a" },
+	dropped: { icon: "󰅖", color: "#f7768e" },
 }
 
+const kinds: Record<
+	WorkTarget["kind"],
+	{ readonly icon: string; readonly color: string }
+> = {
+	epic: { icon: "", color: "#bb9af7" },
+	task: { icon: "󰗡", color: "#7dcfff" },
+	phase: { icon: "󰔚", color: "#e0af68" },
+}
+
+const hexToAnsi = (color: string) => {
+	const value = color.slice(1)
+	return [0, 2, 4]
+		.map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16))
+		.join(";")
+}
+
+const colorize = (item: { readonly icon: string; readonly color: string }) =>
+	`\x1b[38;2;${hexToAnsi(item.color)}m${item.icon}\x1b[0m`
+
 const label = (
-	indent: string,
 	kind: WorkTarget["kind"],
 	id: string,
 	description?: string,
 	status?: WorkStatus,
 ) =>
-	`${indent}${status === undefined ? "" : `${statusIcons[status]} `}${
-		{
-			epic: "\x1b[35m\x1b[0m",
-			task: "\x1b[36m󰗡\x1b[0m",
-			phase: "\x1b[33m󰔚\x1b[0m",
-		}[kind]
-	} ${id}${description === undefined ? "" : `\x1b[2m - ${description}\x1b[0m`}`
+	`${status === undefined ? "" : `${colorize(statuses[status])} `}${colorize(kinds[kind])} ${id}${description === undefined ? "" : `\x1b[2m - ${description}\x1b[0m`}`
+
+const segments = (
+	kind: WorkTarget["kind"],
+	id: string,
+	description?: string,
+	status?: WorkStatus,
+): readonly ChoiceSegment[] => [
+	...(status === undefined
+		? []
+		: [
+				{ text: statuses[status].icon, color: statuses[status].color },
+				{ text: " " },
+			]),
+	{ text: kinds[kind].icon, color: kinds[kind].color },
+	{ text: ` ${id}` },
+	...(description === undefined
+		? []
+		: [{ text: ` - ${description}`, color: "#6c7086" }]),
+]
 
 const plainLabel = (
-	indent: string,
 	kind: WorkTarget["kind"],
 	id: string,
 	description?: string,
 	status?: WorkStatus,
 ) =>
-	`${indent}${status === undefined ? "" : `[${status}] `}${kind} ${id}${description === undefined ? "" : ` - ${description}`}`
+	`${status === undefined ? "" : `[${status}] `}${kind} ${id}${description === undefined ? "" : ` - ${description}`}`
 
 const taskChoices = (
 	task: TaskRecord,
 	phaseRecords: readonly PhaseRecord[],
-	indent: string,
+	depth: number,
 ): readonly WorkTargetChoice[] => {
 	const multiPhase = "phases" in task.data
 	const choices: WorkTargetChoice[] = [
 		{
 			label: label(
-				indent,
 				"task",
 				task.id,
 				task.data.description,
 				multiPhase ? undefined : (task.data.status ?? "open"),
 			),
 			plainLabel: plainLabel(
-				indent,
+				"task",
+				task.id,
+				task.data.description,
+				multiPhase ? undefined : (task.data.status ?? "open"),
+			),
+			depth,
+			segments: segments(
 				"task",
 				task.id,
 				task.data.description,
@@ -132,14 +172,19 @@ const taskChoices = (
 		renderedPhases.add(record.id)
 		choices.push({
 			label: label(
-				`${indent}  `,
 				"phase",
 				record.id,
 				record.data.description,
 				record.data.status ?? "open",
 			),
 			plainLabel: plainLabel(
-				`${indent}  `,
+				"phase",
+				record.id,
+				record.data.description,
+				record.data.status ?? "open",
+			),
+			depth: depth + 1,
+			segments: segments(
 				"phase",
 				record.id,
 				record.data.description,
@@ -158,14 +203,19 @@ const taskChoices = (
 		if (renderedPhases.has(record.id)) continue
 		choices.push({
 			label: label(
-				`${indent}  `,
 				"phase",
 				record.id,
 				record.data.description,
 				record.data.status ?? "open",
 			),
 			plainLabel: plainLabel(
-				`${indent}  `,
+				"phase",
+				record.id,
+				record.data.description,
+				record.data.status ?? "open",
+			),
+			depth: depth + 1,
+			segments: segments(
 				"phase",
 				record.id,
 				record.data.description,
@@ -200,21 +250,23 @@ export const buildWorkTargetChoices = (
 
 	for (const epic of epicRecords) {
 		choices.push({
-			label: label("", "epic", epic.id, epic.data.description),
-			plainLabel: plainLabel("", "epic", epic.id, epic.data.description),
+			label: label("epic", epic.id, epic.data.description),
+			plainLabel: plainLabel("epic", epic.id, epic.data.description),
+			depth: 0,
+			segments: segments("epic", epic.id, epic.data.description),
 			target: { kind: "epic", epicId: epic.id, path: epic.path },
 		})
 		for (const child of epic.data.tasks) {
 			const task = tasks.get(child.id)
 			if (!task || nestedTasks.has(task.id)) continue
 			nestedTasks.add(task.id)
-			choices.push(...taskChoices(task, phases.get(task.id) ?? [], "  "))
+			choices.push(...taskChoices(task, phases.get(task.id) ?? [], 1))
 		}
 	}
 
 	for (const task of taskRecords) {
 		if (nestedTasks.has(task.id)) continue
-		choices.push(...taskChoices(task, phases.get(task.id) ?? [], ""))
+		choices.push(...taskChoices(task, phases.get(task.id) ?? [], 0))
 	}
 
 	return choices
@@ -232,6 +284,8 @@ export const pickWorkTarget: PickWorkTarget = (choices, command) =>
 			key: String(index),
 			label: choice.label,
 			plainLabel: choice.plainLabel,
+			depth: choice.depth,
+			segments: choice.segments,
 			value: choice.target,
 		})),
 		command,

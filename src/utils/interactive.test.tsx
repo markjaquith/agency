@@ -6,9 +6,11 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import {
 	fuzzyChoices,
+	hierarchyPrefix,
 	InteractiveSelectPrompt,
 	InteractiveTextPrompt,
 	interactiveRendererConfig,
+	interactiveSelectRendererConfig,
 } from "./interactive"
 
 const submitEditedText = async (
@@ -79,6 +81,61 @@ describe("OpenTUI interaction", () => {
 		})
 	})
 
+	test("uses the full alternate screen for selectors", () => {
+		expect(interactiveSelectRendererConfig).toMatchObject({
+			screenMode: "alternate-screen",
+			externalOutputMode: "passthrough",
+			clearOnShutdown: false,
+		})
+	})
+
+	test("fills the available rows and keeps the selection visible after resize", async () => {
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Work on"
+					choices={Array.from({ length: 10 }, (_, index) => ({
+						key: String(index),
+						label: `choice-${index}`,
+					}))}
+					onDone={() => undefined}
+				/>
+			),
+			{ width: 40, height: 8 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+
+			let frame = setup.captureCharFrame()
+			for (let index = 0; index < 6; index++) {
+				expect(frame).toContain(`choice-${index}`)
+			}
+			expect(frame).not.toContain("choice-6")
+
+			for (let index = 0; index < 7; index++) {
+				setup.mockInput.pressArrow("down")
+			}
+			await setup.flush()
+			frame = setup.captureCharFrame()
+			expect(frame).toContain("choice-4")
+			expect(frame).toContain("> choice-7")
+			expect(frame).toContain("choice-9")
+
+			setup.resize(40, 5)
+			await setup.flush()
+			frame = setup.captureCharFrame()
+			expect(frame).not.toContain("choice-5")
+			expect(frame).toContain("choice-6")
+			expect(frame).toContain("> choice-7")
+			expect(frame).toContain("choice-8")
+			expect(frame).not.toContain("choice-9")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("ranks case-insensitive fuzzy matches", () => {
 		const choices = [
 			{ key: "nested", label: "Manage Agency" },
@@ -94,6 +151,122 @@ describe("OpenTUI interaction", () => {
 			"nested",
 		])
 		expect(fuzzyChoices(choices, "zzz")).toEqual([])
+	})
+
+	test("builds continuous hierarchy connectors for roots, children, and phases", () => {
+		const choices = [
+			{ key: "epic", label: "epic delivery", depth: 0 },
+			{ key: "multi", label: "task multi", depth: 1 },
+			{ key: "build", label: "phase build", depth: 2 },
+			{ key: "verify", label: "phase verify", depth: 2 },
+			{ key: "single", label: "task single", depth: 1 },
+			{ key: "empty", label: "epic empty", depth: 0 },
+			{ key: "standalone", label: "task standalone", depth: 0 },
+		]
+
+		expect(choices.map((_, index) => hierarchyPrefix(choices, index))).toEqual([
+			"╭─ ",
+			"│  ╭─ ",
+			"│  │  ╭─ ",
+			"│  │  ╰─ ",
+			"│  ╰─ ",
+			"├─ ",
+			"╰─ ",
+		])
+		expect(hierarchyPrefix([{ key: "only", label: "Only", depth: 0 }], 0)).toBe(
+			"╰─ ",
+		)
+		expect(hierarchyPrefix([{ key: "flat", label: "Flat" }], 0)).toBe("")
+	})
+
+	test("renders hierarchy only while the filter is empty", async () => {
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Work on"
+					choices={[
+						{ key: "epic", label: "epic delivery", depth: 0 },
+						{ key: "child", label: "task delivery-child", depth: 1 },
+						{ key: "standalone", label: "task standalone", depth: 0 },
+					]}
+					onDone={() => undefined}
+				/>
+			),
+			{ width: 40, height: 4 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+
+			let frame = setup.captureCharFrame()
+			expect(frame).toContain("> ╭─ epic delivery")
+			expect(frame).toContain("  │  ╰─ task delivery-child")
+
+			setup.mockInput.pressArrow("down")
+			await setup.flush()
+			frame = setup.captureCharFrame()
+			expect(frame).toContain("  ╭─ epic delivery")
+			expect(frame).toContain("> │  ╰─ task delivery-child")
+
+			await setup.mockInput.typeText("delivery")
+			await setup.flush()
+			frame = setup.captureCharFrame()
+			expect(frame).toContain("> epic delivery")
+			expect(frame).toContain("  task delivery-child")
+			expect(frame).not.toMatch(/[╭│├╰─]/)
+
+			setup.mockInput.pressKey("u", { ctrl: true })
+			await setup.flush()
+			setup.resize(32, 4)
+			await setup.flush()
+			frame = setup.captureCharFrame()
+			expect(frame).toContain("> ╭─ epic delivery")
+			expect(frame).toContain("  │  ╰─ task delivery-child")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("renders entity and status Nerd Font icons in distinct colors", async () => {
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Work on"
+					choices={[
+						{
+							key: "verify",
+							label: "[done] phase verify",
+							depth: 0,
+							segments: [
+								{ text: "󰄬", color: "#9ece6a" },
+								{ text: " " },
+								{ text: "󰔚", color: "#e0af68" },
+								{ text: " verify" },
+							],
+						},
+					]}
+					onDone={() => undefined}
+				/>
+			),
+			{ width: 40, height: 4 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+
+			expect(setup.captureCharFrame()).toContain("> ╰─ 󰄬 󰔚 verify")
+			const spans = setup.captureSpans().lines.flatMap((line) => line.spans)
+			expect(spans.find((span) => span.text === "󰄬")?.fg.toInts()).toEqual([
+				158, 206, 106, 255,
+			])
+			expect(spans.find((span) => span.text === "󰔚")?.fg.toInts()).toEqual([
+				224, 175, 104, 255,
+			])
+		} finally {
+			setup.renderer.destroy()
+		}
 	})
 
 	test("selects choices with ctrl-p, ctrl-n, and arrow navigation", async () => {
