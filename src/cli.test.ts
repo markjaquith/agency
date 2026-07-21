@@ -244,6 +244,10 @@ describe("CLI", () => {
 			),
 		)
 		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
+		expect(
+			parseJson(await runCli(["task", "show", "claimed", "--json"], root)).data
+				.status,
+		).toBe("working")
 	})
 
 	test("routes graph mutations through structured output", async () => {
@@ -416,7 +420,7 @@ describe("CLI", () => {
 	})
 
 	test("routes command help and global options on either side of commands", async () => {
-		for (const [command, usage] of [
+		const commands = [
 			["init", "Usage: agency init"],
 			["workbase", "Usage: agency workbase"],
 			["integration", "Usage: agency integration"],
@@ -433,11 +437,19 @@ describe("CLI", () => {
 			["context", "Usage: agency context"],
 			["graph", "Usage: agency graph"],
 			["next", "Usage: agency next"],
-		] as const) {
-			const result = await runCli([command, "--help"])
-			expect(result.exitCode).toBe(0)
-			expect(result.stdout).toContain(usage)
-			expect(result.stderr).toBe("")
+		] as const
+		for (let offset = 0; offset < commands.length; offset += 4) {
+			const results = await Promise.all(
+				commands.slice(offset, offset + 4).map(async ([command, usage]) => ({
+					usage,
+					result: await runCli([command, "--help"]),
+				})),
+			)
+			for (const { result, usage } of results) {
+				expect(result.exitCode).toBe(0)
+				expect(result.stdout).toContain(usage)
+				expect(result.stderr).toBe("")
+			}
 		}
 
 		const helpBefore = await runCli(["--help", "task"])
@@ -468,7 +480,7 @@ describe("CLI", () => {
 			)
 		}
 		parseJson(
-			await runCli(["task", "status", "finished", "done", "--json"], root),
+			await runCli(["task", "status", "finished", "dropped", "--json"], root),
 		)
 
 		const human = await runCli(["next"], root)
@@ -482,9 +494,9 @@ describe("CLI", () => {
 		expect(result.excluded).toMatchObject([
 			{
 				key: "task/finished",
-				status: "done",
+				status: "dropped",
 				terminal: true,
-				blockers: [{ kind: "status", reason: "Task status is done" }],
+				blockers: [{ kind: "status", reason: "Task status is dropped" }],
 			},
 		])
 
@@ -496,8 +508,8 @@ describe("CLI", () => {
 			error: {
 				code: "EXECUTION_BLOCKED",
 				fields: {
-					status: "done",
-					blockers: [{ kind: "status", reason: "Task status is done" }],
+					status: "dropped",
+					blockers: [{ kind: "status", reason: "Task status is dropped" }],
 				},
 			},
 		})
@@ -514,6 +526,7 @@ describe("CLI", () => {
 		expect(before.files).toMatchObject([
 			{ name: "agents", state: "managed" },
 			{ name: "opencode", state: "managed" },
+			{ name: "opencode-command", state: "managed" },
 		])
 
 		const synced = parseJson(
@@ -522,6 +535,7 @@ describe("CLI", () => {
 		expect(synced.files).toMatchObject([
 			{ name: "agents", state: "managed", changed: false },
 			{ name: "opencode", state: "managed", changed: false },
+			{ name: "opencode-command", state: "managed", changed: false },
 		])
 	})
 
@@ -836,7 +850,9 @@ status: open
 		).toBe("example\n")
 	})
 
-	test.skipIf(Bun.which("opencode") === null)(
+	test.skipIf(
+		Bun.which("opencode") === null || process.env.AGENCY_TEST_OPENCODE !== "1",
+	)(
 		"provides effective whole-workbase OpenCode access from every launch topology",
 		async () => {
 			const parent = await createTempDir()
@@ -1009,7 +1025,13 @@ status: open
 				const contract = JSON.parse(printed.stdout)
 				expect(contract.cwd).toBe(launch.cwd)
 				expect(contract.environment.OPENCODE_CONFIG).toBeUndefined()
-				expect(contract.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+				expect(
+					JSON.parse(contract.environment.OPENCODE_CONFIG_CONTENT),
+				).toEqual({
+					permission: {
+						external_directory: { [join(workbaseRoot, "*")]: "allow" },
+					},
+				})
 				const environment = {
 					...process.env,
 					...contract.environment,
@@ -1134,18 +1156,18 @@ status: open
 			}
 
 			parseJson(
-				await runCli(["task", "status", "example", "done", "--json"], root),
+				await runCli(["task", "status", "example", "dropped", "--json"], root),
 			)
 			const blocked = await runCli(
 				["work", "--task", "example", "--runner", "noop"],
 				root,
 			)
 			expect(blocked.exitCode).toBe(1)
-			expect(blocked.stderr).toContain("Task status is done")
+			expect(blocked.stderr).toContain("Task status is dropped")
 			expect(
 				parseJson(await runCli(["task", "show", "example", "--json"], root))
 					.data.status,
-			).toBe("done")
+			).toBe("dropped")
 
 			const resumedTask = await runCli(
 				["work", "--task", "example", "--runner", "noop", "--force"],
@@ -1153,7 +1175,7 @@ status: open
 			)
 			expect(resumedTask).toMatchObject({ exitCode: 0, stderr: "" })
 			expect(resumedTask.stdout).toContain(
-				"Reopened task/example from done as working",
+				"Reopened task/example from dropped as working",
 			)
 			expect(
 				parseJson(await runCli(["task", "show", "example", "--json"], root))

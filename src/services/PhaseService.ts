@@ -487,6 +487,12 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						})
 					}
 					if (!canTransitionStatus(record.data.status, validStatus)) {
+						if (validStatus === "done") {
+							return yield* new PhaseError({
+								message:
+									"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply'",
+							})
+						}
 						return yield* new PhaseError({
 							message: `Cannot transition phase '${id}' from ${record.data.status} to ${validStatus}; reopen it first`,
 						})

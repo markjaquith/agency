@@ -891,17 +891,19 @@ const commands = {
 		},
 	},
 	context: {
-		usage: "agency context [target] [--json] [--compact]",
+		usage: "agency context [target] [--json] [--compact | --full]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
 			compact: { type: "boolean" },
+			full: { type: "boolean" },
 		},
 		command: {
-			usage: "agency context [target] [--json] [--compact]",
+			usage: "agency context [target] [--json] [--compact | --full]",
 			minArgs: 0,
 			maxArgs: 1,
-			options: ["json", "compact", "epic", "task", "phase"],
+			options: ["json", "compact", "full", "epic", "task", "phase"],
+			conflicts: [["compact", "full"]],
 		},
 	},
 	graph: {

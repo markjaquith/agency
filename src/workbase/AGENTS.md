@@ -48,17 +48,19 @@ reason to edit `agency.json` or `repos/` by hand.
 
 ## Closeout
 
-An execution unit is `working` while implementation or requested delivery work
-remains. It becomes `done` when both are complete, even if its PR remains open
-for review or merge. Do not leave a task or phase `working` solely because its PR
-is open; if merge was requested, merge remains delivery work.
+An execution unit remains `working` after implementation is committed and while
+its pull request is open. It becomes `done` only after its authoritative pull
+request is merged and Agency reconciles that state. Do not mark committed or
+review-ready work `done` manually.
 
 At each closeout trigger (creating or updating a PR, marking it ready, completing
 a refinement loop, or pausing or handing off completed implementation work):
 
-- Finish an active claim with the current revision via `agency finish`.
-  Otherwise use `agency task status` or `agency phase status` to set the
-  execution unit's current status.
+- Finish an active claim with the current revision via `agency finish`; a
+  successful claim outcome leaves unmerged work `working`. For unclaimed work,
+  keep the execution unit `working` through review and merge.
+- After merge, run `agency sync --apply` to reconcile the execution unit to
+  `done`.
 - Refresh durable delivery context in `TASK.md` or `PHASE.md`, including recorded
   PR state, current head, diff summary, and verification results after later
   pushes when those details are maintained there.
@@ -69,6 +71,8 @@ a refinement loop, or pausing or handing off completed implementation work):
 `agency integration status` reports `managed`, `drifted`, `customized`, or
 `missing` generated files. Agency keeps these instructions in
 `.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
+It also installs `.opencode/command/agency.md`, which provides safe `/agency`
+workflows for active OpenCode sessions.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
 `agency integration sync` updates only missing or checksum-safe drifted managed

@@ -80,10 +80,10 @@ workbase/
 
 Agency keeps discovery and other observational commands read-only. Run
 `agency integration status` to inspect `.agency/AGENTS.md` and
-`.opencode/opencode.jsonc`, then `agency integration sync` to create missing
-files or refresh checksum-safe managed files. Customized files are reported but
-never overwritten. The root `AGENTS.md` is user-owned and is not inspected or
-modified by Agency.
+`.opencode/opencode.jsonc`, and `.opencode/command/agency.md`, then `agency
+integration sync` to create missing files or refresh checksum-safe managed
+files. Customized files are reported but never overwritten. The root
+`AGENTS.md` is user-owned and is not inspected or modified by Agency.
 
 When upgrading an existing workbase, synchronization moves a checksum-valid
 Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
@@ -92,10 +92,19 @@ preserved as user-owned content.
 
 The OpenCode config defines an `@agency` subagent for delegated workbase
 orchestration, loads Agency's hidden instructions in addition to any user-owned
-root `AGENTS.md`, and advertises the complete workbase as one portable reference.
-OpenCode discovers that config from task and epic launch directories. Agents
+root `AGENTS.md`, advertises the complete workbase as one portable reference,
+and replaces the built-in Plan agent with `agency-plan`. That planning agent can
+update `TASK.md`, `PHASE.md`, and `EPIC.md` while other edits remain disabled.
+OpenCode discovers the config from task and epic launch directories. Agents
 receive whole-workbase visibility from that reference. Bash and Agency operations
 must still follow the write authority reported by `agency context`.
+
+OpenCode also discovers a managed `/agency` command. Use `/agency status` for a
+read-only current-work summary, `/agency start [target]` to begin or resume work
+in the active session, `/agency next` to inspect ready work, `/agency validate`
+to check the workbase, and `/agency finish [target]` for verified closeout. The
+command uses OpenCode positional arguments internally and defaults to the safe
+`status` workflow when no subcommand is supplied.
 
 Repository aliases and canonical fetch remotes are declared in tracked
 `agency.json`; local bare clones and symlinks remain ignored under
@@ -359,10 +368,16 @@ agency validate
 
 ### Target Context
 
-`agency context [target] --json` returns the complete bootstrap context for an
-epic, task, or phase without modifying the workbase or fetching repositories.
-The target defaults to the current directory; entity directories, document
-paths, checkout descendants, and bare task IDs are accepted.
+`agency context [target] --json` returns complete bootstrap context without
+modifying the workbase or fetching repositories. At the workbase root it returns
+a discovery catalog of all epics, tasks, and phases, including frontmatter,
+paths, and document revisions. Elsewhere it returns context for an epic, task,
+or phase. The target defaults to the current directory; entity directories,
+document paths, checkout descendants, and bare task IDs are accepted.
+
+Root discovery is compact by default and includes a hint to run `agency context
+. --full --json` when document prose is needed. Entity context remains complete
+by default. `--compact` explicitly requests compact entity context.
 
 The result includes workbase and target identity, ancestor frontmatter and prose
 with SHA-256 hashes, dependency and readiness state, aggregate status, writable
@@ -370,9 +385,10 @@ and reference authority, local checkout and resolved-commit state, recorded PR
 state, and validation warnings. Only `done` satisfies a dependency; `dropped` is
 terminal but remains a blocker.
 
-Complete output is the default. Pass `--compact` explicitly to omit document
-prose and low-level Git details while retaining identity, hashes, authority,
-paths, graph state, materialization state, and validation warnings.
+Complete output is the default for entity targets. Pass `--compact` explicitly
+to omit document prose and low-level Git details while retaining identity,
+hashes, authority, paths, graph state, materialization state, and validation
+warnings.
 
 ### Workbase Graph
 
@@ -421,7 +437,7 @@ materializing or pushing. Blocked, done, and dropped targets are rejected unless
 `agency sync` first compares portable repository declarations with local
 materializations, then compares every execution declaration with local branch
 and worktree registration, checkout dirtiness, resolved reference commits, claim
-expiry, and pull request and merge state. It reports
+expiry, and pull request state, merge state, and mergeability. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default and `--dry-run` modes are observational.
 
@@ -431,7 +447,7 @@ default and `--dry-run` modes are observational.
 - adopt legacy materializations only when they have an unambiguous portable origin;
 - materialize missing checkouts when no registration, branch, or path conflicts;
 - release an active claim only after its declared expiry has passed;
-- record a single PR whose head and base match the declaration; and
+- record or refresh a single PR whose head and base match the declaration; and
 - mark work done after its authoritative PR is merged and no active claim remains.
 
 Apply never overwrites linked or invalid repositories, repairs remote drift,
@@ -563,7 +579,7 @@ Targeted commands accept `--epic`, `--task`, and `--phase` where those entity
 kinds apply. A phase selector requires a task selector. Entity selectors cannot
 be mixed with positional target IDs, and an epic selector cannot be mixed with
 task or phase selectors. This makes commands such as
-`agency phase status done --task ship --phase release --workbase primary --no-input`
+`agency phase status working --task ship --phase release --workbase primary --no-input`
 fully independent of process cwd and prompts.
 
 Inspect tasks:
@@ -571,7 +587,7 @@ Inspect tasks:
 ```text
 agency task list [filters] [--json]
 agency task show <id> [--json]
-agency task status <id> <open|done|dropped> [--json]
+agency task status <id> <open|working|dropped> [--json]
 agency task update <id> [metadata options] [--json]
 agency task rename <id> <new-id> [--json]
 agency task move <id> (--epic <epic-id> | --no-epic) [--json]
@@ -610,7 +626,7 @@ agency phase create <task-id> <phase-id>
 
 agency phase list <task-id> [filters] [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|done|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|working|dropped> [--json]
 agency phase update <task-id> <phase-id> [metadata options] [--json]
 agency phase rename <task-id> <phase-id> <new-id> [--json]
 agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
@@ -633,6 +649,8 @@ writing anything.
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
 before launch. Running `agency work` again can relaunch unclaimed `working` work.
+The `done` status is reserved for an authoritative merged pull request and is
+applied by `agency sync --apply`, not by task or phase status commands.
 Use explicit claims only when an external orchestrator needs coordinated
 ownership. The interactive work selector displays status markers before
 execution units. Existing working and delegated work may be released to `open`
@@ -666,11 +684,12 @@ agency finish <task-id> [phase-id] --session-id <id>
   --revision <sha256> --outcome <done|dropped> [--json]
 ```
 
-An active claim sets status to `working`. Release returns it to `open`; finish
-sets the terminal outcome. Released and finished ownership metadata remains in
-frontmatter. Conflicts return the current revision and complete ownership record
-in the machine error envelope rather than overwriting it. Expired claims may be
-replaced with a revision-guarded claim.
+An active claim sets status to `working`. Release returns it to `open`. Finish
+records the claim outcome and ownership history; a `done` claim outcome leaves
+the execution unit `working` until its pull request is merged, while `dropped`
+remains terminal. Conflicts return the current revision and complete ownership
+record in the machine error envelope rather than overwriting it. Expired claims
+may be replaced with a revision-guarded claim.
 
 `agency work` does not claim execution units. It refuses active explicit claims,
 marks open execution work `working`, and launches the runner. External

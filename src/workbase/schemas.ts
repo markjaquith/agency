@@ -72,6 +72,7 @@ export const PullRequestRecord = Schema.Struct({
 	state: Schema.Literal("open", "closed", "merged"),
 	draft: Schema.Boolean,
 	merged: Schema.Boolean,
+	mergeable: Schema.optional(Schema.NullOr(Schema.Boolean)),
 })
 
 const DeliveryProvider = Schema.Struct({

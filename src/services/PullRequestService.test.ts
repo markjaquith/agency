@@ -263,11 +263,13 @@ process.exit(${exitCode})
 		await createTask()
 		await runTestEffect(
 			TaskService.pipe(
-				Effect.flatMap((service) => service.setStatus("example", "done", root)),
+				Effect.flatMap((service) =>
+					service.setStatus("example", "dropped", root),
+				),
 			),
 		)
 
-		await expect(createPullRequest()).rejects.toThrow("Task status is done")
+		await expect(createPullRequest()).rejects.toThrow("Task status is dropped")
 		expect(
 			await Bun.file(join(root, "tasks/example/code/agency")).exists(),
 		).toBe(false)

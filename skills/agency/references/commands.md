@@ -8,7 +8,7 @@ Commands that return Agency-owned data accept `--json` unless noted otherwise.
 ## Discovery And Health
 
 ```text
-agency context [target] [--json] [--compact]
+agency context [target] [--json] [--compact | --full]
 agency graph [--json | --jsonl] [--ready | --blocked]
   [--status <status>...] [--repository <alias>...] [--kind <kind>...]
   [--include <bodies|workspace|git|pr>...]
@@ -21,11 +21,13 @@ agency integration status [--json]
 agency integration sync [--json]
 ```
 
-`context` defaults to cwd and accepts entity directories, document paths,
-checkout descendants, or a task ID. Complete output includes prose and Git
-details; `--compact` intentionally omits them. `graph` computes readiness before
-applying filters. `doctor` discovers required tools, integrations, repositories,
-refs, worktrees, permissions, drift, and optional runner capabilities. `sync` is
+`context` defaults to cwd and accepts the workbase root, entity directories,
+document paths, checkout descendants, or a task ID. Root context catalogs all
+epics, tasks, and phases in compact form and hints that `--full` includes prose.
+Entity context is complete by default; `--compact` intentionally omits prose and
+low-level Git details. `graph` computes readiness before applying filters.
+`doctor` discovers required tools, integrations, repositories, refs, worktrees,
+permissions, drift, and optional runner capabilities. `sync` is
 observational unless `--apply` is explicit. Integration status includes safe
 remediation when customized OpenCode config prevents Agency from guaranteeing
 whole-workbase access.
@@ -87,7 +89,7 @@ agency task create <id> --multi-phase [--ticket-url <url>]
   [--description <text>] [--epic <id>] [--json]
 agency task list [filters] [--json]
 agency task show <id> [--json]
-agency task status <id> <open|done|dropped> [--json]
+agency task status <id> <open|working|dropped> [--json]
 agency task update <id> [metadata options] [--if-revision <hash>] [--json]
 agency task rename <id> <new-id> [--if-revision <hash>] [--json]
 agency task move <id> (--epic <epic-id> | --no-epic)
@@ -100,7 +102,7 @@ agency phase create <task-id> <phase-id> --repo <alias> --branch <name>
   [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
 agency phase list <task-id> [filters] [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|done|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|working|dropped> [--json]
 agency phase update <task-id> <phase-id> [metadata options]
   [--if-revision <hash>] [--json]
 agency phase rename <task-id> <phase-id> <new-id>
