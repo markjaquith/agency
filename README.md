@@ -427,7 +427,7 @@ materializing or pushing. Blocked, done, and dropped targets are rejected unless
 `agency sync` first compares portable repository declarations with local
 materializations, then compares every execution declaration with local branch
 and worktree registration, checkout dirtiness, resolved reference commits, claim
-expiry, and pull request and merge state. It reports
+expiry, and pull request state, merge state, and mergeability. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default and `--dry-run` modes are observational.
 
@@ -437,7 +437,7 @@ default and `--dry-run` modes are observational.
 - adopt legacy materializations only when they have an unambiguous portable origin;
 - materialize missing checkouts when no registration, branch, or path conflicts;
 - release an active claim only after its declared expiry has passed;
-- record a single PR whose head and base match the declaration; and
+- record or refresh a single PR whose head and base match the declaration; and
 - mark work done after its authoritative PR is merged and no active claim remains.
 
 Apply never overwrites linked or invalid repositories, repairs remote drift,

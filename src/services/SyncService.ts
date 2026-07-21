@@ -689,7 +689,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							"view",
 							existing.url,
 							"--json",
-							"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit",
+							"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
 						])
 						if (viewed.exitCode === 0) {
 							const detail = parseJson<Record<string, unknown>>(
@@ -729,7 +729,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								"--state",
 								"all",
 								"--json",
-								"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit",
+								"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
 							],
 							{ cwd: repositoryPath },
 						)

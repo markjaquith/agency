@@ -46,14 +46,18 @@ describe("SyncService", () => {
 		await Bun.write(
 			gh,
 			`#!/bin/sh
+case "$*" in
+*mergeable*) ;;
+*) echo "mergeable field was not requested" >&2; exit 2 ;;
+esac
 if [ "$2" = "view" ]; then
 cat <<'JSON'
-{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}
+{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}
 JSON
 exit 0
 fi
 cat <<'JSON'
-[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}]
+[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
 JSON
 `,
 		)
@@ -220,8 +224,83 @@ pr: null
 				state: "merged",
 				draft: false,
 				merged: true,
+				mergeable: true,
 			},
 			claim: { state: "released", sessionId: "session-1" },
+		})
+	})
+
+	test("records a conflicting open PR without changing lifecycle status", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "example",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("example", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"example",
+						undefined,
+						"https://github.com/example/agency/pull/42",
+						root,
+					),
+				),
+			),
+		)
+		await Bun.write(
+			join(root, "bin", "gh"),
+			`#!/bin/sh
+cat <<'JSON'
+{"number":42,"state":"OPEN","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":null,"mergeCommit":null,"mergeable":"CONFLICTING"}
+JSON
+`,
+		)
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(applied.changes).toContainEqual(
+			expect.objectContaining({ kind: "record-pr", target: "task:example" }),
+		)
+		expect(applied.changes.some((change) => change.kind === "mark-done")).toBe(
+			false,
+		)
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect(task.data).toMatchObject({
+			status: "open",
+			pr: { state: "open", merged: false, mergeable: false },
 		})
 	})
 
