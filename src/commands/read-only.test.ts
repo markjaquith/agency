@@ -154,5 +154,8 @@ status: open
 		expect(
 			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
 		).toBe(false)
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(false)
 	})
 })

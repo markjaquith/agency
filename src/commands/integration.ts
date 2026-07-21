@@ -54,8 +54,8 @@ export const help = `
 Usage: agency integration <subcommand>
 
 Inspect or explicitly synchronize managed agent integration files. OpenCode
-launches load the managed file at runtime to provide whole-workbase read
-access without changing Agency write authority.
+launches load the managed instructions and project config at runtime, and expose
+the managed /agency command, without changing Agency write authority.
 
 Subcommands:
   status  Report file state, access diagnostics, and safe remediation

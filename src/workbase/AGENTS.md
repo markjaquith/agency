@@ -71,6 +71,8 @@ a refinement loop, or pausing or handing off completed implementation work):
 `agency integration status` reports `managed`, `drifted`, `customized`, or
 `missing` generated files. Agency keeps these instructions in
 `.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
+It also installs `.opencode/command/agency.md`, which provides safe `/agency`
+workflows for active OpenCode sessions.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
 `agency integration sync` updates only missing or checksum-safe drifted managed
