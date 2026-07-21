@@ -264,47 +264,90 @@ export class ContextService extends Effect.Service<ContextService>()(
 						const entries = (yield* fs.readDirectory(taskRoot))
 							.filter((entry) => entry.isDirectory)
 							.sort((a, b) => a.name.localeCompare(b.name))
-						for (const entry of entries) {
-							const path = join(taskRoot, entry.name, "TASK.md")
-							if (!(yield* fs.exists(path))) continue
-							const content = yield* fs.readFile(path)
-							const parsed = yield* Effect.either(
-								parseFrontmatter(content, path),
-							)
-							if (Either.isLeft(parsed)) continue
-							const decoded = decode(TaskFrontmatter, parsed.right.data)
-							if (!decoded.ok) continue
-							taskDocuments.set(entry.name, {
-								id: entry.name,
-								path,
-								sha256: documentRevision(content),
-								data: decoded.value,
-								body: parsed.right.body,
-							})
-							const phasesPath = join(taskRoot, entry.name, "phases")
-							if (!(yield* fs.isDirectory(phasesPath))) continue
-							for (const phaseEntry of (yield* fs.readDirectory(phasesPath))
-								.filter((item) => item.isDirectory)
-								.sort((a, b) => a.name.localeCompare(b.name))) {
-								const phasePath = join(phasesPath, phaseEntry.name, "PHASE.md")
-								if (!(yield* fs.exists(phasePath))) continue
-								const phaseContent = yield* fs.readFile(phasePath)
-								const phaseParsed = yield* Effect.either(
-									parseFrontmatter(phaseContent, phasePath),
+						const documents = yield* Effect.all(
+							entries.map((entry) =>
+								Effect.gen(function* () {
+									const path = join(taskRoot, entry.name, "TASK.md")
+									let taskDocument: Document<TaskData> | null = null
+									if (yield* fs.exists(path)) {
+										const content = yield* fs.readFile(path)
+										const parsed = yield* Effect.either(
+											parseFrontmatter(content, path),
+										)
+										if (Either.isRight(parsed)) {
+											const decoded = decode(TaskFrontmatter, parsed.right.data)
+											if (decoded.ok) {
+												taskDocument = {
+													id: entry.name,
+													path,
+													sha256: documentRevision(content),
+													data: decoded.value,
+													body: parsed.right.body,
+												}
+											}
+										}
+									}
+
+									const phasesPath = join(taskRoot, entry.name, "phases")
+									if (!(yield* fs.isDirectory(phasesPath))) {
+										return { taskDocument, phaseDocuments: [] }
+									}
+									const phaseEntries = (yield* fs.readDirectory(phasesPath))
+										.filter((item) => item.isDirectory)
+										.sort((a, b) => a.name.localeCompare(b.name))
+									const childDocuments = yield* Effect.all(
+										phaseEntries.map((phaseEntry) =>
+											Effect.gen(function* () {
+												const phasePath = join(
+													phasesPath,
+													phaseEntry.name,
+													"PHASE.md",
+												)
+												if (!(yield* fs.exists(phasePath))) return null
+												const content = yield* fs.readFile(phasePath)
+												const parsed = yield* Effect.either(
+													parseFrontmatter(content, phasePath),
+												)
+												if (Either.isLeft(parsed)) return null
+												const decoded = decode(
+													PhaseFrontmatter,
+													parsed.right.data,
+												)
+												if (!decoded.ok) return null
+												return [
+													`${entry.name}/${phaseEntry.name}`,
+													{
+														id: phaseEntry.name,
+														path: phasePath,
+														sha256: documentRevision(content),
+														data: decoded.value,
+														body: parsed.right.body,
+													},
+												] as const
+											}),
+										),
+										{ concurrency: "unbounded" },
+									)
+									return {
+										taskDocument,
+										phaseDocuments: childDocuments.filter(
+											(document): document is NonNullable<typeof document> =>
+												document !== null,
+										),
+									}
+								}),
+							),
+							{ concurrency: "unbounded" },
+						)
+						for (const document of documents) {
+							if (document.taskDocument) {
+								taskDocuments.set(
+									document.taskDocument.id,
+									document.taskDocument,
 								)
-								if (Either.isLeft(phaseParsed)) continue
-								const phaseDecoded = decode(
-									PhaseFrontmatter,
-									phaseParsed.right.data,
-								)
-								if (!phaseDecoded.ok) continue
-								phaseDocuments.set(`${entry.name}/${phaseEntry.name}`, {
-									id: phaseEntry.name,
-									path: phasePath,
-									sha256: documentRevision(phaseContent),
-									data: phaseDecoded.value,
-									body: phaseParsed.right.body,
-								})
+							}
+							for (const [key, phaseDocument] of document.phaseDocuments) {
+								phaseDocuments.set(key, phaseDocument)
 							}
 						}
 					}
