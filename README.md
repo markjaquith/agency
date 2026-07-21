@@ -95,6 +95,8 @@ orchestration, loads Agency's hidden instructions in addition to any user-owned
 root `AGENTS.md`, advertises the complete workbase as one portable reference,
 and replaces the built-in Plan agent with `agency-plan`. That planning agent can
 update `TASK.md`, `PHASE.md`, and `EPIC.md` while other edits remain disabled.
+When the subagent launches work in another agent, it verifies that the runner
+started and returns without waiting for the task to finish.
 OpenCode discovers the config from task and epic launch directories. Agents
 receive whole-workbase visibility from that reference. Bash and Agency operations
 must still follow the write authority reported by `agency context`.
