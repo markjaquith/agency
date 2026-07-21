@@ -11,6 +11,15 @@ const body = () =>
 		{
 			$schema: "https://opencode.ai/config.json",
 			instructions: [".agency/AGENTS.md"],
+			agent: {
+				agency: {
+					description:
+						"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
+					mode: "subagent",
+					prompt:
+						"You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with `agency context . --json`, follow the managed Agency instructions and reported authority, use Agency commands for durable mutations, and report the resulting state concisely.",
+				},
+			},
 			references: {
 				workbase: {
 					path: "..",

@@ -40,6 +40,11 @@ describe("init command", () => {
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
+		expect(config.agent.agency).toMatchObject({
+			description: expect.stringContaining("Agency workbase orchestration"),
+			mode: "subagent",
+			prompt: expect.stringContaining("agency context . --json"),
+		})
 		expect(config.references).toEqual({
 			workbase: expect.objectContaining({ path: ".." }),
 		})

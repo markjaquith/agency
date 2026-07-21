@@ -1037,12 +1037,31 @@ status: open
 						env: environment,
 					})
 					expect(configProbe.exitCode).toBe(0)
-					expect(JSON.parse(configProbe.stdout.toString()).references).toEqual({
+					const effectiveConfig = JSON.parse(configProbe.stdout.toString())
+					expect(effectiveConfig.agent.agency).toMatchObject({
+						description: expect.stringContaining(
+							"Agency workbase orchestration",
+						),
+						mode: "subagent",
+					})
+					expect(effectiveConfig.references).toEqual({
 						workbase: {
 							path: "..",
 							description:
 								"Complete Agency workbase context; write authority still comes only from agency context",
 						},
+					})
+					const agencyProbe = Bun.spawnSync(
+						["opencode", "debug", "agent", "agency"],
+						{ cwd: contract.cwd, env: environment },
+					)
+					expect(agencyProbe.exitCode).toBe(0)
+					expect(JSON.parse(agencyProbe.stdout.toString())).toMatchObject({
+						name: "agency",
+						description: expect.stringContaining(
+							"Agency workbase orchestration",
+						),
+						mode: "subagent",
 					})
 					for (const document of documents) {
 						const read = Bun.spawnSync(
