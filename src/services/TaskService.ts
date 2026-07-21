@@ -270,6 +270,12 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					})
 				}
 				if (!canTransitionStatus(record.data.status, validStatus)) {
+					if (validStatus === "done") {
+						return yield* new TaskError({
+							message:
+								"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply'",
+						})
+					}
 					return yield* new TaskError({
 						message: `Cannot transition task '${id}' from ${record.data.status} to ${validStatus}; reopen it first`,
 					})

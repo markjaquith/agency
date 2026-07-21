@@ -74,7 +74,7 @@ describe("status command", () => {
 		await runTestEffect(
 			task({
 				subcommand: "status",
-				args: ["finished", "done"],
+				args: ["finished", "dropped"],
 				cwd: root,
 				silent: true,
 			}),

@@ -139,7 +139,7 @@ describe("claim service", () => {
 				),
 			),
 		)
-		expect(finished.data.status).toBe("done")
+		expect(finished.data.status).toBe("working")
 		expect(finished.claim).toMatchObject({
 			state: "finished",
 			finishedAt: "2026-07-17T12:45:00.000Z",

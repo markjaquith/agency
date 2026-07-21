@@ -137,6 +137,8 @@ readable legacy state but cannot be newly assigned.
 - An execution unit has one writable `repo`; plural `repos` are read-only
   `{ repo, ref }` entries and cannot repeat the writable alias.
 - A writable `(repo, branch)` pair belongs to exactly one active execution unit.
+- `done` represents an authoritative merged pull request and is reconciled by
+  `agency sync --apply`; committed or review-ready work remains `working`.
 - Only `done` satisfies dependencies. `dropped` is terminal but blocks dependents.
 - Epic task dependencies live in `EPIC.md`; phase dependencies live in `TASK.md`.
 - IDs remain stable; use `dependsOn`, not numeric directory prefixes, for order.
