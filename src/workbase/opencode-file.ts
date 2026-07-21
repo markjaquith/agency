@@ -21,7 +21,7 @@ const body = () =>
 						"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
 					mode: "subagent",
 					prompt:
-						"You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with `agency context . --json`, follow the managed Agency instructions and reported authority, use Agency commands for durable mutations, and report the resulting state concisely.",
+						"You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with `agency context . --json`, follow the managed Agency instructions and reported authority, use Agency commands for durable mutations, and report the resulting state concisely. When delegated to start or kick off work in another agent, launch it, verify that the runner started successfully, and return without waiting for the task to finish.",
 				},
 				plan: {
 					disable: true,

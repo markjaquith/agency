@@ -172,6 +172,12 @@ describe("IntegrationService", () => {
 		expect(config.agent.agency.permission).toBeUndefined()
 		expect(config.agent.agency.hidden).toBeUndefined()
 		expect(config.agent.agency.steps).toBeUndefined()
+		expect(config.agent.agency.prompt).toContain(
+			"verify that the runner started successfully",
+		)
+		expect(config.agent.agency.prompt).toContain(
+			"return without waiting for the task to finish",
+		)
 		expect(config.references).toEqual({
 			workbase: {
 				path: "..",
