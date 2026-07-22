@@ -92,9 +92,8 @@ checks readiness, materializes worktrees, marks this execution unit working
 without a claim, and launches the runner. Run it again to relaunch unclaimed
 working work. The runner opens without a prompt by default; add `--auto` only
 when the generated context prompt should start autonomous execution.
-OpenCode receives whole-workbase read visibility through runtime-only config and
-permission values; this does not expand the writable checkout reported by
-`agency context`.
+OpenCode receives whole-workbase visibility through the managed project plugin;
+this does not expand the writable checkout reported by `agency context`.
 
 ## Active Agent: Execute Assigned Work
 

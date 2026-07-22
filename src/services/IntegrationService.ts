@@ -97,7 +97,7 @@ const describe = (
 		return state === "managed"
 			? {
 					diagnostic:
-						"Agency's managed OpenCode plugin exposes writable-checkout skills to work-item sessions.",
+						"Agency's managed OpenCode plugin provides whole-workbase access and exposes writable-checkout skills.",
 					remediation: null,
 				}
 			: state === "customized"
@@ -108,9 +108,9 @@ const describe = (
 					}
 				: {
 						diagnostic:
-							"The managed OpenCode checkout-skill plugin needs synchronization.",
+							"The managed OpenCode workbase plugin needs synchronization.",
 						remediation:
-							"Run 'agency integration sync' to expose writable-checkout skills in OpenCode.",
+							"Run 'agency integration sync' to provide workbase access and expose writable-checkout skills in OpenCode.",
 					}
 	}
 	if (name === "opencode-tui") {

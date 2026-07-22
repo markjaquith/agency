@@ -31,7 +31,7 @@ const integrationNames = {
 	agents: "Agent instructions",
 	opencode: "OpenCode config",
 	"opencode-command": "OpenCode /agency command",
-	"opencode-plugin": "OpenCode checkout skills",
+	"opencode-plugin": "OpenCode workbase plugin",
 	"opencode-tui": "OpenCode TUI config",
 	"opencode-tui-plugin": "OpenCode /agency-debug",
 } as const
@@ -91,9 +91,10 @@ export const help = `
 Usage: agency integration <subcommand>
 
 Inspect or explicitly synchronize managed agent integration files. OpenCode
-launches load the managed instructions and project config at runtime, and expose
-the managed /agency command, writable-checkout skills, and /agency-debug TUI
-diagnostic, without changing Agency write authority.
+launches load the managed instructions and project config at runtime. The
+managed plugin provides whole-workbase access and writable-checkout skills, and
+the /agency-debug TUI diagnostic reports integration state without changing
+Agency write authority.
 
 Subcommands:
   status  Report file state, access diagnostics, and safe remediation

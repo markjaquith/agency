@@ -113,7 +113,7 @@ describe("IntegrationService", () => {
 		])
 	})
 
-	test("generates a dynamic repository skill plugin", () => {
+	test("generates a dynamic workbase plugin", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"process.env.AGENCY_WRITABLE_CHECKOUT",
 		)
@@ -128,6 +128,9 @@ describe("IntegrationService", () => {
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			'join(checkout, ".opencode", "skills")',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'config.permission.external_directory = { [join(root, "*")]: "allow" }',
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"config.skills.paths = [...new Set",

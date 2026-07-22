@@ -10,7 +10,7 @@ const body = `import { existsSync } from "node:fs"
 import { join, sep } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 
-const contextCheckout = async (directory: string) => {
+const agencyContext = async (directory: string) => {
   const task = process.env.AGENCY_TASK_ID
   const phase = process.env.AGENCY_PHASE_ID
   const args = task
@@ -21,14 +21,39 @@ const contextCheckout = async (directory: string) => {
   if ((await child.exited) !== 0) return
   const envelope = JSON.parse(output)
   if (envelope.ok !== true) return
-  return envelope.result?.authority?.writable?.checkoutPath as string | undefined
+  return {
+    root: envelope.result?.workbase?.root as string | undefined,
+    checkout: envelope.result?.authority?.writable?.checkoutPath as string | undefined,
+  }
 }
 
 const plugin: Plugin = async ({ directory }) => ({
   config: async (config) => {
-    const checkout =
-      process.env.AGENCY_WRITABLE_CHECKOUT ??
-      (await contextCheckout(directory).catch(() => undefined))
+    const context = await agencyContext(directory).catch(() => undefined)
+    const root = process.env.AGENCY_WORKBASE ?? context?.root
+    const checkout = process.env.AGENCY_WRITABLE_CHECKOUT ?? context?.checkout
+
+    const reference = config.references?.workbase
+    if (
+      root &&
+      typeof reference === "object" &&
+      reference.path === ".." &&
+      reference.description ===
+        "Complete Agency workbase context; write authority still comes only from agency context" &&
+      typeof config.permission !== "string"
+    ) {
+      config.permission ??= {}
+      const external = config.permission.external_directory
+      if (external === undefined) {
+        config.permission.external_directory = { [join(root, "*")]: "allow" }
+      } else if (typeof external === "object") {
+        config.permission.external_directory = {
+          [join(root, "*")]: "allow",
+          ...external,
+        }
+      }
+    }
+
     if (!checkout) return
 
     const paths = [

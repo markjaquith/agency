@@ -54,7 +54,7 @@ workbase/
     opencode.jsonc         # managed @agency subagent, instructions, and reference
     tui.jsonc              # managed TUI plugin registration
     command/agency.md      # managed /agency workflow command
-    plugin/agency-repository-skills.ts # managed checkout skill discovery
+    plugin/agency-repository-skills.ts # managed workbase access and checkout skills
     tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
@@ -111,9 +111,10 @@ whether the server plugin registered writable-checkout skills. It uses a native
 toast and does not submit a prompt to an LLM. When no writable checkout skill
 directory is available, server initialization is reported as indeterminate
 rather than inferred from plugin discovery.
-OpenCode discovers the config from task and epic launch directories. Agents
-receive whole-workbase visibility from that reference. Bash and Agency operations
-must still follow the write authority reported by `agency context`.
+OpenCode discovers the config and plugin from task and epic launch directories.
+The plugin grants whole-workbase access dynamically, while the portable
+reference advertises that context to agents. Bash and Agency operations must
+still follow the write authority reported by `agency context`.
 
 OpenCode also discovers a managed `/agency` command. Use `/agency status` for a
 read-only current-work summary, `/agency start [target]` to begin or resume work
@@ -252,8 +253,9 @@ authoritative writable checkout path.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
 The `opencode` runner remains rooted in its task or epic working directory so
 the workbase `AGENTS.md` and managed OpenCode config are discovered normally.
-Agency's managed OpenCode plugin adds existing checkout-local `.claude/skills`,
-`.agents/skills`, and `.opencode/{skill,skills}` directories to `skills.paths`.
+Agency's managed OpenCode plugin grants the active workbase external-directory
+access and adds existing checkout-local `.claude/skills`, `.agents/skills`, and
+`.opencode/{skill,skills}` directories to `skills.paths`.
 `agency work` supplies the checkout directly; plain OpenCode launches resolve a
 materialized execution-unit checkout through `agency context`. A multi-phase
 task root has no single checkout, so launch from its phase directory when using
