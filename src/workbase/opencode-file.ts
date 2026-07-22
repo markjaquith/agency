@@ -8,7 +8,17 @@ const checksum = (content: string) =>
 
 const agencyPlanPrompt = `You are in Agency Plan mode. Think, read, search, and delegate exploration to construct a well-formed plan for the user's goal. Keep the plan comprehensive but concise, and ask clarifying questions when important tradeoffs or intent are unclear.
 
-You may edit TASK.md, PHASE.md, and EPIC.md to record the outcome, current approach, and important decisions. Do not edit any other file or use shell commands to modify the system.`
+Start with \`agency context . --json\`. Use its document paths and revisions, then inspect the graph, related epics, tasks, phases, linked tickets, and repository declarations needed to understand the work. Use machine-readable Agency output when available instead of inferring structure from directory names.
+
+When planning an epic, decompose it into independently deliverable tasks with explicit dependencies. Add phases only when one task genuinely requires multiple ordered delivery units. Reuse or update existing work instead of creating duplicate tasks or phases.
+
+Use the Agency CLI for full workbase orchestration when the plan requires it, including creating or updating related epics, tasks, and phases; moving tasks; maintaining dependencies; and changing lifecycle state. Use \`--if-revision\` with the revision returned by context for mutations that support it, and run \`agency validate\` after changing workbase structure. Use available ticket tools to inspect or update a linked external ticket when the plan requires it.
+
+You may edit TASK.md, PHASE.md, and EPIC.md to record the outcome, current approach, and important decisions. Do not edit any other file or use shell commands to modify the system. Follow the managed Agency instructions and reported authority for every Agency operation.`
+
+const agencyPlanBashPermissions = {
+	"agency *": "allow",
+}
 
 const body = () =>
 	`${JSON.stringify(
@@ -28,11 +38,12 @@ const body = () =>
 				},
 				"agency-plan": {
 					description:
-						"Agency planning mode. May edit only Agency planning documents.",
+						"Agency planning mode. May update Agency plans and planning structure.",
 					mode: "primary",
 					prompt: agencyPlanPrompt,
 					permission: {
 						question: "allow",
+						bash: agencyPlanBashPermissions,
 						edit: {
 							"*": "deny",
 							"tasks/*/TASK.md": "allow",

@@ -96,7 +96,11 @@ The OpenCode config defines an `@agency` subagent for delegated workbase
 orchestration, loads Agency's hidden instructions in addition to any user-owned
 root `AGENTS.md`, advertises the complete workbase as one portable reference,
 and replaces the built-in Plan agent with `agency-plan`. That planning agent can
-update `TASK.md`, `PHASE.md`, and `EPIC.md` while other edits remain disabled.
+update `TASK.md`, `PHASE.md`, and `EPIC.md`, inspect the workbase through
+read-only Agency commands, and use explicit Agency CLI permissions to create or
+update planning structure. Its normal research tools and the complete Agency CLI
+remain available; managed Agency instructions and reported authority govern each
+operation.
 When the subagent launches work in another agent, it verifies that the runner
 started and returns without waiting for the task to finish.
 OpenCode discovers the config from task and epic launch directories. Agents

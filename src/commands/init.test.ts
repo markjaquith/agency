@@ -49,6 +49,9 @@ describe("init command", () => {
 		expect(config.agent["agency-plan"]).toMatchObject({
 			mode: "primary",
 			permission: {
+				bash: {
+					"agency *": "allow",
+				},
 				edit: {
 					"*": "deny",
 					"tasks/*/TASK.md": "allow",
