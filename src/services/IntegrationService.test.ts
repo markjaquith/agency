@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { createHash } from "node:crypto"
 import { mkdir, stat, symlink, unlink, utimes } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { pathToFileURL } from "node:url"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { managedWorkbaseAgents } from "../workbase/agents-file"
 import {
@@ -14,6 +15,11 @@ import {
 	canUpdateManagedWorkbaseOpencodePlugin,
 	managedWorkbaseOpencodePlugin,
 } from "../workbase/opencode-plugin-file"
+import { managedWorkbaseOpencodeTui } from "../workbase/opencode-tui-file"
+import {
+	canUpdateManagedWorkbaseOpencodeTuiPlugin,
+	managedWorkbaseOpencodeTuiPlugin,
+} from "../workbase/opencode-tui-plugin-file"
 import { IntegrationService } from "./IntegrationService"
 
 const write = async (root: string, path: string, content: string) => {
@@ -56,6 +62,8 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
+			"missing",
+			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
@@ -71,7 +79,15 @@ describe("IntegrationService", () => {
 			".opencode/plugin/agency-repository-skills.ts",
 			managedWorkbaseOpencodePlugin,
 		)
+		await write(root, ".opencode/tui.jsonc", managedWorkbaseOpencodeTui)
+		await write(
+			root,
+			".opencode/tui/agency-debug.ts",
+			managedWorkbaseOpencodeTuiPlugin,
+		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
+			"managed",
+			"managed",
 			"managed",
 			"managed",
 			"managed",
@@ -90,6 +106,8 @@ describe("IntegrationService", () => {
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"customized",
 			"drifted",
+			"missing",
+			"missing",
 			"missing",
 			"missing",
 		])
@@ -114,6 +132,9 @@ describe("IntegrationService", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"config.skills.paths = [...new Set",
 		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			".map((path) => `${path}${sep}.`)",
+		)
 		expect(
 			canUpdateManagedWorkbaseOpencodePlugin(managedWorkbaseOpencodePlugin),
 		).toBe(true)
@@ -122,6 +143,73 @@ describe("IntegrationService", () => {
 				managedWorkbaseOpencodePlugin.replace("config.skills ??= {}", ""),
 			),
 		).toBe(false)
+	})
+
+	test("registers a TUI-only /agency-debug diagnostic", async () => {
+		const config = JSON.parse(managedBody(managedWorkbaseOpencodeTui))
+		expect(config).toEqual({
+			$schema: "https://opencode.ai/tui.json",
+			plugin: ["./tui/agency-debug.ts"],
+		})
+
+		const path = join(root, ".opencode/tui/agency-debug.ts")
+		await write(
+			root,
+			".opencode/tui/agency-debug.ts",
+			managedWorkbaseOpencodeTuiPlugin,
+		)
+		const module = await import(pathToFileURL(path).href)
+		let clientReads = 0
+
+		const runDiagnostic = async (paths: string[], ready = true) => {
+			let command:
+				| {
+						slashName?: string
+						namespace?: string
+						run: () => void
+				  }
+				| undefined
+			let toast: { variant: string; message: string } | undefined
+			await module.default.tui({
+				get client() {
+					clientReads += 1
+					throw new Error("diagnostic must not access the server client")
+				},
+				state: { ready, config: { skills: { paths } } },
+				keymap: {
+					registerLayer: (layer: { commands: (typeof command)[] }) => {
+						command = layer.commands[0]
+					},
+				},
+				ui: {
+					toast: (input: { variant: string; message: string }) => {
+						toast = input
+					},
+				},
+			} as never)
+			expect(command).toMatchObject({
+				namespace: "palette",
+				slashName: "agency-debug",
+			})
+			command?.run()
+			return toast
+		}
+
+		expect(await runDiagnostic(["/checkout/.agents/skills/."])).toMatchObject({
+			variant: "success",
+			message: expect.stringContaining("Server plugin: initialized"),
+		})
+		expect(await runDiagnostic([])).toMatchObject({
+			variant: "warning",
+			message: expect.stringContaining("Server plugin: indeterminate"),
+		})
+		expect(clientReads).toBe(0)
+		expect(managedWorkbaseOpencodeTuiPlugin).not.toContain("chat.message")
+		expect(
+			canUpdateManagedWorkbaseOpencodeTuiPlugin(
+				managedWorkbaseOpencodeTuiPlugin,
+			),
+		).toBe(true)
 	})
 
 	test("generates a positional OpenCode command for Agency workflows", () => {
@@ -289,6 +377,8 @@ describe("IntegrationService", () => {
 			{ name: "opencode", state: "managed", changed: true },
 			{ name: "opencode-command", state: "managed", changed: true },
 			{ name: "opencode-plugin", state: "managed", changed: true },
+			{ name: "opencode-tui", state: "managed", changed: true },
+			{ name: "opencode-tui-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
@@ -307,6 +397,12 @@ describe("IntegrationService", () => {
 				join(root, ".opencode/plugin/agency-repository-skills.ts"),
 			).text(),
 		).toBe(managedWorkbaseOpencodePlugin)
+		expect(await Bun.file(join(root, ".opencode/tui.jsonc")).text()).toBe(
+			managedWorkbaseOpencodeTui,
+		)
+		expect(
+			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
+		).toBe(managedWorkbaseOpencodeTuiPlugin)
 
 		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
@@ -344,6 +440,34 @@ describe("IntegrationService", () => {
 			state: "customized",
 			changed: false,
 		})
+	})
+
+	test("preserves user-owned TUI config and diagnostic plugin", async () => {
+		const customConfig = '{"theme":"custom"}\n'
+		const customPlugin =
+			"export default { id: 'agency.debug', tui: async () => {} }\n"
+		await write(root, ".opencode/tui.json", customConfig)
+		await write(root, ".opencode/tui/agency-debug.ts", customPlugin)
+
+		const result = await sync(root)
+		expect(result.files[4]).toMatchObject({
+			name: "opencode-tui",
+			path: join(root, ".opencode/tui.json"),
+			state: "customized",
+			changed: false,
+			remediation: expect.stringContaining("plugin list"),
+		})
+		expect(result.files[5]).toMatchObject({
+			name: "opencode-tui-plugin",
+			state: "customized",
+			changed: false,
+		})
+		expect(await Bun.file(join(root, ".opencode/tui.json")).text()).toBe(
+			customConfig,
+		)
+		expect(
+			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
+		).toBe(customPlugin)
 	})
 
 	test("preserves user-owned OpenCode commands at either supported path", async () => {

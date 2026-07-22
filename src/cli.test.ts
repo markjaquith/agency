@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { access, mkdir, realpath, symlink } from "node:fs/promises"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
 import { cleanupTempDir, createTempDir } from "./test-utils"
@@ -528,6 +528,8 @@ describe("CLI", () => {
 			{ name: "opencode", state: "managed" },
 			{ name: "opencode-command", state: "managed" },
 			{ name: "opencode-plugin", state: "managed" },
+			{ name: "opencode-tui", state: "managed" },
+			{ name: "opencode-tui-plugin", state: "managed" },
 		])
 
 		const synced = parseJson(
@@ -538,6 +540,8 @@ describe("CLI", () => {
 			{ name: "opencode", state: "managed", changed: false },
 			{ name: "opencode-command", state: "managed", changed: false },
 			{ name: "opencode-plugin", state: "managed", changed: false },
+			{ name: "opencode-tui", state: "managed", changed: false },
+			{ name: "opencode-tui-plugin", state: "managed", changed: false },
 		])
 	})
 
@@ -1097,7 +1101,9 @@ status: open
 					]),
 				)
 				if (launch.skillPath) {
-					expect(effectiveConfig.skills.paths).toContain(launch.skillPath)
+					expect(effectiveConfig.skills.paths).toContain(
+						`${launch.skillPath}${sep}.`,
+					)
 					const skillProbe = Bun.spawnSync(
 						[
 							"opencode",
@@ -1115,6 +1121,12 @@ status: open
 					expect(
 						JSON.parse(skillProbe.stdout.toString()).result.output,
 					).toContain("Repository skill content.")
+				} else {
+					expect(
+						(effectiveConfig.skills?.paths ?? []).filter((path: string) =>
+							path.endsWith(`${sep}.`),
+						),
+					).toEqual([])
 				}
 				if (launch === launches[0]) {
 					expect(effectiveConfig.instructions).toContain(".agency/AGENTS.md")

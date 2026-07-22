@@ -46,6 +46,16 @@ describe("integration command", () => {
 					state: "missing",
 					remediation: expect.stringContaining("integration sync"),
 				},
+				{
+					name: "opencode-tui",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
+				{
+					name: "opencode-tui-plugin",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
 			],
 		})
 	})
@@ -89,7 +99,17 @@ OpenCode /agency command: missing
 OpenCode checkout skills: missing
   Path: .opencode/plugin/agency-repository-skills.ts
   The managed OpenCode checkout-skill plugin needs synchronization.
-  Action: Run 'agency integration sync' to expose writable-checkout skills in OpenCode.`)
+  Action: Run 'agency integration sync' to expose writable-checkout skills in OpenCode.
+
+OpenCode TUI config: missing
+  Path: .opencode/tui.jsonc
+  The managed OpenCode TUI config needs synchronization.
+  Action: Run 'agency integration sync' to register /agency-debug.
+
+OpenCode /agency-debug: missing
+  Path: .opencode/tui/agency-debug.ts
+  The managed OpenCode TUI diagnostic companion needs synchronization.
+  Action: Run 'agency integration sync' to install /agency-debug.`)
 	})
 
 	test("explicitly synchronizes integration files", async () => {
@@ -102,6 +122,8 @@ OpenCode checkout skills: missing
 			{ name: "opencode", state: "managed", changed: true },
 			{ name: "opencode-command", state: "managed", changed: true },
 			{ name: "opencode-plugin", state: "managed", changed: true },
+			{ name: "opencode-tui", state: "managed", changed: true },
+			{ name: "opencode-tui-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
@@ -115,6 +137,12 @@ OpenCode checkout skills: missing
 			await Bun.file(
 				join(root, ".opencode/plugin/agency-repository-skills.ts"),
 			).exists(),
+		).toBe(true)
+		expect(await Bun.file(join(root, ".opencode/tui.jsonc")).exists()).toBe(
+			true,
+		)
+		expect(
+			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).exists(),
 		).toBe(true)
 	})
 
@@ -139,6 +167,14 @@ OpenCode /agency command: synced
 
 OpenCode checkout skills: synced
   Path: .opencode/plugin/agency-repository-skills.ts
-  Agency's managed OpenCode plugin exposes writable-checkout skills to work-item sessions.`)
+  Agency's managed OpenCode plugin exposes writable-checkout skills to work-item sessions.
+
+OpenCode TUI config: synced
+  Path: .opencode/tui.jsonc
+  Agency's managed OpenCode TUI config explicitly loads /agency-debug.
+
+OpenCode /agency-debug: synced
+  Path: .opencode/tui/agency-debug.ts
+  Agency's managed OpenCode TUI diagnostic companion is current.`)
 	})
 })

@@ -71,6 +71,17 @@ describe("init command", () => {
 		).text()
 		expect(plugin).toContain("AGENCY_WRITABLE_CHECKOUT")
 		expect(plugin).toContain("config.skills.paths")
+		const tui = await Bun.file(join(root, ".opencode/tui.jsonc")).text()
+		expect(JSON.parse(tui.slice(tui.indexOf("\n\n") + 2))).toEqual({
+			$schema: "https://opencode.ai/tui.json",
+			plugin: ["./tui/agency-debug.ts"],
+		})
+		const tuiPlugin = await Bun.file(
+			join(root, ".opencode/tui/agency-debug.ts"),
+		).text()
+		expect(tuiPlugin).toContain('slashName: "agency-debug"')
+		expect(tuiPlugin).toContain("api.ui.toast")
+		expect(tuiPlugin).not.toContain("chat.message")
 	})
 
 	test("preserves existing gitignore entries", async () => {
