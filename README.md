@@ -52,6 +52,8 @@ workbase/
     AGENTS.md              # managed Agency instructions
   .opencode/
     opencode.jsonc         # managed @agency subagent, instructions, and reference
+    command/agency.md      # managed /agency workflow command
+    plugin/agency-repository-skills.ts # managed checkout skill discovery
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
@@ -232,12 +234,18 @@ Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
 `AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
+Execution-unit runners also receive `AGENCY_WRITABLE_CHECKOUT` with the
+authoritative writable checkout path.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
-The `opencode` runner discovers the managed project config from its task or epic
-working directory; Agency does not inject OpenCode-specific configuration.
-`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
-`AGENCY_PROMPT` is empty unless `--auto` is set.
+The `opencode` runner remains rooted in its task or epic working directory so
+the workbase `AGENTS.md` and managed OpenCode config are discovered normally.
+Agency's managed OpenCode plugin adds existing checkout-local `.claude/skills`,
+`.agents/skills`, and `.opencode/{skill,skills}` directories to `skills.paths`.
+`agency work` supplies the checkout directly; plain OpenCode launches resolve a
+materialized execution-unit checkout through `agency context`. A multi-phase
+task root has no single checkout, so launch from its phase directory when using
+plain OpenCode. Other checkout-local configuration is not composed.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
 without launching the runner.
 

@@ -41,6 +41,11 @@ describe("integration command", () => {
 					state: "missing",
 					remediation: expect.stringContaining("integration sync"),
 				},
+				{
+					name: "opencode-plugin",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
 			],
 		})
 	})
@@ -79,7 +84,12 @@ OpenCode config: missing
 OpenCode /agency command: missing
   Path: .opencode/command/agency.md
   The managed OpenCode /agency command needs synchronization.
-  Action: Run 'agency integration sync' to install the managed /agency command.`)
+  Action: Run 'agency integration sync' to install the managed /agency command.
+
+OpenCode checkout skills: missing
+  Path: .opencode/plugin/agency-repository-skills.ts
+  The managed OpenCode checkout-skill plugin needs synchronization.
+  Action: Run 'agency integration sync' to expose writable-checkout skills in OpenCode.`)
 	})
 
 	test("explicitly synchronizes integration files", async () => {
@@ -91,6 +101,7 @@ OpenCode /agency command: missing
 			{ name: "agents", state: "managed", changed: true },
 			{ name: "opencode", state: "managed", changed: true },
 			{ name: "opencode-command", state: "managed", changed: true },
+			{ name: "opencode-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
@@ -99,6 +110,11 @@ OpenCode /agency command: missing
 		).toBe(true)
 		expect(
 			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(true)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugin/agency-repository-skills.ts"),
+			).exists(),
 		).toBe(true)
 	})
 
@@ -119,6 +135,10 @@ OpenCode config: synced
 
 OpenCode /agency command: synced
   Path: .opencode/command/agency.md
-  Agency's managed OpenCode /agency command is current.`)
+  Agency's managed OpenCode /agency command is current.
+
+OpenCode checkout skills: synced
+  Path: .opencode/plugin/agency-repository-skills.ts
+  Agency's managed OpenCode plugin exposes writable-checkout skills to work-item sessions.`)
 	})
 })

@@ -10,6 +10,10 @@ import {
 	managedWorkbaseOpencodeCommand,
 } from "../workbase/opencode-command-file"
 import { managedWorkbaseOpencode } from "../workbase/opencode-file"
+import {
+	canUpdateManagedWorkbaseOpencodePlugin,
+	managedWorkbaseOpencodePlugin,
+} from "../workbase/opencode-plugin-file"
 import { IntegrationService } from "./IntegrationService"
 
 const write = async (root: string, path: string, content: string) => {
@@ -51,6 +55,7 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
+			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
@@ -61,7 +66,13 @@ describe("IntegrationService", () => {
 			".opencode/command/agency.md",
 			managedWorkbaseOpencodeCommand,
 		)
+		await write(
+			root,
+			".opencode/plugin/agency-repository-skills.ts",
+			managedWorkbaseOpencodePlugin,
+		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
+			"managed",
 			"managed",
 			"managed",
 			"managed",
@@ -80,7 +91,37 @@ describe("IntegrationService", () => {
 			"customized",
 			"drifted",
 			"missing",
+			"missing",
 		])
+	})
+
+	test("generates a dynamic repository skill plugin", () => {
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"process.env.AGENCY_WRITABLE_CHECKOUT",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'["agency", "context", ".", "--compact", "--json"]',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'join(checkout, ".claude", "skills")',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'join(checkout, ".agents", "skills")',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'join(checkout, ".opencode", "skills")',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"config.skills.paths = [...new Set",
+		)
+		expect(
+			canUpdateManagedWorkbaseOpencodePlugin(managedWorkbaseOpencodePlugin),
+		).toBe(true)
+		expect(
+			canUpdateManagedWorkbaseOpencodePlugin(
+				managedWorkbaseOpencodePlugin.replace("config.skills ??= {}", ""),
+			),
+		).toBe(false)
 	})
 
 	test("generates a positional OpenCode command for Agency workflows", () => {
@@ -247,6 +288,7 @@ describe("IntegrationService", () => {
 			{ name: "agents", state: "customized", changed: false },
 			{ name: "opencode", state: "managed", changed: true },
 			{ name: "opencode-command", state: "managed", changed: true },
+			{ name: "opencode-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
@@ -260,6 +302,11 @@ describe("IntegrationService", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/command/agency.md")).text(),
 		).toBe(managedWorkbaseOpencodeCommand)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugin/agency-repository-skills.ts"),
+			).text(),
+		).toBe(managedWorkbaseOpencodePlugin)
 
 		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
@@ -270,6 +317,33 @@ describe("IntegrationService", () => {
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
 		)
+	})
+
+	test("preserves user-owned checkout-skill plugins at either supported path", async () => {
+		const custom = "export default async () => ({})\n"
+		await write(root, ".opencode/plugins/agency-repository-skills.ts", custom)
+
+		let result = await sync(root)
+		expect(result.files[3]).toMatchObject({
+			name: "opencode-plugin",
+			path: join(root, ".opencode/plugins/agency-repository-skills.ts"),
+			state: "customized",
+			changed: false,
+		})
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugin/agency-repository-skills.ts"),
+			).exists(),
+		).toBe(false)
+
+		await unlink(join(root, ".opencode/plugins/agency-repository-skills.ts"))
+		await write(root, ".opencode/plugin/agency-repository-skills.ts", custom)
+		result = await sync(root)
+		expect(result.files[3]).toMatchObject({
+			path: join(root, ".opencode/plugin/agency-repository-skills.ts"),
+			state: "customized",
+			changed: false,
+		})
 	})
 
 	test("preserves user-owned OpenCode commands at either supported path", async () => {

@@ -12,7 +12,11 @@ interface IntegrationOptions extends BaseCommandOptions {
 interface IntegrationResult {
 	readonly root: string
 	readonly files: readonly {
-		readonly name: "agents" | "opencode" | "opencode-command"
+		readonly name:
+			| "agents"
+			| "opencode"
+			| "opencode-command"
+			| "opencode-plugin"
 		readonly path: string
 		readonly state: string
 		readonly diagnostic: string
@@ -25,6 +29,7 @@ const integrationNames = {
 	agents: "Agent instructions",
 	opencode: "OpenCode config",
 	"opencode-command": "OpenCode /agency command",
+	"opencode-plugin": "OpenCode checkout skills",
 } as const
 
 const logHumanResult = (
@@ -83,7 +88,8 @@ Usage: agency integration <subcommand>
 
 Inspect or explicitly synchronize managed agent integration files. OpenCode
 launches load the managed instructions and project config at runtime, and expose
-the managed /agency command, without changing Agency write authority.
+the managed /agency command and writable-checkout skills, without changing
+Agency write authority.
 
 Subcommands:
   status  Report file state, access diagnostics, and safe remediation
