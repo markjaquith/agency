@@ -164,7 +164,14 @@ describe("IntegrationService", () => {
 		const module = await import(pathToFileURL(path).href)
 		let clientReads = 0
 
-		const runDiagnostic = async (paths: string[], ready = true) => {
+		const runDiagnostic = async (
+			paths: string[],
+			options: {
+				ready?: boolean
+				managedReference?: boolean
+				externalDirectory?: Record<string, string>
+			} = {},
+		) => {
 			let command:
 				| {
 						slashName?: string
@@ -178,7 +185,25 @@ describe("IntegrationService", () => {
 					clientReads += 1
 					throw new Error("diagnostic must not access the server client")
 				},
-				state: { ready, config: { skills: { paths } } },
+				state: {
+					ready: options.ready ?? true,
+					config: {
+						skills: { paths },
+						references: options.managedReference
+							? {
+									workbase: {
+										path: "..",
+										description:
+											"Complete Agency workbase context; write authority still comes only from agency context",
+									},
+								}
+							: undefined,
+						permission: options.externalDirectory
+							? { external_directory: options.externalDirectory }
+							: undefined,
+					},
+					path: { directory: join(root, "tasks", "example") },
+				},
 				keymap: {
 					registerLayer: (layer: { commands: (typeof command)[] }) => {
 						command = layer.commands[0]
@@ -201,6 +226,23 @@ describe("IntegrationService", () => {
 		expect(await runDiagnostic(["/checkout/.agents/skills/."])).toMatchObject({
 			variant: "success",
 			message: expect.stringContaining("Server plugin: initialized"),
+		})
+		expect(
+			await runDiagnostic([], {
+				managedReference: true,
+				externalDirectory: { [join(root, "*")]: "allow" },
+			}),
+		).toMatchObject({
+			variant: "success",
+			message: expect.stringContaining("workbase access registered"),
+		})
+		expect(
+			await runDiagnostic([], {
+				externalDirectory: { [join(root, "*")]: "allow" },
+			}),
+		).toMatchObject({
+			variant: "warning",
+			message: expect.stringContaining("Server plugin: indeterminate"),
 		})
 		expect(await runDiagnostic([])).toMatchObject({
 			variant: "warning",

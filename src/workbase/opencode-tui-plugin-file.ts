@@ -6,9 +6,21 @@ const managedHeaderPattern =
 const checksum = (content: string) =>
 	createHash("sha256").update(content).digest("hex")
 
-const body = `import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
+const body = `import { existsSync } from "node:fs"
+import { dirname, join } from "node:path"
+import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 
 const serverMarker = /[\\\\/]\\.$/
+
+const findWorkbase = (start: string) => {
+  let directory = start
+  while (true) {
+    if (existsSync(join(directory, "agency.json"))) return directory
+    const parent = dirname(directory)
+    if (parent === directory) return
+    directory = parent
+  }
+}
 
 const tui: TuiPlugin = async (api) => {
   api.keymap.registerLayer({
@@ -21,14 +33,35 @@ const tui: TuiPlugin = async (api) => {
         namespace: "palette",
         slashName: "agency-debug",
         run() {
-          const paths = api.state.config.skills?.paths
-          const serverInitialized = paths?.some(
+          const config = api.state.config
+          const checkoutSkillsRegistered = config.skills?.paths?.some(
             (path) => typeof path === "string" && serverMarker.test(path),
           )
+          const reference = config.references?.workbase
+          const managedReference =
+            typeof reference === "object" &&
+            reference.path === ".." &&
+            reference.description ===
+              "Complete Agency workbase context; write authority still comes only from agency context"
+          const workbase = managedReference
+            ? findWorkbase(api.state.path.directory)
+            : undefined
+          const external =
+            typeof config.permission === "object"
+              ? config.permission.external_directory
+              : undefined
+          const workbaseAccessRegistered =
+            workbase !== undefined &&
+            typeof external === "object" &&
+            external[join(workbase, "*")] === "allow"
+          const serverInitialized =
+            checkoutSkillsRegistered || workbaseAccessRegistered
           const message = serverInitialized
-            ? "TUI companion: initialized. Server plugin: initialized; checkout skills registered."
+            ? checkoutSkillsRegistered
+              ? "TUI companion: initialized. Server plugin: initialized; checkout skills registered."
+              : "TUI companion: initialized. Server plugin: initialized; workbase access registered."
             : api.state.ready
-              ? "TUI companion: initialized. Server plugin: indeterminate; no checkout skill marker is present."
+              ? "TUI companion: initialized. Server plugin: indeterminate; no Agency config marker is present."
               : "TUI companion: initialized. Server plugin: indeterminate; server state is not ready."
 
           api.ui.toast({
