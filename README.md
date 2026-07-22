@@ -52,8 +52,10 @@ workbase/
     AGENTS.md              # managed Agency instructions
   .opencode/
     opencode.jsonc         # managed @agency subagent, instructions, and reference
+    tui.jsonc              # managed TUI plugin registration
     command/agency.md      # managed /agency workflow command
     plugin/agency-repository-skills.ts # managed checkout skill discovery
+    tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
@@ -82,9 +84,10 @@ workbase/
 
 Agency keeps discovery and other observational commands read-only. Run
 `agency integration status` to inspect `.agency/AGENTS.md` and
-`.opencode/opencode.jsonc`, and `.opencode/command/agency.md`, then `agency
-integration sync` to create missing files or refresh checksum-safe managed
-files. Customized files are reported but never overwritten. The root
+`.opencode/opencode.jsonc`, `.opencode/tui.jsonc`, and their managed command and
+plugin files, then `agency integration sync` to create missing files or refresh
+checksum-safe managed files. Customized files are reported but never
+overwritten. The root
 `AGENTS.md` is user-owned and is not inspected or modified by Agency.
 
 When upgrading an existing workbase, synchronization moves a checksum-valid
@@ -99,6 +102,11 @@ and replaces the built-in Plan agent with `agency-plan`. That planning agent can
 update `TASK.md`, `PHASE.md`, and `EPIC.md` while other edits remain disabled.
 When the subagent launches work in another agent, it verifies that the runner
 started and returns without waiting for the task to finish.
+The TUI-only `/agency-debug` command reports TUI companion initialization and
+whether the server plugin registered writable-checkout skills. It uses a native
+toast and does not submit a prompt to an LLM. When no writable checkout skill
+directory is available, server initialization is reported as indeterminate
+rather than inferred from plugin discovery.
 OpenCode discovers the config from task and epic launch directories. Agents
 receive whole-workbase visibility from that reference. Bash and Agency operations
 must still follow the write authority reported by `agency context`.

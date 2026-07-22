@@ -7,7 +7,7 @@ const checksum = (content: string) =>
 	createHash("sha256").update(content).digest("hex")
 
 const body = `import { existsSync } from "node:fs"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
 
 const contextCheckout = async (directory: string) => {
@@ -36,7 +36,7 @@ const plugin: Plugin = async ({ directory }) => ({
       join(checkout, ".agents", "skills"),
       join(checkout, ".opencode", "skill"),
       join(checkout, ".opencode", "skills"),
-    ].filter(existsSync)
+    ].filter(existsSync).map((path) => \`\${path}\${sep}.\`)
     if (paths.length === 0) return
 
     config.skills ??= {}

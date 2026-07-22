@@ -72,8 +72,9 @@ a refinement loop, or pausing or handing off completed implementation work):
 `missing` generated files. Agency keeps these instructions in
 `.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
 It also installs `.opencode/command/agency.md`, which provides safe `/agency`
-workflows for active OpenCode sessions, and a managed plugin that exposes skills
-from the authoritative writable checkout without changing the project root.
+workflows for active OpenCode sessions, a managed server plugin that exposes
+skills from the authoritative writable checkout, and an explicitly registered
+TUI companion providing `/agency-debug` without submitting an LLM prompt.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
 `agency integration sync` updates only missing or checksum-safe drifted managed
