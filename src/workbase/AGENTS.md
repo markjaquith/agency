@@ -72,7 +72,8 @@ a refinement loop, or pausing or handing off completed implementation work):
 `missing` generated files. Agency keeps these instructions in
 `.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
 It also installs `.opencode/command/agency.md`, which provides safe `/agency`
-workflows for active OpenCode sessions.
+workflows for active OpenCode sessions, and a managed plugin that exposes skills
+from the authoritative writable checkout without changing the project root.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
 `agency integration sync` updates only missing or checksum-safe drifted managed
@@ -81,6 +82,9 @@ files, and `agency work` reconciles them before launching an agent.
 
 OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
-`agency context`. OpenCode discovers the managed project config from task and
-epic launch directories. No machine-specific path or runtime permission overlay
-is required; agents must follow the authority reported by `agency context`.
+`agency context`. OpenCode remains rooted in the task or epic directory so the
+workbase instructions and config compose normally. The managed plugin resolves
+the writable checkout from launch context or `agency context`, then adds its
+supported skill directories through `skills.paths`; this does not make other
+checkout-local OpenCode configuration authoritative. Agents must follow the
+authority reported by `agency context`.

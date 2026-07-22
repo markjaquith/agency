@@ -239,6 +239,7 @@ export const work = (
 				(target.status !== undefined && target.status !== "open"))
 		let prompt: string
 		let launchPath: string
+		let writablePath: string | undefined
 		if (target.kind === "epic") {
 			prompt = `Work on the epic. Read ${target.path}.`
 			launchPath = dirname(target.path)
@@ -264,6 +265,7 @@ export const work = (
 				? `${action} the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `${action} the task. Read ${workspace.taskPath}.`
 			launchPath = dirname(workspace.taskPath)
+			writablePath = workspace.writablePath
 		}
 
 		const explicitlyRequested = Boolean(
@@ -334,6 +336,7 @@ export const work = (
 			...resolved.environment,
 			...runnerEnvironment(runner, variables),
 		}
+		if (writablePath) environment.AGENCY_WRITABLE_CHECKOUT = writablePath
 		if (runner === "opencode" && managedOpencode) {
 			environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
 				permission: {

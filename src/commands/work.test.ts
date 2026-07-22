@@ -929,6 +929,23 @@ describe("work command", () => {
 		expect(printed.environment.OPENCODE_CONFIG_CONTENT).toBe(workbasePermission)
 	})
 
+	test("provides the writable checkout to plugins without changing the project", async () => {
+		const harness = createHarness()
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: ["opencode"],
+			cwd: taskDirectory,
+		})
+		expect(harness.launchEnvironments[0]?.AGENCY_WRITABLE_CHECKOUT).toBe(
+			"/workbase/tasks/example/code/agency",
+		)
+		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT).toBe(
+			workbasePermission,
+		)
+	})
+
 	test("does not override customized OpenCode access policy", async () => {
 		const harness = createHarness({ opencodeIntegrationState: "customized" })
 		await harness.run({ taskId: "example", opencode: true })

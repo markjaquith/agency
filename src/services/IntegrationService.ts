@@ -14,11 +14,15 @@ import {
 	canUpdateManagedWorkbaseOpencodeCommand,
 	managedWorkbaseOpencodeCommand,
 } from "../workbase/opencode-command-file"
+import {
+	canUpdateManagedWorkbaseOpencodePlugin,
+	managedWorkbaseOpencodePlugin,
+} from "../workbase/opencode-plugin-file"
 
 type IntegrationFileState = "managed" | "customized" | "missing" | "drifted"
 
 interface IntegrationFileStatus {
-	readonly name: "agents" | "opencode" | "opencode-command"
+	readonly name: "agents" | "opencode" | "opencode-command" | "opencode-plugin"
 	readonly path: string
 	readonly state: IntegrationFileState
 	readonly diagnostic: string
@@ -75,6 +79,26 @@ const describe = (
 							"Run 'agency integration sync' to install the managed /agency command.",
 					}
 	}
+	if (name === "opencode-plugin") {
+		return state === "managed"
+			? {
+					diagnostic:
+						"Agency's managed OpenCode plugin exposes writable-checkout skills to work-item sessions.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned OpenCode checkout-skill plugin is present and was preserved.",
+						remediation: null,
+					}
+				: {
+						diagnostic:
+							"The managed OpenCode checkout-skill plugin needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to expose writable-checkout skills in OpenCode.",
+					}
+	}
 
 	return state === "missing" || state === "drifted"
 		? {
@@ -123,6 +147,16 @@ const inspect = (root: string) =>
 		const opencodeJsonPath = join(opencodeDirectory, "opencode.json")
 		const commandPath = join(opencodeDirectory, "command", "agency.md")
 		const pluralCommandPath = join(opencodeDirectory, "commands", "agency.md")
+		const pluginPath = join(
+			opencodeDirectory,
+			"plugin",
+			"agency-repository-skills.ts",
+		)
+		const pluralPluginPath = join(
+			opencodeDirectory,
+			"plugins",
+			"agency-repository-skills.ts",
+		)
 		const files: IntegrationFileStatus[] = []
 
 		files.push(
@@ -183,6 +217,27 @@ const inspect = (root: string) =>
 			files.push(fileStatus("opencode-command", commandPath, "missing"))
 		}
 
+		if ((yield* fs.readSymlinkTarget(pluginPath)) !== null) {
+			files.push(fileStatus("opencode-plugin", pluginPath, "customized"))
+		} else if (
+			(yield* fs.readSymlinkTarget(pluralPluginPath)) !== null ||
+			(yield* fs.exists(pluralPluginPath))
+		) {
+			files.push(fileStatus("opencode-plugin", pluralPluginPath, "customized"))
+		} else if (yield* fs.exists(pluginPath)) {
+			files.push(
+				classify(
+					"opencode-plugin",
+					pluginPath,
+					yield* fs.readFile(pluginPath),
+					managedWorkbaseOpencodePlugin,
+					canUpdateManagedWorkbaseOpencodePlugin,
+				),
+			)
+		} else {
+			files.push(fileStatus("opencode-plugin", pluginPath, "missing"))
+		}
+
 		return files
 	})
 
@@ -232,9 +287,12 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							} else if (status.name === "opencode") {
 								yield* fs.createDirectory(join(root, ".opencode"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencode)
-							} else {
+							} else if (status.name === "opencode-command") {
 								yield* fs.createDirectory(join(root, ".opencode", "command"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencodeCommand)
+							} else {
+								yield* fs.createDirectory(join(root, ".opencode", "plugin"))
+								yield* fs.writeFile(status.path, managedWorkbaseOpencodePlugin)
 							}
 						}
 						files.push({

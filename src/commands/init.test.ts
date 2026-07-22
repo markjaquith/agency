@@ -66,6 +66,11 @@ describe("init command", () => {
 		).text()
 		expect(command).toContain("Workflow: `$1`")
 		expect(command).toContain("Optional target: `$2`")
+		const plugin = await Bun.file(
+			join(root, ".opencode/plugin/agency-repository-skills.ts"),
+		).text()
+		expect(plugin).toContain("AGENCY_WRITABLE_CHECKOUT")
+		expect(plugin).toContain("config.skills.paths")
 	})
 
 	test("preserves existing gitignore entries", async () => {
