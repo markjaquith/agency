@@ -96,10 +96,10 @@ OpenCode /agency command: missing
   The managed OpenCode /agency command needs synchronization.
   Action: Run 'agency integration sync' to install the managed /agency command.
 
-OpenCode checkout skills: missing
+OpenCode workbase plugin: missing
   Path: .opencode/plugin/agency-repository-skills.ts
-  The managed OpenCode checkout-skill plugin needs synchronization.
-  Action: Run 'agency integration sync' to expose writable-checkout skills in OpenCode.
+  The managed OpenCode workbase plugin needs synchronization.
+  Action: Run 'agency integration sync' to provide workbase access and expose writable-checkout skills in OpenCode.
 
 OpenCode TUI config: missing
   Path: .opencode/tui.jsonc
@@ -165,9 +165,9 @@ OpenCode /agency command: synced
   Path: .opencode/command/agency.md
   Agency's managed OpenCode /agency command is current.
 
-OpenCode checkout skills: synced
+OpenCode workbase plugin: synced
   Path: .opencode/plugin/agency-repository-skills.ts
-  Agency's managed OpenCode plugin exposes writable-checkout skills to work-item sessions.
+  Agency's managed OpenCode plugin provides whole-workbase access and exposes writable-checkout skills.
 
 OpenCode TUI config: synced
   Path: .opencode/tui.jsonc

@@ -1059,13 +1059,7 @@ status: open
 				expect(contract.environment.AGENCY_WRITABLE_CHECKOUT).toBe(
 					launch.checkoutPath,
 				)
-				expect(
-					JSON.parse(contract.environment.OPENCODE_CONFIG_CONTENT),
-				).toEqual({
-					permission: {
-						external_directory: { [join(workbaseRoot, "*")]: "allow" },
-					},
-				})
+				expect(contract.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 				const environment = {
 					...process.env,
 					...contract.environment,
@@ -1093,6 +1087,9 @@ status: open
 				})
 				expect(configProbe.exitCode).toBe(0)
 				const effectiveConfig = JSON.parse(configProbe.stdout.toString())
+				expect(effectiveConfig.permission.external_directory).toMatchObject({
+					[join(workbaseRoot, "*")]: "allow",
+				})
 				expect(effectiveConfig.plugin_origins).toEqual(
 					expect.arrayContaining([
 						expect.objectContaining({
@@ -1218,9 +1215,11 @@ status: open
 					env: directEnvironment,
 				})
 				expect(configProbe.exitCode).toBe(0)
-				expect(
-					JSON.parse(configProbe.stdout.toString()).plugin_origins,
-				).toEqual(
+				const effectiveConfig = JSON.parse(configProbe.stdout.toString())
+				expect(effectiveConfig.permission.external_directory).toMatchObject({
+					[join(workbaseRoot, "*")]: "allow",
+				})
+				expect(effectiveConfig.plugin_origins).toEqual(
 					expect.arrayContaining([
 						expect.objectContaining({
 							spec: expect.stringContaining("agency-repository-skills.ts"),
@@ -1247,6 +1246,31 @@ status: open
 					)
 				}
 			}
+			const denied = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
+				cwd: directDirectories[0],
+				env: {
+					...directEnvironment,
+					OPENCODE_CONFIG_CONTENT: JSON.stringify({
+						permission: { external_directory: { "*": "deny" } },
+					}),
+				},
+			})
+			expect(denied.exitCode).toBe(0)
+			const deniedRules = JSON.parse(denied.stdout.toString()).permission
+			const managedRule = deniedRules.findIndex(
+				(rule: any) =>
+					rule.permission === "external_directory" &&
+					rule.pattern === join(workbaseRoot, "*") &&
+					rule.action === "allow",
+			)
+			const userRule = deniedRules.findLastIndex(
+				(rule: any) =>
+					rule.permission === "external_directory" &&
+					rule.pattern === "*" &&
+					rule.action === "deny",
+			)
+			expect(managedRule).toBeGreaterThanOrEqual(0)
+			expect(userRule).toBeGreaterThan(managedRule)
 			for (const cwd of [
 				join(workbaseRoot, "tasks/example"),
 				join(workbaseRoot, "tasks/pipeline/phases/build"),
@@ -1325,7 +1349,7 @@ status: open
 				graph.nodes.find((node: any) => node.id === "task:pipeline").status,
 			).toBe("working")
 		},
-		90_000,
+		180_000,
 	)
 
 	test("envelopes help and version output in machine mode", async () => {

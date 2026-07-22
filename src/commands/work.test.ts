@@ -45,10 +45,6 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 }
 
 const taskDirectory = "/workbase/tasks/example"
-const workbasePermission = JSON.stringify({
-	permission: { external_directory: { "/workbase/*": "allow" } },
-})
-
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
@@ -74,7 +70,6 @@ interface HarnessOptions {
 	readonly guardError?: Error
 	readonly launchError?: Error
 	readonly workTargetIds?: readonly string[]
-	readonly opencodeIntegrationState?: "managed" | "customized"
 	readonly taskStatus?: "open" | "working" | "delegated" | "done" | "dropped"
 	readonly phaseStatus?: "open" | "working" | "delegated" | "done" | "dropped"
 	readonly taskStatuses?: Readonly<
@@ -237,7 +232,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				files: [
 					{
 						name: "opencode",
-						state: options.opencodeIntegrationState ?? "managed",
+						state: "managed",
 					},
 				],
 			})
@@ -490,9 +485,9 @@ describe("work command", () => {
 			cwd: "/workbase/epics/delivery",
 		})
 		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
-		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT).toBe(
-			workbasePermission,
-		)
+		expect(
+			harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT,
+		).toBeUndefined()
 	})
 
 	test("resolves an existing positional path before treating it as a task ID", async () => {
@@ -918,7 +913,7 @@ describe("work command", () => {
 		expect(harness.taskStatuses.example).toBe("done")
 	})
 
-	test("grants managed OpenCode launches absolute workbase access", async () => {
+	test("leaves managed OpenCode access to the project plugin", async () => {
 		const harness = createHarness()
 		const output = await captureLogs(() =>
 			harness.run({ taskId: "example", opencode: true, printCommand: true }),
@@ -926,7 +921,7 @@ describe("work command", () => {
 		const printed = JSON.parse(output.join("\n"))
 
 		expect(printed.environment.OPENCODE_CONFIG).toBeUndefined()
-		expect(printed.environment.OPENCODE_CONFIG_CONTENT).toBe(workbasePermission)
+		expect(printed.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 	})
 
 	test("provides the writable checkout to plugins without changing the project", async () => {
@@ -941,16 +936,6 @@ describe("work command", () => {
 		expect(harness.launchEnvironments[0]?.AGENCY_WRITABLE_CHECKOUT).toBe(
 			"/workbase/tasks/example/code/agency",
 		)
-		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT).toBe(
-			workbasePermission,
-		)
-	})
-
-	test("does not override customized OpenCode access policy", async () => {
-		const harness = createHarness({ opencodeIntegrationState: "customized" })
-		await harness.run({ taskId: "example", opencode: true })
-
-		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
 		expect(
 			harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT,
 		).toBeUndefined()

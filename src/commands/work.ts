@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorktreeService } from "../services/WorktreeService"
 import { FileSystemService } from "../services/FileSystemService"
@@ -122,10 +122,7 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
-		const integration = yield* integrations.sync(root)
-		const managedOpencode = integration.files.some(
-			(file) => file.name === "opencode" && file.state === "managed",
-		)
+		yield* integrations.sync(root)
 		const { config } = yield* workbase.loadConfig(root)
 
 		let target: WorkTarget | null = null
@@ -337,13 +334,6 @@ export const work = (
 			...runnerEnvironment(runner, variables),
 		}
 		if (writablePath) environment.AGENCY_WRITABLE_CHECKOUT = writablePath
-		if (runner === "opencode" && managedOpencode) {
-			environment.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-				permission: {
-					external_directory: { [join(root, "*")]: "allow" },
-				},
-			})
-		}
 		if (options.printCommand) {
 			log(
 				JSON.stringify(
@@ -490,8 +480,8 @@ Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>]
 Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
 ID. Use '.' for the current directory. Outside a workbase, select a registered
-workbase first. OpenCode launches receive whole-workbase read access through the
-runtime environment; Agency context remains authoritative for writes.
+workbase first. Managed OpenCode launches receive whole-workbase access through
+Agency's project plugin; Agency context remains authoritative for writes.
 
 The prepare subcommand resolves and materializes an execution workspace without
 launching an agent or changing lifecycle status. --dry-run reports planned Git
