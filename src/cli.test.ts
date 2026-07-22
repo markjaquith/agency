@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
-import { access, mkdir, realpath } from "node:fs/promises"
+import { access, mkdir, realpath, symlink } from "node:fs/promises"
 import { join } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
@@ -1164,8 +1164,12 @@ status: open
 				}
 			}
 
+			const agencyBin = join(parent, "bin")
+			await mkdir(agencyBin)
+			await symlink(cliPath, join(agencyBin, "agency"))
 			const directEnvironment: Record<string, string | undefined> = {
 				...process.env,
+				PATH: `${agencyBin}:${process.env.PATH ?? ""}`,
 				XDG_CONFIG_HOME: isolatedConfigHome,
 				OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
 			}
