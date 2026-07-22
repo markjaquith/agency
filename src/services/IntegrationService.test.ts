@@ -283,11 +283,14 @@ describe("IntegrationService", () => {
 			},
 			"agency-plan": {
 				description:
-					"Agency planning mode. May edit only Agency planning documents.",
+					"Agency planning mode. May update Agency plans and planning structure.",
 				mode: "primary",
 				prompt: expect.stringContaining("You are in Agency Plan mode"),
 				permission: {
 					question: "allow",
+					bash: {
+						"agency *": "allow",
+					},
 					edit: {
 						"*": "deny",
 						"tasks/*/TASK.md": "allow",
@@ -307,6 +310,23 @@ describe("IntegrationService", () => {
 		expect(config.agent.agency.prompt).toContain(
 			"return without waiting for the task to finish",
 		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"Start with `agency context . --json`",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"decompose it into independently deliverable tasks",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain("Use `--if-revision`")
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"available ticket tools",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"changing lifecycle state",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"Follow the managed Agency instructions and reported authority",
+		)
+		expect(config.agent["agency-plan"].permission.bash["*"]).toBeUndefined()
 		expect(config.references).toEqual({
 			workbase: {
 				path: "..",
