@@ -46,11 +46,15 @@ describe("withWorktreeLocks", () => {
 		)
 		release()
 		await held
+		const lockPath = join(
+			root,
+			`.agency-worktree-${Buffer.from("alpha:task").toString("hex")}.lock`,
+		)
 		expect(conflict).toMatchObject({
 			_tag: "Left",
 			left: {
 				_tag: "WorktreeLockError",
-				message: "Another worktree operation is in progress for 'alpha'",
+				message: `Another worktree operation is in progress for 'alpha'. If no operation is active, remove the stale sentinel with: rm '${lockPath}'`,
 			},
 		})
 	})
