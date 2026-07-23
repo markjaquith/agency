@@ -85,6 +85,12 @@ files or refresh checksum-safe managed files. Customized files are reported but
 never overwritten. The root `AGENTS.md` is user-owned and is not inspected or
 modified by Agency.
 
+The managed `.agency/AGENTS.md` is the complete in-workbase operating contract
+for agents. It is created by `agency init`, updated by checksum-safe integration
+sync, and requires no separately installed Agency skill. CLI help remains the
+source of truth for exact command syntax; this README provides the detailed
+product and protocol reference.
+
 When upgrading an existing workbase, synchronization moves a checksum-valid
 Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
 can load the hidden file. A customized root file, including a symlink, is
@@ -838,14 +844,10 @@ payloads are exported as `@markjaquith/agency/fixtures/protocol/success.json` an
 Success, help, and version output exit `0`; usage and command failures exit `1`.
 There are no error-specific exit statuses. `graph --jsonl` streams versioned
 records on success instead of wrapping them in an envelope; JSONL failures still
-use one error envelope. See `skills/agency/references/contracts.md` for revision,
-selector, projection, retry, and capability details.
-
-## Agent Skill
-
-`skills/agency/SKILL.md` contains an agent-oriented operating guide for Agency.
-Install or link that directory into your agent's skill location when you want
-Agency workflows to be discovered automatically.
+use one error envelope. Revision and concurrency behavior is documented under
+Tasks, Phases, and Claims; selector behavior under Noninteractive Use; projection
+behavior under Target Context and Workbase Graph; and retry behavior in the
+machine error contract above.
 
 ## Development
 

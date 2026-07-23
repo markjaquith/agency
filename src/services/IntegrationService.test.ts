@@ -75,9 +75,21 @@ describe("IntegrationService", () => {
 		const body = managedBody(managedWorkbaseAgents)
 
 		expect(body).toContain("agency context . --json")
+		expect(body).toContain("agency next --json")
+		expect(body).toContain("agency <command> --help")
 		expect(body).toContain("authority.writable.checkoutPath")
-		expect(body).toContain("`agency work` is the local launch flow")
-		expect(body).toContain("External orchestrators claim before launching")
+		expect(body).toContain("Only `done` satisfies a dependency")
+		expect(body).toContain("Require explicit user intent")
+		expect(body).toContain("changing repository")
+		expect(body).toMatch(/archiving, restoring,\s+dropping, or/)
+		expect(body).toContain("Never invent entity IDs")
+		expect(body).toContain("Preserve parent backlinks")
+		expect(body).toContain("dirty-worktree, active-claim, revision")
+		expect(body).toContain("`agency work` is the human launch flow")
+		expect(body).toContain("marks execution work")
+		expect(body).toContain("without creating a claim")
+		expect(body).toContain("formatting, type checks, build, dead-code checks")
+		expect(body).toContain("Review and commit the diff")
 		expect(body).toContain("Run `agency validate`")
 		expect(body).toContain("only with explicit user intent")
 		expect(body).toContain("An execution unit is `working`")
@@ -92,6 +104,8 @@ describe("IntegrationService", () => {
 		expect(body).toContain("PR state, current head, diff summary")
 		expect(body).toContain("Run `agency validate` before reporting completion")
 		expect(body).toContain("agency integration status")
+		expect(body).not.toContain("SKILL.md")
+		expect(body).not.toContain("~/.agents")
 	})
 
 	test("grants OpenCode access to the complete workbase", () => {
@@ -185,6 +199,31 @@ describe("IntegrationService", () => {
 		)
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
+		)
+	})
+
+	test("upgrades prior managed instructions without changing owner instructions", async () => {
+		const ownerInstructions = "# User-owned workbase instructions\n"
+		const priorInstructions = managed(
+			"<!-- agency-managed: sha256=",
+			"# Previous Agency instructions\n",
+			" -->",
+		)
+		await write(root, "AGENTS.md", ownerInstructions)
+		await write(root, ".agency/AGENTS.md", priorInstructions)
+
+		const result = await sync(root)
+
+		expect(result.files[0]).toMatchObject({
+			name: "agents",
+			state: "managed",
+			changed: true,
+		})
+		expect(await Bun.file(join(root, ".agency/AGENTS.md")).text()).toBe(
+			managedWorkbaseAgents,
+		)
+		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
+			ownerInstructions,
 		)
 	})
 
