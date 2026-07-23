@@ -45,7 +45,6 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 }
 
 const taskDirectory = "/workbase/tasks/example"
-
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
@@ -71,7 +70,6 @@ interface HarnessOptions {
 	readonly guardError?: Error
 	readonly launchError?: Error
 	readonly workTargetIds?: readonly string[]
-	readonly opencodeIntegrationState?: "managed" | "customized"
 	readonly taskStatus?: "open" | "working" | "delegated" | "done" | "dropped"
 	readonly phaseStatus?: "open" | "working" | "delegated" | "done" | "dropped"
 	readonly taskStatuses?: Readonly<
@@ -234,7 +232,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				files: [
 					{
 						name: "opencode",
-						state: options.opencodeIntegrationState ?? "managed",
+						state: "managed",
 					},
 				],
 			})
@@ -915,7 +913,7 @@ describe("work command", () => {
 		expect(harness.taskStatuses.example).toBe("done")
 	})
 
-	test("does not inject runtime OpenCode configuration", async () => {
+	test("leaves managed OpenCode access to the project plugin", async () => {
 		const harness = createHarness()
 		const output = await captureLogs(() =>
 			harness.run({ taskId: "example", opencode: true, printCommand: true }),
@@ -926,11 +924,18 @@ describe("work command", () => {
 		expect(printed.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 	})
 
-	test("does not override customized OpenCode access policy", async () => {
-		const harness = createHarness({ opencodeIntegrationState: "customized" })
+	test("provides the writable checkout to plugins without changing the project", async () => {
+		const harness = createHarness()
 		await harness.run({ taskId: "example", opencode: true })
 
-		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: ["opencode"],
+			cwd: taskDirectory,
+		})
+		expect(harness.launchEnvironments[0]?.AGENCY_WRITABLE_CHECKOUT).toBe(
+			"/workbase/tasks/example/code/agency",
+		)
 		expect(
 			harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT,
 		).toBeUndefined()

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
-import { access, mkdir, realpath } from "node:fs/promises"
-import { join } from "node:path"
+import { access, mkdir, realpath, symlink } from "node:fs/promises"
+import { join, sep } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
 import { cleanupTempDir, createTempDir } from "./test-utils"
@@ -244,6 +244,10 @@ describe("CLI", () => {
 			),
 		)
 		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
+		expect(
+			parseJson(await runCli(["task", "show", "claimed", "--json"], root)).data
+				.status,
+		).toBe("working")
 	})
 
 	test("routes graph mutations through structured output", async () => {
@@ -416,7 +420,7 @@ describe("CLI", () => {
 	})
 
 	test("routes command help and global options on either side of commands", async () => {
-		for (const [command, usage] of [
+		const commands = [
 			["init", "Usage: agency init"],
 			["workbase", "Usage: agency workbase"],
 			["integration", "Usage: agency integration"],
@@ -433,11 +437,19 @@ describe("CLI", () => {
 			["context", "Usage: agency context"],
 			["graph", "Usage: agency graph"],
 			["next", "Usage: agency next"],
-		] as const) {
-			const result = await runCli([command, "--help"])
-			expect(result.exitCode).toBe(0)
-			expect(result.stdout).toContain(usage)
-			expect(result.stderr).toBe("")
+		] as const
+		for (let offset = 0; offset < commands.length; offset += 4) {
+			const results = await Promise.all(
+				commands.slice(offset, offset + 4).map(async ([command, usage]) => ({
+					usage,
+					result: await runCli([command, "--help"]),
+				})),
+			)
+			for (const { result, usage } of results) {
+				expect(result.exitCode).toBe(0)
+				expect(result.stdout).toContain(usage)
+				expect(result.stderr).toBe("")
+			}
 		}
 
 		const helpBefore = await runCli(["--help", "task"])
@@ -468,7 +480,7 @@ describe("CLI", () => {
 			)
 		}
 		parseJson(
-			await runCli(["task", "status", "finished", "done", "--json"], root),
+			await runCli(["task", "status", "finished", "dropped", "--json"], root),
 		)
 
 		const human = await runCli(["next"], root)
@@ -482,9 +494,9 @@ describe("CLI", () => {
 		expect(result.excluded).toMatchObject([
 			{
 				key: "task/finished",
-				status: "done",
+				status: "dropped",
 				terminal: true,
-				blockers: [{ kind: "status", reason: "Task status is done" }],
+				blockers: [{ kind: "status", reason: "Task status is dropped" }],
 			},
 		])
 
@@ -496,8 +508,8 @@ describe("CLI", () => {
 			error: {
 				code: "EXECUTION_BLOCKED",
 				fields: {
-					status: "done",
-					blockers: [{ kind: "status", reason: "Task status is done" }],
+					status: "dropped",
+					blockers: [{ kind: "status", reason: "Task status is dropped" }],
 				},
 			},
 		})
@@ -514,6 +526,10 @@ describe("CLI", () => {
 		expect(before.files).toMatchObject([
 			{ name: "agents", state: "managed" },
 			{ name: "opencode", state: "managed" },
+			{ name: "opencode-command", state: "managed" },
+			{ name: "opencode-plugin", state: "managed" },
+			{ name: "opencode-tui", state: "managed" },
+			{ name: "opencode-tui-plugin", state: "managed" },
 		])
 
 		const synced = parseJson(
@@ -522,6 +538,10 @@ describe("CLI", () => {
 		expect(synced.files).toMatchObject([
 			{ name: "agents", state: "managed", changed: false },
 			{ name: "opencode", state: "managed", changed: false },
+			{ name: "opencode-command", state: "managed", changed: false },
+			{ name: "opencode-plugin", state: "managed", changed: false },
+			{ name: "opencode-tui", state: "managed", changed: false },
+			{ name: "opencode-tui-plugin", state: "managed", changed: false },
 		])
 	})
 
@@ -836,7 +856,9 @@ status: open
 		).toBe("example\n")
 	})
 
-	test.skipIf(Bun.which("opencode") === null)(
+	test.skipIf(
+		Bun.which("opencode") === null || process.env.AGENCY_TEST_OPENCODE !== "1",
+	)(
 		"provides effective whole-workbase OpenCode access from every launch topology",
 		async () => {
 			const parent = await createTempDir()
@@ -848,10 +870,17 @@ status: open
 					.exitCode,
 			).toBe(0)
 			await Bun.write(join(source, "README.md"), "example\n")
+			await mkdir(join(source, ".claude/skills/repository-skill"), {
+				recursive: true,
+			})
+			await Bun.write(
+				join(source, ".claude/skills/repository-skill/SKILL.md"),
+				"---\nname: repository-skill\ndescription: Repository discovery test.\n---\n\nRepository skill content.\n",
+			)
 			for (const args of [
 				["config", "user.email", "test@example.com"],
 				["config", "user.name", "Test"],
-				["add", "README.md"],
+				["add", "."],
 				["-c", "commit.gpgsign=false", "commit", "-m", "initial"],
 			]) {
 				expect(Bun.spawnSync(["git", "-C", source, ...args]).exitCode).toBe(0)
@@ -985,18 +1014,35 @@ status: open
 				{
 					args: ["--task", "example"],
 					cwd: join(workbaseRoot, "tasks/example"),
+					checkoutPath: join(workbaseRoot, "tasks/example/code/agency"),
+					skillPath: join(
+						workbaseRoot,
+						"tasks/example/code/agency/.claude/skills",
+					),
 				},
 				{
 					args: ["--task", "pipeline", "--phase", "build"],
 					cwd: join(workbaseRoot, "tasks/pipeline"),
+					checkoutPath: join(
+						workbaseRoot,
+						"tasks/pipeline/phases/build/code/agency",
+					),
+					skillPath: join(
+						workbaseRoot,
+						"tasks/pipeline/phases/build/code/agency/.claude/skills",
+					),
 				},
 				{
 					args: ["--epic", "delivery"],
 					cwd: join(workbaseRoot, "epics/delivery"),
+					checkoutPath: undefined,
+					skillPath: undefined,
 				},
 				{
 					args: ["--task", "pipeline"],
 					cwd: join(workbaseRoot, "tasks/pipeline"),
+					checkoutPath: undefined,
+					skillPath: undefined,
 				},
 			]
 			for (const launch of launches) {
@@ -1008,7 +1054,11 @@ status: open
 				expect(printed.stderr).toBe("")
 				const contract = JSON.parse(printed.stdout)
 				expect(contract.cwd).toBe(launch.cwd)
+				expect(contract.argv).toEqual(["opencode"])
 				expect(contract.environment.OPENCODE_CONFIG).toBeUndefined()
+				expect(contract.environment.AGENCY_WRITABLE_CHECKOUT).toBe(
+					launch.checkoutPath,
+				)
 				expect(contract.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 				const environment = {
 					...process.env,
@@ -1031,18 +1081,76 @@ status: open
 						}),
 					]),
 				)
+				const configProbe = Bun.spawnSync(["opencode", "debug", "config"], {
+					cwd: contract.cwd,
+					env: environment,
+				})
+				expect(configProbe.exitCode).toBe(0)
+				const effectiveConfig = JSON.parse(configProbe.stdout.toString())
+				expect(effectiveConfig.permission.external_directory).toMatchObject({
+					[join(workbaseRoot, "*")]: "allow",
+				})
+				expect(effectiveConfig.plugin_origins).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							spec: expect.stringContaining("agency-repository-skills.ts"),
+						}),
+					]),
+				)
+				if (launch.skillPath) {
+					expect(effectiveConfig.skills.paths).toContain(
+						`${launch.skillPath}${sep}.`,
+					)
+					const skillProbe = Bun.spawnSync(
+						[
+							"opencode",
+							"debug",
+							"agent",
+							"build",
+							"--tool",
+							"skill",
+							"--params",
+							JSON.stringify({ name: "repository-skill" }),
+						],
+						{ cwd: contract.cwd, env: environment },
+					)
+					expect(skillProbe.exitCode).toBe(0)
+					expect(
+						JSON.parse(skillProbe.stdout.toString()).result.output,
+					).toContain("Repository skill content.")
+				} else {
+					expect(
+						(effectiveConfig.skills?.paths ?? []).filter((path: string) =>
+							path.endsWith(`${sep}.`),
+						),
+					).toEqual([])
+				}
 				if (launch === launches[0]) {
-					const configProbe = Bun.spawnSync(["opencode", "debug", "config"], {
-						cwd: contract.cwd,
-						env: environment,
+					expect(effectiveConfig.instructions).toContain(".agency/AGENTS.md")
+					expect(effectiveConfig.agent.agency).toMatchObject({
+						description: expect.stringContaining(
+							"Agency workbase orchestration",
+						),
+						mode: "subagent",
 					})
-					expect(configProbe.exitCode).toBe(0)
-					expect(JSON.parse(configProbe.stdout.toString()).references).toEqual({
+					expect(effectiveConfig.references).toEqual({
 						workbase: {
 							path: "..",
 							description:
 								"Complete Agency workbase context; write authority still comes only from agency context",
 						},
+					})
+					const agencyProbe = Bun.spawnSync(
+						["opencode", "debug", "agent", "agency"],
+						{ cwd: contract.cwd, env: environment },
+					)
+					expect(agencyProbe.exitCode).toBe(0)
+					expect(JSON.parse(agencyProbe.stdout.toString())).toMatchObject({
+						name: "agency",
+						description: expect.stringContaining(
+							"Agency workbase orchestration",
+						),
+						mode: "subagent",
 					})
 					for (const document of documents) {
 						const read = Bun.spawnSync(
@@ -1065,19 +1173,28 @@ status: open
 				}
 			}
 
+			const agencyBin = join(parent, "bin")
+			await mkdir(agencyBin)
+			await symlink(cliPath, join(agencyBin, "agency"))
 			const directEnvironment: Record<string, string | undefined> = {
 				...process.env,
+				PATH: `${agencyBin}:${process.env.PATH ?? ""}`,
 				XDG_CONFIG_HOME: isolatedConfigHome,
 				OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
 			}
 			delete directEnvironment.OPENCODE_CONFIG
 			delete directEnvironment.OPENCODE_CONFIG_CONTENT
 			delete directEnvironment.AGENCY_WORKBASE
-			for (const cwd of [
+			delete directEnvironment.AGENCY_TASK_ID
+			delete directEnvironment.AGENCY_PHASE_ID
+			delete directEnvironment.AGENCY_WRITABLE_CHECKOUT
+			const directDirectories = [
 				join(workbaseRoot, "tasks/example"),
 				join(workbaseRoot, "tasks/pipeline"),
+				join(workbaseRoot, "tasks/pipeline/phases/build"),
 				join(workbaseRoot, "epics/delivery"),
-			]) {
+			]
+			for (const cwd of directDirectories) {
 				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
 					cwd,
 					env: directEnvironment,
@@ -1090,6 +1207,22 @@ status: open
 							permission: "external_directory",
 							pattern: join(workbaseRoot, "*"),
 							action: "allow",
+						}),
+					]),
+				)
+				const configProbe = Bun.spawnSync(["opencode", "debug", "config"], {
+					cwd,
+					env: directEnvironment,
+				})
+				expect(configProbe.exitCode).toBe(0)
+				const effectiveConfig = JSON.parse(configProbe.stdout.toString())
+				expect(effectiveConfig.permission.external_directory).toMatchObject({
+					[join(workbaseRoot, "*")]: "allow",
+				})
+				expect(effectiveConfig.plugin_origins).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							spec: expect.stringContaining("agency-repository-skills.ts"),
 						}),
 					]),
 				)
@@ -1113,20 +1246,67 @@ status: open
 					)
 				}
 			}
+			const denied = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
+				cwd: directDirectories[0],
+				env: {
+					...directEnvironment,
+					OPENCODE_CONFIG_CONTENT: JSON.stringify({
+						permission: { external_directory: { "*": "deny" } },
+					}),
+				},
+			})
+			expect(denied.exitCode).toBe(0)
+			const deniedRules = JSON.parse(denied.stdout.toString()).permission
+			const managedRule = deniedRules.findIndex(
+				(rule: any) =>
+					rule.permission === "external_directory" &&
+					rule.pattern === join(workbaseRoot, "*") &&
+					rule.action === "allow",
+			)
+			const userRule = deniedRules.findLastIndex(
+				(rule: any) =>
+					rule.permission === "external_directory" &&
+					rule.pattern === "*" &&
+					rule.action === "deny",
+			)
+			expect(managedRule).toBeGreaterThanOrEqual(0)
+			expect(userRule).toBeGreaterThan(managedRule)
+			for (const cwd of [
+				join(workbaseRoot, "tasks/example"),
+				join(workbaseRoot, "tasks/pipeline/phases/build"),
+			]) {
+				const manualSkill = Bun.spawnSync(
+					[
+						"opencode",
+						"debug",
+						"agent",
+						"build",
+						"--tool",
+						"skill",
+						"--params",
+						JSON.stringify({ name: "repository-skill" }),
+					],
+					{ cwd, env: directEnvironment },
+				)
+				expect(manualSkill.exitCode, manualSkill.stderr.toString()).toBe(0)
+				expect(
+					JSON.parse(manualSkill.stdout.toString()).result.output,
+				).toContain("Repository skill content.")
+			}
 
 			parseJson(
-				await runCli(["task", "status", "example", "done", "--json"], root),
+				await runCli(["task", "status", "example", "dropped", "--json"], root),
 			)
 			const blocked = await runCli(
 				["work", "--task", "example", "--runner", "noop"],
 				root,
 			)
 			expect(blocked.exitCode).toBe(1)
-			expect(blocked.stderr).toContain("Task status is done")
+			expect(blocked.stderr).toContain("Task status is dropped")
 			expect(
 				parseJson(await runCli(["task", "show", "example", "--json"], root))
 					.data.status,
-			).toBe("done")
+			).toBe("dropped")
 
 			const resumedTask = await runCli(
 				["work", "--task", "example", "--runner", "noop", "--force"],
@@ -1134,7 +1314,7 @@ status: open
 			)
 			expect(resumedTask).toMatchObject({ exitCode: 0, stderr: "" })
 			expect(resumedTask.stdout).toContain(
-				"Reopened task/example from done as working",
+				"Reopened task/example from dropped as working",
 			)
 			expect(
 				parseJson(await runCli(["task", "show", "example", "--json"], root))
@@ -1169,7 +1349,7 @@ status: open
 				graph.nodes.find((node: any) => node.id === "task:pipeline").status,
 			).toBe("working")
 		},
-		90_000,
+		180_000,
 	)
 
 	test("envelopes help and version output in machine mode", async () => {

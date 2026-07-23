@@ -119,13 +119,20 @@ export const recordFromGitHubUrl = (url: string): PullRequestRecord => {
 export const recordFromGitHubJson = (value: Record<string, unknown>) => {
 	const url = typeof value.url === "string" ? value.url : ""
 	const record = recordFromGitHubUrl(url)
-	const state = String(value.state ?? "OPEN").toLowerCase()
+	const githubState = String(value.state ?? "OPEN").toLowerCase()
+	const merged = githubState === "merged" || value.mergedAt != null
+	const mergeable = String(value.mergeable ?? "UNKNOWN").toLowerCase()
 	return {
 		...record,
-		state:
-			state === "merged" ? "merged" : state === "closed" ? "closed" : "open",
+		state: merged ? "merged" : githubState === "closed" ? "closed" : "open",
 		draft: value.isDraft === true,
-		merged: state === "merged" || value.mergedAt != null,
+		merged,
+		mergeable:
+			mergeable === "mergeable"
+				? true
+				: mergeable === "conflicting"
+					? false
+					: null,
 	} satisfies PullRequestRecord
 }
 

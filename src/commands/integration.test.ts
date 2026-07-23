@@ -36,6 +36,26 @@ describe("integration command", () => {
 					diagnostic: expect.stringContaining("cannot load"),
 					remediation: expect.stringContaining("integration sync"),
 				},
+				{
+					name: "opencode-command",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
+				{
+					name: "opencode-plugin",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
+				{
+					name: "opencode-tui",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
+				{
+					name: "opencode-tui-plugin",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
 			],
 		})
 	})
@@ -54,6 +74,44 @@ describe("integration command", () => {
 		expect(logs.join("\n")).toContain("global config")
 	})
 
+	test("formats integration status for people", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(integration({ subcommand: "status", cwd: root })),
+		)
+
+		expect(logs.join("\n")).toBe(`Integration status: ${root}
+
+Agent instructions: missing
+  Path: .agency/AGENTS.md
+  Managed workbase instructions need synchronization.
+  Action: Run 'agency integration sync' to restore managed instructions.
+
+OpenCode config: missing
+  Path: .opencode/opencode.jsonc
+  Agency OpenCode launches cannot load current Agency instructions or whole-workbase access.
+  Action: Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.
+
+OpenCode /agency command: missing
+  Path: .opencode/command/agency.md
+  The managed OpenCode /agency command needs synchronization.
+  Action: Run 'agency integration sync' to install the managed /agency command.
+
+OpenCode workbase plugin: missing
+  Path: .opencode/plugin/agency-repository-skills.ts
+  The managed OpenCode workbase plugin needs synchronization.
+  Action: Run 'agency integration sync' to provide workbase access and expose writable-checkout skills in OpenCode.
+
+OpenCode TUI config: missing
+  Path: .opencode/tui.jsonc
+  The managed OpenCode TUI config needs synchronization.
+  Action: Run 'agency integration sync' to register /agency-debug.
+
+OpenCode /agency-debug: missing
+  Path: .opencode/tui/agency-debug.ts
+  The managed OpenCode TUI diagnostic companion needs synchronization.
+  Action: Run 'agency integration sync' to install /agency-debug.`)
+	})
+
 	test("explicitly synchronizes integration files", async () => {
 		const logs = await captureLogs(() =>
 			runTestEffect(integration({ subcommand: "sync", cwd: root, json: true })),
@@ -62,11 +120,61 @@ describe("integration command", () => {
 		expect(JSON.parse(logs[0]!).files).toMatchObject([
 			{ name: "agents", state: "managed", changed: true },
 			{ name: "opencode", state: "managed", changed: true },
+			{ name: "opencode-command", state: "managed", changed: true },
+			{ name: "opencode-plugin", state: "managed", changed: true },
+			{ name: "opencode-tui", state: "managed", changed: true },
+			{ name: "opencode-tui-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
 		expect(
 			await Bun.file(join(root, ".opencode/opencode.jsonc")).exists(),
 		).toBe(true)
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(true)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugin/agency-repository-skills.ts"),
+			).exists(),
+		).toBe(true)
+		expect(await Bun.file(join(root, ".opencode/tui.jsonc")).exists()).toBe(
+			true,
+		)
+		expect(
+			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).exists(),
+		).toBe(true)
+	})
+
+	test("formats integration sync results for people", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(integration({ subcommand: "sync", cwd: root })),
+		)
+
+		expect(logs.join("\n")).toBe(`Integration sync: ${root}
+
+Agent instructions: synced
+  Path: .agency/AGENTS.md
+  Managed workbase instructions are current.
+
+OpenCode config: synced
+  Path: .opencode/opencode.jsonc
+  Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.
+
+OpenCode /agency command: synced
+  Path: .opencode/command/agency.md
+  Agency's managed OpenCode /agency command is current.
+
+OpenCode workbase plugin: synced
+  Path: .opencode/plugin/agency-repository-skills.ts
+  Agency's managed OpenCode plugin provides whole-workbase access and exposes writable-checkout skills.
+
+OpenCode TUI config: synced
+  Path: .opencode/tui.jsonc
+  Agency's managed OpenCode TUI config explicitly loads /agency-debug.
+
+OpenCode /agency-debug: synced
+  Path: .opencode/tui/agency-debug.ts
+  Agency's managed OpenCode TUI diagnostic companion is current.`)
 	})
 })

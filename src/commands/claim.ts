@@ -93,5 +93,6 @@ Release an execution unit owned by the session.
 export const finishHelp = `
 Usage: agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped>
 
-Finish an execution unit owned by the session.
+Finish a claim owned by the session. A done claim outcome leaves unmerged work
+working; agency sync --apply marks the execution unit done after merge.
 `

@@ -10,11 +10,33 @@ import {
 	canUpdateManagedWorkbaseOpencode,
 	managedWorkbaseOpencode,
 } from "../workbase/opencode-file"
+import {
+	canUpdateManagedWorkbaseOpencodeCommand,
+	managedWorkbaseOpencodeCommand,
+} from "../workbase/opencode-command-file"
+import {
+	canUpdateManagedWorkbaseOpencodePlugin,
+	managedWorkbaseOpencodePlugin,
+} from "../workbase/opencode-plugin-file"
+import {
+	canUpdateManagedWorkbaseOpencodeTui,
+	managedWorkbaseOpencodeTui,
+} from "../workbase/opencode-tui-file"
+import {
+	canUpdateManagedWorkbaseOpencodeTuiPlugin,
+	managedWorkbaseOpencodeTuiPlugin,
+} from "../workbase/opencode-tui-plugin-file"
 
 type IntegrationFileState = "managed" | "customized" | "missing" | "drifted"
 
 interface IntegrationFileStatus {
-	readonly name: "agents" | "opencode"
+	readonly name:
+		| "agents"
+		| "opencode"
+		| "opencode-command"
+		| "opencode-plugin"
+		| "opencode-tui"
+		| "opencode-tui-plugin"
 	readonly path: string
 	readonly state: IntegrationFileState
 	readonly diagnostic: string
@@ -51,6 +73,86 @@ const describe = (
 			remediation:
 				"Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.",
 		}
+	}
+	if (name === "opencode-command") {
+		return state === "managed"
+			? {
+					diagnostic: "Agency's managed OpenCode /agency command is current.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned OpenCode /agency command is present and was preserved.",
+						remediation: null,
+					}
+				: {
+						diagnostic:
+							"The managed OpenCode /agency command needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to install the managed /agency command.",
+					}
+	}
+	if (name === "opencode-plugin") {
+		return state === "managed"
+			? {
+					diagnostic:
+						"Agency's managed OpenCode plugin provides whole-workbase access and exposes writable-checkout skills.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned OpenCode checkout-skill plugin is present and was preserved.",
+						remediation: null,
+					}
+				: {
+						diagnostic:
+							"The managed OpenCode workbase plugin needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to provide workbase access and expose writable-checkout skills in OpenCode.",
+					}
+	}
+	if (name === "opencode-tui") {
+		return state === "managed"
+			? {
+					diagnostic:
+						"Agency's managed OpenCode TUI config explicitly loads /agency-debug.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned OpenCode TUI config is present and was preserved.",
+						remediation:
+							"Add './tui/agency-debug.ts' to its plugin list to enable /agency-debug.",
+					}
+				: {
+						diagnostic:
+							"The managed OpenCode TUI config needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to register /agency-debug.",
+					}
+	}
+	if (name === "opencode-tui-plugin") {
+		return state === "managed"
+			? {
+					diagnostic:
+						"Agency's managed OpenCode TUI diagnostic companion is current.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned OpenCode /agency-debug TUI plugin is present and was preserved.",
+						remediation: null,
+					}
+				: {
+						diagnostic:
+							"The managed OpenCode TUI diagnostic companion needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to install /agency-debug.",
+					}
 	}
 
 	return state === "missing" || state === "drifted"
@@ -98,6 +200,21 @@ const inspect = (root: string) =>
 		const opencodeDirectory = join(root, ".opencode")
 		const opencodePath = join(opencodeDirectory, "opencode.jsonc")
 		const opencodeJsonPath = join(opencodeDirectory, "opencode.json")
+		const tuiPath = join(opencodeDirectory, "tui.jsonc")
+		const tuiJsonPath = join(opencodeDirectory, "tui.json")
+		const commandPath = join(opencodeDirectory, "command", "agency.md")
+		const pluralCommandPath = join(opencodeDirectory, "commands", "agency.md")
+		const pluginPath = join(
+			opencodeDirectory,
+			"plugin",
+			"agency-repository-skills.ts",
+		)
+		const pluralPluginPath = join(
+			opencodeDirectory,
+			"plugins",
+			"agency-repository-skills.ts",
+		)
+		const tuiPluginPath = join(opencodeDirectory, "tui", "agency-debug.ts")
 		const files: IntegrationFileStatus[] = []
 
 		files.push(
@@ -133,6 +250,87 @@ const inspect = (root: string) =>
 			)
 		} else {
 			files.push(fileStatus("opencode", opencodePath, "missing"))
+		}
+
+		if ((yield* fs.readSymlinkTarget(commandPath)) !== null) {
+			files.push(fileStatus("opencode-command", commandPath, "customized"))
+		} else if (
+			(yield* fs.readSymlinkTarget(pluralCommandPath)) !== null ||
+			(yield* fs.exists(pluralCommandPath))
+		) {
+			files.push(
+				fileStatus("opencode-command", pluralCommandPath, "customized"),
+			)
+		} else if (yield* fs.exists(commandPath)) {
+			files.push(
+				classify(
+					"opencode-command",
+					commandPath,
+					yield* fs.readFile(commandPath),
+					managedWorkbaseOpencodeCommand,
+					canUpdateManagedWorkbaseOpencodeCommand,
+				),
+			)
+		} else {
+			files.push(fileStatus("opencode-command", commandPath, "missing"))
+		}
+
+		if ((yield* fs.readSymlinkTarget(pluginPath)) !== null) {
+			files.push(fileStatus("opencode-plugin", pluginPath, "customized"))
+		} else if (
+			(yield* fs.readSymlinkTarget(pluralPluginPath)) !== null ||
+			(yield* fs.exists(pluralPluginPath))
+		) {
+			files.push(fileStatus("opencode-plugin", pluralPluginPath, "customized"))
+		} else if (yield* fs.exists(pluginPath)) {
+			files.push(
+				classify(
+					"opencode-plugin",
+					pluginPath,
+					yield* fs.readFile(pluginPath),
+					managedWorkbaseOpencodePlugin,
+					canUpdateManagedWorkbaseOpencodePlugin,
+				),
+			)
+		} else {
+			files.push(fileStatus("opencode-plugin", pluginPath, "missing"))
+		}
+
+		if ((yield* fs.readSymlinkTarget(tuiPath)) !== null) {
+			files.push(fileStatus("opencode-tui", tuiPath, "customized"))
+		} else if (
+			(yield* fs.readSymlinkTarget(tuiJsonPath)) !== null ||
+			(yield* fs.exists(tuiJsonPath))
+		) {
+			files.push(fileStatus("opencode-tui", tuiJsonPath, "customized"))
+		} else if (yield* fs.exists(tuiPath)) {
+			files.push(
+				classify(
+					"opencode-tui",
+					tuiPath,
+					yield* fs.readFile(tuiPath),
+					managedWorkbaseOpencodeTui,
+					canUpdateManagedWorkbaseOpencodeTui,
+				),
+			)
+		} else {
+			files.push(fileStatus("opencode-tui", tuiPath, "missing"))
+		}
+
+		if ((yield* fs.readSymlinkTarget(tuiPluginPath)) !== null) {
+			files.push(fileStatus("opencode-tui-plugin", tuiPluginPath, "customized"))
+		} else if (yield* fs.exists(tuiPluginPath)) {
+			files.push(
+				classify(
+					"opencode-tui-plugin",
+					tuiPluginPath,
+					yield* fs.readFile(tuiPluginPath),
+					managedWorkbaseOpencodeTuiPlugin,
+					canUpdateManagedWorkbaseOpencodeTuiPlugin,
+				),
+			)
+		} else {
+			files.push(fileStatus("opencode-tui-plugin", tuiPluginPath, "missing"))
 		}
 
 		return files
@@ -181,9 +379,24 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							if (status.name === "agents") {
 								yield* fs.createDirectory(join(root, ".agency"))
 								yield* fs.writeFile(status.path, managedWorkbaseAgents)
-							} else {
+							} else if (status.name === "opencode") {
 								yield* fs.createDirectory(join(root, ".opencode"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencode)
+							} else if (status.name === "opencode-command") {
+								yield* fs.createDirectory(join(root, ".opencode", "command"))
+								yield* fs.writeFile(status.path, managedWorkbaseOpencodeCommand)
+							} else if (status.name === "opencode-plugin") {
+								yield* fs.createDirectory(join(root, ".opencode", "plugin"))
+								yield* fs.writeFile(status.path, managedWorkbaseOpencodePlugin)
+							} else if (status.name === "opencode-tui") {
+								yield* fs.createDirectory(join(root, ".opencode"))
+								yield* fs.writeFile(status.path, managedWorkbaseOpencodeTui)
+							} else {
+								yield* fs.createDirectory(join(root, ".opencode", "tui"))
+								yield* fs.writeFile(
+									status.path,
+									managedWorkbaseOpencodeTuiPlugin,
+								)
 							}
 						}
 						files.push({

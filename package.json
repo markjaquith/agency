@@ -58,6 +58,7 @@
   },
   "scripts": {
     "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | xargs -0 -n 1 -P 4 bun test",
+    "test:opencode": "AGENCY_TEST_OPENCODE=1 bun test src/cli.test.ts --test-name-pattern 'provides effective whole-workbase OpenCode access'",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "knip": "knip --production",
