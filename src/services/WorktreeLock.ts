@@ -21,12 +21,13 @@ const withWorktreeLock = <A, E, R>(
 		`${target.taskId}:${target.phaseId ?? "task"}`,
 	).toString("hex")
 	const lockPath = join(root, `.agency-worktree-${key}.lock`)
+	const removalCommand = `rm '${lockPath.replaceAll("'", `'\\''`)}'`
 	return Effect.acquireUseRelease(
 		Effect.tryPromise({
 			try: () => open(lockPath, "wx"),
 			catch: (cause) =>
 				new WorktreeLockError({
-					message: `Another worktree operation is in progress for '${target.taskId}${target.phaseId ? `/${target.phaseId}` : ""}'`,
+					message: `Another worktree operation is in progress for '${target.taskId}${target.phaseId ? `/${target.phaseId}` : ""}'. If no operation is active, remove the stale sentinel with: ${removalCommand}`,
 					cause,
 				}),
 		}),
