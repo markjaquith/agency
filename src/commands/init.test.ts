@@ -64,11 +64,9 @@ describe("init command", () => {
 			workbase: expect.objectContaining({ path: ".." }),
 		})
 		expect(config.permission).toBeUndefined()
-		const command = await Bun.file(
-			join(root, ".opencode/command/agency.md"),
-		).text()
-		expect(command).toContain("Workflow: `$1`")
-		expect(command).toContain("Optional target: `$2`")
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(false)
 		const plugin = await Bun.file(
 			join(root, ".opencode/plugin/agency-repository-skills.ts"),
 		).text()

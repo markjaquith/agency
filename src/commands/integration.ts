@@ -15,7 +15,6 @@ interface IntegrationResult {
 		readonly name:
 			| "agents"
 			| "opencode"
-			| "opencode-command"
 			| "opencode-plugin"
 			| "opencode-tui"
 			| "opencode-tui-plugin"
@@ -30,7 +29,6 @@ interface IntegrationResult {
 const integrationNames = {
 	agents: "Agent instructions",
 	opencode: "OpenCode config",
-	"opencode-command": "OpenCode /agency command",
 	"opencode-plugin": "OpenCode workbase plugin",
 	"opencode-tui": "OpenCode TUI config",
 	"opencode-tui-plugin": "OpenCode /agency-debug",

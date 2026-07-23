@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -10,10 +11,6 @@ import {
 	canUpdateManagedWorkbaseOpencode,
 	managedWorkbaseOpencode,
 } from "../workbase/opencode-file"
-import {
-	canUpdateManagedWorkbaseOpencodeCommand,
-	managedWorkbaseOpencodeCommand,
-} from "../workbase/opencode-command-file"
 import {
 	canUpdateManagedWorkbaseOpencodePlugin,
 	managedWorkbaseOpencodePlugin,
@@ -33,7 +30,6 @@ interface IntegrationFileStatus {
 	readonly name:
 		| "agents"
 		| "opencode"
-		| "opencode-command"
 		| "opencode-plugin"
 		| "opencode-tui"
 		| "opencode-tui-plugin"
@@ -73,25 +69,6 @@ const describe = (
 			remediation:
 				"Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.",
 		}
-	}
-	if (name === "opencode-command") {
-		return state === "managed"
-			? {
-					diagnostic: "Agency's managed OpenCode /agency command is current.",
-					remediation: null,
-				}
-			: state === "customized"
-				? {
-						diagnostic:
-							"A user-owned OpenCode /agency command is present and was preserved.",
-						remediation: null,
-					}
-				: {
-						diagnostic:
-							"The managed OpenCode /agency command needs synchronization.",
-						remediation:
-							"Run 'agency integration sync' to install the managed /agency command.",
-					}
 	}
 	if (name === "opencode-plugin") {
 		return state === "managed"
@@ -202,8 +179,6 @@ const inspect = (root: string) =>
 		const opencodeJsonPath = join(opencodeDirectory, "opencode.json")
 		const tuiPath = join(opencodeDirectory, "tui.jsonc")
 		const tuiJsonPath = join(opencodeDirectory, "tui.json")
-		const commandPath = join(opencodeDirectory, "command", "agency.md")
-		const pluralCommandPath = join(opencodeDirectory, "commands", "agency.md")
 		const pluginPath = join(
 			opencodeDirectory,
 			"plugin",
@@ -250,29 +225,6 @@ const inspect = (root: string) =>
 			)
 		} else {
 			files.push(fileStatus("opencode", opencodePath, "missing"))
-		}
-
-		if ((yield* fs.readSymlinkTarget(commandPath)) !== null) {
-			files.push(fileStatus("opencode-command", commandPath, "customized"))
-		} else if (
-			(yield* fs.readSymlinkTarget(pluralCommandPath)) !== null ||
-			(yield* fs.exists(pluralCommandPath))
-		) {
-			files.push(
-				fileStatus("opencode-command", pluralCommandPath, "customized"),
-			)
-		} else if (yield* fs.exists(commandPath)) {
-			files.push(
-				classify(
-					"opencode-command",
-					commandPath,
-					yield* fs.readFile(commandPath),
-					managedWorkbaseOpencodeCommand,
-					canUpdateManagedWorkbaseOpencodeCommand,
-				),
-			)
-		} else {
-			files.push(fileStatus("opencode-command", commandPath, "missing"))
 		}
 
 		if ((yield* fs.readSymlinkTarget(pluginPath)) !== null) {
@@ -348,6 +300,25 @@ const canRemoveLegacyAgents = (root: string) =>
 		return canUpdateManagedWorkbaseAgents(yield* fs.readFile(path))
 	})
 
+const canRemoveLegacyOpencodeCommand = (root: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const path = join(root, ".opencode", "command", "agency.md")
+		if (
+			(yield* fs.readSymlinkTarget(path)) !== null ||
+			!(yield* fs.exists(path))
+		)
+			return false
+
+		const content = yield* fs.readFile(path)
+		const header = /^---\r?\n# agency-managed: sha256=([a-f0-9]{64})\r?\n/
+		const match = content.match(header)
+		if (!match?.[1]) return false
+
+		const canonical = content.replace(header, "---\n")
+		return createHash("sha256").update(canonical).digest("hex") === match[1]
+	})
+
 export class IntegrationService extends Effect.Service<IntegrationService>()(
 	"IntegrationService",
 	{
@@ -370,6 +341,8 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							(status) =>
 								status.name === "opencode" && status.state !== "customized",
 						) && (yield* canRemoveLegacyAgents(root))
+					const removeLegacyOpencodeCommand =
+						yield* canRemoveLegacyOpencodeCommand(root)
 					const files: IntegrationSyncFile[] = []
 
 					for (const status of statuses) {
@@ -382,9 +355,6 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							} else if (status.name === "opencode") {
 								yield* fs.createDirectory(join(root, ".opencode"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencode)
-							} else if (status.name === "opencode-command") {
-								yield* fs.createDirectory(join(root, ".opencode", "command"))
-								yield* fs.writeFile(status.path, managedWorkbaseOpencodeCommand)
 							} else if (status.name === "opencode-plugin") {
 								yield* fs.createDirectory(join(root, ".opencode", "plugin"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencodePlugin)
@@ -411,6 +381,11 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 					}
 
 					if (removeLegacyAgents) yield* fs.deleteFile(join(root, "AGENTS.md"))
+					if (removeLegacyOpencodeCommand) {
+						yield* fs.deleteFile(
+							join(root, ".opencode", "command", "agency.md"),
+						)
+					}
 
 					return { root, files }
 				}),

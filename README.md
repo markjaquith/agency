@@ -53,7 +53,6 @@ workbase/
   .opencode/
     opencode.jsonc         # managed @agency subagent, instructions, and reference
     tui.jsonc              # managed TUI plugin registration
-    command/agency.md      # managed /agency workflow command
     plugin/agency-repository-skills.ts # managed workbase access and checkout skills
     tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
   agency.json              # tracked config and portable repository declarations
@@ -84,10 +83,11 @@ workbase/
 
 Agency keeps discovery and other observational commands read-only. Run
 `agency integration status` to inspect `.agency/AGENTS.md` and
-`.opencode/opencode.jsonc`, `.opencode/tui.jsonc`, and their managed command and
-plugin files, then `agency integration sync` to create missing files or refresh
+`.opencode/opencode.jsonc`, `.opencode/tui.jsonc`, and their managed plugin
+files, then `agency integration sync` to create missing files or refresh
 checksum-safe managed files. Customized files are reported but never
-overwritten. The root
+overwritten. Sync also removes checksum-valid retired managed artifacts while
+preserving customized files at their former paths. The root
 `AGENTS.md` is user-owned and is not inspected or modified by Agency.
 
 When upgrading an existing workbase, synchronization moves a checksum-valid
@@ -115,13 +115,6 @@ OpenCode discovers the config and plugin from task and epic launch directories.
 The plugin grants whole-workbase access dynamically, while the portable
 reference advertises that context to agents. Bash and Agency operations must
 still follow the write authority reported by `agency context`.
-
-OpenCode also discovers a managed `/agency` command. Use `/agency status` for a
-read-only current-work summary, `/agency start [target]` to begin or resume work
-in the active session, `/agency next` to inspect ready work, `/agency validate`
-to check the workbase, and `/agency finish [target]` for verified closeout. The
-command uses OpenCode positional arguments internally and defaults to the safe
-`status` workflow when no subcommand is supplied.
 
 Repository aliases and canonical fetch remotes are declared in tracked
 `agency.json`; local bare clones and symlinks remain ignored under
