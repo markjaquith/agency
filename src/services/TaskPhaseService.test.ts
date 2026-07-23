@@ -283,6 +283,66 @@ describe("task and phase services", () => {
 		})
 	})
 
+	test("preserves non-PR completion when converting a task to phases", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "completed",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/completed",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("completed", "done", root, {
+						summary: "Investigation completed without changes.",
+					}),
+				),
+			),
+		)
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "completed",
+							id: "follow-up",
+							firstPhase: "investigation",
+							repo: "agency",
+							branch: "task/completed-follow-up",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const firstPhase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.show("completed", "investigation", root),
+				),
+			),
+		)
+		expect(firstPhase.data).toMatchObject({
+			status: "done",
+			completion: {
+				mode: "non-pr",
+				summary: "Investigation completed without changes.",
+			},
+		})
+	})
+
 	test("updates status on execution units", async () => {
 		const createdTask = await runTestEffect(
 			TaskService.pipe(
@@ -327,6 +387,50 @@ describe("task and phase services", () => {
 				),
 			),
 		).rejects.toThrow("authoritative pull request is merged")
+		const completedTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "done", root, {
+						summary: "Investigation completed without repository changes.",
+						evidenceUrl: "https://example.com/investigation",
+					}),
+				),
+			),
+		)
+		expect(completedTask.data).toMatchObject({
+			status: "done",
+			completion: {
+				mode: "non-pr",
+				summary: "Investigation completed without repository changes.",
+				evidenceUrl: "https://example.com/investigation",
+			},
+		})
+		expect(completedTask.data.completion?.completedAt).toMatch(
+			/^\d{4}-\d{2}-\d{2}T/,
+		)
+		await expect(
+			runTestEffect(
+				PullRequestService.pipe(
+					Effect.flatMap((service) =>
+						service.setUrl(
+							"single-status",
+							undefined,
+							"https://github.com/example/agency/pull/1",
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("Reopen non-PR completed work")
+		const reopenedTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "open", root),
+				),
+			),
+		)
+		expect(reopenedTask.data.status).toBe("open")
+		expect("completion" in reopenedTask.data).toBe(false)
 		const droppedTask = await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -335,6 +439,17 @@ describe("task and phase services", () => {
 			),
 		)
 		expect(droppedTask.data.status).toBe("dropped")
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("single-status", "done", root, {
+							summary: "Cannot bypass reopening.",
+						}),
+					),
+				),
+			),
+		).rejects.toThrow("reopen it first")
 
 		await runTestEffect(
 			TaskService.pipe(
@@ -407,6 +522,73 @@ describe("task and phase services", () => {
 				),
 			),
 		).rejects.toThrow("authoritative pull request is merged")
+		await expect(
+			runTestEffect(
+				PhaseService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("multi-status", "implementation", "done", root, {
+							summary: "   ",
+						}),
+					),
+				),
+			),
+		).rejects.toThrow("summary must not be empty")
+		const completedPhase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("multi-status", "implementation", "done", root, {
+						summary: "Operational work completed outside the repository.",
+					}),
+				),
+			),
+		)
+		expect(completedPhase.data).toMatchObject({
+			status: "done",
+			completion: {
+				mode: "non-pr",
+				summary: "Operational work completed outside the repository.",
+			},
+		})
+
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "recorded-pr",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/recorded-pr",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"recorded-pr",
+						undefined,
+						"https://github.com/example/agency/pull/1",
+						root,
+					),
+				),
+			),
+		)
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("recorded-pr", "done", root, {
+							summary: "Attempted bypass",
+						}),
+					),
+				),
+			),
+		).rejects.toThrow("authoritative pull request is recorded")
 		await expect(
 			runTestEffect(
 				TaskService.pipe(

@@ -20,6 +20,10 @@ import { canTransitionStatus } from "../readiness"
 import { documentRevision } from "../workbase/document-revision"
 import { archivedTaskDirectory } from "../workbase/archive"
 import {
+	buildNonPrCompletion,
+	type NonPrCompletionInput,
+} from "../workbase/completion"
+import {
 	documentWriteStep,
 	runLifecycleTransaction,
 } from "./LifecycleTransaction"
@@ -247,6 +251,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 			id: string,
 			status: string,
 			startPath: string = process.cwd(),
+			nonPrCompletion?: NonPrCompletionInput,
 		) =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystemService
@@ -269,11 +274,41 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 						message: `Task '${id}' has an active claim; use agency release or agency finish`,
 					})
 				}
-				if (!canTransitionStatus(record.data.status, validStatus)) {
+				if (nonPrCompletion && validStatus !== "done") {
+					return yield* new TaskError({
+						message: "Non-PR completion is valid only with a done status",
+					})
+				}
+				if (nonPrCompletion && record.data.pr !== null) {
+					return yield* new TaskError({
+						message:
+							"Cannot complete without a pull request while an authoritative pull request is recorded",
+					})
+				}
+				const completionResult = nonPrCompletion
+					? buildNonPrCompletion(nonPrCompletion, new Date())
+					: undefined
+				if (completionResult && "error" in completionResult) {
+					return yield* new TaskError({ message: completionResult.error })
+				}
+				if (
+					completionResult &&
+					record.data.status !== "open" &&
+					record.data.status !== "working" &&
+					record.data.status !== "delegated"
+				) {
+					return yield* new TaskError({
+						message: `Cannot transition task '${id}' from ${record.data.status} to done; reopen it first`,
+					})
+				}
+				if (
+					!canTransitionStatus(record.data.status, validStatus) &&
+					!completionResult
+				) {
 					if (validStatus === "done") {
 						return yield* new TaskError({
 							message:
-								"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply'",
+								"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply', or explicitly complete a non-PR outcome with '--no-pull-request --summary <text>'",
 						})
 					}
 					return yield* new TaskError({
@@ -281,7 +316,16 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					})
 				}
 				const parsed = yield* parseFrontmatter(record.content, record.path)
-				const data = { ...record.data, status: validStatus }
+				const { completion: _, ...withoutCompletion } = record.data
+				const data: TaskData = completionResult
+					? {
+							...record.data,
+							status: "done",
+							completion: completionResult.value,
+						}
+					: validStatus === "open"
+						? { ...withoutCompletion, status: validStatus }
+						: { ...record.data, status: validStatus }
 				const content = formatMarkdownDocument(data, parsed.body)
 				yield* fs.writeFile(record.path, content)
 				return {

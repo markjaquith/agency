@@ -13,6 +13,9 @@ interface ClaimCommandOptions extends BaseCommandOptions {
 	readonly revision?: string
 	readonly expiresAt?: string
 	readonly outcome?: string
+	readonly noPullRequest?: boolean
+	readonly summary?: string
+	readonly evidenceUrl?: string
 	readonly json?: boolean
 }
 
@@ -30,6 +33,16 @@ export const claimCommand = (options: ClaimCommandOptions) =>
 		) {
 			return yield* Effect.fail(
 				new Error("Claimant and runner identities are required"),
+			)
+		}
+		if (options.noPullRequest && !options.summary?.trim()) {
+			return yield* Effect.fail(
+				new Error("Non-PR completion requires a non-empty summary"),
+			)
+		}
+		if (options.noPullRequest && options.outcome !== "done") {
+			return yield* Effect.fail(
+				new Error("Non-PR completion is valid only with a done outcome"),
 			)
 		}
 		if (
@@ -65,6 +78,16 @@ export const claimCommand = (options: ClaimCommandOptions) =>
 							{
 								...common,
 								outcome: options.outcome as "done" | "dropped",
+								...(options.noPullRequest
+									? {
+											nonPrCompletion: {
+												summary: options.summary!,
+												...(options.evidenceUrl
+													? { evidenceUrl: options.evidenceUrl }
+													: {}),
+											},
+										}
+									: {}),
 							},
 							cwd,
 						)
@@ -91,8 +114,9 @@ Release an execution unit owned by the session.
 `
 
 export const finishHelp = `
-Usage: agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped>
+Usage: agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [--no-pull-request --summary <text> [--evidence-url <url>]]
 
 Finish a claim owned by the session. A done claim outcome leaves unmerged work
-working; agency sync --apply marks the execution unit done after merge.
+working; agency sync --apply marks the execution unit done after merge. Use
+--no-pull-request with a summary for an explicit non-PR completion.
 `

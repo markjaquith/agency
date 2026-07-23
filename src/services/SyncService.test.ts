@@ -8,6 +8,7 @@ import { PullRequestService } from "./PullRequestService"
 import { SyncService } from "./SyncService"
 import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
+import { WorkbaseService } from "./WorkbaseService"
 
 const git = async (args: string[], cwd?: string) => {
 	const process = Bun.spawn(["git", ...args], {
@@ -662,5 +663,70 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 			),
 		)
 		expect(task.data).toMatchObject({ status: "open" })
+	})
+
+	test("leaves non-PR completion unchanged when a matching PR is discoverable", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "non-pr",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("non-pr", "done", root, {
+						summary: "Investigation completed without changes.",
+					}),
+				),
+			),
+		)
+
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const applied = await runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) =>
+						service.reconcile({ cwd: root, apply: true }),
+					),
+				),
+			)
+			expect(
+				applied.changes.some(
+					(change) =>
+						change.kind === "record-pr" || change.kind === "mark-done",
+				),
+			).toBe(false)
+		}
+
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("non-pr", root)),
+			),
+		)
+		expect(task.data).toMatchObject({
+			status: "done",
+			pr: null,
+			completion: {
+				mode: "non-pr",
+				summary: "Investigation completed without changes.",
+			},
+		})
+		expect(
+			await runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.validate(root)),
+				),
+			),
+		).toMatchObject({ valid: true, issues: [] })
 	})
 })

@@ -248,6 +248,77 @@ describe("CLI", () => {
 			parseJson(await runCli(["task", "show", "claimed", "--json"], root)).data
 				.status,
 		).toBe("working")
+
+		parseJson(
+			await runCli(
+				["task", "create", "non-pr", "--repo", "agency", "--json"],
+				root,
+			),
+		)
+		const nonPrContext = parseJson(
+			await runCli(["context", "tasks/non-pr", "--json"], root),
+		)
+		const nonPrClaim = parseJson(
+			await runCli(
+				[
+					"claim",
+					"non-pr",
+					"--claimant",
+					"orchestrator",
+					"--runner",
+					"agent",
+					"--session-id",
+					"job-2",
+					"--revision",
+					nonPrContext.documents.task.sha256,
+					"--json",
+				],
+				root,
+			),
+		)
+		parseJson(
+			await runCli(
+				[
+					"finish",
+					"non-pr",
+					"--session-id",
+					"job-2",
+					"--revision",
+					nonPrClaim.revision,
+					"--outcome",
+					"done",
+					"--no-pull-request",
+					"--summary",
+					"Investigation completed without changes.",
+					"--evidence-url",
+					"https://example.com/result",
+					"--json",
+				],
+				root,
+			),
+		)
+		expect(
+			parseJson(await runCli(["task", "show", "non-pr", "--json"], root)).data,
+		).toMatchObject({
+			status: "done",
+			completion: {
+				mode: "non-pr",
+				summary: "Investigation completed without changes.",
+				evidenceUrl: "https://example.com/result",
+			},
+		})
+		const prUpdate = await runCli(
+			[
+				"task",
+				"update",
+				"non-pr",
+				"--pr-url",
+				"https://github.com/example/agency/pull/1",
+			],
+			root,
+		)
+		expect(prUpdate.exitCode).toBe(1)
+		expect(prUpdate.stderr).toContain("Reopen non-PR completed work")
 	})
 
 	test("routes graph mutations through structured output", async () => {

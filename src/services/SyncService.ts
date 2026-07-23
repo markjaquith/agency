@@ -580,6 +580,19 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 
+					if (data.completion) {
+						executions.push({
+							target: record.key,
+							status: data.status,
+							branch: data.branch,
+							base: data.base,
+							claim: data.claim ?? null,
+							checkouts: checkoutStates,
+							pr: { url: null, state: "none" },
+						})
+						continue
+					}
+
 					const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
 					let current: PullRequestRecord | null = existing
 					let pr: Record<string, unknown> = existing ?? {

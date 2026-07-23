@@ -75,6 +75,13 @@ export const PullRequestRecord = Schema.Struct({
 	mergeable: Schema.optional(Schema.NullOr(Schema.Boolean)),
 })
 
+export const CompletionRecord = Schema.Struct({
+	mode: Schema.Literal("non-pr"),
+	completedAt: IsoTimestamp,
+	summary: NonEmptyString,
+	evidenceUrl: Schema.optional(Url),
+})
+
 const DeliveryProvider = Schema.Struct({
 	provider: EntityId,
 	remote: Schema.optional(NonEmptyString),
@@ -141,6 +148,7 @@ const ExecutionUnit = {
 	pr: Schema.NullOr(Schema.Union(GitHubPullRequestUrl, PullRequestRecord)),
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
 	claim: Schema.optional(ClaimRecord),
+	completion: Schema.optional(CompletionRecord),
 }
 
 export const EpicFrontmatter = Schema.Struct({
@@ -187,6 +195,7 @@ export type RepositoryDeclaration = Schema.Schema.Type<
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
 export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
 export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>
+export type CompletionRecord = Schema.Schema.Type<typeof CompletionRecord>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

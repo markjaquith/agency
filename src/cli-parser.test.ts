@@ -362,6 +362,64 @@ describe("strict CLI parsing", () => {
 				"working",
 			]),
 		).toThrow("must be 'done' or 'dropped'")
+		expect(
+			parseCli([
+				"finish",
+				"task",
+				"--session-id",
+				"job-1",
+				"--revision",
+				revision,
+				"--outcome",
+				"done",
+				"--no-pull-request",
+				"--summary",
+				"Investigation completed",
+				"--evidence-url",
+				"https://example.com/result",
+			]),
+		).toMatchObject({
+			values: {
+				"no-pull-request": true,
+				summary: "Investigation completed",
+				"evidence-url": "https://example.com/result",
+			},
+		})
+		expect(() =>
+			parseCli([
+				"finish",
+				"task",
+				"--session-id",
+				"job-1",
+				"--revision",
+				revision,
+				"--outcome",
+				"done",
+				"--no-pull-request",
+			]),
+		).toThrow("--summary' is required")
+		expect(() =>
+			parseCli([
+				"task",
+				"status",
+				"example",
+				"working",
+				"--no-pull-request",
+				"--summary",
+				"Not done",
+			]),
+		).toThrow("valid only with a done status")
+		expect(() =>
+			parseCli([
+				"phase",
+				"status",
+				"task",
+				"phase",
+				"done",
+				"--summary",
+				"Missing explicit flag",
+			]),
+		).toThrow("require '--no-pull-request'")
 	})
 
 	test("accepts valid mutation revisions and rejects malformed hashes", () => {
