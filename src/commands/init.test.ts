@@ -34,7 +34,11 @@ describe("init command", () => {
 			"/repos/\n/tasks/*/code/\n/tasks/*/phases/*/code/\n",
 		)
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
-		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
+		const agents = await Bun.file(join(root, ".agency/AGENTS.md")).text()
+		expect(agents).toContain("agency context . --json")
+		expect(agents).toContain("## Consent Boundaries")
+		expect(agents).toContain("## Execution")
+		expect(agents).not.toContain("SKILL.md")
 		const opencode = await Bun.file(
 			join(root, ".opencode/opencode.jsonc"),
 		).text()
