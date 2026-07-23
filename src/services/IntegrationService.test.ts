@@ -6,10 +6,6 @@ import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { managedWorkbaseAgents } from "../workbase/agents-file"
-import {
-	canUpdateManagedWorkbaseOpencodeCommand,
-	managedWorkbaseOpencodeCommand,
-} from "../workbase/opencode-command-file"
 import { managedWorkbaseOpencode } from "../workbase/opencode-file"
 import {
 	canUpdateManagedWorkbaseOpencodePlugin,
@@ -35,6 +31,12 @@ const managed = (prefix: string, body: string, suffix = "") => {
 
 const managedBody = (content: string) =>
 	content.slice(content.indexOf("\n\n") + 2)
+
+const legacyCommand = (content: string) =>
+	content.replace(
+		/^---\n/,
+		`---\n# agency-managed: sha256=${createHash("sha256").update(content).digest("hex")}\n`,
+	)
 
 const status = (root: string) =>
 	runTestEffect(
@@ -63,17 +65,11 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
-			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
 		await write(root, ".agency/AGENTS.md", managedWorkbaseAgents)
 		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
-		await write(
-			root,
-			".opencode/command/agency.md",
-			managedWorkbaseOpencodeCommand,
-		)
 		await write(
 			root,
 			".opencode/plugin/agency-repository-skills.ts",
@@ -86,7 +82,6 @@ describe("IntegrationService", () => {
 			managedWorkbaseOpencodeTuiPlugin,
 		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
-			"managed",
 			"managed",
 			"managed",
 			"managed",
@@ -106,7 +101,6 @@ describe("IntegrationService", () => {
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"customized",
 			"drifted",
-			"missing",
 			"missing",
 			"missing",
 			"missing",
@@ -257,36 +251,6 @@ describe("IntegrationService", () => {
 		).toBe(true)
 	})
 
-	test("generates a positional OpenCode command for Agency workflows", () => {
-		expect(managedWorkbaseOpencodeCommand).toContain(
-			"description: Operate Agency work",
-		)
-		expect(managedWorkbaseOpencodeCommand).toContain("Workflow: `$1`")
-		expect(managedWorkbaseOpencodeCommand).toContain("Optional target: `$2`")
-		expect(managedWorkbaseOpencodeCommand).toContain(
-			"Complete request: `$ARGUMENTS`",
-		)
-		for (const workflow of [
-			"start",
-			"status",
-			"next",
-			"validate",
-			"finish",
-			"help",
-		]) {
-			expect(managedWorkbaseOpencodeCommand).toContain(`- \`${workflow}\`:`)
-		}
-		expect(managedWorkbaseOpencodeCommand).toContain("Never run `agency work`")
-		expect(
-			canUpdateManagedWorkbaseOpencodeCommand(managedWorkbaseOpencodeCommand),
-		).toBe(true)
-		expect(
-			canUpdateManagedWorkbaseOpencodeCommand(
-				managedWorkbaseOpencodeCommand.replace("Workflow: `$1`", "Workflow"),
-			),
-		).toBe(false)
-	})
-
 	test("generates context-first safety and execution closeout guidance", () => {
 		const body = managedBody(managedWorkbaseAgents)
 
@@ -323,7 +287,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("agency integration status")
 		expect(body).not.toContain("SKILL.md")
 		expect(body).not.toContain("~/.agents")
-		expect(body).toContain(".opencode/command/agency.md")
+		expect(body).not.toContain(".opencode/command/agency.md")
 	})
 
 	test("configures Agency agents with complete workbase access", () => {
@@ -454,7 +418,6 @@ describe("IntegrationService", () => {
 		expect(first.files).toMatchObject([
 			{ name: "agents", state: "customized", changed: false },
 			{ name: "opencode", state: "managed", changed: true },
-			{ name: "opencode-command", state: "managed", changed: true },
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
@@ -469,8 +432,8 @@ describe("IntegrationService", () => {
 			managedWorkbaseOpencode,
 		)
 		expect(
-			await Bun.file(join(root, ".opencode/command/agency.md")).text(),
-		).toBe(managedWorkbaseOpencodeCommand)
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(false)
 		expect(
 			await Bun.file(
 				join(root, ".opencode/plugin/agency-repository-skills.ts"),
@@ -524,7 +487,7 @@ describe("IntegrationService", () => {
 		await write(root, ".opencode/plugins/agency-repository-skills.ts", custom)
 
 		let result = await sync(root)
-		expect(result.files[3]).toMatchObject({
+		expect(result.files[2]).toMatchObject({
 			name: "opencode-plugin",
 			path: join(root, ".opencode/plugins/agency-repository-skills.ts"),
 			state: "customized",
@@ -539,7 +502,7 @@ describe("IntegrationService", () => {
 		await unlink(join(root, ".opencode/plugins/agency-repository-skills.ts"))
 		await write(root, ".opencode/plugin/agency-repository-skills.ts", custom)
 		result = await sync(root)
-		expect(result.files[3]).toMatchObject({
+		expect(result.files[2]).toMatchObject({
 			path: join(root, ".opencode/plugin/agency-repository-skills.ts"),
 			state: "customized",
 			changed: false,
@@ -554,14 +517,14 @@ describe("IntegrationService", () => {
 		await write(root, ".opencode/tui/agency-debug.ts", customPlugin)
 
 		const result = await sync(root)
-		expect(result.files[4]).toMatchObject({
+		expect(result.files[3]).toMatchObject({
 			name: "opencode-tui",
 			path: join(root, ".opencode/tui.json"),
 			state: "customized",
 			changed: false,
 			remediation: expect.stringContaining("plugin list"),
 		})
-		expect(result.files[5]).toMatchObject({
+		expect(result.files[4]).toMatchObject({
 			name: "opencode-tui-plugin",
 			state: "customized",
 			changed: false,
@@ -574,32 +537,23 @@ describe("IntegrationService", () => {
 		).toBe(customPlugin)
 	})
 
-	test("preserves user-owned OpenCode commands at either supported path", async () => {
-		const custom = "---\ndescription: Custom Agency command\n---\n\nCustom.\n"
-		await write(root, ".opencode/commands/agency.md", custom)
+	test("removes a checksum-valid legacy command and preserves a customized file", async () => {
+		const path = ".opencode/command/agency.md"
+		const legacy = legacyCommand(
+			"---\ndescription: Operate Agency work\n---\n\nLegacy command.\n",
+		)
+		await write(root, path, legacy)
 
-		let result = await sync(root)
-		expect(result.files[2]).toMatchObject({
-			name: "opencode-command",
-			path: join(root, ".opencode/commands/agency.md"),
-			state: "customized",
-			changed: false,
-		})
-		expect(
-			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
-		).toBe(false)
+		await status(root)
+		expect(await Bun.file(join(root, path)).text()).toBe(legacy)
 
-		await unlink(join(root, ".opencode/commands/agency.md"))
-		await write(root, ".opencode/command/agency.md", custom)
-		result = await sync(root)
-		expect(result.files[2]).toMatchObject({
-			path: join(root, ".opencode/command/agency.md"),
-			state: "customized",
-			changed: false,
-		})
-		expect(
-			await Bun.file(join(root, ".opencode/command/agency.md")).text(),
-		).toBe(custom)
+		await sync(root)
+		expect(await Bun.file(join(root, path)).exists()).toBe(false)
+
+		const custom = `${legacy}User edit.\n`
+		await write(root, path, custom)
+		await sync(root)
+		expect(await Bun.file(join(root, path)).text()).toBe(custom)
 	})
 
 	test("migrates checksum-valid root instructions", async () => {

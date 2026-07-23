@@ -37,11 +37,6 @@ describe("integration command", () => {
 					remediation: expect.stringContaining("integration sync"),
 				},
 				{
-					name: "opencode-command",
-					state: "missing",
-					remediation: expect.stringContaining("integration sync"),
-				},
-				{
 					name: "opencode-plugin",
 					state: "missing",
 					remediation: expect.stringContaining("integration sync"),
@@ -91,11 +86,6 @@ OpenCode config: missing
   Agency OpenCode launches cannot load current Agency instructions or whole-workbase access.
   Action: Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.
 
-OpenCode /agency command: missing
-  Path: .opencode/command/agency.md
-  The managed OpenCode /agency command needs synchronization.
-  Action: Run 'agency integration sync' to install the managed /agency command.
-
 OpenCode workbase plugin: missing
   Path: .opencode/plugin/agency-repository-skills.ts
   The managed OpenCode workbase plugin needs synchronization.
@@ -120,7 +110,6 @@ OpenCode /agency-debug: missing
 		expect(JSON.parse(logs[0]!).files).toMatchObject([
 			{ name: "agents", state: "managed", changed: true },
 			{ name: "opencode", state: "managed", changed: true },
-			{ name: "opencode-command", state: "managed", changed: true },
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
@@ -132,7 +121,7 @@ OpenCode /agency-debug: missing
 		).toBe(true)
 		expect(
 			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
-		).toBe(true)
+		).toBe(false)
 		expect(
 			await Bun.file(
 				join(root, ".opencode/plugin/agency-repository-skills.ts"),
@@ -160,10 +149,6 @@ Agent instructions: synced
 OpenCode config: synced
   Path: .opencode/opencode.jsonc
   Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.
-
-OpenCode /agency command: synced
-  Path: .opencode/command/agency.md
-  Agency's managed OpenCode /agency command is current.
 
 OpenCode workbase plugin: synced
   Path: .opencode/plugin/agency-repository-skills.ts

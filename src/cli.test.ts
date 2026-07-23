@@ -526,7 +526,6 @@ describe("CLI", () => {
 		expect(before.files).toMatchObject([
 			{ name: "agents", state: "managed" },
 			{ name: "opencode", state: "managed" },
-			{ name: "opencode-command", state: "managed" },
 			{ name: "opencode-plugin", state: "managed" },
 			{ name: "opencode-tui", state: "managed" },
 			{ name: "opencode-tui-plugin", state: "managed" },
@@ -538,7 +537,6 @@ describe("CLI", () => {
 		expect(synced.files).toMatchObject([
 			{ name: "agents", state: "managed", changed: false },
 			{ name: "opencode", state: "managed", changed: false },
-			{ name: "opencode-command", state: "managed", changed: false },
 			{ name: "opencode-plugin", state: "managed", changed: false },
 			{ name: "opencode-tui", state: "managed", changed: false },
 			{ name: "opencode-tui-plugin", state: "managed", changed: false },
