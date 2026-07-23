@@ -297,7 +297,9 @@ describe("IntegrationService", () => {
 		expect(body).toContain("Only `done` satisfies a dependency")
 		expect(body).toContain("Require explicit user intent")
 		expect(body).toContain("changing repository")
-		expect(body).toMatch(/archiving, restoring,\s+dropping, or/)
+		expect(body).toMatch(
+			/archiving, restoring,\s+dropping, reopening, or completing work without a pull request/,
+		)
 		expect(body).toContain("Never invent entity IDs")
 		expect(body).toContain("Preserve parent backlinks")
 		expect(body).toContain("dirty-worktree, active-claim, revision")
@@ -317,6 +319,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("pausing or handing off")
 		expect(body).toContain("`agency finish`")
 		expect(body).toContain("`agency sync --apply`")
+		expect(body).toContain("`--no-pull-request --summary <text>`")
 		expect(body).toContain("`TASK.md` or `PHASE.md`")
 		expect(body).toContain("PR state, current head, diff summary")
 		expect(body).toContain("Run `agency validate` before reporting completion")

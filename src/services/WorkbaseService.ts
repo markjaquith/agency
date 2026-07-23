@@ -746,6 +746,24 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						}
 					}
 
+					const validateCompletion = (
+						record: DocumentRecord<TaskData | PhaseData>,
+					) => {
+						if (!("repo" in record.data) || !record.data.completion) return
+						if (record.data.status !== "done") {
+							issue(record.path, "Non-PR completion requires status 'done'")
+						}
+						if (record.data.pr !== null) {
+							issue(
+								record.path,
+								"Non-PR completion cannot have a recorded pull request",
+							)
+						}
+						if (record.data.claim?.state === "active") {
+							issue(record.path, "Completed work cannot have an active claim")
+						}
+					}
+
 					for (const epic of epics.values()) {
 						validateRepositories(epic)
 						const ids = new Set(epic.data.tasks.map((task) => task.id))
@@ -776,6 +794,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					for (const task of tasks.values()) {
 						validateRepositories(task)
 						validateBranchOwnership(task)
+						validateCompletion(task)
 						if (task.data.epic) {
 							const parent = epics.get(task.data.epic)
 							if (!parent) {
@@ -828,6 +847,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					for (const phase of phases.values()) {
 						validateRepositories(phase)
 						validateBranchOwnership(phase)
+						validateCompletion(phase)
 					}
 
 					issues.sort((a, b) =>

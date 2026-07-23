@@ -58,6 +58,12 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 										message: `Task '${taskId}' requires a phase ID`,
 									})
 							: task
+					if ("completion" in target.data && target.data.completion) {
+						return yield* new PullRequestError({
+							message:
+								"Reopen non-PR completed work before recording a pull request",
+						})
+					}
 					const parsed = yield* parseFrontmatter(target.content, target.path)
 					yield* fs.writeFile(
 						target.path,
@@ -99,6 +105,21 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					const worktrees = yield* WorktreeService
 					const readiness = yield* ReadinessService
 					const workbase = yield* WorkbaseService
+					const task = yield* tasks.show(taskId, startPath)
+					const target =
+						"phases" in task.data
+							? phaseId
+								? yield* phases.show(taskId, phaseId, startPath)
+								: yield* new PullRequestError({
+										message: `Task '${taskId}' requires a phase ID`,
+									})
+							: task
+					if ("completion" in target.data && target.data.completion) {
+						return yield* new PullRequestError({
+							message:
+								"Reopen non-PR completed work before creating a pull request",
+						})
+					}
 					yield* readiness.guard(
 						"pr",
 						taskId,
@@ -112,11 +133,11 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						startPath,
 						options,
 					)
-					const task = yield* tasks.show(taskId, workspace.root)
+					const workspaceTask = yield* tasks.show(taskId, workspace.root)
 					const execution =
-						"phases" in task.data
+						"phases" in workspaceTask.data
 							? (yield* phases.show(taskId, phaseId!, workspace.root)).data
-							: task.data
+							: workspaceTask.data
 					const { config } = yield* workbase.loadConfig(workspace.root)
 					const remote = config.delivery?.remote ?? "origin"
 

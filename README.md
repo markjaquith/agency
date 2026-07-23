@@ -617,7 +617,8 @@ Inspect tasks:
 ```text
 agency task list [filters] [--json]
 agency task show <id> [--json]
-agency task status <id> <open|working|dropped> [--json]
+agency task status <id> <open|working|done|dropped>
+  [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
 agency task update <id> [metadata options] [--json]
 agency task rename <id> <new-id> [--json]
 agency task move <id> (--epic <epic-id> | --no-epic) [--json]
@@ -656,7 +657,8 @@ agency phase create <task-id> <phase-id>
 
 agency phase list <task-id> [filters] [--json]
 agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|working|dropped> [--json]
+agency phase status <task-id> <phase-id> <open|working|done|dropped>
+  [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
 agency phase update <task-id> <phase-id> [metadata options] [--json]
 agency phase rename <task-id> <phase-id> <new-id> [--json]
 agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
@@ -679,8 +681,12 @@ writing anything.
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
 before launch. Running `agency work` again can relaunch unclaimed `working` work.
-The `done` status is reserved for an authoritative merged pull request and is
-applied by `agency sync --apply`, not by task or phase status commands.
+By default, `done` requires an authoritative merged pull request and is applied
+by `agency sync --apply`. Work whose intended outcome genuinely requires no pull
+request may instead use an explicit `--no-pull-request --summary <text>` status
+transition. Agency records the summary, completion time, and optional evidence
+URL durably; reopening removes that evidence. This exceptional path refuses work
+that already has a recorded pull request.
 Use explicit claims only when an external orchestrator needs coordinated
 ownership. The interactive work selector displays status markers before
 execution units. Existing working and delegated work may be released to `open`
@@ -711,15 +717,19 @@ agency claim <task-id> [phase-id] --claimant <id> --runner <id>
 agency release <task-id> [phase-id] --session-id <id>
   --revision <sha256> [--json]
 agency finish <task-id> [phase-id] --session-id <id>
-  --revision <sha256> --outcome <done|dropped> [--json]
+  --revision <sha256> --outcome <done|dropped>
+  [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
 ```
 
 An active claim sets status to `working`. Release returns it to `open`. Finish
 records the claim outcome and ownership history; a `done` claim outcome leaves
 the execution unit `working` until its pull request is merged, while `dropped`
-remains terminal. Conflicts return the current revision and complete ownership
-record in the machine error envelope rather than overwriting it. Expired claims
-may be replaced with a revision-guarded claim.
+remains terminal. For a genuine non-PR outcome, `--no-pull-request` atomically
+records completion evidence, finishes the claim, and sets the execution unit to
+`done`; `--summary` is required and `--evidence-url` is optional. Conflicts return
+the current revision and complete ownership record in the machine error envelope
+rather than overwriting it. Expired claims may be replaced with a
+revision-guarded claim.
 
 `agency work` does not claim execution units. It refuses active explicit claims,
 marks open execution work `working`, and launches the runner. External

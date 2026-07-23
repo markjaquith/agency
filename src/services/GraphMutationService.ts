@@ -375,6 +375,16 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						})
 					}
 					if (
+						updates.pr &&
+						"completion" in record.data &&
+						record.data.completion
+					) {
+						return yield* new GraphMutationError({
+							message:
+								"Reopen non-PR completed work before recording a pull request",
+						})
+					}
+					if (
 						executionChange &&
 						(yield* fs.isDirectory(join(dirname(record.path), "code")))
 					) {
@@ -502,6 +512,12 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 					if (executionChange && record.data.claim?.state === "active") {
 						return yield* new GraphMutationError({
 							message: `Phase '${id}' has an active claim; release or finish it before changing execution metadata`,
+						})
+					}
+					if (updates.pr && record.data.completion) {
+						return yield* new GraphMutationError({
+							message:
+								"Reopen non-PR completed work before recording a pull request",
 						})
 					}
 					const data: PhaseData = yield* decode(

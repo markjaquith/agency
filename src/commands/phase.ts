@@ -31,6 +31,9 @@ interface PhaseOptions extends BaseCommandOptions {
 	readonly pr?: boolean
 	readonly work?: boolean
 	readonly auto?: boolean
+	readonly noPullRequest?: boolean
+	readonly summary?: string
+	readonly evidenceUrl?: string
 }
 
 export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
@@ -166,7 +169,20 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						),
 					)
 				}
-				const record = yield* phases.setStatus(taskId, phaseId, status, cwd)
+				const record = yield* phases.setStatus(
+					taskId,
+					phaseId,
+					status,
+					cwd,
+					options.noPullRequest
+						? {
+								summary: options.summary ?? "",
+								...(options.evidenceUrl
+									? { evidenceUrl: options.evidenceUrl }
+									: {}),
+							}
+						: undefined,
+				)
 				const { content: _, ...output } = record
 				log(
 					options.json
@@ -275,7 +291,7 @@ Subcommands:
   list <task>           List task phases
   show <task> <phase>   Show a phase
   status <task> <phase> <status>
-                        Set open, working, or dropped
+                        Set open, working, dropped, or explicit non-PR done
   update <task> <phase> Update phase metadata
   rename <task> <phase> <new-id>
                         Rename a phase and update dependencies
@@ -284,6 +300,11 @@ Subcommands:
 
 Mutation option:
   --if-revision <hash>  Require the target's current revision
+
+Non-PR completion options (status done only):
+  --no-pull-request     Complete without a pull request
+  --summary <text>      Required durable outcome summary
+  --evidence-url <url>  Optional supporting record
 
 Create options:
   --description <text>  Short description of the phase

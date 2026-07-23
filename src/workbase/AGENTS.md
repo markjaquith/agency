@@ -43,7 +43,8 @@ reason to edit `agency.json` or `repos/` by hand.
 Require explicit user intent before initializing a workbase; changing repository
 aliases or applying repository setup or workbase sync changes; launching another
 agent from an active agent session; creating a pull request; archiving, restoring,
-dropping, or reopening work; or using `--force` to override readiness.
+dropping, reopening, or completing work without a pull request; or using `--force`
+to override readiness.
 
 ## Safety
 
@@ -80,7 +81,9 @@ release the claim with the current document revision.
 An execution unit remains `working` after implementation is committed and while
 its pull request is open. It becomes `done` only after its authoritative pull
 request is merged and Agency reconciles that state. Do not mark committed or
-review-ready work `done` manually.
+review-ready work `done` manually. A genuine investigation, operational action,
+or no-change result may complete without a pull request only with explicit user
+intent, `--no-pull-request`, and a durable outcome summary.
 
 At each closeout trigger (creating or updating a PR, marking it ready, completing
 a refinement loop, or pausing or handing off completed implementation work):
@@ -90,6 +93,8 @@ a refinement loop, or pausing or handing off completed implementation work):
   keep the execution unit `working` through review and merge.
 - After merge, run `agency sync --apply` to reconcile the execution unit to
   `done`.
+- For an approved non-PR outcome, finish an active claim or update unclaimed
+  status with `--no-pull-request --summary <text>` and optional supporting URL.
 - Refresh durable delivery context in `TASK.md` or `PHASE.md`, including recorded
   PR state, current head, diff summary, and verification results after later
   pushes when those details are maintained there.

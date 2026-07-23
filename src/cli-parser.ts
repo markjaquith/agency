@@ -120,6 +120,12 @@ const ownedClaimOptions = {
 	revision: { type: "string" },
 } satisfies OptionConfig
 
+const nonPrCompletionOptions = {
+	"no-pull-request": { type: "boolean" },
+	summary: { type: "string" },
+	"evidence-url": { type: "string" },
+} satisfies OptionConfig
+
 const commands = {
 	init: {
 		usage: "agency init [path] [--json]",
@@ -360,6 +366,7 @@ const commands = {
 			...newWorkOptions,
 			...viewOptions,
 			...mutationOptions,
+			...nonPrCompletionOptions,
 			"pr-url": { type: "string" },
 			task: { type: "string" },
 		},
@@ -417,10 +424,10 @@ const commands = {
 				options: ["json", "task"],
 			},
 			status: {
-				usage: "agency task status <id> <status> [--json]",
+				usage: "agency task status <id> <status> [options] [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json", "task"],
+				options: ["json", "task", "no-pull-request", "summary", "evidence-url"],
 			},
 			update: {
 				usage: "agency task update <id> [options] [--json]",
@@ -479,6 +486,7 @@ const commands = {
 			...newWorkOptions,
 			...viewOptions,
 			...mutationOptions,
+			...nonPrCompletionOptions,
 			"pr-url": { type: "string" },
 			task: { type: "string" },
 			phase: { type: "string" },
@@ -542,10 +550,18 @@ const commands = {
 				options: ["json", "task", "phase"],
 			},
 			status: {
-				usage: "agency phase status <task-id> <phase-id> <status> [--json]",
+				usage:
+					"agency phase status <task-id> <phase-id> <status> [options] [--json]",
 				minArgs: 3,
 				maxArgs: 3,
-				options: ["json", "task", "phase"],
+				options: [
+					"json",
+					"task",
+					"phase",
+					"no-pull-request",
+					"summary",
+					"evidence-url",
+				],
 			},
 			update: {
 				usage: "agency phase update <task-id> <phase-id> [options] [--json]",
@@ -631,16 +647,27 @@ const commands = {
 		usage: "agency finish <task-id> [phase-id] [options]",
 		options: {
 			...ownedClaimOptions,
+			...nonPrCompletionOptions,
 			outcome: { type: "string" },
 			task: { type: "string" },
 			phase: { type: "string" },
 		},
 		command: {
 			usage:
-				"agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [--json]",
+				"agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [options] [--json]",
 			minArgs: 1,
 			maxArgs: 2,
-			options: ["session-id", "revision", "outcome", "json", "task", "phase"],
+			options: [
+				"session-id",
+				"revision",
+				"outcome",
+				"no-pull-request",
+				"summary",
+				"evidence-url",
+				"json",
+				"task",
+				"phase",
+			],
 			required: ["session-id", "revision", "outcome"],
 		},
 	},
@@ -1408,6 +1435,40 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			"Option '--outcome' must be 'done' or 'dropped'.",
 			spec.usage,
 		)
+	}
+	const nonPrCompletion = parsed.values["no-pull-request"] === true
+	const completionSummary = parsed.values.summary
+	const completionEvidenceUrl = parsed.values["evidence-url"]
+	if (
+		(completionSummary !== undefined || completionEvidenceUrl !== undefined) &&
+		!nonPrCompletion
+	) {
+		throw usageError(
+			"Options '--summary' and '--evidence-url' require '--no-pull-request'.",
+			spec.usage,
+		)
+	}
+	if (nonPrCompletion) {
+		if (
+			typeof completionSummary !== "string" ||
+			completionSummary.trim().length === 0
+		) {
+			throw usageError(
+				"Option '--summary' is required with '--no-pull-request'.",
+				spec.usage,
+			)
+		}
+		const completesDone =
+			(commandName === "finish" && parsed.values.outcome === "done") ||
+			(["task", "phase"].includes(commandName) &&
+				subcommand === "status" &&
+				commandPositionals.at(-1) === "done")
+		if (!completesDone) {
+			throw usageError(
+				"Option '--no-pull-request' is valid only with a done status or outcome.",
+				spec.usage,
+			)
+		}
 	}
 	if (commandName === "work") {
 		const preparing = commandPositionals[0] === "prepare"

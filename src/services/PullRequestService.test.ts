@@ -279,6 +279,26 @@ process.exit(${exitCode})
 		expect(await createPullRequest("example", undefined, false, true)).toBe(url)
 	})
 
+	test("requires reopening non-PR completed work even when forced", async () => {
+		await createTask()
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("example", "done", root, {
+						summary: "Investigation completed without changes.",
+					}),
+				),
+			),
+		)
+
+		await expect(
+			createPullRequest("example", undefined, false, true),
+		).rejects.toThrow("Reopen non-PR completed work")
+		expect(
+			await Bun.file(join(root, "tasks/example/code/agency")).exists(),
+		).toBe(false)
+	})
+
 	test("updates only PHASE.md for a phase PR", async () => {
 		await runTestEffect(
 			TaskService.pipe(
