@@ -45,6 +45,8 @@ const multiPhaseWorkspace: ExecutionWorkspace = {
 }
 
 const taskDirectory = "/workbase/tasks/example"
+const phaseDirectory = `${taskDirectory}/phases/implementation`
+
 interface HarnessOptions {
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
@@ -563,7 +565,7 @@ describe("work command", () => {
 				"--prompt",
 				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
-			cwd: taskDirectory,
+			cwd: phaseDirectory,
 		})
 		expect(harness.statusUpdates).toEqual([
 			"phase:example:implementation:working",
@@ -593,7 +595,11 @@ describe("work command", () => {
 			data: {},
 		}
 		const harness = createHarness({
-			workspace: multiPhaseWorkspace,
+			workspace: {
+				...multiPhaseWorkspace,
+				taskPath: "/workbase/tasks/delivery/TASK.md",
+				phasePath: "/workbase/tasks/delivery/phases/build/PHASE.md",
+			},
 			taskRecords: [
 				{
 					id: "delivery",
@@ -615,7 +621,9 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
+		expect(harness.launches[0]?.cwd).toBe(
+			"/workbase/tasks/delivery/phases/build",
+		)
 	})
 
 	test("requires an explicit target when input is disabled", async () => {
@@ -767,6 +775,18 @@ describe("work command", () => {
 		])
 	})
 
+	test("launches OpenCode in the phase directory with explicit context", async () => {
+		const harness = createHarness({ workspace: multiPhaseWorkspace })
+
+		await harness.run({
+			taskId: "example",
+			phaseId: "implementation",
+			opencode: true,
+		})
+
+		expect(harness.launches[0]?.cwd).toBe(phaseDirectory)
+	})
+
 	test("sends the generated prompt only with --auto", async () => {
 		const harness = createHarness()
 
@@ -820,7 +840,7 @@ describe("work command", () => {
 				"--prompt",
 				"Continue the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
-			cwd: taskDirectory,
+			cwd: phaseDirectory,
 		})
 	})
 
@@ -895,6 +915,20 @@ describe("work command", () => {
 		expect(printed.environment.AGENCY_PROMPT).toBe("")
 		expect(printed.environment.VISIBLE).toBe("example")
 		expect(printed.environment.API_TOKEN).toBeUndefined()
+	})
+
+	test("prints the phase directory in the command contract", async () => {
+		const harness = createHarness({ workspace: multiPhaseWorkspace })
+		const output = await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				phaseId: "implementation",
+				opencode: true,
+				printCommand: true,
+			}),
+		)
+
+		expect(JSON.parse(output.join("\n")).cwd).toBe(phaseDirectory)
 	})
 
 	test("does not reopen a forced terminal target in print-only mode", async () => {

@@ -1020,7 +1020,7 @@ status: open
 				},
 				{
 					args: ["--task", "pipeline", "--phase", "build"],
-					cwd: join(workbaseRoot, "tasks/pipeline"),
+					cwd: join(workbaseRoot, "tasks/pipeline/phases/build"),
 					checkoutPath: join(
 						workbaseRoot,
 						"tasks/pipeline/phases/build/code/agency",
@@ -1058,6 +1058,16 @@ status: open
 					launch.checkoutPath,
 				)
 				expect(contract.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
+				if (launch === launches[1]) {
+					const context = parseJson(
+						await runCli(["context", ".", "--json"], contract.cwd),
+					)
+					expect(context.target).toMatchObject({
+						kind: "phase",
+						taskId: "pipeline",
+						phaseId: "build",
+					})
+				}
 				const environment = {
 					...process.env,
 					...contract.environment,
