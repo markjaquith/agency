@@ -261,7 +261,7 @@ export const work = (
 			prompt = workspace.phasePath
 				? `${action} the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `${action} the task. Read ${workspace.taskPath}.`
-			launchPath = dirname(workspace.taskPath)
+			launchPath = dirname(workspace.phasePath ?? workspace.taskPath)
 			writablePath = workspace.writablePath
 		}
 
