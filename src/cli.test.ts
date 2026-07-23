@@ -1025,7 +1025,7 @@ status: open
 						workbaseRoot,
 						"tasks/pipeline/phases/build/code/agency",
 					),
-						skillPath: join(
+					skillPath: join(
 						workbaseRoot,
 						"tasks/pipeline/phases/build/code/agency/.claude/skills",
 					),
