@@ -43,6 +43,8 @@ import { SyncService } from "./src/services/SyncService"
 import { ReadinessService } from "./src/services/ReadinessService"
 import { GraphMutationService } from "./src/services/GraphMutationService"
 import { DoctorService } from "./src/services/DoctorService"
+import { ReviewService } from "./src/services/ReviewService"
+import { review, help as reviewHelp } from "./src/commands/review"
 import {
 	claimCommand,
 	claimHelp,
@@ -75,6 +77,7 @@ const CliLayer = Layer.mergeAll(
 	ReadinessService.Default,
 	GraphMutationService.Default,
 	DoctorService.Default,
+	ReviewService.Default,
 )
 
 /**
@@ -443,6 +446,9 @@ const commands: Record<string, Command> = {
 					clearDescription: options["clear-description"],
 					epic: options.epic,
 					repo: options.repo?.[0],
+					review: options.review,
+					pullRequest: options["pull-request"],
+					ref: options.ref,
 					references: options.reference,
 					branch: options.branch,
 					base: options.base,
@@ -463,6 +469,22 @@ const commands: Record<string, Command> = {
 					silent: options.silent,
 					verbose: options.verbose,
 					inputAllowed: options.inputAllowed,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
+	review: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(reviewHelp)
+			await runCommand(
+				review({
+					subcommand: args[0],
+					taskId: args[1],
+					ifRevision: options["if-revision"],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
 					cwd: options.cwd,
 				}),
 			)
@@ -673,6 +695,7 @@ Commands:
   worktree <subcommand>  Inspect and maintain managed worktrees
   next                   List or select ready execution units
   pr create              Create a pull request for an execution unit
+  review refresh         Explicitly refresh a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
   doctor                 Diagnose workbase health and integrations

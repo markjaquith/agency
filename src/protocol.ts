@@ -100,6 +100,7 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 	ArchiveError: { code: "ARCHIVE_ERROR", retryable: false },
 	WorktreeError: { code: "WORKTREE_ERROR", retryable: false },
 	PullRequestError: { code: "PULL_REQUEST_ERROR", retryable: false },
+	ReviewError: { code: "REVIEW_ERROR", retryable: false },
 	ContextError: {
 		code: "CONTEXT_ERROR",
 		retryable: false,

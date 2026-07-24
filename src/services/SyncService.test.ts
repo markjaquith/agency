@@ -410,7 +410,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 				),
 			),
 		)
-		await rm(workspace.writablePath, { recursive: true, force: true })
+		await rm(workspace.writablePath!, { recursive: true, force: true })
 
 		const observed = await runTestEffect(
 			SyncService.pipe(
@@ -434,7 +434,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 		)
 		expect(applied.changes).toEqual([])
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
 		).toBe(false)
 	})
 

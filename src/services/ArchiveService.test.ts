@@ -315,7 +315,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
-		await Bun.write(join(workspace.writablePath, "dirty.txt"), "keep me\n")
+		await Bun.write(join(workspace.writablePath!, "dirty.txt"), "keep me\n")
 
 		await expect(
 			runTestEffect(
@@ -747,7 +747,7 @@ describe("ArchiveService", () => {
 			),
 		).rejects.toThrow("Another archive or restore operation")
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
 		).toBe(true)
 		expect(await Bun.file(join(root, "tasks/locked/TASK.md")).exists()).toBe(
 			true,

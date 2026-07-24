@@ -43,7 +43,8 @@ interface ExecutionWorkspace {
 	readonly taskPath: string
 	readonly phasePath: string | null
 	readonly codePath: string
-	readonly writablePath: string
+	readonly writablePath: string | null
+	readonly reviewPath: string | null
 	readonly repo: string
 	readonly repos: readonly RepositoryReference[]
 	readonly dryRun: boolean
@@ -181,12 +182,14 @@ const inspectExecution = (
 		const root = yield* workbase.discover(startPath)
 		const task = yield* tasks.show(taskId, root)
 
-		let execution: {
-			repo: string
-			repos?: readonly RepositoryReference[]
-			branch: string
-			base: string
-		}
+		let execution:
+			| {
+					repo: string
+					repos?: readonly RepositoryReference[]
+					branch: string
+					base: string
+			  }
+			| { review: { repo: string; commit: string } }
 		let owner: WorktreeOwner
 		let codePath: string
 		if ("phases" in task.data) {
@@ -230,6 +233,7 @@ const inspectExecution = (
 					ownership.set(key, owners)
 				}
 			} else {
+				if (!("repo" in taskRecord.data)) continue
 				const key = `${taskRecord.data.repo}:${taskRecord.data.branch}`
 				const owners = ownership.get(key) ?? []
 				owners.push({
@@ -244,10 +248,13 @@ const inspectExecution = (
 		const declared: readonly (
 			| { readonly repo: string; readonly branch: string }
 			| RepositoryReference
-		)[] = [
-			{ repo: execution.repo, branch: execution.branch },
-			...(execution.repos ?? []),
-		]
+		)[] =
+			"review" in execution
+				? [{ repo: execution.review.repo, ref: execution.review.commit }]
+				: [
+						{ repo: execution.repo, branch: execution.branch },
+						...(execution.repos ?? []),
+					]
 		const checkouts: WorktreeCheckoutInspection[] = []
 		for (const checkout of declared) {
 			const repositoryPath = join(root, "repos", checkout.repo)
@@ -608,12 +615,14 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						}
 						const task = yield* tasks.show(taskId, root)
 
-						let execution: {
-							repo: string
-							repos?: readonly RepositoryReference[]
-							branch: string
-							base: string
-						}
+						let execution:
+							| {
+									repo: string
+									repos?: readonly RepositoryReference[]
+									branch: string
+									base: string
+							  }
+							| { review: { repo: string; commit: string } }
 						let phasePath: string | null = null
 						let codePath: string
 						if ("phases" in task.data) {
@@ -639,10 +648,19 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						const requestedCheckouts: readonly (
 							| { readonly repo: string; readonly branch: string }
 							| RepositoryReference
-						)[] = [
-							{ repo: execution.repo, branch: execution.branch },
-							...(execution.repos ?? []),
-						]
+						)[] =
+							"review" in execution
+								? [
+										{
+											repo: execution.review.repo,
+											ref: execution.review.commit,
+										},
+									]
+								: [
+										{ repo: execution.repo, branch: execution.branch },
+										...(execution.repos ?? []),
+									]
+						const executionBase = "base" in execution ? execution.base : ""
 						const canonicalCodePath = (yield* fs.exists(codePath))
 							? yield* fs.realPath(codePath)
 							: resolve(codePath)
@@ -732,7 +750,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											repositoryPath,
 											"rev-parse",
 											"--verify",
-											`${execution.base}^{commit}`,
+											`${executionBase}^{commit}`,
 										],
 										{ captureOutput: true },
 									)
@@ -744,7 +762,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												repositoryPath,
 												"ls-remote",
 												"origin",
-												originRef(execution.base),
+												originRef(executionBase),
 											],
 											{ captureOutput: true },
 										)
@@ -753,7 +771,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											!remoteBase.stdout.trim()
 										) {
 											return yield* new WorktreeError({
-												message: `Base '${execution.base}' for repository '${alias}' does not resolve to a commit`,
+												message: `Base '${executionBase}' for repository '${alias}' does not resolve to a commit`,
 											})
 										}
 									}
@@ -764,7 +782,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											repo: repositoryPath,
 											worktree: checkoutPath,
 											branch: checkout.branch,
-											base: execution.base,
+											base: executionBase,
 										})
 									} catch (cause) {
 										return yield* new WorktreeError({
@@ -991,7 +1009,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											repo: repositoryPath,
 											worktree: checkoutPath,
 											branch: checkout.branch,
-											base: execution.base,
+											base: executionBase,
 										}
 										try {
 											args = expandWorktreeCreateCommand(
@@ -1026,7 +1044,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												repositoryPath,
 												"branch",
 												checkout.branch,
-												execution.base,
+												executionBase,
 											]
 											operations.push({
 												action: "create-branch",
@@ -1085,7 +1103,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 													repositoryPath,
 													"rev-parse",
 													"--verify",
-													`${execution.base}^{commit}`,
+													`${executionBase}^{commit}`,
 												],
 												{ captureOutput: true },
 											)
@@ -1266,9 +1284,17 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								taskPath: task.path,
 								phasePath,
 								codePath,
-								writablePath: join(codePath, execution.repo),
-								repo: execution.repo,
-								repos: execution.repos ?? [],
+								writablePath:
+									"review" in execution ? null : join(codePath, execution.repo),
+								reviewPath:
+									"review" in execution
+										? join(codePath, execution.review.repo)
+										: null,
+								repo:
+									"review" in execution
+										? execution.review.repo
+										: execution.repo,
+								repos: "review" in execution ? [] : (execution.repos ?? []),
 								dryRun: options.dryRun === true,
 								checkouts: checkoutReports,
 								operations,
@@ -1412,11 +1438,13 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						}
 						const task = yield* tasks.show(taskId, root)
 
-						let execution: {
-							repo: string
-							repos?: readonly RepositoryReference[]
-							branch: string
-						}
+						let execution:
+							| {
+									repo: string
+									repos?: readonly RepositoryReference[]
+									branch: string
+							  }
+							| { review: { repo: string; commit: string } }
 						let codePath: string
 						if ("phases" in task.data) {
 							if (!phaseId) {
@@ -1450,10 +1478,18 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						const expectedCheckouts: readonly (
 							| { readonly repo: string; readonly branch: string }
 							| RepositoryReference
-						)[] = [
-							{ repo: execution.repo, branch: execution.branch },
-							...(execution.repos ?? []),
-						]
+						)[] =
+							"review" in execution
+								? [
+										{
+											repo: execution.review.repo,
+											ref: execution.review.commit,
+										},
+									]
+								: [
+										{ repo: execution.repo, branch: execution.branch },
+										...(execution.repos ?? []),
+									]
 						const expectedAliases = expectedCheckouts.map(({ repo }) => repo)
 						if (codeDirectoryExists) {
 							const unmanaged = (yield* fs.readDirectory(codePath)).filter(

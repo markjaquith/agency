@@ -50,6 +50,11 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					const phases = yield* PhaseService
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(taskId, root)
+					if ("review" in task.data) {
+						return yield* new PullRequestError({
+							message: `Review task '${taskId}' cannot record a delivery pull request`,
+						})
+					}
 					const target =
 						"phases" in task.data
 							? phaseId
@@ -99,6 +104,12 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					const worktrees = yield* WorktreeService
 					const readiness = yield* ReadinessService
 					const workbase = yield* WorkbaseService
+					const requestedTask = yield* tasks.show(taskId, startPath)
+					if ("review" in requestedTask.data) {
+						return yield* new PullRequestError({
+							message: `Review task '${taskId}' cannot create a delivery pull request`,
+						})
+					}
 					yield* readiness.guard(
 						"pr",
 						taskId,
@@ -113,11 +124,21 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						options,
 					)
 					const task = yield* tasks.show(taskId, workspace.root)
+					if ("review" in task.data) {
+						return yield* new PullRequestError({
+							message: `Review task '${taskId}' cannot create a delivery pull request`,
+						})
+					}
 					const execution =
 						"phases" in task.data
 							? (yield* phases.show(taskId, phaseId!, workspace.root)).data
 							: task.data
 					const { config } = yield* workbase.loadConfig(workspace.root)
+					if (!workspace.writablePath) {
+						return yield* new PullRequestError({
+							message: `Task '${taskId}' has no writable checkout`,
+						})
+					}
 					const remote = config.delivery?.remote ?? "origin"
 
 					const status = yield* fs.runCommand(

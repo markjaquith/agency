@@ -331,7 +331,7 @@ process.exit(${exitCode})
 	test("blocks a dirty checkout before push or gh", async () => {
 		await createTask()
 		const workspace = await materialize()
-		await Bun.write(join(workspace.writablePath, "dirty.txt"), "dirty\n")
+		await Bun.write(join(workspace.writablePath!, "dirty.txt"), "dirty\n")
 		await writeFakeGh({ stdout: "https://github.com/example/agency/pull/45" })
 
 		await expect(createPullRequest()).rejects.toThrow(
@@ -496,7 +496,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(providerRecord))})
 	test("reports git status failure before push or gh", async () => {
 		await createTask()
 		const workspace = await materialize()
-		await rm(join(workspace.writablePath, ".git"))
+		await rm(join(workspace.writablePath!, ".git"))
 		await writeFakeGh({ stdout: "https://github.com/example/agency/pull/48" })
 
 		await expect(createPullRequest()).rejects.toThrow(

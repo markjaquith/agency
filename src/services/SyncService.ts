@@ -83,11 +83,16 @@ interface CheckoutState {
 interface ExecutionSyncState {
 	readonly target: string
 	readonly status: WorkStatus
-	readonly branch: string
-	readonly base: string
+	readonly branch: string | null
+	readonly base: string | null
 	readonly claim: ClaimRecord | null
 	readonly checkouts: readonly CheckoutState[]
 	readonly pr: Record<string, unknown>
+	readonly review?: {
+		readonly pinnedCommit: string
+		readonly sourceCommit: string | null
+		readonly sourceAvailable: boolean
+	}
 }
 
 interface SyncResult {
@@ -219,7 +224,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								data: phase.data,
 							})
 						}
-					} else {
+					} else if (!("review" in task.data)) {
 						records.push({
 							key: `task:${task.id}`,
 							taskId: task.id,
@@ -551,7 +556,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								},
 								root,
 							)
-							data = expired.data
+							data = expired.data as ExecutionData
 							revision = expired.revision
 						} else {
 							const claim: ClaimRecord = {
@@ -774,7 +779,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								},
 								root,
 							)
-							data = recorded.data
+							data = recorded.data as ExecutionData
 							revision = recorded.revision
 						}
 						changes.push({
@@ -810,7 +815,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 									},
 									root,
 								)
-								data = completed.data
+								data = completed.data as ExecutionData
 								revision = completed.revision
 							}
 							changes.push({
@@ -830,6 +835,105 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						claim: data.claim ?? null,
 						checkouts: checkoutStates,
 						pr,
+					})
+				}
+
+				for (const task of (yield* tasks.list(root)).filter(
+					(task) => "review" in task.data,
+				)) {
+					if (!("review" in task.data)) continue
+					let data = task.data
+					let revision = task.revision
+					if (
+						isExpired(data.claim, now) &&
+						(data.status === "working" || data.status === "delegated")
+					) {
+						if (apply) {
+							const expired = yield* claims.expire(
+								{ taskId: task.id, revision, now },
+								root,
+							)
+							if ("review" in expired.data) data = expired.data
+							revision = expired.revision
+						}
+						changes.push({
+							kind: "release-stale-claim",
+							target: `task:${task.id}`,
+							message: `Release expired claim '${data.claim?.sessionId ?? "unknown"}'`,
+							status: apply ? "applied" : "planned",
+						})
+					}
+					const inspection = yield* worktrees.inspect(task.id, undefined, root)
+					for (const conflict of inspection.conflicts) {
+						unresolved.push({
+							kind: conflict.kind,
+							target: `task:${task.id}`,
+							message: conflict.message,
+							action: "Repair or remove the review checkout explicitly",
+						})
+					}
+					const checkout = inspection.checkouts[0]
+					if (
+						!checkout?.exists &&
+						inspection.conflicts.length === 0 &&
+						(data.status === "working" || data.status === "delegated")
+					) {
+						if (apply) yield* worktrees.materialize(task.id, undefined, root)
+						changes.push({
+							kind: "materialize-workspace",
+							target: `task:${task.id}`,
+							message: `Materialize pinned review checkout under ${inspection.codePath}`,
+							status: apply ? "applied" : "planned",
+						})
+					}
+					const repositoryPath = join(root, "repos", data.review.repo)
+					const source = yield* runExternal([
+						"git",
+						"-C",
+						repositoryPath,
+						"ls-remote",
+						"origin",
+						data.review.source.kind === "pull-request"
+							? data.review.source.fetchRef
+							: originRef(data.review.source.ref),
+					])
+					const sourceCommit = source.stdout.trim().split(/\s+/)[0] || null
+					if (!sourceCommit) {
+						warnings.push({
+							kind: "review-source-unavailable",
+							target: `task:${task.id}`,
+							message:
+								"Review source is unavailable; the pinned commit is unchanged",
+						})
+					}
+					executions.push({
+						target: `task:${task.id}`,
+						status: data.status,
+						branch: null,
+						base: null,
+						claim: data.claim ?? null,
+						checkouts: checkout
+							? [
+									{
+										repo: checkout.repo,
+										kind: "reference",
+										path: checkout.path,
+										requestedRef: data.review.commit,
+										resolvedCommit: checkout.expectedCommit,
+										registered: checkout.registered,
+										exists: checkout.exists,
+										head: checkout.actualCommit,
+										branch: checkout.actualBranch,
+										dirty: checkout.dirty,
+									},
+								]
+							: [],
+						pr: { url: null, state: "none" },
+						review: {
+							pinnedCommit: data.review.commit,
+							sourceCommit,
+							sourceAvailable: sourceCommit !== null,
+						},
 					})
 				}
 

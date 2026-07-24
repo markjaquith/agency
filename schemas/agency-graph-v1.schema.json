@@ -176,6 +176,7 @@
             { "$ref": "#/$defs/epicData" },
             { "$ref": "#/$defs/singleTaskData" },
             { "$ref": "#/$defs/multiTaskData" },
+            { "$ref": "#/$defs/reviewTaskData" },
             { "$ref": "#/$defs/phaseData" },
             { "$ref": "#/$defs/executionData" },
             { "$ref": "#/$defs/repositoryData" }
@@ -220,7 +221,8 @@
               "data": {
                 "oneOf": [
                   { "$ref": "#/$defs/singleTaskData" },
-                  { "$ref": "#/$defs/multiTaskData" }
+                  { "$ref": "#/$defs/multiTaskData" },
+                  { "$ref": "#/$defs/reviewTaskData" }
                 ]
               },
               "workspace": { "$ref": "#/$defs/documentWorkspace" },
@@ -358,6 +360,67 @@
         "sha256": { "type": "string" }
       }
     },
+    "reviewSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "provider",
+            "repository",
+            "identifier",
+            "url",
+            "fetchRef"
+          ],
+          "properties": {
+            "kind": { "const": "pull-request" },
+            "provider": { "const": "github" },
+            "repository": { "type": "string" },
+            "identifier": { "type": "string", "pattern": "^\\d+$" },
+            "url": {
+              "type": "string",
+              "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/\\d+$"
+            },
+            "fetchRef": { "type": "string", "pattern": "^refs/pull/\\d+/head$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "ref"],
+          "properties": {
+            "kind": { "const": "branch" },
+            "ref": { "type": "string", "pattern": "^refs/heads/" }
+          }
+        }
+      ]
+    },
+    "reviewRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "source", "commit", "refreshedAt"],
+      "properties": {
+        "repo": { "type": "string" },
+        "source": { "$ref": "#/$defs/reviewSource" },
+        "commit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+        "refreshedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "reviewTaskData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ticketUrl", "review", "status", "sha256"],
+      "properties": {
+        "ticketUrl": { "type": ["string", "null"] },
+        "description": { "type": "string" },
+        "epic": { "type": "string" },
+        "review": { "$ref": "#/$defs/reviewRecord" },
+        "status": { "$ref": "#/$defs/status" },
+        "claim": { "$ref": "#/$defs/claim" },
+        "sha256": { "type": "string" }
+      }
+    },
     "phaseData": {
       "type": "object",
       "additionalProperties": false,
@@ -378,26 +441,44 @@
       }
     },
     "executionData": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["taskId", "repo", "branch", "base", "pr", "status"],
-      "properties": {
-        "taskId": { "type": "string" },
-        "phaseId": { "type": "string" },
-        "ticketUrl": { "type": ["string", "null"] },
-        "epic": { "type": "string" },
-        "description": { "type": "string" },
-        "repo": { "type": "string" },
-        "repos": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/repositoryReference" }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["taskId", "repo", "branch", "base", "pr", "status"],
+          "properties": {
+            "taskId": { "type": "string" },
+            "phaseId": { "type": "string" },
+            "ticketUrl": { "type": ["string", "null"] },
+            "epic": { "type": "string" },
+            "description": { "type": "string" },
+            "repo": { "type": "string" },
+            "repos": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/repositoryReference" }
+            },
+            "branch": { "type": "string" },
+            "base": { "type": "string" },
+            "pr": { "type": ["string", "null"] },
+            "status": { "$ref": "#/$defs/status" },
+            "claim": { "$ref": "#/$defs/claim" }
+          }
         },
-        "branch": { "type": "string" },
-        "base": { "type": "string" },
-        "pr": { "type": ["string", "null"] },
-        "status": { "$ref": "#/$defs/status" },
-        "claim": { "$ref": "#/$defs/claim" }
-      }
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["taskId", "ticketUrl", "review", "status"],
+          "properties": {
+            "taskId": { "type": "string" },
+            "ticketUrl": { "type": ["string", "null"] },
+            "description": { "type": "string" },
+            "epic": { "type": "string" },
+            "review": { "$ref": "#/$defs/reviewRecord" },
+            "status": { "$ref": "#/$defs/status" },
+            "claim": { "$ref": "#/$defs/claim" }
+          }
+        }
+      ]
     },
     "claim": {
       "type": "object",
@@ -469,26 +550,48 @@
       }
     },
     "executionGit": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "branch",
-        "base",
-        "branchCommit",
-        "baseCommit",
-        "checkoutCommit",
-        "checkoutBranch",
-        "dirty"
-      ],
-      "properties": {
-        "branch": { "type": "string" },
-        "base": { "type": "string" },
-        "branchCommit": { "type": ["string", "null"] },
-        "baseCommit": { "type": ["string", "null"] },
-        "checkoutCommit": { "type": ["string", "null"] },
-        "checkoutBranch": { "type": ["string", "null"] },
-        "dirty": { "type": ["boolean", "null"] }
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "base",
+            "branchCommit",
+            "baseCommit",
+            "checkoutCommit",
+            "checkoutBranch",
+            "dirty"
+          ],
+          "properties": {
+            "branch": { "type": "string" },
+            "base": { "type": "string" },
+            "branchCommit": { "type": ["string", "null"] },
+            "baseCommit": { "type": ["string", "null"] },
+            "checkoutCommit": { "type": ["string", "null"] },
+            "checkoutBranch": { "type": ["string", "null"] },
+            "dirty": { "type": ["boolean", "null"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pinnedCommit",
+            "sourceCommit",
+            "checkoutCommit",
+            "checkoutBranch",
+            "dirty"
+          ],
+          "properties": {
+            "pinnedCommit": { "type": "string" },
+            "sourceCommit": { "type": ["string", "null"] },
+            "checkoutCommit": { "type": ["string", "null"] },
+            "checkoutBranch": { "type": ["string", "null"] },
+            "dirty": { "type": ["boolean", "null"] }
+          }
+        }
+      ]
     },
     "pr": {
       "oneOf": [

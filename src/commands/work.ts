@@ -465,7 +465,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			log(JSON.stringify(workspace, null, 2))
 		} else {
 			log(
-				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath}`,
+				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath ?? workspace.reviewPath}`,
 			)
 		}
 	})

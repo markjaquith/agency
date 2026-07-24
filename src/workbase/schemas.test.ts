@@ -64,6 +64,63 @@ describe("portable repository declarations", () => {
 })
 
 describe("body-of-work descriptions", () => {
+	test("decodes review tasks strictly and rejects writable execution fields", () => {
+		const review = {
+			ticketUrl: null,
+			review: {
+				repo: "agency",
+				source: { kind: "branch", ref: "refs/heads/feature/review" },
+				commit: "a".repeat(40),
+				refreshedAt: "2026-07-23T12:00:00.000Z",
+			},
+		}
+		expect(
+			Schema.decodeUnknownSync(TaskFrontmatter, { onExcessProperty: "error" })(
+				review,
+			),
+		).toMatchObject({ status: "open", review: review.review })
+		for (const field of ["repo", "repos", "branch", "base", "pr"]) {
+			expect(() =>
+				Schema.decodeUnknownSync(TaskFrontmatter, {
+					onExcessProperty: "error",
+				})({ ...review, [field]: field === "repos" ? [] : "forbidden" }),
+			).toThrow()
+		}
+	})
+
+	test("rejects inconsistent pull request source provenance", () => {
+		const source = {
+			kind: "pull-request",
+			provider: "github",
+			repository: "owner/repo",
+			identifier: "42",
+			url: "https://github.com/owner/repo/pull/42",
+			fetchRef: "refs/pull/42/head",
+		}
+		const review = {
+			ticketUrl: null,
+			review: {
+				repo: "agency",
+				source,
+				commit: "a".repeat(40),
+				refreshedAt: "2026-07-23T12:00:00.000Z",
+			},
+		}
+		expect(Schema.decodeUnknownSync(TaskFrontmatter)(review)).toBeDefined()
+		for (const inconsistent of [
+			{ ...source, url: "https://github.com/owner/repo/pull/41" },
+			{ ...source, repository: "other/repo" },
+			{ ...source, fetchRef: "refs/pull/41/head" },
+		]) {
+			expect(() =>
+				Schema.decodeUnknownSync(TaskFrontmatter)({
+					...review,
+					review: { ...review.review, source: inconsistent },
+				}),
+			).toThrow()
+		}
+	})
+
 	test("accepts descriptions on epics, tasks, and phases", () => {
 		const epic = Schema.decodeUnknownSync(EpicFrontmatter)({
 			ticketUrl: "https://example.com/epic",

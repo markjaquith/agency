@@ -77,7 +77,11 @@ const rowFor = (
 	executions: readonly ExecutionNode[],
 ): WorkViewRow => {
 	const branches = [
-		...new Set(executions.map((execution) => execution.data.branch)),
+		...new Set(
+			executions.flatMap((execution) =>
+				"branch" in execution.data ? [execution.data.branch] : [],
+			),
+		),
 	]
 	const parent =
 		node.kind === "task"
@@ -103,16 +107,19 @@ const rowFor = (
 				: branches.length === 1
 					? branches[0]!
 					: "multiple",
-		pr: aggregateLabel(executions, (execution) => Boolean(execution.data.pr), [
-			"present",
-			"absent",
-		]),
+		pr: aggregateLabel(
+			executions,
+			(execution) => "pr" in execution.data && Boolean(execution.data.pr),
+			["present", "absent"],
+		),
 		worktree: aggregateLabel(
 			executions,
 			(execution) => execution.workspace?.materialized === true,
 			["materialized", "absent"],
 		),
-		hasPr: executions.some((execution) => Boolean(execution.data.pr)),
+		hasPr: executions.some(
+			(execution) => "pr" in execution.data && Boolean(execution.data.pr),
+		),
 	}
 }
 
@@ -210,6 +217,7 @@ export const getWorkViews = (options: WorkViewOptions = {}) =>
 				return executions.filter(
 					(execution) =>
 						execution.data.taskId === taskId &&
+						"phaseId" in execution.data &&
 						execution.data.phaseId === phaseId,
 				)
 			}

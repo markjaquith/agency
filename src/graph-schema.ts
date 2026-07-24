@@ -3,6 +3,8 @@ import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
 	PullRequestRecord,
+	ClaimRecord,
+	ReviewRecord,
 	TaskFrontmatter,
 	WorkStatus,
 } from "./workbase/schemas"
@@ -69,13 +71,24 @@ const DocumentHash = Schema.Struct({ sha256: Schema.String })
 export const GraphEpicData = Schema.extend(EpicFrontmatter, DocumentHash)
 export const GraphTaskData = Schema.extend(TaskFrontmatter, DocumentHash)
 export const GraphPhaseData = Schema.extend(PhaseFrontmatter, DocumentHash)
-export const GraphExecutionData = Schema.extend(
-	PhaseFrontmatter,
+export const GraphExecutionData = Schema.Union(
+	Schema.extend(
+		PhaseFrontmatter,
+		Schema.Struct({
+			taskId: Schema.String,
+			phaseId: Schema.optional(Schema.String),
+			ticketUrl: Schema.optional(Schema.NullOr(Schema.String)),
+			epic: Schema.optional(Schema.String),
+		}),
+	),
 	Schema.Struct({
 		taskId: Schema.String,
-		phaseId: Schema.optional(Schema.String),
-		ticketUrl: Schema.optional(Schema.NullOr(Schema.String)),
+		ticketUrl: Schema.NullOr(Schema.String),
+		description: Schema.optional(Schema.String),
 		epic: Schema.optional(Schema.String),
+		review: ReviewRecord,
+		status: WorkStatus,
+		claim: Schema.optional(ClaimRecord),
 	}),
 )
 
@@ -98,15 +111,24 @@ export const GraphRepositoryGit = Schema.Struct({
 	head: Schema.NullOr(Schema.String),
 	branch: Schema.NullOr(Schema.String),
 })
-export const GraphExecutionGit = Schema.Struct({
-	branch: Schema.String,
-	base: Schema.String,
-	branchCommit: Schema.NullOr(Schema.String),
-	baseCommit: Schema.NullOr(Schema.String),
-	checkoutCommit: Schema.NullOr(Schema.String),
-	checkoutBranch: Schema.NullOr(Schema.String),
-	dirty: Schema.NullOr(Schema.Boolean),
-})
+export const GraphExecutionGit = Schema.Union(
+	Schema.Struct({
+		branch: Schema.String,
+		base: Schema.String,
+		branchCommit: Schema.NullOr(Schema.String),
+		baseCommit: Schema.NullOr(Schema.String),
+		checkoutCommit: Schema.NullOr(Schema.String),
+		checkoutBranch: Schema.NullOr(Schema.String),
+		dirty: Schema.NullOr(Schema.Boolean),
+	}),
+	Schema.Struct({
+		pinnedCommit: Schema.String,
+		sourceCommit: Schema.NullOr(Schema.String),
+		checkoutCommit: Schema.NullOr(Schema.String),
+		checkoutBranch: Schema.NullOr(Schema.String),
+		dirty: Schema.NullOr(Schema.Boolean),
+	}),
+)
 export const GraphPr = Schema.Union(
 	Schema.Struct({ url: Schema.Null, state: Schema.Literal("none") }),
 	Schema.Struct({ url: Schema.String, state: Schema.Literal("unavailable") }),

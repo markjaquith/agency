@@ -43,6 +43,8 @@ const IsoTimestamp = NonEmptyString.pipe(
 	Schema.pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
 )
 
+const GitCommit = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/))
+
 const DocumentRevision = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/))
 
 export const ClaimRecord = Schema.Struct({
@@ -163,9 +165,60 @@ const MultiPhaseTaskFrontmatter = Schema.Struct({
 	phases: Schema.Array(Dependency),
 })
 
+export const ReviewPullRequestSource = Schema.Struct({
+	kind: Schema.Literal("pull-request"),
+	provider: Schema.Literal("github"),
+	repository: NonEmptyString,
+	identifier: NonEmptyString.pipe(Schema.pattern(/^\d+$/)),
+	url: GitHubPullRequestUrl,
+	fetchRef: NonEmptyString,
+}).pipe(
+	Schema.filter(
+		(source) =>
+			source.url ===
+				`https://github.com/${source.repository}/pull/${source.identifier}` &&
+			source.fetchRef === `refs/pull/${source.identifier}/head`,
+		{
+			message: () =>
+				"Pull request review source URL, repository, identifier, and fetch ref must agree",
+		},
+	),
+)
+
+export const ReviewBranchSource = Schema.Struct({
+	kind: Schema.Literal("branch"),
+	ref: NonEmptyString.pipe(
+		Schema.pattern(
+			/^refs\/heads\/(?!HEAD$)(?!.*(?:\.\.|@\{|[ ~^:?*\[\\\]]))(?!.*\/\/)(?!.*(?:^|\/)\.)(?!.*\/$)(?!.*\.lock(?:\/|$))[A-Za-z0-9._\/-]+$/,
+		),
+	),
+})
+
+export const ReviewSource = Schema.Union(
+	ReviewPullRequestSource,
+	ReviewBranchSource,
+)
+
+export const ReviewRecord = Schema.Struct({
+	repo: RepositoryAlias,
+	source: ReviewSource,
+	commit: GitCommit,
+	refreshedAt: IsoTimestamp,
+})
+
+const ReviewTaskFrontmatter = Schema.Struct({
+	ticketUrl: Schema.NullOr(Url),
+	description: Description,
+	epic: Schema.optional(EntityId),
+	review: ReviewRecord,
+	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
+	claim: Schema.optional(ClaimRecord),
+})
+
 export const TaskFrontmatter = Schema.Union(
 	SinglePhaseTaskFrontmatter,
 	MultiPhaseTaskFrontmatter,
+	ReviewTaskFrontmatter,
 )
 
 export const PhaseFrontmatter = Schema.Struct({
@@ -186,6 +239,8 @@ export type RepositoryDeclaration = Schema.Schema.Type<
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
 export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
 export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>
+export type ReviewSource = Schema.Schema.Type<typeof ReviewSource>
+export type ReviewRecord = Schema.Schema.Type<typeof ReviewRecord>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

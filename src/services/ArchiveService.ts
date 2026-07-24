@@ -367,6 +367,7 @@ const repositoriesFor = (record: ArchivedRecord) => {
 			...(record.data.repos ?? []).map((reference) => reference.repo),
 		]
 	}
+	if ("review" in record.data) return [record.data.review.repo]
 	return []
 }
 

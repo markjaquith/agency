@@ -682,7 +682,8 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							)
 						}
 
-						const all = [writable, ...referenceAliases].filter(
+						const reviewAlias = "review" in data ? data.review.repo : undefined
+						const all = [writable, reviewAlias, ...referenceAliases].filter(
 							(alias): alias is string => alias !== undefined,
 						)
 						for (const alias of new Set(all)) {

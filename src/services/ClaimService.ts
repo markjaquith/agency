@@ -103,7 +103,8 @@ interface ReconcileInput {
 const PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/
 
 type SingleTaskData = Extract<TaskData, { readonly repo: string }>
-type ExecutionData = SingleTaskData | PhaseData
+type ReviewTaskData = Extract<TaskData, { readonly review: unknown }>
+type ExecutionData = SingleTaskData | ReviewTaskData | PhaseData
 
 const isTaggedClaimError = (
 	error: unknown,
