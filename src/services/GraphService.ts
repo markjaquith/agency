@@ -33,7 +33,7 @@ import {
 	type WorkStatus,
 } from "../workbase/schemas"
 import { FileSystemService } from "./FileSystemService"
-import { WorkbaseService } from "./WorkbaseService"
+import { WorkbaseService, type ValidationReport } from "./WorkbaseService"
 
 class GraphError extends Data.TaggedError("GraphError")<{
 	readonly message: string
@@ -61,6 +61,7 @@ type ExecutionData =
 
 export interface GraphOptions {
 	readonly cwd?: string
+	readonly validation?: ValidationReport
 	readonly ready?: boolean
 	readonly blocked?: boolean
 	readonly statuses?: readonly WorkStatus[]
@@ -169,34 +170,64 @@ export class GraphService extends Effect.Service<GraphService>()(
 							} satisfies Document<Schema.Schema.Type<S>>
 						})
 
-					for (const id of yield* directories(join(root, "epics"))) {
-						const path = join(root, "epics", id, "EPIC.md")
-						if (yield* fs.exists(path)) {
-							epics.set(id, yield* readDocument(id, path, EpicFrontmatter))
-						}
+					const epicIds = yield* directories(join(root, "epics"))
+					const epicDocuments = yield* Effect.all(
+						epicIds.map((id) =>
+							Effect.gen(function* () {
+								const path = join(root, "epics", id, "EPIC.md")
+								return (yield* fs.exists(path))
+									? yield* readDocument(id, path, EpicFrontmatter)
+									: null
+							}),
+						),
+						{ concurrency: "unbounded" },
+					)
+					for (const document of epicDocuments) {
+						if (document) epics.set(document.id, document)
 					}
-					for (const id of yield* directories(join(root, "tasks"))) {
-						const path = join(root, "tasks", id, "TASK.md")
-						if (yield* fs.exists(path)) {
-							tasks.set(id, yield* readDocument(id, path, TaskFrontmatter))
-						}
-						for (const phaseId of yield* directories(
-							join(root, "tasks", id, "phases"),
-						)) {
-							const phasePath = join(
-								root,
-								"tasks",
-								id,
-								"phases",
-								phaseId,
-								"PHASE.md",
-							)
-							if (yield* fs.exists(phasePath)) {
-								phases.set(
-									`${id}/${phaseId}`,
-									yield* readDocument(phaseId, phasePath, PhaseFrontmatter),
+
+					const taskIds = yield* directories(join(root, "tasks"))
+					const taskDocuments = yield* Effect.all(
+						taskIds.map((id) =>
+							Effect.gen(function* () {
+								const path = join(root, "tasks", id, "TASK.md")
+								const task = (yield* fs.exists(path))
+									? yield* readDocument(id, path, TaskFrontmatter)
+									: null
+								const phaseIds = yield* directories(
+									join(root, "tasks", id, "phases"),
 								)
-							}
+								const taskPhases = yield* Effect.all(
+									phaseIds.map((phaseId) =>
+										Effect.gen(function* () {
+											const phasePath = join(
+												root,
+												"tasks",
+												id,
+												"phases",
+												phaseId,
+												"PHASE.md",
+											)
+											return (yield* fs.exists(phasePath))
+												? yield* readDocument(
+														phaseId,
+														phasePath,
+														PhaseFrontmatter,
+													)
+												: null
+										}),
+									),
+									{ concurrency: "unbounded" },
+								)
+								return { id, task, phases: taskPhases }
+							}),
+						),
+						{ concurrency: "unbounded" },
+					)
+					for (const documents of taskDocuments) {
+						if (documents.task) tasks.set(documents.id, documents.task)
+						for (const phase of documents.phases) {
+							if (phase) phases.set(`${documents.id}/${phase.id}`, phase)
 						}
 					}
 
@@ -265,7 +296,8 @@ export class GraphService extends Effect.Service<GraphService>()(
 									]
 						})
 
-					const validation = yield* workbase.validate(root)
+					const validation =
+						options.validation ?? (yield* workbase.validate(root))
 					const validationBlockers = (
 						paths: readonly string[],
 					): GraphBlocker[] =>

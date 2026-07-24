@@ -242,10 +242,14 @@ describe("delivery configuration", () => {
 				state: "open",
 				draft: false,
 				merged: false,
+				mergeable: false,
 			},
 		})
 		expect(phase.pr && typeof phase.pr !== "string" && phase.pr.provider).toBe(
 			"forge",
+		)
+		expect(phase.pr && typeof phase.pr !== "string" && phase.pr.mergeable).toBe(
+			false,
 		)
 	})
 })

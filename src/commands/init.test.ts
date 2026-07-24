@@ -34,16 +34,59 @@ describe("init command", () => {
 			"/repos/\n/tasks/*/code/\n/tasks/*/phases/*/code/\n",
 		)
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
-		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
+		const agents = await Bun.file(join(root, ".agency/AGENTS.md")).text()
+		expect(agents).toContain("agency context . --json")
+		expect(agents).toContain("## Consent Boundaries")
+		expect(agents).toContain("## Execution")
+		expect(agents).not.toContain("SKILL.md")
 		const opencode = await Bun.file(
 			join(root, ".opencode/opencode.jsonc"),
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
+		expect(config.agent.agency).toMatchObject({
+			description: expect.stringContaining("Agency workbase orchestration"),
+			mode: "subagent",
+			prompt: expect.stringContaining("agency context . --json"),
+		})
+		expect(config.agent.plan).toEqual({ disable: true })
+		expect(config.agent["agency-plan"]).toMatchObject({
+			mode: "primary",
+			permission: {
+				bash: {
+					"agency *": "allow",
+				},
+				edit: {
+					"*": "deny",
+					"tasks/*/TASK.md": "allow",
+					"tasks/*/phases/*/PHASE.md": "allow",
+					"epics/*/EPIC.md": "allow",
+				},
+			},
+		})
 		expect(config.references).toEqual({
 			workbase: expect.objectContaining({ path: ".." }),
 		})
 		expect(config.permission).toBeUndefined()
+		expect(
+			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
+		).toBe(false)
+		const plugin = await Bun.file(
+			join(root, ".opencode/plugin/agency-repository-skills.ts"),
+		).text()
+		expect(plugin).toContain("AGENCY_WRITABLE_CHECKOUT")
+		expect(plugin).toContain("config.skills.paths")
+		const tui = await Bun.file(join(root, ".opencode/tui.jsonc")).text()
+		expect(JSON.parse(tui.slice(tui.indexOf("\n\n") + 2))).toEqual({
+			$schema: "https://opencode.ai/tui.json",
+			plugin: ["./tui/agency-debug.ts"],
+		})
+		const tuiPlugin = await Bun.file(
+			join(root, ".opencode/tui/agency-debug.ts"),
+		).text()
+		expect(tuiPlugin).toContain('slashName: "agency-debug"')
+		expect(tuiPlugin).toContain("api.ui.toast")
+		expect(tuiPlugin).not.toContain("chat.message")
 	})
 
 	test("preserves existing gitignore entries", async () => {

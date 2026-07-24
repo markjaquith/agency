@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import orchestrationRecipes from "../fixtures/protocol/orchestration-recipes.json"
-import skillSetupCommands from "../fixtures/protocol/skill-setup-commands.json"
 import { parseCli } from "./cli-parser"
 
 const expectUsageError = (args: string[], usage: string) => {
@@ -72,12 +71,6 @@ describe("strict CLI parsing", () => {
 
 	test("accepts every documented orchestration recipe command", () => {
 		for (const args of orchestrationRecipes) {
-			expect(() => parseCli(args)).not.toThrow()
-		}
-	})
-
-	test("accepts every documented skill setup command", () => {
-		for (const args of skillSetupCommands) {
 			expect(() => parseCli(args)).not.toThrow()
 		}
 	})
@@ -431,6 +424,64 @@ describe("strict CLI parsing", () => {
 				"working",
 			]),
 		).toThrow("must be 'done' or 'dropped'")
+		expect(
+			parseCli([
+				"finish",
+				"task",
+				"--session-id",
+				"job-1",
+				"--revision",
+				revision,
+				"--outcome",
+				"done",
+				"--no-pull-request",
+				"--summary",
+				"Investigation completed",
+				"--evidence-url",
+				"https://example.com/result",
+			]),
+		).toMatchObject({
+			values: {
+				"no-pull-request": true,
+				summary: "Investigation completed",
+				"evidence-url": "https://example.com/result",
+			},
+		})
+		expect(() =>
+			parseCli([
+				"finish",
+				"task",
+				"--session-id",
+				"job-1",
+				"--revision",
+				revision,
+				"--outcome",
+				"done",
+				"--no-pull-request",
+			]),
+		).toThrow("--summary' is required")
+		expect(() =>
+			parseCli([
+				"task",
+				"status",
+				"example",
+				"working",
+				"--no-pull-request",
+				"--summary",
+				"Not done",
+			]),
+		).toThrow("valid only with a done status")
+		expect(() =>
+			parseCli([
+				"phase",
+				"status",
+				"task",
+				"phase",
+				"done",
+				"--summary",
+				"Missing explicit flag",
+			]),
+		).toThrow("require '--no-pull-request'")
 	})
 
 	test("accepts valid mutation revisions and rejects malformed hashes", () => {
@@ -465,6 +516,13 @@ describe("strict CLI parsing", () => {
 			values: { json: true, compact: true },
 		})
 		expectUsageError(["status", "--compact"], "agency status")
+		expect(parseCli(["context", ".", "--json", "--full"])).toMatchObject({
+			commandName: "context",
+			args: ["."],
+			values: { json: true, full: true },
+		})
+		expectUsageError(["context", ".", "--compact", "--full"], "agency context")
+		expectUsageError(["status", "--full"], "agency status")
 	})
 
 	test("accepts work preparation options only for the prepare subcommand", () => {

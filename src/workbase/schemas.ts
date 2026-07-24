@@ -74,6 +74,14 @@ export const PullRequestRecord = Schema.Struct({
 	state: Schema.Literal("open", "closed", "merged"),
 	draft: Schema.Boolean,
 	merged: Schema.Boolean,
+	mergeable: Schema.optional(Schema.NullOr(Schema.Boolean)),
+})
+
+export const CompletionRecord = Schema.Struct({
+	mode: Schema.Literal("non-pr"),
+	completedAt: IsoTimestamp,
+	summary: NonEmptyString,
+	evidenceUrl: Schema.optional(Url),
 })
 
 const DeliveryProvider = Schema.Struct({
@@ -142,6 +150,7 @@ const ExecutionUnit = {
 	pr: Schema.NullOr(Schema.Union(GitHubPullRequestUrl, PullRequestRecord)),
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
 	claim: Schema.optional(ClaimRecord),
+	completion: Schema.optional(CompletionRecord),
 }
 
 export const EpicFrontmatter = Schema.Struct({
@@ -213,6 +222,7 @@ const ReviewTaskFrontmatter = Schema.Struct({
 	review: ReviewRecord,
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
 	claim: Schema.optional(ClaimRecord),
+	completion: Schema.optional(CompletionRecord),
 })
 
 export const TaskFrontmatter = Schema.Union(
@@ -241,6 +251,7 @@ export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
 export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>
 export type ReviewSource = Schema.Schema.Type<typeof ReviewSource>
 export type ReviewRecord = Schema.Schema.Type<typeof ReviewRecord>
+export type CompletionRecord = Schema.Schema.Type<typeof CompletionRecord>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

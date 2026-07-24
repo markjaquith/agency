@@ -139,12 +139,71 @@ describe("claim service", () => {
 				),
 			),
 		)
-		expect(finished.data.status).toBe("done")
+		expect(finished.data.status).toBe("working")
 		expect(finished.claim).toMatchObject({
 			state: "finished",
 			finishedAt: "2026-07-17T12:45:00.000Z",
 			outcome: "done",
 		})
+	})
+
+	test("finishes claimed non-PR work with durable completion evidence", async () => {
+		const initial = await inspect()
+		const acquired = await claim(initial.revision)
+		const finished = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.finish(
+						{
+							taskId: "single",
+							sessionId: "session-1",
+							revision: acquired.revision,
+							outcome: "done",
+							nonPrCompletion: {
+								summary: "Review completed; no code change was needed.",
+								evidenceUrl: "https://example.com/review",
+							},
+							now: at("2026-07-17T12:45:00.000Z"),
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		expect(finished.data).toMatchObject({
+			status: "done",
+			claim: { state: "finished", outcome: "done" },
+			completion: {
+				mode: "non-pr",
+				completedAt: "2026-07-17T12:45:00.000Z",
+				summary: "Review completed; no code change was needed.",
+				evidenceUrl: "https://example.com/review",
+			},
+		})
+	})
+
+	test("rejects invalid claimed non-PR completion", async () => {
+		const initial = await inspect()
+		const acquired = await claim(initial.revision)
+		await expect(
+			runTestEffect(
+				ClaimService.pipe(
+					Effect.flatMap((service) =>
+						service.finish(
+							{
+								taskId: "single",
+								sessionId: "session-1",
+								revision: acquired.revision,
+								outcome: "done",
+								nonPrCompletion: { summary: " " },
+							},
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("summary must not be empty")
 	})
 
 	test("returns structured ownership and revision conflicts", async () => {

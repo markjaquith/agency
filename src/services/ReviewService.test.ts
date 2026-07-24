@@ -104,7 +104,7 @@ describe("ReviewService", () => {
 		expect(context.authority.mode).toBe("review")
 		expect(context.authority.writable).toBeNull()
 		expect(context.authority.references).toHaveLength(1)
-		expect(context.authority.documents.writable).toEqual([created.path])
+		expect(context.authority.documents?.writable).toEqual([created.path])
 		expect(context.pr).toEqual({ url: null, state: "none" })
 
 		const graph = await runTestEffect(
@@ -452,7 +452,11 @@ describe("ReviewService", () => {
 		await git(["branch", "-D", "review-me"], source)
 		await runTestEffect(
 			TaskService.pipe(
-				Effect.flatMap((service) => service.setStatus("review", "done", root)),
+				Effect.flatMap((service) =>
+					service.setStatus("review", "done", root, {
+						summary: "Review completed.",
+					}),
+				),
 			),
 		)
 		const archived = await runTestEffect(

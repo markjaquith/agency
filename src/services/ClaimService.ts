@@ -31,6 +31,10 @@ import {
 	type PhaseFrontmatter as PhaseData,
 	type TaskFrontmatter as TaskData,
 } from "../workbase/schemas"
+import {
+	buildNonPrCompletion,
+	type NonPrCompletionInput,
+} from "../workbase/completion"
 
 class ClaimError extends Data.TaggedError("ClaimError")<{
 	readonly message: string
@@ -83,6 +87,7 @@ interface OwnedClaimInput {
 
 interface FinishInput extends OwnedClaimInput {
 	readonly outcome: "done" | "dropped"
+	readonly nonPrCompletion?: NonPrCompletionInput
 }
 
 interface ExpireClaimInput {
@@ -508,6 +513,11 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 			finish: (input: FinishInput, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					assertIdentity("Session ID", input.sessionId)
+					if (input.nonPrCompletion && input.outcome !== "done") {
+						return yield* new ClaimError({
+							message: "Non-PR completion is valid only with a done outcome",
+						})
+					}
 					const service = yield* ClaimService
 					const inspected = yield* service.inspect(
 						input.taskId,
@@ -532,6 +542,22 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 										message: `Session '${input.sessionId}' does not own ${inspected.target.label}`,
 									})
 								}
+								if (input.nonPrCompletion && "pr" in data && data.pr !== null) {
+									throw new ClaimError({
+										target: inspected.target.label,
+										message:
+											"Cannot complete without a pull request while an authoritative pull request is recorded",
+									})
+								}
+								const completionResult = input.nonPrCompletion
+									? buildNonPrCompletion(input.nonPrCompletion, now)
+									: undefined
+								if (completionResult && "error" in completionResult) {
+									throw new ClaimError({
+										target: inspected.target.label,
+										message: completionResult.error,
+									})
+								}
 								const claim: ClaimRecord = {
 									...data.claim,
 									state: "finished",
@@ -539,7 +565,18 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 									outcome: input.outcome,
 								}
 								return {
-									data: { ...data, status: input.outcome, claim },
+									data: {
+										...data,
+										status: completionResult
+											? "done"
+											: input.outcome === "done"
+												? "working"
+												: "dropped",
+										claim,
+										...(completionResult
+											? { completion: completionResult.value }
+											: {}),
+									},
 									claim,
 								}
 							},

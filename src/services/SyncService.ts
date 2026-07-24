@@ -585,6 +585,19 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 
+					if (data.completion) {
+						executions.push({
+							target: record.key,
+							status: data.status,
+							branch: data.branch,
+							base: data.base,
+							claim: data.claim ?? null,
+							checkouts: checkoutStates,
+							pr: { url: null, state: "none" },
+						})
+						continue
+					}
+
 					const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
 					let current: PullRequestRecord | null = existing
 					let pr: Record<string, unknown> = existing ?? {
@@ -694,7 +707,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							"view",
 							existing.url,
 							"--json",
-							"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit",
+							"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
 						])
 						if (viewed.exitCode === 0) {
 							const detail = parseJson<Record<string, unknown>>(
@@ -734,7 +747,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								"--state",
 								"all",
 								"--json",
-								"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit",
+								"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
 							],
 							{ cwd: repositoryPath },
 						)

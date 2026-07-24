@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import type { GraphNode } from "./graph-schema"
 import { GraphService } from "./services/GraphService"
+import type { ValidationReport } from "./services/WorkbaseService"
 import type { WorkStatus } from "./workbase/schemas"
 
 type WorkNode = Extract<
@@ -12,6 +13,7 @@ type ExecutionNode = Extract<WorkNode, { readonly kind: "execution-unit" }>
 
 export interface WorkViewOptions {
 	readonly cwd?: string
+	readonly validation?: ValidationReport
 	readonly statuses?: readonly string[]
 	readonly repositories?: readonly string[]
 	readonly ready?: boolean
@@ -177,6 +179,7 @@ export const getWorkViews = (options: WorkViewOptions = {}) =>
 		)
 		const graph = yield* graphService.get({
 			cwd: options.cwd,
+			validation: options.validation,
 			include: ["workspace"],
 		})
 		const workNodes = graph.nodes.filter(

@@ -42,6 +42,9 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly pr?: boolean
 	readonly work?: boolean
 	readonly auto?: boolean
+	readonly noPullRequest?: boolean
+	readonly summary?: string
+	readonly evidenceUrl?: string
 }
 
 export interface TaskInteraction {
@@ -322,7 +325,19 @@ export const task = (
 						new Error("Usage: agency task status <id> <status>"),
 					)
 				}
-				const record = yield* tasks.setStatus(id, status, cwd)
+				const record = yield* tasks.setStatus(
+					id,
+					status,
+					cwd,
+					options.noPullRequest
+						? {
+								summary: options.summary ?? "",
+								...(options.evidenceUrl
+									? { evidenceUrl: options.evidenceUrl }
+									: {}),
+							}
+						: undefined,
+				)
 				const { content: _, ...output } = record
 				log(
 					options.json
@@ -441,7 +456,7 @@ Subcommands:
   create <id>           Create a task without prompting
   list                  List tasks
   show <id>             Show a task
-  status <id> <status>  Set open, working, done, or dropped
+  status <id> <status>  Set open, working, dropped, or explicit non-PR done
   update <id>           Update task metadata
   rename <id> <new-id>  Rename a task and update graph references
   move <id>             Move a task with --epic or --no-epic
@@ -450,6 +465,11 @@ Subcommands:
 
 Mutation option:
   --if-revision <hash>  Require the target's current revision
+
+Non-PR completion options (status done only):
+  --no-pull-request     Complete without a pull request
+  --summary <text>      Required durable outcome summary
+  --evidence-url <url>  Optional supporting record
 
 Create options:
   --ticket-url <url>    External ticket URL (optional)

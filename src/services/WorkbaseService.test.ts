@@ -73,6 +73,64 @@ pr: null
 		expect(report.issues).toEqual([])
 	})
 
+	test("validates non-PR completion invariants without rejecting legacy done work", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: { remote: "https://example.com/agency.git" },
+				},
+			}),
+		)
+		await write(
+			root,
+			"tasks/invalid/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: task/invalid
+base: main
+pr: https://github.com/example/agency/pull/1
+status: working
+completion:
+  mode: non-pr
+  completedAt: 2026-07-23T18:00:00.000Z
+  summary: Investigation completed.
+---
+`,
+		)
+		await write(
+			root,
+			"tasks/legacy/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: task/legacy
+base: main
+pr: null
+status: done
+---
+`,
+		)
+
+		const report = await runTestEffect(
+			WorkbaseService.pipe(Effect.flatMap((service) => service.validate(root))),
+		)
+		expect(report.issues).toContainEqual({
+			path: "tasks/invalid/TASK.md",
+			message: "Non-PR completion requires status 'done'",
+		})
+		expect(report.issues).toContainEqual({
+			path: "tasks/invalid/TASK.md",
+			message: "Non-PR completion cannot have a recorded pull request",
+		})
+		expect(
+			report.issues.some((issue) => issue.path === "tasks/legacy/TASK.md"),
+		).toBe(false)
+	})
+
 	test("registers canonical workbase paths without duplicates", async () => {
 		const workbaseRoot = join(root, "workbase")
 		const nested = join(workbaseRoot, "nested")

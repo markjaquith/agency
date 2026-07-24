@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorktreeService } from "../services/WorktreeService"
 import { FileSystemService } from "../services/FileSystemService"
@@ -236,6 +236,7 @@ export const work = (
 				(target.status !== undefined && target.status !== "open"))
 		let prompt: string
 		let launchPath: string
+		let writablePath: string | undefined
 		if (target.kind === "epic") {
 			prompt = `Work on the epic. Read ${target.path}.`
 			launchPath = dirname(target.path)
@@ -260,7 +261,8 @@ export const work = (
 			prompt = workspace.phasePath
 				? `${action} the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `${action} the task. Read ${workspace.taskPath}.`
-			launchPath = dirname(workspace.taskPath)
+			launchPath = dirname(workspace.phasePath ?? workspace.taskPath)
+			writablePath = workspace.writablePath ?? undefined
 		}
 
 		const explicitlyRequested = Boolean(
@@ -331,6 +333,7 @@ export const work = (
 			...resolved.environment,
 			...runnerEnvironment(runner, variables),
 		}
+		if (writablePath) environment.AGENCY_WRITABLE_CHECKOUT = writablePath
 		if (options.printCommand) {
 			log(
 				JSON.stringify(
@@ -477,8 +480,8 @@ Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>]
 Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
 ID. Use '.' for the current directory. Outside a workbase, select a registered
-workbase first. OpenCode launches receive whole-workbase read access through the
-runtime environment; Agency context remains authoritative for writes.
+workbase first. Managed OpenCode launches receive whole-workbase access through
+Agency's project plugin; Agency context remains authoritative for writes.
 
 The prepare subcommand resolves and materializes an execution workspace without
 launching an agent or changing lifecycle status. --dry-run reports planned Git

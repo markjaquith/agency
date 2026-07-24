@@ -8,6 +8,7 @@ import { PullRequestService } from "./PullRequestService"
 import { SyncService } from "./SyncService"
 import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
+import { WorkbaseService } from "./WorkbaseService"
 
 const git = async (args: string[], cwd?: string) => {
 	const process = Bun.spawn(["git", ...args], {
@@ -46,14 +47,18 @@ describe("SyncService", () => {
 		await Bun.write(
 			gh,
 			`#!/bin/sh
+case "$*" in
+*mergeable*) ;;
+*) echo "mergeable field was not requested" >&2; exit 2 ;;
+esac
 if [ "$2" = "view" ]; then
 cat <<'JSON'
-{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}
+{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}
 JSON
 exit 0
 fi
 cat <<'JSON'
-[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}]
+[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
 JSON
 `,
 		)
@@ -220,8 +225,83 @@ pr: null
 				state: "merged",
 				draft: false,
 				merged: true,
+				mergeable: true,
 			},
 			claim: { state: "released", sessionId: "session-1" },
+		})
+	})
+
+	test("records a conflicting open PR without changing lifecycle status", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "example",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("example", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"example",
+						undefined,
+						"https://github.com/example/agency/pull/42",
+						root,
+					),
+				),
+			),
+		)
+		await Bun.write(
+			join(root, "bin", "gh"),
+			`#!/bin/sh
+cat <<'JSON'
+{"number":42,"state":"OPEN","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":null,"mergeCommit":null,"mergeable":"CONFLICTING"}
+JSON
+`,
+		)
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(applied.changes).toContainEqual(
+			expect.objectContaining({ kind: "record-pr", target: "task:example" }),
+		)
+		expect(applied.changes.some((change) => change.kind === "mark-done")).toBe(
+			false,
+		)
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect(task.data).toMatchObject({
+			status: "open",
+			pr: { state: "open", merged: false, mergeable: false },
 		})
 	})
 
@@ -309,6 +389,99 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 			),
 		)
 		expect("pr" in task.data && task.data.pr).toEqual(record)
+	})
+
+	test("marks a successfully finished claim done only after merge", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "finished-claim",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("finished-claim", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		const initial = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("finished-claim", undefined, root),
+				),
+			),
+		)
+		const claimed = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.claim(
+						{
+							taskId: "finished-claim",
+							claimant: "orchestrator",
+							runner: "agent",
+							sessionId: "session-1",
+							revision: initial.revision,
+						},
+						root,
+					),
+				),
+			),
+		)
+		const finished = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.finish(
+						{
+							taskId: "finished-claim",
+							sessionId: "session-1",
+							revision: claimed.revision,
+							outcome: "done",
+						},
+						root,
+					),
+				),
+			),
+		)
+		expect(finished.data).toMatchObject({
+			status: "working",
+			claim: { state: "finished", outcome: "done" },
+		})
+
+		const synced = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(synced.changes.map((change) => change.kind)).toContain("mark-done")
+		expect(
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) => service.show("finished-claim", root)),
+				),
+			),
+		).toMatchObject({
+			data: {
+				status: "done",
+				claim: { state: "finished", outcome: "done" },
+			},
+		})
 	})
 
 	test("materializes missing workspaces but leaves branch conflicts unresolved", async () => {
@@ -490,5 +663,70 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 			),
 		)
 		expect(task.data).toMatchObject({ status: "open" })
+	})
+
+	test("leaves non-PR completion unchanged when a matching PR is discoverable", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "non-pr",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("non-pr", "done", root, {
+						summary: "Investigation completed without changes.",
+					}),
+				),
+			),
+		)
+
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const applied = await runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) =>
+						service.reconcile({ cwd: root, apply: true }),
+					),
+				),
+			)
+			expect(
+				applied.changes.some(
+					(change) =>
+						change.kind === "record-pr" || change.kind === "mark-done",
+				),
+			).toBe(false)
+		}
+
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("non-pr", root)),
+			),
+		)
+		expect(task.data).toMatchObject({
+			status: "done",
+			pr: null,
+			completion: {
+				mode: "non-pr",
+				summary: "Investigation completed without changes.",
+			},
+		})
+		expect(
+			await runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.validate(root)),
+				),
+			),
+		).toMatchObject({ valid: true, issues: [] })
 	})
 })

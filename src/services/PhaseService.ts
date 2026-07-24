@@ -26,6 +26,10 @@ import {
 	type TransactionStep,
 } from "./LifecycleTransaction"
 import { withWorktreeLocks } from "./WorktreeLock"
+import {
+	buildNonPrCompletion,
+	type NonPrCompletionInput,
+} from "../workbase/completion"
 
 class PhaseError extends Data.TaggedError("PhaseError")<{
 	readonly message: string
@@ -226,6 +230,9 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							pr: task.data.pr,
 							status: task.data.status,
 							...(task.data.claim ? { claim: task.data.claim } : {}),
+							...(task.data.completion
+								? { completion: task.data.completion }
+								: {}),
 						})
 						const firstTitle = firstPhaseId!
 							.split("-")
@@ -474,6 +481,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 				id: string,
 				status: string,
 				startPath: string = process.cwd(),
+				nonPrCompletion?: NonPrCompletionInput,
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -491,13 +499,58 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							message: `Phase '${id}' has an active claim; use agency release or agency finish`,
 						})
 					}
-					if (!canTransitionStatus(record.data.status, validStatus)) {
+					if (nonPrCompletion && validStatus !== "done") {
+						return yield* new PhaseError({
+							message: "Non-PR completion is valid only with a done status",
+						})
+					}
+					if (nonPrCompletion && record.data.pr !== null) {
+						return yield* new PhaseError({
+							message:
+								"Cannot complete without a pull request while an authoritative pull request is recorded",
+						})
+					}
+					const completionResult = nonPrCompletion
+						? buildNonPrCompletion(nonPrCompletion, new Date())
+						: undefined
+					if (completionResult && "error" in completionResult) {
+						return yield* new PhaseError({ message: completionResult.error })
+					}
+					if (
+						completionResult &&
+						record.data.status !== "open" &&
+						record.data.status !== "working" &&
+						record.data.status !== "delegated"
+					) {
+						return yield* new PhaseError({
+							message: `Cannot transition phase '${id}' from ${record.data.status} to done; reopen it first`,
+						})
+					}
+					if (
+						!canTransitionStatus(record.data.status, validStatus) &&
+						!completionResult
+					) {
+						if (validStatus === "done") {
+							return yield* new PhaseError({
+								message:
+									"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply', or explicitly complete a non-PR outcome with '--no-pull-request --summary <text>'",
+							})
+						}
 						return yield* new PhaseError({
 							message: `Cannot transition phase '${id}' from ${record.data.status} to ${validStatus}; reopen it first`,
 						})
 					}
 					const parsed = yield* parseFrontmatter(record.content, record.path)
-					const data = { ...record.data, status: validStatus }
+					const { completion: _, ...withoutCompletion } = record.data
+					const data: PhaseData = completionResult
+						? {
+								...record.data,
+								status: "done",
+								completion: completionResult.value,
+							}
+						: validStatus === "open"
+							? { ...withoutCompletion, status: validStatus }
+							: { ...record.data, status: validStatus }
 					const content = formatMarkdownDocument(data, parsed.body)
 					yield* fs.writeFile(record.path, content)
 					return {
