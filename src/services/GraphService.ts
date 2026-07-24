@@ -54,7 +54,10 @@ interface RepositoryRecord {
 	readonly target: string | null
 }
 
-type ExecutionData = PhaseData | Extract<TaskData, { readonly repo: string }>
+type ExecutionData =
+	| PhaseData
+	| Extract<TaskData, { readonly repo: string }>
+	| Extract<TaskData, { readonly review: unknown }>
 
 export interface GraphOptions {
 	readonly cwd?: string
@@ -548,10 +551,18 @@ export class GraphService extends Effect.Service<GraphService>()(
 					const executionRepositories = (
 						data: TaskData | PhaseData,
 					): readonly string[] =>
-						"repo" in data
-							? [data.repo, ...(data.repos ?? []).map((item) => item.repo)]
-							: []
+						"review" in data
+							? [data.review.repo]
+							: "repo" in data
+								? [data.repo, ...(data.repos ?? []).map((item) => item.repo)]
+								: []
 					const executionEdges = (id: string, data: TaskData | PhaseData) => {
+						if ("review" in data) {
+							edges.push(
+								edge("references", id, repositoryNodeId(data.review.repo)),
+							)
+							return
+						}
 						if (!("repo" in data)) return
 						edges.push(edge("writes", id, repositoryNodeId(data.repo)))
 						for (const reference of data.repos ?? []) {
@@ -650,8 +661,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 					const executionDetails = (entityPath: string, data: ExecutionData) =>
 						Effect.gen(function* () {
 							const directory = entityPath.replace(/\/(?:TASK|PHASE)\.md$/, "")
-							const checkoutPath = join(directory, "code", data.repo)
-							const repositoryPath = join(root, "repos", data.repo)
+							const repo = "review" in data ? data.review.repo : data.repo
+							const checkoutPath = join(directory, "code", repo)
+							const repositoryPath = join(root, "repos", repo)
 							const materialized = yield* fs.isDirectory(checkoutPath)
 							const result: {
 								workspace?: GraphExecutionWorkspace
@@ -666,58 +678,110 @@ export class GraphService extends Effect.Service<GraphService>()(
 								}
 							}
 							if (include.has("git")) {
-								result.git = {
-									branch: data.branch,
-									base: data.base,
-									branchCommit: yield* run(fs, [
-										"git",
-										"-C",
-										repositoryPath,
-										"rev-parse",
-										`${data.branch}^{commit}`,
-									]),
-									baseCommit: yield* run(fs, [
-										"git",
-										"-C",
-										repositoryPath,
-										"rev-parse",
-										`${data.base}^{commit}`,
-									]),
-									checkoutCommit: materialized
-										? yield* run(fs, [
-												"git",
-												"-C",
-												checkoutPath,
-												"rev-parse",
-												"HEAD",
-											])
-										: null,
-									checkoutBranch: materialized
-										? yield* run(fs, [
-												"git",
-												"-C",
-												checkoutPath,
-												"symbolic-ref",
-												"--quiet",
-												"--short",
-												"HEAD",
-											])
-										: null,
-									dirty: materialized
-										? ((status) =>
-												status === null ? null : status.length > 0)(
-												yield* runText(fs, [
+								result.git =
+									"review" in data
+										? {
+												pinnedCommit: data.review.commit,
+												sourceCommit: ((value) =>
+													value?.split(/\s+/)[0] ?? null)(
+													yield* run(fs, [
+														"git",
+														"-C",
+														repositoryPath,
+														"ls-remote",
+														"origin",
+														data.review.source.kind === "pull-request"
+															? data.review.source.fetchRef
+															: data.review.source.ref
+																	.replace(/^refs\/remotes\/origin\//, "")
+																	.replace(/^origin\//, ""),
+													]),
+												),
+												checkoutCommit: materialized
+													? yield* run(fs, [
+															"git",
+															"-C",
+															checkoutPath,
+															"rev-parse",
+															"HEAD",
+														])
+													: null,
+												checkoutBranch: materialized
+													? yield* run(fs, [
+															"git",
+															"-C",
+															checkoutPath,
+															"symbolic-ref",
+															"--quiet",
+															"--short",
+															"HEAD",
+														])
+													: null,
+												dirty: materialized
+													? ((status) =>
+															status === null ? null : status.length > 0)(
+															yield* runText(fs, [
+																"git",
+																"-C",
+																checkoutPath,
+																"status",
+																"--porcelain",
+															]),
+														)
+													: null,
+											}
+										: {
+												branch: data.branch,
+												base: data.base,
+												branchCommit: yield* run(fs, [
 													"git",
 													"-C",
-													checkoutPath,
-													"status",
-													"--porcelain",
+													repositoryPath,
+													"rev-parse",
+													`${data.branch}^{commit}`,
 												]),
-											)
-										: null,
-								}
+												baseCommit: yield* run(fs, [
+													"git",
+													"-C",
+													repositoryPath,
+													"rev-parse",
+													`${data.base}^{commit}`,
+												]),
+												checkoutCommit: materialized
+													? yield* run(fs, [
+															"git",
+															"-C",
+															checkoutPath,
+															"rev-parse",
+															"HEAD",
+														])
+													: null,
+												checkoutBranch: materialized
+													? yield* run(fs, [
+															"git",
+															"-C",
+															checkoutPath,
+															"symbolic-ref",
+															"--quiet",
+															"--short",
+															"HEAD",
+														])
+													: null,
+												dirty: materialized
+													? ((status) =>
+															status === null ? null : status.length > 0)(
+															yield* runText(fs, [
+																"git",
+																"-C",
+																checkoutPath,
+																"status",
+																"--porcelain",
+															]),
+														)
+													: null,
+											}
 							}
-							if (include.has("pr")) {
+							if (include.has("pr") && !("review" in data)) {
 								if (!data.pr) {
 									result.pr = { url: null, state: "none" }
 								} else {

@@ -97,6 +97,11 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					const taskId = yield* decodeId(input.taskId, "task")
 					const id = yield* decodeId(input.id, "phase")
 					const task = yield* tasks.show(taskId, root)
+					if ("review" in task.data) {
+						return yield* new PhaseError({
+							message: `Review task '${taskId}' cannot be converted to phases`,
+						})
+					}
 					const isMultiPhase = "phases" in task.data
 					let firstPhaseId: string | undefined
 					if (!isMultiPhase) {

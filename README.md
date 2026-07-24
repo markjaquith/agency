@@ -589,6 +589,26 @@ agency task create <id> --multi-phase
   [--ticket-url <url>] [--description <text>] [--epic <id>] [--json]
 ```
 
+Create a pinned, read-only review task from the selected alias's origin:
+
+```text
+agency task create <id> --review <alias> --pull-request <url-or-number>
+agency task create <id> --review <alias> --ref <remote-ref>
+agency review refresh <id> [--if-revision <hash>] [--json]
+```
+
+Review creation fetches the source and records its exact 40-character commit.
+GitHub pull requests use the base alias's `refs/pull/<number>/head`, including
+fork pull requests exposed through that ref. Review workspaces contain one
+detached checkout and no writable branch. Source movement is observed separately
+from the pin and applied only by `review refresh`; sync, doctor, work, cleanup,
+and archive never move the pin implicitly. Dirty or structurally unexpected
+review checkouts block refresh and cleanup. Review tasks support normal status
+and claim lifecycle, but reject phase conversion and delivery PR operations.
+Each active or archived review task owns one internal task-scoped pin ref. A
+refresh advances that ref transactionally; failed creation removes it. Archiving
+retains the pin so a deleted source can still be restored and inspected.
+
 ### Noninteractive Use
 
 Agency never prompts when `--no-input` is set or stdin/stderr are not TTYs.
@@ -771,7 +791,8 @@ their built-in presets. Launches are interactive and promptless by default; use
 `--auto` to send Agency's generated context prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
-writable and reference worktrees without launching an agent or changing status.
+writable and reference worktrees, or its single pinned review checkout, without
+launching an agent or changing status.
 Its JSON result includes document and checkout paths, resolved commits, actions,
 and Git operations. Use `--dry-run` to report planned fetch, branch, and worktree
 changes without applying them.

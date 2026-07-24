@@ -11,6 +11,7 @@ import { formatTable } from "../utils/table"
 import { getWorkViews } from "../work-view"
 import { GraphMutationService } from "../services/GraphMutationService"
 import { work as startWork, type StartWork } from "./work"
+import { ReviewService } from "../services/ReviewService"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -30,6 +31,9 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly ifRevision?: string
 	readonly noEpic?: boolean
 	readonly multiPhase?: boolean
+	readonly review?: string
+	readonly pullRequest?: string
+	readonly ref?: string
 	readonly json?: boolean
 	readonly statuses?: readonly string[]
 	readonly repositories?: readonly string[]
@@ -85,6 +89,7 @@ export const task = (
 		const repositories = yield* RepositoryService
 		const workbase = yield* WorkbaseService
 		const mutations = yield* GraphMutationService
+		const reviews = yield* ReviewService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 
@@ -211,11 +216,18 @@ export const task = (
 					return yield* Effect.fail(new Error("Task ID is required"))
 				}
 				const multiPhase = options.multiPhase ?? false
-				if (!multiPhase && !options.repo) {
+				if (!multiPhase && !options.repo && !options.review) {
 					return yield* Effect.fail(
 						new Error("Writable repository is required for task create"),
 					)
 				}
+				const review = options.review
+					? yield* reviews.resolve(
+							options.review,
+							{ pullRequest: options.pullRequest, ref: options.ref },
+							cwd,
+						)
+					: undefined
 				const record = yield* tasks.create(
 					{
 						id,
@@ -223,10 +235,16 @@ export const task = (
 						description: options.description?.trim() || undefined,
 						epic: options.epic,
 						multiPhase,
+						review,
 						repo: options.repo,
-						repos: parseRepositoryReferences(options.references),
-						branch: multiPhase ? undefined : (options.branch ?? `task/${id}`),
-						base: multiPhase ? undefined : (options.base ?? "main"),
+						repos: review
+							? undefined
+							: parseRepositoryReferences(options.references),
+						branch:
+							multiPhase || review
+								? undefined
+								: (options.branch ?? `task/${id}`),
+						base: multiPhase || review ? undefined : (options.base ?? "main"),
 					},
 					cwd,
 				)
@@ -462,7 +480,11 @@ Create options:
                         Read-only repository reference; repeatable
   --branch <name>       Working branch (default: task/<id>)
   --base <name>         Base branch (default: main)
-  --multi-phase         Create a task container for phases
+	--multi-phase         Create a task container for phases
+	--review <alias>      Create a pinned read-only review task
+	--pull-request <url-or-number>
+	                       Review a GitHub pull request from the alias origin
+	--ref <remote-ref>    Review a branch or other fetchable origin ref
   --work                Start work on the new task after creating it
   --auto                Pass --auto to work; requires --work
 

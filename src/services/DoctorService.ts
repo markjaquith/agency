@@ -282,6 +282,8 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 					}
 
 					const refs = new Map<string, Set<string>>()
+					const reviewSources: { repo: string; task: string; ref: string }[] =
+						[]
 					const declareRef = (repo: string, ref: string) => {
 						const values = refs.get(repo) ?? new Set<string>()
 						values.add(ref)
@@ -293,7 +295,19 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 								declareRef(reference.repo, reference.ref)
 						}
 						for (const task of yield* tasks.list(root)) {
-							if ("repo" in task.data) {
+							if ("review" in task.data) {
+								declareRef(task.data.review.repo, task.data.review.commit)
+								reviewSources.push({
+									repo: task.data.review.repo,
+									task: task.id,
+									ref:
+										task.data.review.source.kind === "pull-request"
+											? task.data.review.source.fetchRef
+											: task.data.review.source.ref
+													.replace(/^refs\/remotes\/origin\//, "")
+													.replace(/^origin\//, ""),
+								})
+							} else if ("repo" in task.data) {
 								declareRef(task.data.repo, task.data.base)
 								for (const reference of task.data.repos ?? [])
 									declareRef(reference.repo, reference.ref)
@@ -356,6 +370,36 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 							remediation: `Run 'agency repo remote ${repository.alias} <url>' to configure origin.`,
 						})
 						if (!repositoryValid) continue
+
+						for (const source of reviewSources.filter(
+							(item) => item.repo === repository.alias,
+						)) {
+							const observed = yield* fs.runCommand(
+								[
+									"git",
+									"-C",
+									repository.path,
+									"ls-remote",
+									"origin",
+									source.ref,
+								],
+								{ captureOutput: true },
+							)
+							const available =
+								observed.exitCode === 0 && Boolean(observed.stdout.trim())
+							add({
+								id: `review.${source.task}.source`,
+								category: "repository",
+								level: "warning",
+								status: available ? "pass" : "fail",
+								message: available
+									? `Review source '${source.ref}' is available for task '${source.task}'`
+									: `Review source '${source.ref}' is unavailable for task '${source.task}'; its pin remains usable`,
+								remediation: available
+									? undefined
+									: "Use the pinned checkout or refresh after restoring the source.",
+							})
+						}
 
 						for (const ref of [...(refs.get(repository.alias) ?? [])].sort()) {
 							const local = yield* fs.runCommand(

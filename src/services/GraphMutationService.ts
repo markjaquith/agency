@@ -360,6 +360,11 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						"base",
 						"pr",
 					].some((key) => updates[key as keyof TaskUpdates] !== undefined)
+					if ("review" in record.data && executionChange) {
+						return yield* new GraphMutationError({
+							message: `Review task '${id}' does not have writable execution metadata`,
+						})
+					}
 					if ("phases" in record.data && executionChange) {
 						return yield* new GraphMutationError({
 							message: `Task '${id}' has multiple phases; update execution metadata on a phase instead`,

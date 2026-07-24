@@ -81,13 +81,13 @@ describe("WorktreeService", () => {
 		)
 
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).text(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).text(),
 		).toBe("example\n")
 		expect(
 			await Bun.file(join(workspace.codePath, "effect/README.md")).text(),
 		).toBe("example\n")
 		const branch = Bun.spawnSync(
-			["git", "-C", workspace.writablePath, "branch", "--show-current"],
+			["git", "-C", workspace.writablePath!, "branch", "--show-current"],
 			{ stdout: "pipe" },
 		)
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
@@ -272,7 +272,7 @@ describe("WorktreeService", () => {
 			),
 		)
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).text(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).text(),
 		).toBe("example\n")
 	})
 
@@ -599,7 +599,7 @@ pr: null
 
 		expect(
 			await Bun.file(
-				join(originalWorkspace.writablePath, "README.md"),
+				join(originalWorkspace.writablePath!, "README.md"),
 			).exists(),
 		).toBe(false)
 		const movedWorkspace = await runTestEffect(
@@ -613,10 +613,10 @@ pr: null
 			join(root, "tasks/promoted/phases/implementation/code/agency"),
 		)
 		expect(
-			await Bun.file(join(movedWorkspace.writablePath, "README.md")).text(),
+			await Bun.file(join(movedWorkspace.writablePath!, "README.md")).text(),
 		).toBe("example\n")
 		const status = Bun.spawnSync(
-			["git", "-C", movedWorkspace.writablePath, "status", "--porcelain"],
+			["git", "-C", movedWorkspace.writablePath!, "status", "--porcelain"],
 			{ stdout: "pipe", stderr: "pipe" },
 		)
 		expect(status.exitCode).toBe(0)
@@ -1072,7 +1072,7 @@ pr: null
 			),
 		)
 		await Bun.write(
-			join(workspace.writablePath, "uncommitted.txt"),
+			join(workspace.writablePath!, "uncommitted.txt"),
 			"keep me\n",
 		)
 
@@ -1084,7 +1084,7 @@ pr: null
 			),
 		).rejects.toThrow("Failed to remove worktree for 'agency'")
 		expect(
-			await Bun.file(join(workspace.writablePath, "uncommitted.txt")).text(),
+			await Bun.file(join(workspace.writablePath!, "uncommitted.txt")).text(),
 		).toBe("keep me\n")
 	})
 
@@ -1131,7 +1131,7 @@ pr: null
 			"--porcelain",
 		])
 		expect(new TextDecoder().decode(worktrees.stdout)).not.toContain(
-			workspace.writablePath,
+			workspace.writablePath!,
 		)
 		expect(
 			Bun.spawnSync([
@@ -1325,7 +1325,7 @@ pr: null
 			),
 		).rejects.toThrow("multiple Agency owners")
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
 		).toBe(true)
 	})
 
@@ -1371,7 +1371,7 @@ pr: null
 			]),
 		)
 		expect(
-			await Bun.file(join(original.writablePath, "README.md")).exists(),
+			await Bun.file(join(original.writablePath!, "README.md")).exists(),
 		).toBe(true)
 
 		const rebuilt = await runTestEffect(
@@ -1383,7 +1383,7 @@ pr: null
 		)
 		expect(rebuilt.inspection.conflicts).toEqual([])
 		expect(
-			await Bun.file(join(original.writablePath, "README.md")).exists(),
+			await Bun.file(join(original.writablePath!, "README.md")).exists(),
 		).toBe(true)
 	})
 
@@ -1435,7 +1435,7 @@ pr: null
 			),
 		).rejects.toThrow("original worktrees were restored")
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
 		).toBe(true)
 	})
 
@@ -1473,7 +1473,7 @@ pr: null
 			),
 		)
 		expect(plan.actions.join("\n")).toContain("worktree prune --expire now")
-		expect(plan.actions).toContain(`prepare ${workspace.writablePath}`)
+		expect(plan.actions).toContain(`prepare ${workspace.writablePath!}`)
 
 		const repaired = await runTestEffect(
 			WorktreeService.pipe(
@@ -1484,7 +1484,7 @@ pr: null
 		)
 		expect(repaired.inspection.conflicts).toEqual([])
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).exists(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
 		).toBe(true)
 		expect(
 			Bun.spawnSync([
@@ -1648,7 +1648,7 @@ pr: null
 			),
 		)
 		expect(
-			await Bun.file(join(workspace.writablePath, "README.md")).text(),
+			await Bun.file(join(workspace.writablePath!, "README.md")).text(),
 		).toBe("example\n")
 	})
 })

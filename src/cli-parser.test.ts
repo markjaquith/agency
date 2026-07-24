@@ -7,6 +7,68 @@ const expectUsageError = (args: string[], usage: string) => {
 }
 
 describe("strict CLI parsing", () => {
+	test("accepts review creation and refresh while enforcing one source", () => {
+		expect(
+			parseCli([
+				"task",
+				"create",
+				"review-it",
+				"--review",
+				"agency",
+				"--pull-request",
+				"42",
+			]).values,
+		).toMatchObject({ review: "agency", "pull-request": "42" })
+		expect(() =>
+			parseCli([
+				"task",
+				"create",
+				"review-it",
+				"--review",
+				"agency",
+				"--ref",
+				"feature/review",
+			]),
+		).not.toThrow()
+		expect(() =>
+			parseCli([
+				"review",
+				"refresh",
+				"review-it",
+				"--if-revision",
+				"a".repeat(64),
+			]),
+		).not.toThrow()
+		expect(() =>
+			parseCli([
+				"task",
+				"create",
+				"review-it",
+				"--review",
+				"agency",
+				"--pull-request",
+				"42",
+				"--ref",
+				"feature/review",
+			]),
+		).toThrow("exactly one")
+		for (const extra of [
+			["--ref", "feature/review", "--repo", "agency"],
+			["--ref", "feature/review", "--multi-phase"],
+		]) {
+			expect(() =>
+				parseCli([
+					"task",
+					"create",
+					"review-it",
+					"--review",
+					"agency",
+					...extra,
+				]),
+			).toThrow("cannot be combined")
+		}
+	})
+
 	test("accepts every documented orchestration recipe command", () => {
 		for (const args of orchestrationRecipes) {
 			expect(() => parseCli(args)).not.toThrow()

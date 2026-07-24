@@ -82,6 +82,9 @@ const taskCreateOptions = {
 	branch: { type: "string" },
 	base: { type: "string" },
 	"multi-phase": { type: "boolean" },
+	review: { type: "string" },
+	"pull-request": { type: "string" },
+	ref: { type: "string" },
 } satisfies OptionConfig
 
 const phaseCreateOptions = {
@@ -393,7 +396,7 @@ const commands = {
 			},
 			create: {
 				usage:
-					"agency task create <id> (--repo <alias> | --multi-phase) [options]",
+					"agency task create <id> (--repo <alias> | --multi-phase | --review <alias> (--pull-request <value> | --ref <remote-ref>)) [options]",
 				minArgs: 1,
 				maxArgs: 1,
 				options: [
@@ -405,6 +408,9 @@ const commands = {
 					"branch",
 					"base",
 					"multi-phase",
+					"review",
+					"pull-request",
+					"ref",
 					"json",
 				],
 				repeatable: ["reference"],
@@ -757,6 +763,22 @@ const commands = {
 				minArgs: 2,
 				maxArgs: 2,
 				options: ["dry-run", "json", "task", "phase"],
+			},
+		},
+	},
+	review: {
+		usage: "agency review refresh <task-id> [--if-revision <hash>] [--json]",
+		options: {
+			...outputOptions,
+			"if-revision": { type: "string" },
+		},
+		subcommands: {
+			refresh: {
+				usage:
+					"agency review refresh <task-id> [--if-revision <hash>] [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["if-revision", "json"],
 			},
 		},
 	},
@@ -1161,6 +1183,38 @@ function validateTaskCreate(
 	spec: LeafCommand,
 	requireRepo: boolean,
 ) {
+	const review = values.review !== undefined
+	const pullRequest = values["pull-request"] !== undefined
+	const ref = values.ref !== undefined
+	if (review) {
+		if (pullRequest === ref) {
+			throw usageError(
+				"Option '--review' requires exactly one of '--pull-request' or '--ref'.",
+				spec.usage,
+			)
+		}
+		for (const option of [
+			"repo",
+			"reference",
+			"branch",
+			"base",
+			"multi-phase",
+		] as const) {
+			if (values[option] !== undefined) {
+				throw usageError(
+					`Option '--review' cannot be combined with '${optionLabel(option)}'.`,
+					spec.usage,
+				)
+			}
+		}
+		return
+	}
+	if (pullRequest || ref) {
+		throw usageError(
+			`Option '${pullRequest ? "--pull-request" : "--ref"}' requires '--review'.`,
+			spec.usage,
+		)
+	}
 	if (values["multi-phase"]) {
 		for (const option of ["repo", "reference", "branch", "base"] as const) {
 			if (values[option] !== undefined) {

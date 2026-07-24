@@ -54,6 +54,7 @@ interface CheckoutInspection {
 	readonly checkoutCommit: string | null
 	readonly checkoutBranch: string | null
 	readonly detached: boolean | null
+	readonly dirty: boolean | null
 }
 
 type ExecutionData = PhaseData & Partial<Pick<TaskData, "ticketUrl" | "epic">>
@@ -88,6 +89,18 @@ const runGit = (fs: FileSystemService, cwd: string, args: readonly string[]) =>
 	fs.runCommand(["git", "-C", cwd, ...args], { captureOutput: true }).pipe(
 		Effect.map((result) =>
 			result.exitCode === 0 ? result.stdout.trim() || null : null,
+		),
+		Effect.catchAll(() => Effect.succeed(null)),
+	)
+
+const runGitText = (
+	fs: FileSystemService,
+	cwd: string,
+	args: readonly string[],
+) =>
+	fs.runCommand(["git", "-C", cwd, ...args], { captureOutput: true }).pipe(
+		Effect.map((result) =>
+			result.exitCode === 0 ? result.stdout.trim() : null,
 		),
 		Effect.catchAll(() => Effect.succeed(null)),
 	)
@@ -765,9 +778,13 @@ export class ContextService extends Effect.Service<ContextService>()(
 						: task?.data && "repo" in task.data
 							? (task.data as ExecutionData)
 							: null
-					const references: readonly RepositoryReference[] = executionData
-						? (executionData.repos ?? [])
-						: (epic?.data.repos ?? [])
+					const reviewData =
+						task?.data && "review" in task.data ? task.data.review : null
+					const references: readonly RepositoryReference[] = reviewData
+						? [{ repo: reviewData.repo, ref: reviewData.commit }]
+						: executionData
+							? (executionData.repos ?? [])
+							: (epic?.data.repos ?? [])
 					const entityDirectory = target.path.replace(
 						/\/(?:EPIC|TASK|PHASE)\.md$/,
 						"",
@@ -812,6 +829,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 									checkoutCommit: null,
 									checkoutBranch: null,
 									detached: null,
+									dirty: null,
 								}
 							}
 							const checkoutCommit = yield* runGit(fs, checkoutPath, [
@@ -823,6 +841,10 @@ export class ContextService extends Effect.Service<ContextService>()(
 								"--quiet",
 								"--short",
 								"HEAD",
+							])
+							const checkoutStatus = yield* runGitText(fs, checkoutPath, [
+								"status",
+								"--porcelain",
 							])
 							const resolvedCheckoutPath = yield* fs.realPath(checkoutPath)
 							registered = registered || listedPaths.has(resolvedCheckoutPath)
@@ -837,6 +859,8 @@ export class ContextService extends Effect.Service<ContextService>()(
 								checkoutCommit,
 								checkoutBranch,
 								detached: checkoutBranch === null,
+								dirty:
+									checkoutStatus === null ? null : checkoutStatus.length > 0,
 							}
 						})
 
@@ -901,6 +925,17 @@ export class ContextService extends Effect.Service<ContextService>()(
 							...(yield* inspectCheckout(repositoryPath, checkoutPath)),
 						})
 					}
+					const reviewSourceCommit = reviewData
+						? yield* runGit(fs, join(root, "repos", reviewData.repo), [
+								"ls-remote",
+								"origin",
+								reviewData.source.kind === "pull-request"
+									? reviewData.source.fetchRef
+									: reviewData.source.ref
+											.replace(/^refs\/remotes\/origin\//, "")
+											.replace(/^origin\//, ""),
+							])
+						: null
 
 					const checkoutStates = [writable, ...referenceCheckouts].filter(
 						(value): value is NonNullable<typeof value> => value !== null,
@@ -956,7 +991,11 @@ export class ContextService extends Effect.Service<ContextService>()(
 							aggregate: aggregateProgress(aggregateStatuses),
 						},
 						authority: {
-							mode: executionData ? "execution" : "orchestration",
+							mode: reviewData
+								? "review"
+								: executionData
+									? "execution"
+									: "orchestration",
 							writable: writable
 								? {
 										repo: writable.repo,
@@ -972,6 +1011,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 								repositoryPath: reference.repositoryPath,
 								checkoutPath: reference.checkoutPath,
 							})),
+							documents: {
+								writable: reviewData && task ? [task.path] : [],
+							},
 						},
 						workspace: options.compact
 							? {
@@ -997,6 +1039,16 @@ export class ContextService extends Effect.Service<ContextService>()(
 									references: referenceCheckouts,
 									warnings: inspectionWarnings,
 								},
+						review: reviewData
+							? {
+									...reviewData,
+									sourceObservation: {
+										available: reviewSourceCommit !== null,
+										commit: reviewSourceCommit?.split(/\s+/)[0] ?? null,
+									},
+									checkout: referenceCheckouts[0] ?? null,
+								}
+							: null,
 						pr: executionData?.pr
 							? normalizePullRequestRecord(executionData.pr)
 							: { url: null, state: "none" },

@@ -108,7 +108,8 @@ interface ReconcileInput {
 const PR_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/
 
 type SingleTaskData = Extract<TaskData, { readonly repo: string }>
-type ExecutionData = SingleTaskData | PhaseData
+type ReviewTaskData = Extract<TaskData, { readonly review: unknown }>
+type ExecutionData = SingleTaskData | ReviewTaskData | PhaseData
 
 const isTaggedClaimError = (
 	error: unknown,
@@ -541,7 +542,7 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 										message: `Session '${input.sessionId}' does not own ${inspected.target.label}`,
 									})
 								}
-								if (input.nonPrCompletion && data.pr !== null) {
+								if (input.nonPrCompletion && "pr" in data && data.pr !== null) {
 									throw new ClaimError({
 										target: inspected.target.label,
 										message:

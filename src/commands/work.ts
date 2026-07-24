@@ -262,7 +262,7 @@ export const work = (
 				? `${action} the task. Read ${workspace.taskPath} and ${workspace.phasePath}.`
 				: `${action} the task. Read ${workspace.taskPath}.`
 			launchPath = dirname(workspace.phasePath ?? workspace.taskPath)
-			writablePath = workspace.writablePath
+			writablePath = workspace.writablePath ?? undefined
 		}
 
 		const explicitlyRequested = Boolean(
@@ -468,7 +468,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			log(JSON.stringify(workspace, null, 2))
 		} else {
 			log(
-				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath}`,
+				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath ?? workspace.reviewPath}`,
 			)
 		}
 	})

@@ -77,7 +77,7 @@ const itemFor = (
 			? task.data.epic
 			: undefined
 	const dependentIds = new Set(node.dependents)
-	if (node.data.phaseId) {
+	if ("phaseId" in node.data && node.data.phaseId) {
 		const siblings = graph.nodes.filter(
 			(candidate): candidate is ExecutionNode =>
 				candidate.kind === "execution-unit" &&
@@ -93,10 +93,14 @@ const itemFor = (
 		rank,
 		key: node.key,
 		taskId: node.data.taskId,
-		...(node.data.phaseId ? { phaseId: node.data.phaseId } : {}),
+		...("phaseId" in node.data && node.data.phaseId
+			? { phaseId: node.data.phaseId }
+			: {}),
 		...(node.data.description ? { description: node.data.description } : {}),
 		parent: {
-			...(node.data.phaseId ? { taskId: node.data.taskId } : {}),
+			...("phaseId" in node.data && node.data.phaseId
+				? { taskId: node.data.taskId }
+				: {}),
 			...(epicId ? { epicId } : {}),
 		},
 		status: node.status,

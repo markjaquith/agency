@@ -8,6 +8,7 @@ import {
 	EntityId,
 	TaskFrontmatter,
 	type RepositoryReference,
+	type ReviewRecord,
 	type TaskFrontmatter as TaskData,
 	WorkStatus,
 } from "../workbase/schemas"
@@ -26,6 +27,7 @@ import {
 import {
 	documentWriteStep,
 	runLifecycleTransaction,
+	type TransactionStep,
 } from "./LifecycleTransaction"
 
 class TaskError extends Data.TaggedError("TaskError")<{
@@ -50,6 +52,7 @@ export interface CreateTaskInput {
 	readonly repos?: readonly RepositoryReference[]
 	readonly branch?: string
 	readonly base?: string
+	readonly review?: ReviewRecord
 }
 
 const decodeTask = (input: unknown) => {
@@ -78,6 +81,50 @@ const decodeStatus = (status: string) => {
 		: Effect.succeed(result.right)
 }
 
+const reviewPinRef = (taskId: string) =>
+	`refs/agency/reviews/${Buffer.from(taskId).toString("hex")}`
+
+const reviewPinStep = (
+	root: string,
+	taskId: string,
+	review: ReviewRecord,
+): TransactionStep => {
+	const repositoryPath = join(root, "repos", review.repo)
+	const ref = reviewPinRef(taskId)
+	const run = async (args: readonly string[]) => {
+		const child = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe" })
+		const [exitCode, stderr] = await Promise.all([
+			child.exited,
+			new Response(child.stderr).text(),
+		])
+		if (exitCode !== 0) throw new Error(stderr.trim() || args.join(" "))
+	}
+	return {
+		label: `retain review pin for ${taskId}`,
+		apply: () =>
+			run([
+				"git",
+				"-C",
+				repositoryPath,
+				"update-ref",
+				ref,
+				review.commit,
+				"0".repeat(40),
+			]),
+		rollback: () =>
+			run([
+				"git",
+				"-C",
+				repositoryPath,
+				"update-ref",
+				"-d",
+				ref,
+				review.commit,
+			]),
+		manualRecovery: `Delete ${ref} from repository '${review.repo}'`,
+	}
+}
+
 export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 	sync: () => ({
 		create: (input: CreateTaskInput, startPath: string = process.cwd()) =>
@@ -102,7 +149,28 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				}
 
 				let data: TaskData
-				if (input.multiPhase) {
+				if (input.review) {
+					if (
+						input.multiPhase ||
+						input.repo !== undefined ||
+						input.repos !== undefined ||
+						input.branch !== undefined ||
+						input.base !== undefined
+					) {
+						return yield* new TaskError({
+							message:
+								"Review tasks cannot include writable or multi-phase fields",
+						})
+					}
+					data = yield* decodeTask({
+						ticketUrl: input.ticketUrl,
+						...(input.description !== undefined
+							? { description: input.description }
+							: {}),
+						...(input.epic ? { epic: input.epic } : {}),
+						review: input.review,
+					})
+				} else if (input.multiPhase) {
 					data = yield* decodeTask({
 						ticketUrl: input.ticketUrl,
 						...(input.description !== undefined
@@ -132,12 +200,14 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				}
 
 				const referencedRepos =
-					"repo" in data
-						? [
-								data.repo,
-								...(data.repos ?? []).map((reference) => reference.repo),
-							]
-						: []
+					"review" in data
+						? [data.review.repo]
+						: "repo" in data
+							? [
+									data.repo,
+									...(data.repos ?? []).map((reference) => reference.repo),
+								]
+							: []
 				if (new Set(referencedRepos).size !== referencedRepos.length) {
 					return yield* new TaskError({
 						message:
@@ -192,7 +262,10 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					preconditions: parentEpic
 						? [{ path: parentEpic.path, revision: parentEpic.revision }]
 						: [],
-					steps: [documentWriteStep(root, writes)],
+					steps: [
+						...(input.review ? [reviewPinStep(root, id, input.review)] : []),
+						documentWriteStep(root, writes),
+					],
 				})
 
 				return {
@@ -279,7 +352,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 						message: "Non-PR completion is valid only with a done status",
 					})
 				}
-				if (nonPrCompletion && record.data.pr !== null) {
+				if (nonPrCompletion && "pr" in record.data && record.data.pr !== null) {
 					return yield* new TaskError({
 						message:
 							"Cannot complete without a pull request while an authoritative pull request is recorded",
