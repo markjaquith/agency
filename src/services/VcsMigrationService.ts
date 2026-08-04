@@ -243,11 +243,7 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 
 		const records = yield* executionRecords(root)
 		for (const record of records) {
-			if (
-				record.status === "working" ||
-				record.status === "delegated" ||
-				record.claimActive
-			) {
+			if (record.claimActive) {
 				const label = record.phaseId
 					? `phase:${record.taskId}/${record.phaseId}`
 					: `task:${record.taskId}`
