@@ -44,7 +44,14 @@ import { ReadinessService } from "./src/services/ReadinessService"
 import { GraphMutationService } from "./src/services/GraphMutationService"
 import { DoctorService } from "./src/services/DoctorService"
 import { ReviewService } from "./src/services/ReviewService"
+import {
+	GitVersionControlService,
+	JjVersionControlService,
+	VersionControlService,
+} from "./src/services/VersionControlService"
 import { review, help as reviewHelp } from "./src/commands/review"
+import { vcs, help as vcsHelp } from "./src/commands/vcs"
+import { VcsMigrationService } from "./src/services/VcsMigrationService"
 import {
 	claimCommand,
 	claimHelp,
@@ -62,6 +69,10 @@ import {
 const CliLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
+	GitVersionControlService.Default,
+	JjVersionControlService.Default,
+	VersionControlService.Default,
+	VcsMigrationService.Default,
 	RepositoryService.Default,
 	EpicService.Default,
 	TaskService.Default,
@@ -547,6 +558,26 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	vcs: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(vcsHelp)
+				return
+			}
+			await runCommand(
+				vcs({
+					subcommand: args[0],
+					target: args[1],
+					apply: options.apply,
+					dryRun: options["dry-run"],
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	next: {
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(nextHelp)
@@ -702,7 +733,8 @@ Commands:
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase
-  worktree <subcommand>  Inspect and maintain managed worktrees
+  worktree <subcommand>  Inspect and maintain managed workspaces
+  vcs <subcommand>       Inspect or migrate the version-control backend
   next                   List or select ready execution units
   pr create              Create a pull request for an execution unit
   review refresh         Explicitly refresh a pinned review task

@@ -2,13 +2,14 @@
 
 Agency manages durable agentic work across repositories. Epics, tasks, and
 phases live as Markdown documents in a filesystem-backed workbase. Repository
-aliases and Git worktrees provide each execution unit with the code it may read
-or write.
+aliases and managed workspaces provide each execution unit with the code it may
+read or write.
 
 ## Requirements
 
 - [Bun](https://bun.sh) 1.0 or newer
 - Git
+- [Jujutsu](https://jj-vcs.github.io/jj/) is preferred when available
 - [GitHub CLI](https://cli.github.com/) for `agency pr create`
 - OpenCode, Claude Code, or a configured runner for `agency work`
 
@@ -122,14 +123,15 @@ The plugin grants whole-workbase access dynamically, while the portable
 reference advertises that context to agents. Bash and Agency operations must
 still follow the write authority reported by `agency context`.
 
-Repository aliases and canonical fetch remotes are declared in tracked
-`agency.json`; local bare clones and symlinks remain ignored under
+Repository aliases, the version-control backend, and canonical fetch remotes are
+declared in tracked `agency.json`; local clones and symlinks remain ignored under
 `repos/{alias}`. A declaration contains no local path, symlink target, checkout,
 or credential:
 
 ```json
 {
 	"version": 2,
+	"vcs": "jj",
 	"repositories": {
 		"frontend": {
 			"remote": "git@example.com:team/frontend.git"
@@ -137,6 +139,29 @@ or credential:
 	}
 }
 ```
+
+New workbases select `"jj"` when the `jj` executable is available and otherwise
+select `"git"`. Existing version 2 workbases without `vcs` remain Git workbases.
+The selected backend is a workbase-level invariant: jj workbases initialize
+managed clones with `jj git init` and create jj workspaces, while Git workbases
+continue to use Git worktrees.
+
+Inspect the current backend and migration readiness with:
+
+```bash
+agency vcs status
+agency vcs migrate jj          # dry-run
+agency vcs migrate jj --apply
+agency vcs migrate git --apply
+```
+
+Migration is workbase-wide and transactional. Agency locks every execution
+unit, requires clean registered workspaces, blocks active claims and working or
+delegated units, converts repository metadata, recreates checkout paths with the
+target backend, and updates `agency.json` last. Migration from jj to Git also
+blocks jj-only heads that are not preserved by a bookmark or workspace. Failed
+migrations restore the source repositories and workspaces when rollback is
+possible and report explicit manual recovery paths otherwise.
 
 Existing version 2 workbases without `repositories` remain valid. Run
 `agency repo setup` to preview deterministic adoption of legacy local aliases;
@@ -146,7 +171,7 @@ creation command.
 
 ### Custom Worktree Command
 
-By default, Agency creates worktrees with Git. Set `worktreeCreateCommand` to an
+Git workbases create worktrees with Git. Set `worktreeCreateCommand` to an
 argv template when another tool should create writable worktrees:
 
 ```json
@@ -205,9 +230,10 @@ Custom commands own writable branch creation. Agency checks for conflicting
 worktrees first, invokes the command only when the branch is not checked out,
 and verifies that `{worktree}` exists afterward.
 
-The configured command applies only to the writable checkout. Supplemental
-read-only repositories remain detached Git worktrees at their declared refs so
-they do not acquire writable branches.
+The configured command applies only to the writable checkout of a Git workbase.
+Supplemental read-only repositories remain detached Git worktrees at their
+declared refs so they do not acquire writable branches. Jj workbases always use
+jj workspaces and ignore this Git-specific customization.
 
 ### Agent Runners
 

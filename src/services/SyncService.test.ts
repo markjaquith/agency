@@ -22,6 +22,18 @@ const git = async (args: string[], cwd?: string) => {
 	}
 }
 
+const jj = async (args: string[], cwd?: string) => {
+	const process = Bun.spawn(["jj", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await process.exited
+	if (process.exitCode !== 0) {
+		throw new Error(await new Response(process.stderr).text())
+	}
+}
+
 describe("SyncService", () => {
 	let root: string
 	let originalPath: string | undefined
@@ -107,6 +119,61 @@ pr: null
 			),
 		).rejects.toThrow("Unknown repository alias 'unknown'")
 		expect(await Bun.file(join(root, "repos/agency")).exists()).toBe(false)
+	})
+
+	test("reconciles jj workspaces through the jj backend", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", join(root, "source"), repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-sync",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-sync",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const planned = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(planned.changes).toContainEqual(
+			expect.objectContaining({
+				kind: "materialize-workspace",
+				target: "task:jj-sync",
+				status: "planned",
+			}),
+		)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(applied.executions[0]?.checkouts[0]).toMatchObject({
+			exists: true,
+			registered: true,
+			branch: "task/jj-sync",
+			dirty: false,
+		})
 	})
 
 	test("observes drift without mutation and applies only safe transitions", async () => {

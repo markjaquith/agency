@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, realpath, rename, rm } from "node:fs/promises"
+import { mkdir, realpath, rename, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureErrors,
@@ -14,6 +14,17 @@ import { WorktreeService } from "./WorktreeService"
 
 const git = async (args: string[], cwd?: string) => {
 	const process = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await process.exited
+	if (process.exitCode !== 0)
+		throw new Error(await new Response(process.stderr).text())
+}
+
+const jj = async (args: string[], cwd?: string) => {
+	const process = Bun.spawn(["jj", ...args], {
 		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
@@ -91,6 +102,66 @@ describe("WorktreeService", () => {
 			{ stdout: "pipe" },
 		)
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
+	})
+
+	test("materializes and removes a jj workspace for a jj workbase", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-example",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-example", undefined, root),
+				),
+			),
+		)
+		const jjMetadata = await stat(join(workspace.writablePath!, ".jj"))
+		expect(jjMetadata.isFile() || jjMetadata.isDirectory()).toBe(true)
+		const inspection = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("jj-example", undefined, root),
+				),
+			),
+		)
+		expect(inspection.conflicts).toEqual([])
+		expect(inspection.checkouts[0]).toMatchObject({
+			exists: true,
+			registered: true,
+			actualBranch: "task/jj-example",
+		})
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("jj-example", undefined, root),
+				),
+			),
+		)
+		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
 	})
 
 	test("does not fetch the origin for an existing writable worktree", async () => {

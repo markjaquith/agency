@@ -64,7 +64,7 @@ describe("graph contract", () => {
 		]
 		const graph = {
 			version: 1,
-			workbase: { version: 2 },
+			workbase: { version: 2, vcs: "git" },
 			filters: {
 				ready: null,
 				blocked: null,

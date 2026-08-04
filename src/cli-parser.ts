@@ -832,6 +832,29 @@ const commands = {
 			},
 		},
 	},
+	vcs: {
+		usage: "agency vcs <status|migrate>",
+		options: {
+			...outputOptions,
+			apply: { type: "boolean" },
+			"dry-run": { type: "boolean" },
+		},
+		subcommands: {
+			status: {
+				usage: "agency vcs status [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["json"],
+			},
+			migrate: {
+				usage: "agency vcs migrate <git|jj> [--dry-run | --apply] [--json]",
+				minArgs: 1,
+				maxArgs: 1,
+				options: ["apply", "dry-run", "json"],
+				conflicts: [["apply", "dry-run"]],
+			},
+		},
+	},
 	work: {
 		usage:
 			"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",

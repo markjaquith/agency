@@ -943,6 +943,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 						version: GRAPH_VERSION,
 						workbase: {
 							version: config.version,
+							vcs: config.vcs ?? "git",
 							...(include.has("workspace") ? { root } : {}),
 						},
 						filters,

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
-import { access, mkdir, realpath, symlink } from "node:fs/promises"
+import { access, mkdir, realpath, stat, symlink } from "node:fs/promises"
 import { join, sep } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
@@ -1762,9 +1762,9 @@ status: open
 				alias: "agency",
 				status: "applied",
 			})
-			expect(await Bun.file(join(restored, "repos/agency/HEAD")).exists()).toBe(
-				true,
-			)
+			expect(
+				(await stat(join(restored, "repos/agency/.jj"))).isDirectory(),
+			).toBe(true)
 
 			const prepared = parseJson(
 				await runCli(["work", "prepare", "portable", "--json"], restored),

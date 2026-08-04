@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { RepositoryService } from "./RepositoryService"
@@ -96,6 +96,36 @@ describe("RepositoryService", () => {
 				states: ["declared", "materialized"],
 			},
 		])
+	})
+
+	test("initializes a managed clone with jj for a jj workbase", async () => {
+		if (!Bun.which("jj")) return
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		const source = join(root, "source")
+		await runGit(["init", "--initial-branch=main", source])
+		await runGit(["-C", source, "config", "user.email", "test@example.com"])
+		await runGit(["-C", source, "config", "user.name", "Test"])
+		await Bun.write(join(source, "README.md"), "example\n")
+		await runGit(["-C", source, "add", "README.md"])
+		await runGit(["-C", source, "commit", "-m", "initial"])
+		await setPortableOrigin(source, "jj-agency")
+
+		const destination = await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.add("agency", source, root)),
+			),
+		)
+		expect((await stat(join(destination, ".jj"))).isDirectory()).toBe(true)
+		expect(
+			await runTestEffect(
+				RepositoryService.pipe(
+					Effect.flatMap((service) => service.show("agency", root)),
+				),
+			),
+		).toMatchObject({ kind: "repository" })
 	})
 
 	test("links an existing repository", async () => {

@@ -17,6 +17,10 @@ import {
 	WorkbaseConfig,
 } from "../workbase/schemas"
 import { documentRevision } from "../workbase/document-revision"
+import {
+	VersionControlService,
+	type VersionControlBackend,
+} from "./VersionControlService"
 
 class RepositoryError extends Data.TaggedError("RepositoryError")<{
 	readonly message: string
@@ -207,7 +211,11 @@ const requireMaterialized = (repository: RepositoryInfo) =>
 				)
 			: Effect.succeed(repository)
 
-const removalBlockers = (repository: RepositoryInfo, startPath: string) =>
+const removalBlockers = (
+	repository: RepositoryInfo,
+	startPath: string,
+	backend: VersionControlBackend,
+) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const graph = yield* GraphService
@@ -223,28 +231,29 @@ const removalBlockers = (repository: RepositoryInfo, startPath: string) =>
 			.sort()
 		const worktrees: string[] = []
 		if (repository.kind !== null && !repository.states.includes("invalid")) {
+			const repositoryTarget = yield* fs.realPath(repository.path)
 			const linkedTarget =
 				repository.kind === "symlink"
 					? yield* fs.realPath(repository.path)
 					: null
-			const result = yield* fs.runCommand(
-				["git", "-C", repository.path, "worktree", "list", "--porcelain"],
-				{ captureOutput: true },
-			)
-			if (result.exitCode === 0) {
-				for (const block of result.stdout.trim().split(/\n\n+/)) {
-					if (!block || /(^|\n)bare(\n|$)/.test(block)) continue
-					const path = block.match(/^worktree (.+)$/m)?.[1]
-					if (path && path !== linkedTarget) worktrees.push(path)
-				}
+			for (const workspace of yield* backend.listWorkspaces(repository.path)) {
+				if (
+					workspace.path !== repositoryTarget &&
+					workspace.path !== linkedTarget
+				)
+					worktrees.push(workspace.path)
 			}
 		}
 		return { references, worktrees }
 	})
 
-const assertRemovable = (repository: RepositoryInfo, startPath: string) =>
+const assertRemovable = (
+	repository: RepositoryInfo,
+	startPath: string,
+	backend: VersionControlBackend,
+) =>
 	Effect.gen(function* () {
-		const blockers = yield* removalBlockers(repository, startPath)
+		const blockers = yield* removalBlockers(repository, startPath, backend)
 		const details = [
 			...blockers.references.map((item) => `active reference ${item}`),
 			...blockers.worktrees.map((item) => `linked worktree ${item}`),
@@ -258,10 +267,11 @@ const assertRemovable = (repository: RepositoryInfo, startPath: string) =>
 
 const effectPreflightStep = (
 	label: string,
-	check: Effect.Effect<void, unknown, never>,
+	check: Effect.Effect<void, unknown, any>,
 ): TransactionStep => ({
 	label,
-	preflight: () => Effect.runPromise(check),
+	preflight: () =>
+		Effect.runPromise(check as Effect.Effect<void, unknown, never>),
 	apply: async () => undefined,
 })
 
@@ -341,8 +351,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 			add: (alias: string, remote: string, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
+					const versionControl = yield* VersionControlService
 					const validAlias = yield* validateAlias(alias)
 					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const destination = join(state.root, "repos", validAlias)
 					if (
 						state.config.repositories?.[validAlias] ||
@@ -369,7 +381,14 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					)
 					yield* fs.createDirectory(join(state.root, "repos"))
 					const cloned = yield* fs.runCommand(
-						["git", "clone", "--bare", "--", cloneSource, staging],
+						[
+							"git",
+							"clone",
+							...(backend.kind === "git" ? ["--bare"] : []),
+							"--",
+							cloneSource,
+							staging,
+						],
 						{ captureOutput: true },
 					)
 					if (cloned.exitCode !== 0) {
@@ -378,6 +397,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							message: `Failed to clone repository '${remote}': ${cloned.stderr.trim()}`,
 						})
 					}
+					yield* backend.initializeRepository(staging)
 					if (declaredRemote !== remote) {
 						const setRemote = yield* fs.runCommand(
 							[
@@ -417,10 +437,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
+					const versionControl = yield* VersionControlService
 					const graph = yield* GraphService
 					const workbase = yield* WorkbaseService
 					const validAlias = yield* validateAlias(alias)
 					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const destination = join(state.root, "repos", validAlias)
 					const resolvedTarget = resolve(startPath, target)
 					const existing = (yield* RepositoryService)
@@ -452,6 +474,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							message: `Path is not a Git repository: ${resolvedTarget}`,
 						})
 					}
+					yield* backend.initializeRepository(resolvedTarget)
 					const declaredRemote =
 						state.config.repositories?.[validAlias]?.remote ??
 						(yield* portableRemote(resolvedTarget))
@@ -474,7 +497,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const safety = localCurrent
 						? effectPreflightStep(
 								`verify repository safety for ${validAlias}`,
-								assertRemovable(localCurrent, state.root).pipe(
+								assertRemovable(localCurrent, state.root, backend).pipe(
 									Effect.provideService(FileSystemService, fs),
 									Effect.provideService(GraphService, graph),
 									Effect.provideService(WorkbaseService, workbase),
@@ -584,19 +607,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
 			fetch: (alias: string, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
+					const versionControl = yield* VersionControlService
 					const repository = yield* find(alias, startPath).pipe(
 						Effect.flatMap(requireMaterialized),
 					)
-					const result = yield* fs.runCommand(
-						["git", "-C", repository.path, "fetch", "--prune"],
-						{ captureOutput: true },
-					)
-					if (result.exitCode !== 0) {
-						return yield* new RepositoryError({
-							message: `Failed to fetch repository '${alias}': ${result.stderr.trim()}`,
-						})
-					}
+					const backend = yield* versionControl.forWorkbase(startPath)
+					yield* backend.fetch(repository.path, undefined, undefined)
 					return repository
 				}),
 
@@ -605,8 +621,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const fs = yield* FileSystemService
 					const graph = yield* GraphService
 					const workbase = yield* WorkbaseService
+					const versionControl = yield* VersionControlService
 					const repository = yield* find(alias, startPath)
 					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const declarations = { ...(state.config.repositories ?? {}) }
 					delete declarations[repository.alias]
 					const config = withDeclarations(state.config, declarations)
@@ -618,7 +636,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					)
 					const safety = effectPreflightStep(
 						`verify repository safety for ${repository.alias}`,
-						assertRemovable(repository, startPath).pipe(
+						assertRemovable(repository, startPath, backend).pipe(
 							Effect.provideService(FileSystemService, fs),
 							Effect.provideService(GraphService, graph),
 							Effect.provideService(WorkbaseService, workbase),
@@ -642,6 +660,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const fs = yield* FileSystemService
 					const graph = yield* GraphService
 					const workbase = yield* WorkbaseService
+					const versionControl = yield* VersionControlService
 					const repository = yield* find(alias, startPath)
 					if (repository.kind !== "symlink") {
 						return yield* new RepositoryError({
@@ -649,6 +668,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						})
 					}
 					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const staging = join(
 						state.root,
 						"repos",
@@ -660,7 +680,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						steps: [
 							effectPreflightStep(
 								`verify repository safety for ${repository.alias}`,
-								assertRemovable(repository, startPath).pipe(
+								assertRemovable(repository, startPath, backend).pipe(
 									Effect.provideService(FileSystemService, fs),
 									Effect.provideService(GraphService, graph),
 									Effect.provideService(WorkbaseService, workbase),
@@ -685,9 +705,11 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const fs = yield* FileSystemService
 					const graph = yield* GraphService
 					const workbase = yield* WorkbaseService
+					const versionControl = yield* VersionControlService
 					const repository = yield* find(alias, startPath)
 					const validNewAlias = yield* validateAlias(newAlias)
 					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const destination = join(state.root, "repos", validNewAlias)
 					if (
 						state.config.repositories?.[validNewAlias] ||
@@ -712,7 +734,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const exists = yield* fs.exists(repository.path)
 					const safety = effectPreflightStep(
 						`verify repository safety for ${repository.alias}`,
-						assertRemovable(repository, startPath).pipe(
+						assertRemovable(repository, startPath, backend).pipe(
 							Effect.provideService(FileSystemService, fs),
 							Effect.provideService(GraphService, graph),
 							Effect.provideService(WorkbaseService, workbase),
@@ -843,7 +865,9 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 				Effect.gen(function* () {
 					const service = yield* RepositoryService
 					const fs = yield* FileSystemService
+					const versionControl = yield* VersionControlService
 					const state = yield* configState(options.cwd ?? process.cwd())
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const repositories = yield* service.list(state.root)
 					const planned: Omit<RepositorySetupAction, "status">[] = []
 					const unresolved: RepositorySetupIssue[] = []
@@ -913,7 +937,14 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							)
 							yield* fs.createDirectory(join(state.root, "repos"))
 							const cloned = yield* fs.runCommand(
-								["git", "clone", "--bare", "--", action.remote, from],
+								[
+									"git",
+									"clone",
+									...(backend.kind === "git" ? ["--bare"] : []),
+									"--",
+									action.remote,
+									from,
+								],
 								{ captureOutput: true },
 							)
 							if (cloned.exitCode !== 0) {
@@ -923,6 +954,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 									message: `Failed to materialize repository '${action.alias}': ${cloned.stderr.trim()}`,
 								})
 							}
+							yield* backend.initializeRepository(from)
 							staging.push({
 								alias: action.alias,
 								from,

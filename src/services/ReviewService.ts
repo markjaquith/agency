@@ -11,6 +11,11 @@ import {
 	WorktreeService,
 	type WorktreeRemovalSnapshot,
 } from "./WorktreeService"
+import {
+	GitVersionControlService,
+	JjVersionControlService,
+	VersionControlService,
+} from "./VersionControlService"
 import { withWorktreeLocks } from "./WorktreeLock"
 import {
 	documentWriteStep,
@@ -53,6 +58,9 @@ const runGit = async (args: readonly string[]) => {
 const WorktreeLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
+	GitVersionControlService.Default,
+	JjVersionControlService.Default,
+	VersionControlService.Default,
 	TaskService.Default,
 	PhaseService.Default,
 	WorktreeService.Default,
@@ -72,6 +80,21 @@ const restoreSnapshots = async (
 			continue
 		} catch {}
 		await mkdir(dirname(snapshot.path), { recursive: true })
+		if (snapshot.vcs === "jj") {
+			await runGit([
+				"jj",
+				"-R",
+				snapshot.repositoryPath,
+				"workspace",
+				"add",
+				"--name",
+				snapshot.workspaceName!,
+				"-r",
+				snapshot.head,
+				snapshot.path,
+			])
+			continue
+		}
 		await runGit(
 			snapshot.branch
 				? [
