@@ -23,6 +23,7 @@ import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
 import { validateRunners } from "../workbase/runner-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
+import { preferredVersionControl } from "../workbase/version-control"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -189,7 +190,10 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					}
 
 					yield* fs.createDirectory(root)
-					yield* fs.writeJSON(configPath, { version: 2 })
+					yield* fs.writeJSON(configPath, {
+						version: 2,
+						vcs: preferredVersionControl(),
+					})
 					for (const directory of ["repos", "epics", "tasks"]) {
 						yield* fs.createDirectory(join(root, directory))
 					}

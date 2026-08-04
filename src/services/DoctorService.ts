@@ -126,6 +126,14 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 					}
 
 					const gitAvailable = yield* tool("tool.git", "git", "error", "Git")
+					const jjAvailable = yield* tool(
+						"tool.jj",
+						"jj",
+						config.vcs === "jj" ? "error" : "optional",
+						"Jujutsu",
+					)
+					const versionControlAvailable =
+						gitAvailable && (config.vcs !== "jj" || jjAvailable)
 					yield* tool(
 						"capability.runner.opencode",
 						"opencode",
@@ -321,18 +329,17 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						}
 					}
 
-					const repositoryList = gitAvailable
+					const repositoryList = versionControlAvailable
 						? yield* repositories.list(root)
 						: []
-					if (!gitAvailable) {
+					if (!versionControlAvailable) {
 						add({
 							id: "repository.inspection",
 							category: "repository",
 							level: "warning",
 							status: "fail",
-							message:
-								"Repository, ref, remote, and worktree checks were skipped because Git is unavailable",
-							remediation: "Install 'git' and rerun 'agency doctor'.",
+							message: `Repository, ref, remote, and workspace checks were skipped because the ${config.vcs ?? "git"} backend is unavailable`,
+							remediation: `Install '${config.vcs === "jj" ? "jj" : "git"}' and rerun 'agency doctor'.`,
 						})
 					}
 					for (const repository of repositoryList) {
@@ -439,7 +446,7 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						}
 					}
 
-					if (validation.valid && gitAvailable) {
+					if (validation.valid && versionControlAvailable) {
 						const inspected = yield* Effect.either(worktrees.list(root))
 						if (Either.isLeft(inspected)) {
 							add({

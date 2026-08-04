@@ -21,6 +21,12 @@ import { ReadinessService } from "./services/ReadinessService"
 import { GraphMutationService } from "./services/GraphMutationService"
 import { DoctorService } from "./services/DoctorService"
 import { ReviewService } from "./services/ReviewService"
+import {
+	GitVersionControlService,
+	JjVersionControlService,
+	VersionControlService,
+} from "./services/VersionControlService"
+import { VcsMigrationService } from "./services/VcsMigrationService"
 
 export const createTempDir = () => mkdtemp(join(tmpdir(), "agency-test-"))
 
@@ -30,6 +36,10 @@ export const cleanupTempDir = (path: string) =>
 const TestLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
+	GitVersionControlService.Default,
+	JjVersionControlService.Default,
+	VersionControlService.Default,
+	VcsMigrationService.Default,
 	RepositoryService.Default,
 	EpicService.Default,
 	TaskService.Default,

@@ -1,8 +1,8 @@
 # Agency Workbase
 
 This directory is an Agency workbase. Epics, tasks, and phases are durable
-Markdown documents; repository aliases and generated Git worktrees provide code
-access.
+Markdown documents; repository aliases and generated Git worktrees or jj
+workspaces provide code access according to the workbase's `vcs` setting.
 
 ## Bootstrap
 

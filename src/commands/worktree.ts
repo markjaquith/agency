@@ -120,7 +120,7 @@ export const worktree = (options: WorktreeOptions = {}) =>
 export const help = `
 Usage: agency worktree <list|inspect|prepare|remove|rebuild|repair>
 
-Inspect and maintain Agency-managed writable and reference worktrees.
+Inspect and maintain Agency-managed writable and reference workspaces.
 
 Commands:
   list                              List every managed checkout

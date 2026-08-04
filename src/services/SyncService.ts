@@ -25,6 +25,7 @@ import {
 	RepositoryService,
 	type RepositorySetupResult,
 } from "./RepositoryService"
+import { VersionControlService } from "./VersionControlService"
 
 class SyncError extends Data.TaggedError("SyncError")<{
 	readonly message: string
@@ -161,7 +162,9 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const worktrees = yield* WorktreeService
 				const claims = yield* ClaimService
 				const repositories = yield* RepositoryService
+				const versionControl = yield* VersionControlService
 				const { root, config } = yield* workbase.loadConfig(options.cwd)
+				const backend = yield* versionControl.forWorkbase(root)
 				const validation = yield* workbase.validate(root)
 				if (!validation.valid) {
 					return yield* new SyncError({
@@ -268,33 +271,27 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							workspaceConflict = true
 							continue
 						}
-						const listed = yield* fs.runCommand(
-							[
-								"git",
-								"-C",
-								repositoryPath,
-								"worktree",
-								"list",
-								"--porcelain",
-								"-z",
-							],
-							{ captureOutput: true },
+						const listed = yield* Effect.either(
+							backend.listWorkspaces(repositoryPath),
 						)
-						if (listed.exitCode !== 0) {
+						if (Either.isLeft(listed)) {
 							unresolved.push({
 								kind: "worktree-inspection-failed",
 								target: record.key,
-								message:
-									listed.stderr.trim() || `Cannot inspect '${checkout.repo}'`,
+								message: `Cannot inspect '${checkout.repo}'`,
 							})
 							workspaceConflict = true
 							continue
 						}
 						const exists = yield* fs.isDirectory(checkoutPath)
 						const registered: RegisteredWorktree[] = []
-						for (const item of parseWorktrees(listed.stdout)) {
+						for (const item of listed.right) {
 							registered.push({
-								...item,
+								head: item.commit,
+								branch:
+									backend.kind === "jj" && "branch" in checkout
+										? checkout.branch
+										: item.branch,
 								path: (yield* fs.exists(item.path))
 									? yield* fs.realPath(item.path)
 									: resolve(item.path),
@@ -306,39 +303,36 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								? join(yield* fs.realPath(codePath), checkout.repo)
 								: resolve(checkoutPath)
 						let atPath = registered.find((item) => item.path === expectedPath)
+						if (backend.kind === "jj" && atPath && exists) {
+							atPath = {
+								...atPath,
+								head: yield* backend.workspaceHead(checkoutPath),
+							}
+						}
 						const branchRef =
-							"branch" in checkout ? `refs/heads/${checkout.branch}` : null
-						const branchElsewhere = branchRef
-							? registered.find(
-									(item) =>
-										item.branch === branchRef && item.path !== expectedPath,
-								)
-							: undefined
+							"branch" in checkout
+								? backend.kind === "jj"
+									? checkout.branch
+									: `refs/heads/${checkout.branch}`
+								: null
+						const branchElsewhere =
+							branchRef && backend.kind !== "jj"
+								? registered.find(
+										(item) =>
+											item.branch === branchRef && item.path !== expectedPath,
+									)
+								: undefined
 						if ("branch" in checkout && !exists && !branchElsewhere) {
-							const branch = yield* fs.runCommand(
-								[
-									"git",
-									"-C",
-									repositoryPath,
-									"rev-parse",
-									"--verify",
-									`${checkout.branch}^{commit}`,
-								],
-								{ captureOutput: true },
+							const branch = yield* backend.resolveRevision(
+								repositoryPath,
+								checkout.branch,
 							)
-							if (branch.exitCode !== 0) {
-								const base = yield* fs.runCommand(
-									[
-										"git",
-										"-C",
-										repositoryPath,
-										"rev-parse",
-										"--verify",
-										`${data.base}^{commit}`,
-									],
-									{ captureOutput: true },
+							if (!branch) {
+								const base = yield* backend.resolveRevision(
+									repositoryPath,
+									data.base,
 								)
-								if (base.exitCode !== 0) {
+								if (!base) {
 									unresolved.push({
 										kind: "unresolved-base",
 										target: record.key,
@@ -404,22 +398,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 									})
 								}
 							}
-							const resolvedRef = resolvedCommit
-								? null
-								: yield* fs.runCommand(
-										[
-											"git",
-											"-C",
-											repositoryPath,
-											"rev-parse",
-											"--verify",
-											`${checkout.ref}^{commit}`,
-										],
-										{ captureOutput: true },
-									)
-							if (resolvedRef?.exitCode === 0) {
-								resolvedCommit = resolvedRef.stdout.trim()
-							}
+							resolvedCommit ??= yield* backend.resolveRevision(
+								repositoryPath,
+								checkout.ref,
+							)
 							if (!resolvedCommit) {
 								unresolved.push({
 									kind: "unresolved-reference",
@@ -431,23 +413,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							}
 						}
 
-						const dirtyResult =
+						const dirty =
 							exists && atPath
-								? yield* fs.runCommand(
-										["git", "-C", checkoutPath, "status", "--porcelain"],
-										{ captureOutput: true },
-									)
+								? yield* backend.workspaceDirty(checkoutPath)
 								: null
-						const dirty = dirtyResult
-							? dirtyResult.exitCode === 0
-								? dirtyResult.stdout.length > 0
-								: null
-							: null
-						if (dirtyResult && dirtyResult.exitCode !== 0) {
+						if (exists && atPath && dirty === null) {
 							warnings.push({
 								kind: "status-inspection-failed",
 								target: record.key,
-								message: `Could not inspect dirtiness for ${checkoutPath}: ${dirtyResult.stderr.trim()}`,
+								message: `Could not inspect dirtiness for ${checkoutPath}`,
 								action: "Inspect the checkout manually before changing it",
 							})
 						}
@@ -607,15 +581,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					let prConflict = false
 					const repositoryPath = join(root, "repos", data.repo)
 					const remoteName = config.delivery?.remote ?? "origin"
-					const remote = yield* runExternal([
-						"git",
-						"-C",
-						repositoryPath,
-						"remote",
-						"get-url",
-						remoteName,
-					])
-					const remoteRepository = remote.stdout
+					const remoteUrl = yield* backend.remoteUrl(repositoryPath, remoteName)
+					const remoteRepository = (remoteUrl ?? "")
 						.trim()
 						.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
 						.replace(/^[^:]+:/, "")
@@ -635,11 +602,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 
-					if (config.delivery && remote.exitCode !== 0) {
+					if (config.delivery && !remoteUrl) {
 						warnings.push({
 							kind: "delivery-remote-unavailable",
 							target: record.key,
-							message: `Could not inspect delivery remote '${remoteName}': ${remote.stderr.trim()}`,
+							message: `Could not inspect delivery remote '${remoteName}'`,
 						})
 					} else if (config.delivery) {
 						const resolved = resolveDeliveryCommand(config.delivery, "query", {

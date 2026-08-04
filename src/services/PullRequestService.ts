@@ -6,6 +6,7 @@ import type { BaseCommandOptions } from "../utils/command"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
 import { ReadinessService } from "./ReadinessService"
+import { VersionControlService } from "./VersionControlService"
 import {
 	formatMarkdownDocument,
 	parseFrontmatter,
@@ -110,6 +111,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					const worktrees = yield* WorktreeService
 					const readiness = yield* ReadinessService
 					const workbase = yield* WorkbaseService
+					const versionControl = yield* VersionControlService
 					const requestedTask = yield* tasks.show(taskId, startPath)
 					if ("review" in requestedTask.data) {
 						return yield* new PullRequestError({
@@ -154,6 +156,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 							? (yield* phases.show(taskId, phaseId!, workspace.root)).data
 							: workspaceTask.data
 					const { config } = yield* workbase.loadConfig(workspace.root)
+					const backend = yield* versionControl.forWorkbase(workspace.root)
 					if (!workspace.writablePath) {
 						return yield* new PullRequestError({
 							message: `Task '${taskId}' has no writable checkout`,
@@ -161,49 +164,30 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					}
 					const remote = config.delivery?.remote ?? "origin"
 
-					const status = yield* fs.runCommand(
-						["git", "-C", workspace.writablePath, "status", "--porcelain"],
-						{ captureOutput: true },
-					)
-					if (status.exitCode !== 0) {
+					const dirty = yield* backend.workspaceDirty(workspace.writablePath)
+					if (dirty === null) {
 						return yield* new PullRequestError({
-							message: `Failed to inspect worktree status: ${status.stderr}`,
+							message: "Failed to inspect worktree status",
 						})
 					}
-					if (status.stdout) {
+					if (dirty) {
 						return yield* new PullRequestError({
 							message: "Cannot create a PR with a dirty worktree",
 						})
 					}
 
-					const push = yield* fs.runCommand(
-						[
-							"git",
-							"-C",
-							workspace.writablePath,
-							"push",
-							"--set-upstream",
-							remote,
-							execution.branch,
-						],
-						{ captureOutput: true },
-					)
-					if (push.exitCode !== 0) {
-						return yield* new PullRequestError({
-							message: `Failed to push branch: ${push.stderr}`,
-						})
-					}
+					yield* backend.push(workspace.writablePath, remote, execution.branch)
 
-					const remoteResult = yield* fs.runCommand(
-						["git", "-C", workspace.writablePath, "remote", "get-url", remote],
-						{ captureOutput: true },
+					const remoteUrl = yield* backend.remoteUrl(
+						workspace.writablePath,
+						remote,
 					)
-					if (remoteResult.exitCode !== 0) {
+					if (!remoteUrl) {
 						return yield* new PullRequestError({
-							message: `Failed to inspect delivery remote '${remote}': ${remoteResult.stderr}`,
+							message: `Failed to inspect delivery remote '${remote}'`,
 						})
 					}
-					const repository = repositoryFromRemote(remoteResult.stdout.trim())
+					const repository = repositoryFromRemote(remoteUrl)
 					const resolved = config.delivery
 						? resolveDeliveryCommand(config.delivery, "create", {
 								repository,

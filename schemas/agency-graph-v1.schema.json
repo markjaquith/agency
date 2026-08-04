@@ -22,6 +22,7 @@
       "required": ["version"],
       "properties": {
         "version": { "const": 2 },
+        "vcs": { "enum": ["git", "jj"] },
         "root": { "type": "string" }
       }
     },

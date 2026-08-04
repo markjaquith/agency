@@ -8,6 +8,7 @@ import { RepositoryService } from "./RepositoryService"
 import { aggregateProgress, readinessState } from "../readiness"
 import { parseFrontmatter } from "../workbase/frontmatter"
 import { documentRevision } from "../workbase/document-revision"
+import { VersionControlService } from "./VersionControlService"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
@@ -127,6 +128,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const repositoryService = yield* RepositoryService
+					const versionControl = yield* VersionControlService
 					const cwd = resolve(options.cwd ?? process.cwd())
 					const suppliedTarget = options.target ?? "."
 					const candidate = resolve(cwd, suppliedTarget)
@@ -134,6 +136,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const { root, config } = yield* workbase.loadConfig(
 						candidateExists ? candidate : cwd,
 					)
+					const backend = yield* versionControl.forWorkbase(root)
 
 					if (relative(root, candidate) === "") {
 						const compact = !options.full
@@ -214,6 +217,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 								root,
 								configPath: join(root, "agency.json"),
 								version: config.version,
+								vcs: config.vcs ?? "git",
 							},
 							target: { kind: "workbase", path: root },
 							hint: compact
@@ -801,9 +805,45 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const inspectCheckout = (
 						repositoryPath: string,
 						checkoutPath: string,
+						expectedBranch: string | null = null,
 					) =>
 						Effect.gen(function* (): Generator<any, CheckoutInspection, any> {
 							const materialized = yield* fs.isDirectory(checkoutPath)
+							if (backend.kind === "jj") {
+								const listed = yield* Effect.either(
+									backend.listWorkspaces(repositoryPath),
+								)
+								const workspaces = Either.isRight(listed) ? listed.right : []
+								if (Either.isLeft(listed)) {
+									inspectionWarnings.push(
+										`Unable to inspect jj workspace registrations for ${repositoryPath}`,
+									)
+								}
+								const canonicalCheckoutPath = materialized
+									? yield* fs.realPath(checkoutPath)
+									: resolve(checkoutPath)
+								const registered = workspaces.some(
+									(workspace) => workspace.path === canonicalCheckoutPath,
+								)
+								if (!materialized) {
+									return {
+										materialized: false,
+										registered,
+										checkoutCommit: null,
+										checkoutBranch: null,
+										detached: null,
+										dirty: null,
+									}
+								}
+								return {
+									materialized: true,
+									registered,
+									checkoutCommit: yield* backend.workspaceHead(checkoutPath),
+									checkoutBranch: expectedBranch,
+									detached: expectedBranch === null,
+									dirty: yield* backend.workspaceDirty(checkoutPath),
+								}
+							}
 							const listed = yield* runGit(fs, repositoryPath, [
 								"worktree",
 								"list",
@@ -870,14 +910,22 @@ export class ContextService extends Effect.Service<ContextService>()(
 								const repositoryPath =
 									repository?.path ?? join(root, "repos", executionData.repo)
 								const checkoutPath = join(codePath, executionData.repo)
-								const branchCommit = yield* runGit(fs, repositoryPath, [
-									"rev-parse",
-									`${executionData.branch}^{commit}`,
-								])
-								const baseCommit = yield* runGit(fs, repositoryPath, [
-									"rev-parse",
-									`${executionData.base}^{commit}`,
-								])
+								let branchCommit = yield* backend.resolveRevision(
+									repositoryPath,
+									executionData.branch,
+								)
+								const baseCommit = yield* backend.resolveRevision(
+									repositoryPath,
+									executionData.base,
+								)
+								const checkout = yield* inspectCheckout(
+									repositoryPath,
+									checkoutPath,
+									executionData.branch,
+								)
+								if (backend.kind === "jj" && branchCommit === null) {
+									branchCommit = checkout.checkoutCommit
+								}
 								if (branchCommit === null) {
 									inspectionWarnings.push(
 										`Unable to resolve branch '${executionData.branch}' in ${repositoryPath}`,
@@ -896,7 +944,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 									base: executionData.base,
 									branchCommit,
 									baseCommit,
-									...(yield* inspectCheckout(repositoryPath, checkoutPath)),
+									...checkout,
 								}
 							})
 						: null
@@ -907,10 +955,10 @@ export class ContextService extends Effect.Service<ContextService>()(
 						const repositoryPath =
 							repository?.path ?? join(root, "repos", reference.repo)
 						const checkoutPath = join(codePath, reference.repo)
-						const resolvedCommit = yield* runGit(fs, repositoryPath, [
-							"rev-parse",
-							`${reference.ref}^{commit}`,
-						])
+						const resolvedCommit = yield* backend.resolveRevision(
+							repositoryPath,
+							reference.ref,
+						)
 						if (resolvedCommit === null) {
 							inspectionWarnings.push(
 								`Unable to resolve reference '${reference.ref}' in ${repositoryPath}`,
@@ -968,6 +1016,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							root,
 							configPath: join(root, "agency.json"),
 							version: config.version,
+							vcs: config.vcs ?? "git",
 						},
 						target,
 						documents: {
