@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { lstat, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import { ClaimService } from "./ClaimService"
 import { TaskService } from "./TaskService"
 import { VcsMigrationService } from "./VcsMigrationService"
 import { WorktreeService } from "./WorktreeService"
@@ -149,12 +150,47 @@ describe("VcsMigrationService", () => {
 		).toEqual([])
 	})
 
-	test("blocks active and dirty workspaces", async () => {
+	test("allows clean unclaimed working workspaces", async () => {
 		if (!Bun.which("jj")) return
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
 					service.setStatus("example", "working", root),
+				),
+			),
+		)
+		const migrated = await runTestEffect(
+			VcsMigrationService.pipe(
+				Effect.flatMap((service) =>
+					service.migrate("jj", root, { apply: true }),
+				),
+			),
+		)
+		expect(migrated.mode).toBe("apply")
+	})
+
+	test("blocks active claims", async () => {
+		if (!Bun.which("jj")) return
+		const inspected = await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("example", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			ClaimService.pipe(
+				Effect.flatMap((service) =>
+					service.claim(
+						{
+							taskId: "example",
+							claimant: "orchestrator",
+							runner: "agent",
+							sessionId: "session-1",
+							revision: inspected.revision,
+						},
+						root,
+					),
 				),
 			),
 		)
@@ -167,12 +203,10 @@ describe("VcsMigrationService", () => {
 				),
 			),
 		).rejects.toThrow("is active")
+	})
 
-		await runTestEffect(
-			TaskService.pipe(
-				Effect.flatMap((service) => service.setStatus("example", "open", root)),
-			),
-		)
+	test("blocks dirty workspaces", async () => {
+		if (!Bun.which("jj")) return
 		await Bun.write(join(root, "tasks/example/code/agency/DIRTY.md"), "dirty\n")
 		await expect(
 			runTestEffect(
