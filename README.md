@@ -489,9 +489,10 @@ materializations, then compares every execution declaration with local branch
 and worktree registration, checkout dirtiness, resolved reference commits, claim
 expiry, and pull request state, merge state, and mergeability. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
-default and `--dry-run` modes are observational.
+default mode applies safe reconciliation transitions; `--dry-run` is explicitly
+observational.
 
-`agency sync --apply` performs only these safe transitions:
+`agency sync` performs only these safe transitions:
 
 - materialize declared but missing repositories from their canonical remotes;
 - adopt legacy materializations only when they have an unambiguous portable origin;
@@ -722,7 +723,7 @@ Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
 before launch. Running `agency work` again can relaunch unclaimed `working` work.
 By default, `done` requires an authoritative merged pull request and is applied
-by `agency sync --apply`. Work whose intended outcome genuinely requires no pull
+by `agency sync`. Work whose intended outcome genuinely requires no pull
 request may instead use an explicit `--no-pull-request --summary <text>` status
 transition. Agency records the summary, completion time, and optional evidence
 URL durably; reopening removes that evidence. This exceptional path refuses work

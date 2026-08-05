@@ -381,7 +381,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					if (validStatus === "done") {
 						return yield* new TaskError({
 							message:
-								"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply', or explicitly complete a non-PR outcome with '--no-pull-request --summary <text>'",
+								"Work becomes done after its authoritative pull request is merged; run 'agency sync', or explicitly complete a non-PR outcome with '--no-pull-request --summary <text>'",
 						})
 					}
 					return yield* new TaskError({

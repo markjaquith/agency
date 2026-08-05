@@ -91,7 +91,7 @@ a refinement loop, or pausing or handing off completed implementation work):
 - Finish an active claim with the current revision via `agency finish`; a
   successful claim outcome leaves unmerged work `working`. For unclaimed work,
   keep the execution unit `working` through review and merge.
-- After merge, run `agency sync --apply` to reconcile the execution unit to
+- After merge, run `agency sync` to reconcile the execution unit to
   `done`.
 - For an approved non-PR outcome, finish an active claim or update unclaimed
   status with `--no-pull-request --summary <text>` and optional supporting URL.
