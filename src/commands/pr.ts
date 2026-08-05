@@ -1,43 +1,31 @@
 import { Effect } from "effect"
-import type { BaseCommandOptions } from "../utils/command"
-import { PullRequestService } from "../services/PullRequestService"
-import { createLoggers } from "../utils/effect"
+import { resolve } from "node:path"
+import { ContextService } from "../services/ContextService"
+import { FileSystemService } from "../services/FileSystemService"
 
-interface PrOptions extends BaseCommandOptions {
-	readonly subcommand?: string
-	readonly taskId?: string
-	readonly phaseId?: string
-	readonly draft?: boolean
-	readonly force?: boolean
-}
-
-export const pr = (options: PrOptions) =>
+export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 	Effect.gen(function* () {
-		if (options.subcommand !== "create" || !options.taskId) {
-			return yield* Effect.fail(
-				new Error("Usage: agency pr create <task-id> [phase-id]"),
-			)
-		}
-		const pullRequests = yield* PullRequestService
-		const { log } = createLoggers(options)
-		const url = yield* pullRequests.create(
-			options.taskId,
-			options.phaseId,
-			options.draft,
-			options.cwd ?? process.cwd(),
-			options,
-		)
-		log(options.json ? JSON.stringify({ url }, null, 2) : url)
+		const contexts = yield* ContextService
+		const fs = yield* FileSystemService
+		const invocationCwd = resolve(cwd)
+		const context = yield* contexts
+			.get({ cwd: invocationCwd, target: ".", compact: true })
+			.pipe(Effect.catchAll(() => Effect.succeed(null)))
+		const writableCheckout =
+			context?.validation.valid && context.workspace?.writable?.materialized
+				? context.authority.writable?.checkoutPath
+				: null
+		const focusedCwd = writableCheckout ?? invocationCwd
+		const result = yield* fs.runCommand(["gh", "pr", ...args], {
+			cwd: focusedCwd,
+			passthrough: true,
+		})
+		return result.exitCode
 	})
 
 export const help = `
-Usage: agency pr create <task-id> [phase-id]
+Usage: agency pr [args...]
 
-Push the execution branch, create a pull request with the delivery provider,
-and update its task or phase document.
-
-Options:
-  --draft             Create a draft pull request
-  --force             Override readiness and terminal-state guards
-  --json              Output the pull request URL as JSON
+Run gh pr unchanged, focusing the writable repository checkout when invoked
+from an Agency execution task or phase.
 `

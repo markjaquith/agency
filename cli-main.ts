@@ -134,6 +134,9 @@ const resolveInvocationCwd = (
 ) =>
 	runEffect(
 		Effect.gen(function* () {
+			if (commandName === "pr") {
+				return resolve(options.cwd ?? process.cwd())
+			}
 			if (
 				options.help ||
 				commandName === "init" ||
@@ -284,19 +287,7 @@ const commands: Record<string, Command> = {
 				console.log(prHelp)
 				return
 			}
-			await runCommand(
-				pr({
-					subcommand: args[0],
-					taskId: args[1],
-					phaseId: args[2],
-					draft: options.draft,
-					force: options.force,
-					json: options.json,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
+			process.exitCode = await runEffect(pr(args, options.cwd))
 		},
 	},
 	phase: {
@@ -736,7 +727,7 @@ Commands:
   worktree <subcommand>  Inspect and maintain managed workspaces
   vcs <subcommand>       Inspect or migrate the version-control backend
   next                   List or select ready execution units
-  pr create              Create a pull request for an execution unit
+  pr [args...]           Run gh pr with Agency repository focus
   review refresh         Explicitly refresh a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase

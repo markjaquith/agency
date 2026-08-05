@@ -218,25 +218,34 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					readonly cwd?: string
 					readonly captureOutput?: boolean
 					readonly forwardOutput?: boolean
+					readonly passthrough?: boolean
 					readonly env?: Record<string, string>
 				},
 			) =>
 				pipe(
 					spawnProcess(args, {
 						cwd: options?.cwd,
-						stdin: "pipe",
-						stdout: options?.forwardOutput
-							? "tee"
-							: options?.captureOutput
-								? "pipe"
-								: "inherit",
-						stderr: options?.forwardOutput ? "tee" : "pipe",
+						stdin: options?.passthrough ? "inherit" : "pipe",
+						stdout: options?.passthrough
+							? "inherit"
+							: options?.forwardOutput
+								? "tee"
+								: options?.captureOutput
+									? "pipe"
+									: "inherit",
+						stderr: options?.passthrough
+							? "inherit"
+							: options?.forwardOutput
+								? "tee"
+								: "pipe",
 						env: options?.env,
 					}),
 					Effect.mapError(
 						(processError) =>
 							new FileSystemError({
-								message: `Failed to run command: ${args.join(" ")}`,
+								message: options?.passthrough
+									? processError.message
+									: `Failed to run command: ${args.join(" ")}`,
 								cause: processError,
 							}),
 					),
