@@ -1,4 +1,4 @@
-import { Data, Effect, Layer } from "effect"
+import { Data, Effect, Either, Layer } from "effect"
 import { randomUUID } from "node:crypto"
 import { lstat, mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
@@ -15,6 +15,7 @@ import {
 	GitVersionControlService,
 	JjVersionControlService,
 	VersionControlService,
+	type VersionControlBackend,
 } from "./VersionControlService"
 import { withWorktreeLocks } from "./WorktreeLock"
 import {
@@ -160,7 +161,11 @@ const normalizeBranch = (input: string, repositoryPath: string) =>
 		return `refs/heads/${name}`
 	})
 
-const fetchCommit = (repoPath: string, sourceRef: string) =>
+const fetchCommit = (
+	repoPath: string,
+	sourceRef: string,
+	backend: VersionControlBackend,
+) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const temporaryRef = `refs/agency/review-fetch/${process.pid}-${randomUUID()}`
@@ -196,6 +201,17 @@ const fetchCommit = (repoPath: string, sourceRef: string) =>
 			],
 			{ captureOutput: true },
 		)
+		const commit = resolved.stdout.trim()
+		if (resolved.exitCode !== 0 || !/^[a-f0-9]{40}$/.test(commit)) {
+			yield* fs.runCommand(
+				["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
+				{ captureOutput: true },
+			)
+			return yield* new ReviewError({
+				message: `Review source '${sourceRef}' did not resolve to a commit`,
+			})
+		}
+		const imported = yield* Effect.either(backend.importGitRefs(repoPath))
 		const cleanup = yield* fs.runCommand(
 			["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
 			{ captureOutput: true },
@@ -205,10 +221,10 @@ const fetchCommit = (repoPath: string, sourceRef: string) =>
 				message: `Failed to remove temporary review fetch ref: ${cleanup.stderr.trim()}`,
 			})
 		}
-		const commit = resolved.stdout.trim()
-		if (resolved.exitCode !== 0 || !/^[a-f0-9]{40}$/.test(commit)) {
+		if (Either.isLeft(imported)) {
 			return yield* new ReviewError({
-				message: `Review source '${sourceRef}' did not resolve to a commit`,
+				message: `Review source '${sourceRef}' was fetched but could not be imported into ${backend.kind}`,
+				cause: imported.left,
 			})
 		}
 		return commit
@@ -225,6 +241,8 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 			) =>
 				Effect.gen(function* () {
 					const repositories = yield* RepositoryService
+					const versionControl = yield* VersionControlService
+					const backend = yield* versionControl.forWorkbase(startPath)
 					const repository = yield* repositories.show(repo, startPath)
 					if (!repository.remote || repository.states.includes("missing")) {
 						return yield* new ReviewError({
@@ -273,7 +291,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 							message: "Exactly one review source is required",
 						})
 					}
-					const commit = yield* fetchCommit(repository.path, sourceRef)
+					const commit = yield* fetchCommit(repository.path, sourceRef, backend)
 					return {
 						repo,
 						source,

@@ -10,6 +10,7 @@ import { RepositoryService } from "./RepositoryService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
+import { VersionControlService } from "./VersionControlService"
 
 type DoctorCheckLevel = "error" | "warning" | "optional"
 
@@ -87,7 +88,9 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 					const tasks = yield* TaskService
 					const workbases = yield* WorkbaseService
 					const worktrees = yield* WorktreeService
+					const versionControl = yield* VersionControlService
 					const { root, config } = yield* workbases.loadConfig(startPath)
+					const backend = yield* versionControl.forWorkbase(root)
 					const checks: DoctorCheck[] = []
 					const add = (
 						check: Omit<DoctorCheck, "remediation"> & {
@@ -409,32 +412,8 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						}
 
 						for (const ref of [...(refs.get(repository.alias) ?? [])].sort()) {
-							const local = yield* fs.runCommand(
-								[
-									"git",
-									"-C",
-									repository.path,
-									"rev-parse",
-									"--verify",
-									`${ref}^{commit}`,
-								],
-								{ captureOutput: true },
-							)
-							const remote =
-								local.exitCode === 0
-									? local
-									: yield* fs.runCommand(
-											[
-												"git",
-												"-C",
-												repository.path,
-												"rev-parse",
-												"--verify",
-												`origin/${ref}^{commit}`,
-											],
-											{ captureOutput: true },
-										)
-							const found = local.exitCode === 0 || remote.exitCode === 0
+							const found =
+								(yield* backend.resolveRevision(repository.path, ref)) !== null
 							add({
 								id: `ref.${repository.alias}.${ref}`,
 								category: "ref",

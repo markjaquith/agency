@@ -884,8 +884,12 @@ const materializeJj = (options: {
 					revision = yield* backend.resolveRevision(repositoryPath, base)
 				}
 				if (!revision) {
+					const recovery =
+						backend.kind === "jj"
+							? `; run 'agency repo fetch ${checkout.repo}' and retry`
+							: ""
 					return yield* new WorktreeError({
-						message: `${"branch" in checkout ? "Base" : "Reference"} '${"branch" in checkout ? base : checkout.ref}' for repository '${checkout.repo}' does not resolve to a commit`,
+						message: `${"branch" in checkout ? "Base" : "Reference"} '${"branch" in checkout ? base : checkout.ref}' for repository '${checkout.repo}' does not resolve to a commit${recovery}`,
 					})
 				}
 
