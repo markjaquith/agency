@@ -3,7 +3,12 @@ import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { TaskService } from "../services/TaskService"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
 import { sync } from "./sync"
 
 const git = async (args: string[], cwd: string) => {
@@ -55,11 +60,15 @@ describe("sync command", () => {
 	afterEach(async () => cleanupTempDir(root))
 
 	test("applies safe reconciliation by default", async () => {
-		await runTestEffect(sync({ cwd: root, silent: true }))
+		const logs = await captureLogs(() => runTestEffect(sync({ cwd: root })))
 
 		expect(
 			await Bun.file(join(root, "tasks/example/code/agency/README.md")).text(),
 		).toBe("example\n")
+		expect(logs).toContainEqual(
+			expect.stringContaining("Applied materialize-workspace 'task:example'"),
+		)
+		expect(() => JSON.parse(logs.join("\n"))).toThrow()
 	})
 
 	test("keeps explicit dry-run observational", async () => {
@@ -70,5 +79,22 @@ describe("sync command", () => {
 				join(root, "tasks/example/code/agency/README.md"),
 			).exists(),
 		).toBe(false)
+	})
+
+	test("preserves structured output behind --json", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(sync({ cwd: root, dryRun: true, json: true })),
+		)
+
+		expect(logs).toHaveLength(1)
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			mode: "dry-run",
+			changes: [
+				expect.objectContaining({
+					kind: "materialize-workspace",
+					status: "planned",
+				}),
+			],
+		})
 	})
 })
