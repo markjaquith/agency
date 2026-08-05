@@ -59,8 +59,8 @@ to override readiness.
 - Do not run `agency work` from an active agent session unless the user
   explicitly asks to launch another agent.
 - Run `agency validate` before worktree or pull-request operations.
-- Create a pull request only with explicit user intent. Run `agency pr create`
-  from its execution unit, then use `agency sync --apply` to reconcile PR state.
+- Create a pull request only with explicit user intent. Run
+  `agency pr create <task> [phase]` so the URL is recorded durably.
 
 ## Execution
 

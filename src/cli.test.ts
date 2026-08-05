@@ -598,6 +598,20 @@ exit 23
 				blockers: [{ kind: "status", reason: "Task status is dropped" }],
 			},
 		])
+
+		const blockedPr = await runCli(["pr", "create", "finished", "--json"], root)
+		expect(blockedPr.exitCode).toBe(1)
+		expect(blockedPr.stderr).toBe("")
+		expect(JSON.parse(blockedPr.stdout)).toMatchObject({
+			ok: false,
+			error: {
+				code: "EXECUTION_BLOCKED",
+				fields: {
+					status: "dropped",
+					blockers: [{ kind: "status", reason: "Task status is dropped" }],
+				},
+			},
+		})
 	})
 
 	test("reports and synchronizes managed integration files", async () => {

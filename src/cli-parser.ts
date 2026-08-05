@@ -895,12 +895,22 @@ const commands = {
 		},
 	},
 	pr: {
-		usage: "agency pr [args...]",
-		options: commonOptions,
-		command: {
-			usage: "agency pr [args...]",
-			minArgs: 0,
-			maxArgs: Number.POSITIVE_INFINITY,
+		usage: "agency pr create <task-id> [phase-id] | agency pr [args...]",
+		options: {
+			...outputOptions,
+			draft: { type: "boolean" },
+			force: { type: "boolean" },
+			task: { type: "string" },
+			phase: { type: "string" },
+		},
+		subcommands: {
+			create: {
+				usage:
+					"agency pr create <task-id> [phase-id] [--draft] [--force] [--json]",
+				minArgs: 1,
+				maxArgs: 2,
+				options: ["draft", "force", "json", "task", "phase"],
+			},
 		},
 	},
 	next: {
@@ -1019,6 +1029,7 @@ const preCommandValueOptions = new Set(["--workbase", "--cwd"])
 export interface ParsedCli {
 	readonly commandName?: keyof typeof commands
 	readonly args: string[]
+	readonly passthrough?: boolean
 	readonly values: Record<
 		string,
 		boolean | string | (boolean | string)[] | undefined
@@ -1091,6 +1102,7 @@ const targetSlots = (
 	if (commandName === "worktree" && subcommand !== "list") {
 		return ["task", "phase"]
 	}
+	if (commandName === "pr" && subcommand === "create") return ["task", "phase"]
 	return []
 }
 
@@ -1311,7 +1323,15 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			"agency <command> [options]",
 		)
 	}
-	if (commandName === "pr") {
+	const prArgs = args.slice(commandIndex + 1)
+	const taskAwarePrCreate =
+		commandName === "pr" &&
+		prArgs[0] === "create" &&
+		((prArgs[1] !== undefined && !prArgs[1].startsWith("-")) ||
+			prArgs.some(
+				(argument) => argument === "--task" || argument.startsWith("--task="),
+			))
+	if (commandName === "pr" && !taskAwarePrCreate) {
 		const parsed = parse(
 			args.slice(0, commandIndex),
 			rootOptions,
@@ -1336,7 +1356,8 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		}
 		return {
 			commandName,
-			args: [...args.slice(commandIndex + 1)],
+			args: prArgs,
+			passthrough: true,
 			values: parsed.values,
 		}
 	}
