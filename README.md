@@ -10,7 +10,7 @@ read or write.
 - [Bun](https://bun.sh) 1.0 or newer
 - Git
 - [Jujutsu](https://jj-vcs.github.io/jj/) is preferred when available
-- [GitHub CLI](https://cli.github.com/) for `agency pr create`
+- [GitHub CLI](https://cli.github.com/) for `agency pr`
 - OpenCode, Claude Code, or a configured runner for `agency work`
 
 ## Installation
@@ -401,7 +401,8 @@ agency task new
 agency validate
 agency context tasks/refresh-copy --json
 agency work tasks/refresh-copy
-agency pr create refresh-copy
+cd tasks/refresh-copy
+agency pr create --fill
 ```
 
 After cloning an existing workbase on another machine, restore its declared
@@ -476,10 +477,10 @@ priority ready unit in human output.
 execution unit. Excluded entries retain status, terminal state, `blockedBy`, and
 detailed dependency, validation, or status blockers for orchestrators.
 
-`agency work` and `agency pr create` consult this shared readiness model before
-materializing or pushing. Blocked, done, and dropped targets are rejected unless
-`--force` is supplied explicitly. PR creation permits active `working` and
-`delegated` targets when they have no dependency or validation blocker.
+`agency work` consults this shared readiness model before materializing. Blocked,
+done, and dropped targets are rejected unless `--force` is supplied explicitly.
+`agency pr` leaves command semantics to `gh`; run `agency context . --json` first
+when readiness or validation state needs inspection.
 
 ### Reconciliation
 
@@ -803,7 +804,7 @@ for restoration. Archived IDs are reserved until restored.
 agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
-agency pr create <task-id> [phase-id] [--draft] [--json]
+agency pr [args...]
 ```
 
 `agency work` presents the full hierarchy in the native OpenTUI selector or the
@@ -849,9 +850,9 @@ Agency resolves the ref to a commit and creates a detached worktree. Existing
 reference worktrees are reused only while their commit still matches the declared
 ref; use a commit SHA as `ref` when reproducibility matters.
 
-`agency pr create` requires a clean writable worktree. It pushes the branch,
-runs `gh pr create --fill`, and writes the returned GitHub PR URL into `pr` in
-the owning `TASK.md` or `PHASE.md`.
+`agency pr` forwards every argument to `gh pr`. From an execution task or phase
+directory, including descendants, it runs in that execution unit's authoritative
+writable checkout. Otherwise it runs in the caller's current directory.
 
 ### Status and Validation
 

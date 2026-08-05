@@ -292,7 +292,6 @@ describe("strict CLI parsing", () => {
 			[["restore", "task", "one", "two"], "agency restore task"],
 			[["restore", "phase", "one", "two", "three"], "agency restore phase"],
 			[["work", "one", "two"], "agency work"],
-			[["pr", "create", "one", "two", "three"], "agency pr create"],
 			[["status", "extra"], "agency status"],
 			[["validate", "one", "two"], "agency validate"],
 			[["context", "one", "two"], "agency context"],
@@ -358,13 +357,18 @@ describe("strict CLI parsing", () => {
 			commandName: "work",
 			values: { force: true },
 		})
-		expect(parseCli(["pr", "create", "example", "--force"])).toMatchObject({
-			commandName: "pr",
-			values: { force: true },
-		})
 		expect(() => parseCli(["work", "prepare", "example", "--force"])).toThrow(
 			"cannot be combined",
 		)
+	})
+
+	test("preserves every argument after pr without parsing it", () => {
+		const args = ["create", "--title", "two words", "--", "--literal"]
+		expect(parseCli(["--cwd", "/workbase", "pr", ...args])).toEqual({
+			commandName: "pr",
+			args,
+			values: { cwd: "/workbase" },
+		})
 	})
 
 	test("parses reconciliation modes and rejects conflicting modes", () => {

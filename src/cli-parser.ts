@@ -897,22 +897,12 @@ const commands = {
 		},
 	},
 	pr: {
-		usage: "agency pr create <task-id> [phase-id]",
-		options: {
-			...outputOptions,
-			draft: { type: "boolean" },
-			force: { type: "boolean" },
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		subcommands: {
-			create: {
-				usage:
-					"agency pr create <task-id> [phase-id] [--draft] [--force] [--json]",
-				minArgs: 1,
-				maxArgs: 2,
-				options: ["draft", "force", "json", "task", "phase"],
-			},
+		usage: "agency pr [args...]",
+		options: commonOptions,
+		command: {
+			usage: "agency pr [args...]",
+			minArgs: 0,
+			maxArgs: Number.POSITIVE_INFINITY,
 		},
 	},
 	next: {
@@ -1103,7 +1093,6 @@ const targetSlots = (
 	if (commandName === "worktree" && subcommand !== "list") {
 		return ["task", "phase"]
 	}
-	if (commandName === "pr" && subcommand === "create") return ["task", "phase"]
 	return []
 }
 
@@ -1323,6 +1312,35 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			`Unknown command '${commandName}'.`,
 			"agency <command> [options]",
 		)
+	}
+	if (commandName === "pr") {
+		const parsed = parse(
+			args.slice(0, commandIndex),
+			rootOptions,
+			"agency <command> [options]",
+		)
+		assertNoDuplicateOptions(
+			parsed.tokens,
+			new Set(),
+			"agency <command> [options]",
+		)
+		if (parsed.values.silent && parsed.values.verbose) {
+			throw usageError(
+				"Options '--silent' and '--verbose' cannot be combined.",
+				"agency <command> [options]",
+			)
+		}
+		if (parsed.values.workbase && parsed.values.cwd) {
+			throw usageError(
+				"Options '--workbase' and '--cwd' cannot be combined.",
+				"agency <command> [options]",
+			)
+		}
+		return {
+			commandName,
+			args: [...args.slice(commandIndex + 1)],
+			values: parsed.values,
+		}
 	}
 	const commandArgs = [
 		...args.slice(0, commandIndex),

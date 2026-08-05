@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test"
-import { access, mkdir, realpath, stat, symlink } from "node:fs/promises"
+import { access, chmod, mkdir, realpath, stat, symlink } from "node:fs/promises"
 import { join, sep } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
@@ -502,7 +502,7 @@ describe("CLI", () => {
 			["archive", "Usage: agency archive"],
 			["restore", "Usage: agency restore"],
 			["work", "Usage: agency work"],
-			["pr", "Usage: agency pr"],
+			["pr", "Work with GitHub pull requests."],
 			["status", "Usage: agency status"],
 			["validate", "Usage: agency validate"],
 			["context", "Usage: agency context"],
@@ -537,6 +537,34 @@ describe("CLI", () => {
 		expect(after).toEqual({ exitCode: 0, stdout: "", stderr: "" })
 	}, 30_000)
 
+	test("passes pr arguments and exit status through to gh", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		const bin = join(root, "bin")
+		const capture = join(root, "capture")
+		await mkdir(bin)
+		await Bun.write(
+			join(bin, "gh"),
+			`#!/bin/sh
+printf '%s\n' "$PWD" "$@" > "$GH_CAPTURE"
+exit 23
+`,
+		)
+		await chmod(join(bin, "gh"), 0o755)
+		const args = ["pr", "create", "--title", "two words", "--", "literal"]
+
+		const result = await runCli(args, root, {
+			PATH: `${bin}:${process.env.PATH ?? ""}`,
+			GH_CAPTURE: capture,
+		})
+
+		expect(result).toEqual({ exitCode: 23, stdout: "", stderr: "" })
+		expect((await Bun.file(capture).text()).trim().split("\n")).toEqual([
+			await realpath(root),
+			...args,
+		])
+	})
+
 	test("lists ready work and exposes excluded blockers through one result", async () => {
 		const root = await createTempDir()
 		tempDirs.push(root)
@@ -570,20 +598,6 @@ describe("CLI", () => {
 				blockers: [{ kind: "status", reason: "Task status is dropped" }],
 			},
 		])
-
-		const blockedPr = await runCli(["pr", "create", "finished", "--json"], root)
-		expect(blockedPr.exitCode).toBe(1)
-		expect(blockedPr.stderr).toBe("")
-		expect(JSON.parse(blockedPr.stdout)).toMatchObject({
-			ok: false,
-			error: {
-				code: "EXECUTION_BLOCKED",
-				fields: {
-					status: "dropped",
-					blockers: [{ kind: "status", reason: "Task status is dropped" }],
-				},
-			},
-		})
 	})
 
 	test("reports and synchronizes managed integration files", async () => {
