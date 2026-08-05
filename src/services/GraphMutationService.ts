@@ -360,6 +360,12 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						"base",
 						"pr",
 					].some((key) => updates[key as keyof TaskUpdates] !== undefined)
+					const checkoutTopologyChange = [
+						"repo",
+						"repos",
+						"branch",
+						"base",
+					].some((key) => updates[key as keyof TaskUpdates] !== undefined)
 					if ("review" in record.data && executionChange) {
 						return yield* new GraphMutationError({
 							message: `Review task '${id}' does not have writable execution metadata`,
@@ -390,7 +396,7 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						})
 					}
 					if (
-						executionChange &&
+						checkoutTopologyChange &&
 						(yield* fs.isDirectory(join(dirname(record.path), "code")))
 					) {
 						return yield* new GraphMutationError({
@@ -506,8 +512,14 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						"base",
 						"pr",
 					].some((key) => updates[key as keyof PhaseUpdates] !== undefined)
+					const checkoutTopologyChange = [
+						"repo",
+						"repos",
+						"branch",
+						"base",
+					].some((key) => updates[key as keyof PhaseUpdates] !== undefined)
 					if (
-						executionChange &&
+						checkoutTopologyChange &&
 						(yield* fs.isDirectory(join(dirname(record.path), "code")))
 					) {
 						return yield* new GraphMutationError({
