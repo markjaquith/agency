@@ -158,6 +158,77 @@ describe("GraphMutationService", () => {
 		)
 	})
 
+	test("sets and clears pull request metadata with materialized code", async () => {
+		await mkdir(join(root, "tasks/alpha/code/agency"), { recursive: true })
+		await mkdir(join(root, "tasks/multi/phases/build/code/agency"), {
+			recursive: true,
+		})
+		const taskPr = "https://github.com/example/agency/pull/12"
+		const phasePr = "https://github.com/example/agency/pull/13"
+
+		await runTestEffect(
+			Effect.gen(function* () {
+				const mutations = yield* GraphMutationService
+				yield* mutations.updateTask("alpha", { pr: taskPr }, root)
+				yield* mutations.updatePhase("multi", "build", { pr: phasePr }, root)
+				const tasks = yield* TaskService
+				const phases = yield* PhaseService
+				expect((yield* tasks.show("alpha", root)).data).toMatchObject({
+					pr: taskPr,
+				})
+				expect((yield* phases.show("multi", "build", root)).data.pr).toBe(
+					phasePr,
+				)
+
+				yield* mutations.updateTask("alpha", { pr: null }, root)
+				yield* mutations.updatePhase("multi", "build", { pr: null }, root)
+				expect((yield* tasks.show("alpha", root)).data).toMatchObject({
+					pr: null,
+				})
+				expect((yield* phases.show("multi", "build", root)).data.pr).toBeNull()
+			}),
+		)
+	})
+
+	test("rejects checkout topology updates with materialized code", async () => {
+		await mkdir(join(root, "tasks/alpha/code/agency"), { recursive: true })
+		await mkdir(join(root, "tasks/multi/phases/build/code/agency"), {
+			recursive: true,
+		})
+		const topologyUpdates = [
+			{ repo: "docs" },
+			{ repos: [{ repo: "docs", ref: "main" }] },
+			{ branch: "feature/materialized" },
+			{ base: "develop" },
+		]
+
+		for (const updates of topologyUpdates) {
+			await expect(
+				runTestEffect(
+					Effect.gen(function* () {
+						return yield* (yield* GraphMutationService).updateTask(
+							"alpha",
+							updates,
+							root,
+						)
+					}),
+				),
+			).rejects.toThrow("materialized code")
+			await expect(
+				runTestEffect(
+					Effect.gen(function* () {
+						return yield* (yield* GraphMutationService).updatePhase(
+							"multi",
+							"build",
+							updates,
+							root,
+						)
+					}),
+				),
+			).rejects.toThrow("materialized code")
+		}
+	})
+
 	test("preserves dependency order and rejects cycles", async () => {
 		await runTestEffect(
 			Effect.gen(function* () {
