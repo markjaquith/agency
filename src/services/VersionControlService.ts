@@ -3,11 +3,13 @@ import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import type { VersionControlKind } from "../workbase/version-control"
 
-interface RegisteredWorkspace {
+export interface RegisteredWorkspace {
 	readonly name: string | null
 	readonly path: string
 	readonly commit: string | null
 	readonly branch: string | null
+	readonly head?: string | null
+	readonly dirty?: boolean
 }
 
 export interface VersionControlBackend {
@@ -305,7 +307,7 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 									"workspace",
 									"list",
 									"-T",
-									'name ++ "\\t" ++ root ++ "\\t" ++ target.commit_id() ++ "\\n"',
+									'name ++ "\\t" ++ root ++ "\\t" ++ target.commit_id() ++ "\\t" ++ target.parents().map(|commit| commit.commit_id()).join(",") ++ "\\t" ++ target.empty() ++ "\\n"',
 								]),
 								{ captureOutput: true },
 							),
@@ -315,12 +317,16 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 							.split("\n")
 							.filter(Boolean)
 							.map((line) => {
-								const [name, path, commit] = line.split("\t")
+								const [name, path, commit, parents, empty] = line.split("\t")
+								const parentCommits = parents?.split(",").filter(Boolean) ?? []
 								return {
 									name: name || null,
 									path: path!,
 									commit: commit || null,
 									branch: null,
+									head:
+										parentCommits.length === 1 ? parentCommits[0]! : undefined,
+									dirty: empty === "false",
 								}
 							})
 					}),

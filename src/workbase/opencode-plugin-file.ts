@@ -6,9 +6,36 @@ const managedHeaderPattern =
 const checksum = (content: string) =>
 	createHash("sha256").update(content).digest("hex")
 
-const body = `import { existsSync } from "node:fs"
-import { join, sep } from "node:path"
+const body = `import { existsSync, readFileSync } from "node:fs"
+import { dirname, join, sep } from "node:path"
 import type { Plugin } from "@opencode-ai/plugin"
+
+const discoverWorkbase = (directory: string) => {
+  let current = directory
+  while (true) {
+    if (existsSync(join(current, "agency.json"))) return current
+    const parent = dirname(current)
+    if (parent === current) return
+    current = parent
+  }
+}
+
+const discoverCheckout = (directory: string, root: string | undefined) => {
+  if (!root) return
+  let current = directory
+  while (current.startsWith(root)) {
+    for (const name of ["PHASE.md", "TASK.md"]) {
+      const document = join(current, name)
+      if (!existsSync(document)) continue
+      const repo = readFileSync(document, "utf8").match(/^repo:\\s*([^\\s]+)\\s*$/m)?.[1]
+      if (!repo) return
+      const checkout = join(current, "code", repo.replace(/^['\"]|['\"]$/g, ""))
+      return existsSync(checkout) ? checkout : undefined
+    }
+    if (current === root) return
+    current = dirname(current)
+  }
+}
 
 const agencyContext = async (directory: string) => {
   const task = process.env.AGENCY_TASK_ID
@@ -30,8 +57,8 @@ const agencyContext = async (directory: string) => {
 const plugin: Plugin = async ({ directory }) => ({
   config: async (config) => {
     const context = await agencyContext(directory).catch(() => undefined)
-    const root = process.env.AGENCY_WORKBASE ?? context?.root
-    const checkout = process.env.AGENCY_WRITABLE_CHECKOUT ?? context?.checkout
+    const root = process.env.AGENCY_WORKBASE ?? context?.root ?? discoverWorkbase(directory)
+    const checkout = process.env.AGENCY_WRITABLE_CHECKOUT ?? context?.checkout ?? discoverCheckout(directory, root)
 
     const reference = config.references?.workbase
     if (
