@@ -654,7 +654,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						if (validStatus === "done") {
 							return yield* new PhaseError({
 								message:
-									"Work becomes done after its authoritative pull request is merged; run 'agency sync --apply', or explicitly complete a non-PR outcome with '--no-pull-request --summary <text>'",
+									"Work becomes done after its authoritative pull request is merged; run 'agency sync', or explicitly complete a non-PR outcome with '--no-pull-request --summary <text>'",
 							})
 						}
 						return yield* new PhaseError({

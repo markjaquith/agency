@@ -371,18 +371,16 @@ describe("strict CLI parsing", () => {
 		})
 	})
 
-	test("parses reconciliation modes and rejects conflicting modes", () => {
+	test("parses explicit dry-run reconciliation", () => {
+		expect(parseCli(["sync"])).toMatchObject({
+			commandName: "sync",
+			values: {},
+		})
 		expect(parseCli(["sync", "--dry-run", "--json"])).toMatchObject({
 			commandName: "sync",
 			values: { "dry-run": true, json: true },
 		})
-		expect(parseCli(["sync", "--apply"])).toMatchObject({
-			commandName: "sync",
-			values: { apply: true },
-		})
-		expect(() => parseCli(["sync", "--dry-run", "--apply"])).toThrow(
-			"cannot be combined",
-		)
+		expect(() => parseCli(["sync", "--apply"])).toThrow("Unknown option")
 	})
 
 	test("accepts archive dry-run", () => {

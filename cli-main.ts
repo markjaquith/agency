@@ -694,7 +694,6 @@ const commands: Record<string, Command> = {
 			}
 			await runCommand(
 				sync({
-					apply: options.apply,
 					dryRun: options["dry-run"],
 					json: options.json,
 					silent: options.silent,

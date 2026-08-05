@@ -30,7 +30,7 @@
   ["work", "prepare", "--task", "checkout", "--phase", "ui", "--json"],
   ["work", "tasks/checkout/phases/ui", "--runner", "opencode"],
   ["sync", "--dry-run", "--json"],
-  ["sync", "--apply", "--json"],
+  ["sync", "--json"],
   ["pr", "create", "checkout", "ui", "--json"],
   [
     "finish",

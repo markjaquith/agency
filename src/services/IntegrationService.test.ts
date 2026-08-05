@@ -282,7 +282,7 @@ describe("IntegrationService", () => {
 		expect(body).toMatch(/completing\s+a refinement loop/)
 		expect(body).toContain("pausing or handing off")
 		expect(body).toContain("`agency finish`")
-		expect(body).toContain("`agency sync --apply`")
+		expect(body).toContain("`agency sync`")
 		expect(body).toContain("`--no-pull-request --summary <text>`")
 		expect(body).toContain("`TASK.md` or `PHASE.md`")
 		expect(body).toContain("PR state, current head, diff summary")

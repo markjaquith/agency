@@ -678,18 +678,16 @@ const commands = {
 		},
 	},
 	sync: {
-		usage: "agency sync [--dry-run | --apply] [--json]",
+		usage: "agency sync [--dry-run] [--json]",
 		options: {
 			...outputOptions,
 			"dry-run": { type: "boolean" },
-			apply: { type: "boolean" },
 		},
 		command: {
-			usage: "agency sync [--dry-run | --apply] [--json]",
+			usage: "agency sync [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 0,
-			options: ["dry-run", "apply", "json"],
-			conflicts: [["dry-run", "apply"]],
+			options: ["dry-run", "json"],
 		},
 	},
 	archive: {

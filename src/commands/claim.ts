@@ -117,6 +117,6 @@ export const finishHelp = `
 Usage: agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [--no-pull-request --summary <text> [--evidence-url <url>]]
 
 Finish a claim owned by the session. A done claim outcome leaves unmerged work
-working; agency sync --apply marks the execution unit done after merge. Use
+working; agency sync marks the execution unit done after merge. Use
 --no-pull-request with a summary for an explicit non-PR completion.
 `
