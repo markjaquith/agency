@@ -367,8 +367,32 @@ describe("strict CLI parsing", () => {
 		expect(parseCli(["--cwd", "/workbase", "pr", ...args])).toEqual({
 			commandName: "pr",
 			args,
+			passthrough: true,
 			values: { cwd: "/workbase" },
 		})
+	})
+
+	test("parses task-aware pr create without routing it to passthrough", () => {
+		expect(
+			parseCli([
+				"pr",
+				"create",
+				"ship",
+				"release",
+				"--draft",
+				"--force",
+				"--json",
+			]),
+		).toEqual({
+			commandName: "pr",
+			args: ["create", "ship", "release"],
+			values: { draft: true, force: true, json: true },
+		})
+		const selected = parseCli(["pr", "create", "--task", "ship"])
+		expect(selected).toMatchObject({
+			args: ["create", "ship"],
+		})
+		expect(selected.passthrough).toBeUndefined()
 	})
 
 	test("parses explicit dry-run reconciliation", () => {

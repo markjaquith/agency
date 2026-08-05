@@ -2,6 +2,30 @@ import { Effect } from "effect"
 import { resolve } from "node:path"
 import { ContextService } from "../services/ContextService"
 import { FileSystemService } from "../services/FileSystemService"
+import { PullRequestService } from "../services/PullRequestService"
+import type { BaseCommandOptions } from "../utils/command"
+import { createLoggers } from "../utils/effect"
+
+interface PrCreateOptions extends BaseCommandOptions {
+	readonly taskId: string
+	readonly phaseId?: string
+	readonly draft?: boolean
+	readonly force?: boolean
+}
+
+export const prCreate = (options: PrCreateOptions) =>
+	Effect.gen(function* () {
+		const pullRequests = yield* PullRequestService
+		const { log } = createLoggers(options)
+		const url = yield* pullRequests.create(
+			options.taskId,
+			options.phaseId,
+			options.draft,
+			options.cwd ?? process.cwd(),
+			options,
+		)
+		log(options.json ? JSON.stringify({ url }, null, 2) : url)
+	})
 
 export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 	Effect.gen(function* () {
@@ -24,8 +48,10 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 	})
 
 export const help = `
-Usage: agency pr [args...]
+Usage: agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
+       agency pr [args...]
 
-Run gh pr unchanged, focusing the writable repository checkout when invoked
-from an Agency execution task or phase.
+Create records a pull request for an Agency execution unit. Other invocations
+run gh pr unchanged, focusing the writable repository checkout when invoked from
+an Agency execution task or phase.
 `

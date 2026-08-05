@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import { parseCli } from "./src/cli-parser"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
-import { pr, help as prHelp } from "./src/commands/pr"
+import { pr, prCreate, help as prHelp } from "./src/commands/pr"
 import { work, workPrepare, help as workHelp } from "./src/commands/work"
 import { worktree, help as worktreeHelp } from "./src/commands/worktree"
 import { status, help as statusHelp } from "./src/commands/status"
@@ -134,7 +134,7 @@ const resolveInvocationCwd = (
 ) =>
 	runEffect(
 		Effect.gen(function* () {
-			if (commandName === "pr") {
+			if (commandName === "pr" && options.passthrough) {
 				return resolve(options.cwd ?? process.cwd())
 			}
 			if (
@@ -287,7 +287,22 @@ const commands: Record<string, Command> = {
 				console.log(prHelp)
 				return
 			}
-			process.exitCode = await runEffect(pr(args, options.cwd))
+			if (options.passthrough) {
+				process.exitCode = await runEffect(pr(args, options.cwd))
+				return
+			}
+			await runCommand(
+				prCreate({
+					taskId: args[1]!,
+					phaseId: args[2],
+					draft: options.draft,
+					force: options.force,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
 		},
 	},
 	phase: {
@@ -726,7 +741,7 @@ Commands:
   worktree <subcommand>  Inspect and maintain managed workspaces
   vcs <subcommand>       Inspect or migrate the version-control backend
   next                   List or select ready execution units
-  pr [args...]           Run gh pr with Agency repository focus
+  pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   review refresh         Explicitly refresh a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
@@ -761,7 +776,7 @@ const machineMode = process.argv
 
 try {
 	const args = process.argv.slice(2)
-	const { commandName, args: commandArgs, values } = parseCli(args)
+	const { commandName, args: commandArgs, passthrough, values } = parseCli(args)
 
 	// Handle global flags
 	if (values.version) {
@@ -785,16 +800,29 @@ try {
 		!values.json &&
 		!values["no-input"] &&
 		Boolean(process.stdin.isTTY && process.stdout.isTTY)
-	const cwd = await resolveInvocationCwd(commandName, values)
+	const cwd = await resolveInvocationCwd(commandName, {
+		...values,
+		passthrough,
+	})
 	if (values.json || (values.jsonl && values.help)) {
 		const result = await collectCommandResult(() =>
-			command.run(commandArgs, { ...values, cwd, inputAllowed }),
+			command.run(commandArgs, { ...values, cwd, inputAllowed, passthrough }),
 		)
 		writeEnvelope(successEnvelope(result))
 	} else if (values.jsonl) {
-		await command.run(commandArgs, { ...values, cwd, inputAllowed: false })
+		await command.run(commandArgs, {
+			...values,
+			cwd,
+			inputAllowed: false,
+			passthrough,
+		})
 	} else {
-		await command.run(commandArgs, { ...values, cwd, inputAllowed })
+		await command.run(commandArgs, {
+			...values,
+			cwd,
+			inputAllowed,
+			passthrough,
+		})
 	}
 } catch (error) {
 	if (machineMode) {

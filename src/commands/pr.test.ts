@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { Effect } from "effect"
 import { chmod, mkdir, realpath } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
-import { pr } from "./pr"
+import { PullRequestService } from "../services/PullRequestService"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
+import { pr, prCreate } from "./pr"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -94,6 +101,39 @@ status: open
 		)
 		return root
 	}
+
+	test("creates and records an Agency pull request", async () => {
+		const url = "https://github.com/markjaquith/agency/pull/123"
+		let received: unknown[] = []
+		const logs = await captureLogs(() =>
+			Effect.runPromise(
+				prCreate({
+					taskId: "example",
+					phaseId: "implementation",
+					draft: true,
+					force: true,
+					cwd: "/workbase",
+					json: true,
+				}).pipe(
+					Effect.provideService(PullRequestService, {
+						create: (...args: unknown[]) => {
+							received = args
+							return Effect.succeed(url)
+						},
+					} as never),
+				) as Effect.Effect<void, unknown, never>,
+			),
+		)
+
+		expect(JSON.parse(logs[0]!)).toEqual({ url })
+		expect(received).toEqual([
+			"example",
+			"implementation",
+			true,
+			"/workbase",
+			expect.objectContaining({ force: true, draft: true, json: true }),
+		])
+	})
 
 	test("focuses task and descendant invocations on the writable checkout", async () => {
 		const root = await createExecutionWorkbase()

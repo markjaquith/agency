@@ -805,6 +805,7 @@ for restoration. Archived IDs are reserved until restored.
 agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
+agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 agency pr [args...]
 ```
 
@@ -851,9 +852,12 @@ Agency resolves the ref to a commit and creates a detached worktree. Existing
 reference worktrees are reused only while their commit still matches the declared
 ref; use a commit SHA as `ref` when reproducibility matters.
 
-`agency pr` forwards every argument to `gh pr`. From an execution task or phase
-directory, including descendants, it runs in that execution unit's authoritative
-writable checkout. Otherwise it runs in the caller's current directory.
+Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
+including readiness checks and durable PR recording. Other `agency pr`
+invocations forward every argument to `gh pr`. From an execution task or phase
+directory, including descendants, passthrough runs in that execution unit's
+authoritative writable checkout. Otherwise it runs in the caller's current
+directory.
 
 ### Status and Validation
 
