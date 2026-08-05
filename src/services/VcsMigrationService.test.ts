@@ -7,6 +7,7 @@ import { ClaimService } from "./ClaimService"
 import { TaskService } from "./TaskService"
 import { VcsMigrationService } from "./VcsMigrationService"
 import { WorktreeService } from "./WorktreeService"
+import { runVcsStatusFast } from "../vcs-status-fast"
 
 const run = async (args: string[], cwd?: string) => {
 	const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" })
@@ -71,6 +72,51 @@ describe("VcsMigrationService", () => {
 	})
 
 	afterEach(async () => cleanupTempDir(root))
+
+	test("reports same-backend status for materialized workspaces", async () => {
+		const status = await runTestEffect(
+			VcsMigrationService.pipe(
+				Effect.flatMap((service) => service.status(root)),
+			),
+		)
+		expect(status).toMatchObject({
+			configured: "git",
+			source: "git",
+			target: "git",
+			workspaceCount: 2,
+			blockers: [],
+		})
+	})
+
+	test("fast jj status matches the validated service result", async () => {
+		if (!Bun.which("jj")) return
+		await runTestEffect(
+			VcsMigrationService.pipe(
+				Effect.flatMap((service) =>
+					service.migrate("jj", root, { apply: true }),
+				),
+			),
+		)
+		const taskPath = join(root, "tasks/example/TASK.md")
+		const content = await Bun.file(taskPath).text()
+		const withoutReference = content.replace(
+			/\nrepos:\n(?:  .+\n)+(?=branch:)/,
+			"\n",
+		)
+		expect(withoutReference).not.toBe(content)
+		await Bun.write(taskPath, withoutReference)
+
+		const validated = await runTestEffect(
+			VcsMigrationService.pipe(
+				Effect.flatMap((service) => service.status(root)),
+			),
+		)
+		const output: string[] = []
+		expect(
+			await runVcsStatusFast(true, root, (line) => output.push(line)),
+		).toBe(true)
+		expect(JSON.parse(output.join("\n")).result).toEqual(validated)
+	})
 
 	test("migrates Git worktrees to jj workspaces and back", async () => {
 		if (!Bun.which("jj")) return

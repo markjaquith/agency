@@ -20,6 +20,7 @@
   "files": [
     "index.ts",
     "cli.ts",
+    "cli-main.ts",
     "src",
     "schemas",
     "fixtures/protocol",

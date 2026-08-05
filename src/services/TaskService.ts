@@ -34,7 +34,7 @@ class TaskError extends Data.TaggedError("TaskError")<{
 	readonly message: string
 }> {}
 
-interface TaskRecord {
+export interface TaskRecord {
 	readonly id: string
 	readonly path: string
 	readonly content: string

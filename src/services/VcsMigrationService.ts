@@ -8,7 +8,7 @@ import {
 	runLifecycleTransaction,
 } from "./LifecycleTransaction"
 import { FileSystemService } from "./FileSystemService"
-import { PhaseService } from "./PhaseService"
+import { PhaseService, type PhaseRecord } from "./PhaseService"
 import { RepositoryService } from "./RepositoryService"
 import { TaskService } from "./TaskService"
 import {
@@ -182,15 +182,19 @@ const executionRecords = (root: string) =>
 	Effect.gen(function* () {
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
+		const taskRecords = yield* tasks.list(root)
+		const phasesByTask = new Map<string, readonly PhaseRecord[]>()
 		const records: {
 			taskId: string
 			phaseId?: string
 			status: WorkStatus
 			claimActive: boolean
 		}[] = []
-		for (const task of yield* tasks.list(root)) {
+		for (const task of taskRecords) {
 			if ("phases" in task.data) {
-				for (const phase of yield* phases.list(task.id, root)) {
+				const phaseRecords = yield* phases.list(task.id, root)
+				phasesByTask.set(task.id, phaseRecords)
+				for (const phase of phaseRecords) {
 					records.push({
 						taskId: task.id,
 						phaseId: phase.id,
@@ -206,7 +210,7 @@ const executionRecords = (root: string) =>
 				})
 			}
 		}
-		return records
+		return { records, taskRecords, phasesByTask }
 	})
 
 const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
@@ -241,7 +245,8 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 			})
 		}
 
-		const records = yield* executionRecords(root)
+		const execution = yield* executionRecords(root)
+		const records = execution.records
 		for (const record of records) {
 			if (record.claimActive) {
 				const label = record.phaseId
@@ -339,7 +344,15 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 		}
 
 		const workspacePlans: WorkspacePlan[] = []
-		const inspected = yield* Effect.either(worktrees.list(root))
+		const inspected = yield* Effect.either(
+			worktrees.list(root, {
+				materializedOnly: !blockers.some(
+					(blocker) => blocker.kind === "repository",
+				),
+				tasks: execution.taskRecords,
+				phasesByTask: execution.phasesByTask,
+			}),
+		)
 		if (Either.isLeft(inspected)) {
 			blockers.push({
 				kind: "workspace-conflict",
@@ -377,26 +390,27 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 						continue
 					}
 					const sourceName =
-						source === "jj"
+						source !== target && source === "jj"
 							? ((yield* sourceBackend.listWorkspaces(
 									join(root, "repos", checkout.repo),
 								)).find((item) => item.path === checkout.registeredPath)
 									?.name ?? null)
 							: null
-					const previousBranchCommit = checkout.actualBranch
-						? yield* command(
-								fs,
-								[
-									"git",
-									"-C",
-									join(root, "repos", checkout.repo),
-									"rev-parse",
-									"--verify",
-									`${checkout.actualBranch}^{commit}`,
-								],
-								`Failed to inspect branch '${checkout.actualBranch}'`,
-							).pipe(Effect.catchAll(() => Effect.succeed(null)))
-						: null
+					const previousBranchCommit =
+						source !== target && checkout.actualBranch
+							? yield* command(
+									fs,
+									[
+										"git",
+										"-C",
+										join(root, "repos", checkout.repo),
+										"rev-parse",
+										"--verify",
+										`${checkout.actualBranch}^{commit}`,
+									],
+									`Failed to inspect branch '${checkout.actualBranch}'`,
+								).pipe(Effect.catchAll(() => Effect.succeed(null)))
+							: null
 					workspacePlans.push({
 						taskId: inspection.owner.taskId,
 						...(inspection.owner.phaseId

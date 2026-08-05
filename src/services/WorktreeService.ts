@@ -13,6 +13,12 @@ import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 import { withWorktreeLocks } from "./WorktreeLock"
 import { VersionControlService } from "./VersionControlService"
+import type {
+	RegisteredWorkspace,
+	VersionControlBackend,
+} from "./VersionControlService"
+import type { TaskRecord } from "./TaskService"
+import type { PhaseRecord } from "./PhaseService"
 
 class WorktreeError extends Data.TaggedError("WorktreeError")<{
 	readonly message: string
@@ -113,6 +119,19 @@ interface WorktreeInspection {
 	readonly conflicts: readonly WorktreeConflict[]
 }
 
+interface InspectionContext {
+	readonly root: string
+	readonly backend: VersionControlBackend
+	readonly tasks: readonly TaskRecord[]
+	readonly phasesByTask: ReadonlyMap<string, readonly PhaseRecord[]>
+	readonly ownership: ReadonlyMap<string, readonly WorktreeOwner[]>
+	readonly workspacesByRepository: ReadonlyMap<
+		string,
+		readonly RegisteredWorkspace[]
+	>
+	readonly skipWritableRevisionResolution: boolean
+}
+
 interface WorktreeLifecycleResult {
 	readonly operation: "remove" | "rebuild" | "repair"
 	readonly dryRun: boolean
@@ -176,10 +195,17 @@ interface LifecycleOptions extends BaseCommandOptions {
 	readonly lockHeld?: boolean
 }
 
+interface ListOptions {
+	readonly materializedOnly?: boolean
+	readonly tasks?: readonly TaskRecord[]
+	readonly phasesByTask?: ReadonlyMap<string, readonly PhaseRecord[]>
+}
+
 const inspectExecution = (
 	taskId: string,
 	phaseId: string | undefined,
 	startPath: string,
+	context?: InspectionContext,
 ) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
@@ -187,9 +213,17 @@ const inspectExecution = (
 		const versionControl = yield* VersionControlService
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
-		const root = yield* workbase.discover(startPath)
-		const backend = yield* versionControl.forWorkbase(root)
-		const task = yield* tasks.show(taskId, root)
+		const root = context?.root ?? (yield* workbase.discover(startPath))
+		const backend =
+			context?.backend ?? (yield* versionControl.forWorkbase(root))
+		const task = context
+			? context.tasks.find((record) => record.id === taskId)
+			: yield* tasks.show(taskId, root)
+		if (!task) {
+			return yield* new WorktreeError({
+				message: `Task '${taskId}' does not exist`,
+			})
+		}
 
 		let execution:
 			| {
@@ -207,7 +241,16 @@ const inspectExecution = (
 					message: `Task '${taskId}' has multiple phases; phase ID is required`,
 				})
 			}
-			const phase = yield* phases.show(taskId, phaseId, root)
+			const phase = context
+				? context.phasesByTask
+						.get(taskId)
+						?.find((record) => record.id === phaseId)
+				: yield* phases.show(taskId, phaseId, root)
+			if (!phase) {
+				return yield* new WorktreeError({
+					message: `Phase '${phaseId}' does not exist on task '${taskId}'`,
+				})
+			}
 			execution = phase.data
 			owner = {
 				kind: "phase",
@@ -227,31 +270,37 @@ const inspectExecution = (
 			codePath = join(dirname(task.path), "code")
 		}
 
-		const ownership = new Map<string, WorktreeOwner[]>()
-		for (const taskRecord of yield* tasks.list(root)) {
-			if ("phases" in taskRecord.data) {
-				for (const phaseRecord of yield* phases.list(taskRecord.id, root)) {
-					const key = `${phaseRecord.data.repo}:${phaseRecord.data.branch}`
-					const owners = ownership.get(key) ?? []
+		let ownership: ReadonlyMap<string, readonly WorktreeOwner[]>
+		if (context) {
+			ownership = context.ownership
+		} else {
+			const discoveredOwnership = new Map<string, WorktreeOwner[]>()
+			for (const taskRecord of yield* tasks.list(root)) {
+				if ("phases" in taskRecord.data) {
+					for (const phaseRecord of yield* phases.list(taskRecord.id, root)) {
+						const key = `${phaseRecord.data.repo}:${phaseRecord.data.branch}`
+						const owners = discoveredOwnership.get(key) ?? []
+						owners.push({
+							kind: "phase",
+							taskId: taskRecord.id,
+							phaseId: phaseRecord.id,
+							documentPath: phaseRecord.path,
+						})
+						discoveredOwnership.set(key, owners)
+					}
+				} else {
+					if (!("repo" in taskRecord.data)) continue
+					const key = `${taskRecord.data.repo}:${taskRecord.data.branch}`
+					const owners = discoveredOwnership.get(key) ?? []
 					owners.push({
-						kind: "phase",
+						kind: "task",
 						taskId: taskRecord.id,
-						phaseId: phaseRecord.id,
-						documentPath: phaseRecord.path,
+						documentPath: taskRecord.path,
 					})
-					ownership.set(key, owners)
+					discoveredOwnership.set(key, owners)
 				}
-			} else {
-				if (!("repo" in taskRecord.data)) continue
-				const key = `${taskRecord.data.repo}:${taskRecord.data.branch}`
-				const owners = ownership.get(key) ?? []
-				owners.push({
-					kind: "task",
-					taskId: taskRecord.id,
-					documentPath: taskRecord.path,
-				})
-				ownership.set(key, owners)
 			}
+			ownership = discoveredOwnership
 		}
 
 		const declared: readonly (
@@ -318,19 +367,27 @@ const inspectExecution = (
 				const expectedPath = exists
 					? yield* fs.realPath(checkoutPath)
 					: resolve(checkoutPath)
-				const registered = yield* backend.listWorkspaces(repositoryPath)
+				const registered =
+					context?.workspacesByRepository.get(repositoryPath) ??
+					(yield* backend.listWorkspaces(repositoryPath))
 				const atPath = registered.find(
 					(workspace) => workspace.path === expectedPath,
 				)
 				const actualCommit = atPath
-					? yield* backend.workspaceHead(checkoutPath)
+					? atPath.head !== undefined
+						? atPath.head
+						: yield* backend.workspaceHead(checkoutPath)
 					: null
 				const dirty =
-					exists && atPath ? yield* backend.workspaceDirty(checkoutPath) : null
-				const expectedCommit = yield* backend.resolveRevision(
-					repositoryPath,
-					requestedRef,
-				)
+					exists && atPath
+						? atPath.dirty !== undefined
+							? atPath.dirty
+							: yield* backend.workspaceDirty(checkoutPath)
+						: null
+				const expectedCommit =
+					"branch" in checkout && context?.skipWritableRevisionResolution
+						? actualCommit
+						: yield* backend.resolveRevision(repositoryPath, requestedRef)
 
 				if (owners.length > 1) {
 					conflict(
@@ -647,6 +704,95 @@ const jjWorkspaceName = (
 	repo: string,
 ) => `agency-${taskId}-${phaseId ?? "task"}-${repo}`
 
+const buildInspectionContext = (
+	startPath: string,
+	skipWritableRevisionResolution: boolean,
+	preloadedTasks?: readonly TaskRecord[],
+	preloadedPhasesByTask?: ReadonlyMap<string, readonly PhaseRecord[]>,
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const workbase = yield* WorkbaseService
+		const versionControl = yield* VersionControlService
+		const taskService = yield* TaskService
+		const phaseService = yield* PhaseService
+		const root = yield* workbase.discover(startPath)
+		const backend = yield* versionControl.forWorkbase(root)
+		const tasks = preloadedTasks ?? (yield* taskService.list(root))
+		const phasesByTask = new Map<string, readonly PhaseRecord[]>()
+		const ownership = new Map<string, WorktreeOwner[]>()
+		const repositoryAliases = new Set<string>()
+
+		const addExecution = (
+			execution:
+				| {
+						repo: string
+						repos?: readonly RepositoryReference[]
+						branch: string
+				  }
+				| { review: { repo: string } },
+			owner: WorktreeOwner,
+		) => {
+			if ("review" in execution) {
+				repositoryAliases.add(execution.review.repo)
+				return
+			}
+			repositoryAliases.add(execution.repo)
+			for (const reference of execution.repos ?? [])
+				repositoryAliases.add(reference.repo)
+			const key = `${execution.repo}:${execution.branch}`
+			const owners = ownership.get(key) ?? []
+			owners.push(owner)
+			ownership.set(key, owners)
+		}
+
+		for (const task of tasks) {
+			if ("phases" in task.data) {
+				const phaseRecords =
+					preloadedPhasesByTask?.get(task.id) ??
+					(yield* phaseService.list(task.id, root))
+				phasesByTask.set(task.id, phaseRecords)
+				for (const phase of phaseRecords) {
+					addExecution(phase.data, {
+						kind: "phase",
+						taskId: task.id,
+						phaseId: phase.id,
+						documentPath: phase.path,
+					})
+				}
+			} else {
+				addExecution(task.data, {
+					kind: "task",
+					taskId: task.id,
+					documentPath: task.path,
+				})
+			}
+		}
+
+		const workspacesByRepository = new Map<
+			string,
+			readonly RegisteredWorkspace[]
+		>()
+		for (const alias of repositoryAliases) {
+			const repositoryPath = join(root, "repos", alias)
+			if (!(yield* fs.exists(repositoryPath))) continue
+			workspacesByRepository.set(
+				repositoryPath,
+				yield* backend.listWorkspaces(repositoryPath),
+			)
+		}
+
+		return {
+			root,
+			backend,
+			tasks,
+			phasesByTask,
+			ownership,
+			workspacesByRepository,
+			skipWritableRevisionResolution,
+		} satisfies InspectionContext
+	})
+
 const materializeJj = (options: {
 	readonly root: string
 	readonly taskId: string
@@ -935,23 +1081,71 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 	"WorktreeService",
 	{
 		sync: () => ({
-			list: (startPath: string = process.cwd()) =>
+			list: (startPath: string = process.cwd(), options: ListOptions = {}) =>
 				Effect.gen(function* () {
-					const workbase = yield* WorkbaseService
-					const tasks = yield* TaskService
-					const phases = yield* PhaseService
-					const root = yield* workbase.discover(startPath)
+					const fs = yield* FileSystemService
+					const context = yield* buildInspectionContext(
+						startPath,
+						options.materializedOnly === true,
+						options.tasks,
+						options.phasesByTask,
+					)
 					const inspections: WorktreeInspection[] = []
-					for (const task of yield* tasks.list(root)) {
+					const shouldInspect = (
+						documentPath: string,
+						execution:
+							| {
+									repo: string
+									repos?: readonly RepositoryReference[]
+							  }
+							| { review: { repo: string } },
+					) =>
+						Effect.gen(function* () {
+							if (!options.materializedOnly) return true
+							const codePath = join(dirname(documentPath), "code")
+							const aliases =
+								"review" in execution
+									? [execution.review.repo]
+									: [
+											execution.repo,
+											...(execution.repos ?? []).map(
+												(reference) => reference.repo,
+											),
+										]
+							for (const alias of aliases) {
+								if (yield* fs.isDirectory(join(codePath, alias))) return true
+							}
+							return [...context.workspacesByRepository.values()].some(
+								(workspaces) =>
+									workspaces.some(
+										(workspace) =>
+											workspace.path === codePath ||
+											workspace.path.startsWith(`${codePath}/`),
+									),
+							)
+						})
+					for (const task of context.tasks) {
 						if ("phases" in task.data) {
-							for (const phase of yield* phases.list(task.id, root)) {
+							for (const phase of context.phasesByTask.get(task.id) ?? []) {
+								if (!(yield* shouldInspect(phase.path, phase.data))) continue
 								inspections.push(
-									yield* inspectExecution(task.id, phase.id, root),
+									yield* inspectExecution(
+										task.id,
+										phase.id,
+										context.root,
+										context,
+									),
 								)
 							}
 						} else {
+							if (!(yield* shouldInspect(task.path, task.data))) continue
 							inspections.push(
-								yield* inspectExecution(task.id, undefined, root),
+								yield* inspectExecution(
+									task.id,
+									undefined,
+									context.root,
+									context,
+								),
 							)
 						}
 					}
