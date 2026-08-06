@@ -47,6 +47,9 @@ export interface VersionControlBackend {
 		remote?: string,
 		branch?: string,
 	) => Effect.Effect<void, unknown, any>
+	readonly importGitRefs: (
+		repositoryPath: string,
+	) => Effect.Effect<void, unknown, any>
 	readonly push: (
 		workspacePath: string,
 		remote: string,
@@ -240,6 +243,7 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 							),
 						)
 					}),
+				importGitRefs: () => Effect.void,
 				push: (workspacePath, remote, branch) =>
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
@@ -333,18 +337,27 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 				resolveRevision: (repositoryPath, revision) =>
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
-						const result = yield* fs.runCommand(
-							jjCommand(repositoryPath, [
-								"log",
-								"--ignore-working-copy",
-								"--no-graph",
-								"-r",
-								revision,
-								"-T",
-								'commit_id ++ "\\n"',
-							]),
-							{ captureOutput: true },
-						)
+						const resolve = () =>
+							fs.runCommand(
+								jjCommand(repositoryPath, [
+									"log",
+									"--ignore-working-copy",
+									"--no-graph",
+									"-r",
+									revision,
+									"-T",
+									'commit_id ++ "\\n"',
+								]),
+								{ captureOutput: true },
+							)
+						let result = yield* resolve()
+						if (result.exitCode !== 0 || !result.stdout.trim()) {
+							const imported = yield* fs.runCommand(
+								jjCommand(repositoryPath, ["git", "import"]),
+								{ captureOutput: true },
+							)
+							if (imported.exitCode === 0) result = yield* resolve()
+						}
 						return result.exitCode === 0 ? result.stdout.trim() || null : null
 					}),
 				workspaceHead: (workspacePath) =>
@@ -428,6 +441,16 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 								]),
 								{ captureOutput: true },
 							),
+						)
+					}),
+				importGitRefs: (repositoryPath) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						yield* requireSuccess(
+							"Failed to import Git refs into jj",
+							fs.runCommand(jjCommand(repositoryPath, ["git", "import"]), {
+								captureOutput: true,
+							}),
 						)
 					}),
 				push: (workspacePath, remote, branch) =>

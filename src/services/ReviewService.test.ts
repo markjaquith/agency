@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { TaskService } from "./TaskService"
@@ -13,11 +13,22 @@ import { PhaseService } from "./PhaseService"
 import { ArchiveService } from "./ArchiveService"
 import { ClaimService } from "./ClaimService"
 import { SyncService } from "./SyncService"
+import { DoctorService } from "./DoctorService"
 import { task as taskCommand } from "../commands/task"
 
 const git = async (args: string[], cwd?: string) => {
 	const child = Bun.spawn(["git", ...args], {
 		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await child.exited
+	if (child.exitCode !== 0)
+		throw new Error(await new Response(child.stderr).text())
+}
+
+const jj = async (args: string[]) => {
+	const child = Bun.spawn(["jj", ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 	})
@@ -149,6 +160,78 @@ describe("ReviewService", () => {
 			"refs/agency/reviews",
 		])
 		expect(new TextDecoder().decode(oldPins.stdout).trim()).toBe("")
+	})
+
+	test("imports jj reviews for creation, diagnostics, materialization, and refresh", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await git(["switch", "-c", "jj-review"], source)
+		await Bun.write(join(source, "README.md"), "jj review one\n")
+		await git(["commit", "-am", "jj review one"], source)
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+
+		await runTestEffect(
+			taskCommand({
+				subcommand: "create",
+				args: ["jj-review"],
+				review: "agency",
+				ref: "jj-review",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const created = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("jj-review", root)),
+			),
+		)
+		const original = "review" in created.data ? created.data.review.commit : ""
+
+		const context = await runTestEffect(
+			ContextService.pipe(
+				Effect.flatMap((service) =>
+					service.get({ target: "jj-review", cwd: root }),
+				),
+			),
+		)
+		expect(context.workspace!.warnings).toEqual([])
+		expect(context.review?.checkout?.resolvedCommit).toBe(original)
+
+		const doctor = await runTestEffect(
+			DoctorService.pipe(Effect.flatMap((service) => service.inspect(root))),
+		)
+		expect(
+			doctor.checks.find((check) => check.id === `ref.agency.${original}`),
+		).toMatchObject({ status: "pass" })
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-review", undefined, root),
+				),
+			),
+		)
+		expect(
+			await Bun.file(join(workspace.reviewPath!, "README.md")).text(),
+		).toBe("jj review one\n")
+
+		await Bun.write(join(source, "README.md"), "jj review two\n")
+		await git(["commit", "-am", "jj review two"], source)
+		const refreshed = await runTestEffect(
+			ReviewService.pipe(
+				Effect.flatMap((service) => service.refresh("jj-review", root)),
+			),
+		)
+		expect(refreshed.changed).toBe(true)
+		expect(
+			await Bun.file(join(workspace.reviewPath!, "README.md")).text(),
+		).toBe("jj review two\n")
 	})
 
 	test("rejects delivery and phase operations even when forced", async () => {

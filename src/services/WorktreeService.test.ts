@@ -164,6 +164,44 @@ describe("WorktreeService", () => {
 		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
 	})
 
+	test("recommends a repository fetch when jj cannot resolve a base", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-missing",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-missing",
+							base: "absent-base",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("jj-missing", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("run 'agency repo fetch agency' and retry")
+	})
+
 	test("does not fetch the origin for an existing writable worktree", async () => {
 		await runTestEffect(
 			TaskService.pipe(
