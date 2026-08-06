@@ -2,7 +2,8 @@
   "version": 2,
   "repositories": {
     "agency": {
-      "remote": "https://github.com/markjaquith/agency.git"
+      "remote": "https://github.com/markjaquith/agency.git",
+      "postCheckoutCommand": ["bun", "install", "--frozen-lockfile"]
     },
     "effect": {
       "remote": "https://github.com/Effect-TS/effect.git"

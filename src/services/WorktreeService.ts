@@ -8,7 +8,12 @@ import {
 	expandWorktreeCreateCommand,
 	worktreeCommandEnvironment,
 } from "../workbase/worktree-command"
-import type { RepositoryReference } from "../workbase/schemas"
+import {
+	expandPostCheckoutCommand,
+	postCheckoutCommandEnvironment,
+	type CheckoutCommandVariables,
+} from "../workbase/checkout-command"
+import type { RepositoryReference, WorkbaseConfig } from "../workbase/schemas"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 import { withWorktreeLocks } from "./WorktreeLock"
@@ -35,6 +40,7 @@ interface WorkspaceOperation {
 		| "create-branch"
 		| "create-worktree"
 		| "create-workspace"
+		| "post-checkout"
 	readonly repo: string
 	readonly command: readonly string[]
 	readonly status: "planned" | "completed"
@@ -175,6 +181,70 @@ const formatCommand = (args: readonly string[]) =>
 				: `'${argument.replaceAll("'", `'\\''`)}'`,
 		)
 		.join(" ")
+
+const runPostCheckoutHook = (options: {
+	readonly command: readonly string[] | undefined
+	readonly variables: CheckoutCommandVariables
+	readonly dryRun: boolean
+	readonly forwardOutput: boolean
+	readonly verboseLog: (...args: unknown[]) => void
+	readonly operations: WorkspaceOperation[]
+}) =>
+	Effect.gen(function* () {
+		if (!options.command) return
+		let command: string[]
+		try {
+			command = expandPostCheckoutCommand(options.command, options.variables)
+		} catch (cause) {
+			return yield* new WorktreeError({
+				message:
+					cause instanceof Error
+						? cause.message
+						: "Invalid postCheckoutCommand",
+				cause,
+			})
+		}
+		options.verboseLog(
+			`${options.dryRun ? "Planning" : "Running"} post-checkout command for '${options.variables.repoAlias}': ${formatCommand(command)}`,
+		)
+		if (options.dryRun) {
+			options.operations.push({
+				action: "post-checkout",
+				repo: options.variables.repoAlias,
+				command,
+				status: "planned",
+			})
+			return
+		}
+		const result = yield* FileSystemService.pipe(
+			Effect.flatMap((fs) =>
+				fs.runCommand(command, {
+					cwd: options.variables.checkoutPath,
+					captureOutput: true,
+					forwardOutput: options.forwardOutput,
+					env: postCheckoutCommandEnvironment(options.variables),
+				}),
+			),
+			Effect.mapError(
+				(cause) =>
+					new WorktreeError({
+						message: `Failed to start post-checkout command for '${options.variables.repoAlias}': ${cause.message}`,
+						cause,
+					}),
+			),
+		)
+		if (result.exitCode !== 0) {
+			return yield* new WorktreeError({
+				message: `Post-checkout command failed for '${options.variables.repoAlias}' with exit code ${result.exitCode}${result.stderr ? `: ${result.stderr}` : ""}`,
+			})
+		}
+		options.operations.push({
+			action: "post-checkout",
+			repo: options.variables.repoAlias,
+			command,
+			status: "completed",
+		})
+	})
 
 const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
 
@@ -812,6 +882,7 @@ const materializeJj = (options: {
 		| { readonly repo: string; readonly branch: string }
 		| RepositoryReference
 	)[]
+	readonly config: WorkbaseConfig
 	readonly commandOptions: MaterializeOptions
 }) =>
 	Effect.gen(function* () {
@@ -826,6 +897,11 @@ const materializeJj = (options: {
 			workspaceName: string
 		}[] = []
 		const base = "base" in options.execution ? options.execution.base : null
+		const { verboseLog } = createLoggers(options.commandOptions)
+		const forwardCommandOutput =
+			options.commandOptions.verbose === true &&
+			!options.commandOptions.silent &&
+			!options.commandOptions.json
 
 		if (!options.commandOptions.dryRun)
 			yield* fs.createDirectory(options.codePath)
@@ -920,7 +996,37 @@ const materializeJj = (options: {
 						...("branch" in checkout ? { branch: checkout.branch } : {}),
 					})
 					created.push({ repositoryPath, workspacePath, workspaceName })
+					const canonicalWorkspacePath = yield* fs.realPath(workspacePath)
+					const registeredAfterCreate = (yield* backend.listWorkspaces(
+						repositoryPath,
+					)).find((workspace) => workspace.path === canonicalWorkspacePath)
+					const head = yield* backend.workspaceHead(workspacePath)
+					if (!registeredAfterCreate || head !== revision) {
+						return yield* new WorktreeError({
+							message: `Created jj workspace for '${checkout.repo}' failed validation`,
+						})
+					}
 				}
+				yield* runPostCheckoutHook({
+					command:
+						options.config.repositories?.[checkout.repo]?.postCheckoutCommand,
+					variables: {
+						repoAlias: checkout.repo,
+						repositoryPath,
+						checkoutPath: workspacePath,
+						checkoutKind: "branch" in checkout ? "writable" : "reference",
+						requestedRef: requestedRevision,
+						base: base ?? "",
+						vcs: "jj",
+						workbaseRoot: options.root,
+						taskId: options.taskId,
+						phaseId: options.phaseId ?? "",
+					},
+					dryRun: options.commandOptions.dryRun === true,
+					forwardOutput: forwardCommandOutput,
+					verboseLog,
+					operations,
+				})
 				reports.push({
 					repo: checkout.repo,
 					kind: "branch" in checkout ? "writable" : "reference",
@@ -957,16 +1063,36 @@ const materializeJj = (options: {
 		}).pipe(
 			Effect.catchAll((cause) =>
 				Effect.gen(function* () {
+					const rolledBack: string[] = []
+					const manualRecovery: string[] = []
 					for (const workspace of [...created].reverse()) {
-						yield* backend
+						const removed = yield* backend
 							.removeWorkspace({
 								repositoryPath: workspace.repositoryPath,
 								workspacePath: workspace.workspacePath,
 								workspaceName: workspace.workspaceName,
 							})
-							.pipe(Effect.ignore)
+							.pipe(
+								Effect.as(true),
+								Effect.catchAll(() => Effect.succeed(false)),
+							)
+						if (removed)
+							rolledBack.push(`create-workspace ${workspace.workspaceName}`)
+						else
+							manualRecovery.push(
+								`Remove jj workspace ${workspace.workspacePath}`,
+							)
 					}
-					return yield* Effect.fail(cause)
+					return yield* new WorktreeError({
+						message: `${cause instanceof Error ? cause.message : "Workspace creation failed"}. ${
+							manualRecovery.length
+								? "Some effects require manual recovery"
+								: "Created jj workspaces were rolled back"
+						}`,
+						rolledBack,
+						manualRecovery,
+						cause,
+					})
 				}),
 			),
 		)
@@ -1245,6 +1371,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								codePath,
 								execution,
 								requestedCheckouts,
+								config,
 								commandOptions: options,
 							})
 						}
@@ -1695,6 +1822,26 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												{ captureOutput: true },
 											)
 										}
+										yield* runPostCheckoutHook({
+											command:
+												config.repositories?.[alias]?.postCheckoutCommand,
+											variables: {
+												repoAlias: alias,
+												repositoryPath,
+												checkoutPath,
+												checkoutKind: "writable",
+												requestedRef: checkout.branch,
+												base: executionBase,
+												vcs: "git",
+												workbaseRoot: root,
+												taskId,
+												phaseId: phaseId ?? "",
+											},
+											dryRun: true,
+											forwardOutput: false,
+											verboseLog,
+											operations,
+										})
 										checkoutReports.push({
 											repo: alias,
 											kind: "writable",
@@ -1739,6 +1886,38 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 										["git", "-C", checkoutPath, "rev-parse", "HEAD"],
 										{ captureOutput: true },
 									)
+									const currentBranch = yield* fs.runCommand(
+										["git", "-C", checkoutPath, "branch", "--show-current"],
+										{ captureOutput: true },
+									)
+									if (
+										head.exitCode !== 0 ||
+										currentBranch.exitCode !== 0 ||
+										currentBranch.stdout.trim() !== checkout.branch
+									) {
+										return yield* new WorktreeError({
+											message: `Created worktree for '${alias}' failed validation for branch '${checkout.branch}'`,
+										})
+									}
+									yield* runPostCheckoutHook({
+										command: config.repositories?.[alias]?.postCheckoutCommand,
+										variables: {
+											repoAlias: alias,
+											repositoryPath,
+											checkoutPath,
+											checkoutKind: "writable",
+											requestedRef: checkout.branch,
+											base: executionBase,
+											vcs: "git",
+											workbaseRoot: root,
+											taskId,
+											phaseId: phaseId ?? "",
+										},
+										dryRun: false,
+										forwardOutput: forwardCommandOutput,
+										verboseLog,
+										operations,
+									})
 									checkoutReports.push({
 										repo: alias,
 										kind: "writable",
@@ -1831,6 +2010,26 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											command,
 											status: "planned",
 										})
+										yield* runPostCheckoutHook({
+											command:
+												config.repositories?.[alias]?.postCheckoutCommand,
+											variables: {
+												repoAlias: alias,
+												repositoryPath,
+												checkoutPath,
+												checkoutKind: "reference",
+												requestedRef: checkout.ref,
+												base: executionBase,
+												vcs: "git",
+												workbaseRoot: root,
+												taskId,
+												phaseId: phaseId ?? "",
+											},
+											dryRun: true,
+											forwardOutput: false,
+											verboseLog,
+											operations,
+										})
 										checkoutReports.push({
 											repo: alias,
 											kind: "reference",
@@ -1854,6 +2053,34 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 										repo: alias,
 										command,
 										status: "completed",
+									})
+									const head = yield* fs.runCommand(
+										["git", "-C", checkoutPath, "rev-parse", "HEAD"],
+										{ captureOutput: true },
+									)
+									if (head.exitCode !== 0 || head.stdout.trim() !== commit) {
+										return yield* new WorktreeError({
+											message: `Created reference checkout for '${alias}' failed validation for '${checkout.ref}'`,
+										})
+									}
+									yield* runPostCheckoutHook({
+										command: config.repositories?.[alias]?.postCheckoutCommand,
+										variables: {
+											repoAlias: alias,
+											repositoryPath,
+											checkoutPath,
+											checkoutKind: "reference",
+											requestedRef: checkout.ref,
+											base: executionBase,
+											vcs: "git",
+											workbaseRoot: root,
+											taskId,
+											phaseId: phaseId ?? "",
+										},
+										dryRun: false,
+										forwardOutput: forwardCommandOutput,
+										verboseLog,
+										operations,
 									})
 									checkoutReports.push({
 										repo: alias,
@@ -1918,6 +2145,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												join(root, "repos", checkout.repo),
 												"worktree",
 												"remove",
+												"--force",
 												checkoutPath,
 											],
 											{ captureOutput: true },

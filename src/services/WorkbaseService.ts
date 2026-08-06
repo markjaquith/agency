@@ -20,6 +20,7 @@ import {
 	type WorkbaseRegistration,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
+import { validatePostCheckoutCommand } from "../workbase/checkout-command"
 import { validateRunners } from "../workbase/runner-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
@@ -271,6 +272,23 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												cause instanceof Error
 													? cause.message
 													: "Invalid worktreeCreateCommand",
+										})
+									}
+								}
+								for (const [alias, repository] of Object.entries(
+									decoded.value.repositories ?? {},
+								)) {
+									if (!repository.postCheckoutCommand) continue
+									try {
+										validatePostCheckoutCommand(repository.postCheckoutCommand)
+									} catch (cause) {
+										return yield* new WorkbaseConfigError({
+											path: configPath,
+											message: `Repository '${alias}': ${
+												cause instanceof Error
+													? cause.message
+													: "Invalid postCheckoutCommand"
+											}`,
 										})
 									}
 								}

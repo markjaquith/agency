@@ -371,6 +371,30 @@ status: done
 		).rejects.toThrow("{worktree}")
 	})
 
+	test("rejects an unknown post-checkout command placeholder", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: ["tool", "{unknown}"],
+					},
+				},
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.discover(root)),
+				),
+			),
+		).rejects.toThrow("Repository 'agency'")
+	})
+
 	test("rejects an unknown runner command placeholder", async () => {
 		await write(
 			root,
