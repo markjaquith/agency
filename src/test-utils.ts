@@ -11,6 +11,7 @@ import { TaskService } from "./services/TaskService"
 import { PhaseService } from "./services/PhaseService"
 import { WorktreeService } from "./services/WorktreeService"
 import { PullRequestService } from "./services/PullRequestService"
+import { PushService } from "./services/PushService"
 import { ArchiveService } from "./services/ArchiveService"
 import { IntegrationService } from "./services/IntegrationService"
 import { ContextService } from "./services/ContextService"
@@ -46,6 +47,7 @@ const TestLayer = Layer.mergeAll(
 	PhaseService.Default,
 	WorktreeService.Default,
 	PullRequestService.Default,
+	PushService.Default,
 	ArchiveService.Default,
 	IntegrationService.Default,
 	ContextService.Default,

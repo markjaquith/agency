@@ -69,6 +69,11 @@ change only the writable checkout, keep durable decisions current, and run the
 repository's formatting, type checks, build, dead-code checks, and focused tests.
 Review and commit the diff according to the repository's instructions.
 
+Use `agency push` from an execution task or phase to validate and publish its
+declared delivery branch or bookmark without creating a pull request. The
+command never authors semantic commit descriptions; resolve its reported change
+IDs and remediation commands before retrying.
+
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work
 `working` without creating a claim, and starts the runner. Epic and multi-phase

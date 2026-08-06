@@ -272,6 +272,8 @@ describe("IntegrationService", () => {
 		expect(body).toContain("without creating a claim")
 		expect(body).toContain("formatting, type checks, build, dead-code checks")
 		expect(body).toContain("Review and commit the diff")
+		expect(body).toContain("Use `agency push`")
+		expect(body).toContain("never authors semantic commit descriptions")
 		expect(body).toContain("Run `agency validate`")
 		expect(body).toContain("only with explicit user intent")
 		expect(body).toContain("An execution unit remains `working`")

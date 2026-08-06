@@ -502,6 +502,7 @@ describe("CLI", () => {
 			["archive", "Usage: agency archive"],
 			["restore", "Usage: agency restore"],
 			["work", "Usage: agency work"],
+			["push", "Usage: agency push"],
 			["pr", "Work with GitHub pull requests."],
 			["status", "Usage: agency status"],
 			["validate", "Usage: agency validate"],

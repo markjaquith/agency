@@ -6,6 +6,7 @@ import { parseCli } from "./src/cli-parser"
 import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, prCreate, help as prHelp } from "./src/commands/pr"
+import { push, help as pushHelp } from "./src/commands/push"
 import { work, workPrepare, help as workHelp } from "./src/commands/work"
 import { worktree, help as worktreeHelp } from "./src/commands/worktree"
 import { status, help as statusHelp } from "./src/commands/status"
@@ -34,6 +35,7 @@ import { TaskService } from "./src/services/TaskService"
 import { PhaseService } from "./src/services/PhaseService"
 import { WorktreeService } from "./src/services/WorktreeService"
 import { PullRequestService } from "./src/services/PullRequestService"
+import { PushService } from "./src/services/PushService"
 import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
@@ -79,6 +81,7 @@ const CliLayer = Layer.mergeAll(
 	PhaseService.Default,
 	WorktreeService.Default,
 	PullRequestService.Default,
+	PushService.Default,
 	ArchiveService.Default,
 	IntegrationService.Default,
 	ContextService.Default,
@@ -297,6 +300,22 @@ const commands: Record<string, Command> = {
 					phaseId: args[2],
 					draft: options.draft,
 					force: options.force,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
+	push: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(pushHelp)
+				return
+			}
+			await runCommand(
+				push({
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -742,6 +761,7 @@ Commands:
   vcs <subcommand>       Inspect or migrate the version-control backend
   next                   List or select ready execution units
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
+  push                   Validate and publish the current execution unit
   review refresh         Explicitly refresh a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
