@@ -857,7 +857,8 @@ including readiness checks and durable PR recording. Other `agency pr`
 invocations forward every argument to `gh pr`. From an execution task or phase
 directory, including descendants, passthrough runs in that execution unit's
 authoritative writable checkout. Otherwise it runs in the caller's current
-directory.
+directory. In jj workbases, Agency also supplies the repository and the work
+item's declared branch to subcommands that would otherwise infer Git context.
 
 ### Status and Validation
 

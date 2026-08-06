@@ -50,9 +50,19 @@ exit "\${GH_EXIT:-0}"
 	const captured = async () =>
 		(await Bun.file(capturePath).text()).trim().split("\n")
 
-	const createExecutionWorkbase = async () => {
+	const createExecutionWorkbase = async (vcs: "git" | "jj" = "git") => {
 		const root = join(tempRoot, "workbase")
-		await write(root, "agency.json", '{"version":2}\n')
+		await write(
+			root,
+			"agency.json",
+			`${JSON.stringify({
+				version: 2,
+				vcs,
+				repositories: {
+					agency: { remote: "https://github.com/example/agency.git" },
+				},
+			})}\n`,
+		)
 		await mkdir(join(root, "repos/agency"), { recursive: true })
 		await mkdir(join(root, "tasks/single/code/agency"), { recursive: true })
 		await write(
@@ -160,6 +170,51 @@ status: open
 			await realpath(join(phase, "code/agency")),
 			"pr",
 			"status",
+		])
+	})
+
+	test("injects the execution branch and repository for jj targets", async () => {
+		const root = await createExecutionWorkbase("jj")
+		const task = join(root, "tasks/single")
+		const phase = join(root, "tasks/multi/phases/build")
+
+		expect(await runTestEffect(pr(["view", "--web"], task))).toBe(0)
+		expect(await captured()).toEqual([
+			await realpath(join(task, "code/agency")),
+			"pr",
+			"view",
+			"feat/single",
+			"--repo",
+			"example/agency",
+			"--web",
+		])
+
+		expect(
+			await runTestEffect(pr(["create", "--title", "Example"], phase)),
+		).toBe(0)
+		expect(await captured()).toEqual([
+			await realpath(join(phase, "code/agency")),
+			"pr",
+			"create",
+			"--head",
+			"feat/build",
+			"--repo",
+			"example/agency",
+			"--title",
+			"Example",
+		])
+	})
+
+	test("preserves explicit jj PR and repository targets", async () => {
+		const root = await createExecutionWorkbase("jj")
+		const task = join(root, "tasks/single")
+		const args = ["view", "123", "--repo", "other/repository"]
+
+		expect(await runTestEffect(pr(args, task))).toBe(0)
+		expect(await captured()).toEqual([
+			await realpath(join(task, "code/agency")),
+			"pr",
+			...args,
 		])
 	})
 

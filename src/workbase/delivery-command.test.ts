@@ -3,6 +3,7 @@ import {
 	parsePullRequestRecord,
 	recordFromGitHubJson,
 	resolveDeliveryCommand,
+	resolveGitHubCreateCommand,
 	validateDelivery,
 } from "./delivery-command"
 
@@ -28,6 +29,34 @@ describe("delivery commands", () => {
 		expect(resolveDeliveryCommand(delivery, "create", variables)).toEqual({
 			argv: ["forge", "create", "example/agency", "feat/example"],
 			environment: { FORGE_BASE: "main" },
+		})
+	})
+
+	test("adds explicit jj context to the default GitHub create command", () => {
+		const input = {
+			base: "main",
+			branch: "feat/example",
+			repository: "example/agency",
+			draft: false,
+		} as const
+		expect(resolveGitHubCreateCommand({ ...input, vcs: "jj" })).toEqual({
+			argv: [
+				"gh",
+				"pr",
+				"create",
+				"--fill",
+				"--base",
+				"main",
+				"--head",
+				"feat/example",
+				"--repo",
+				"example/agency",
+			],
+			environment: {},
+		})
+		expect(resolveGitHubCreateCommand({ ...input, vcs: "git" })).toEqual({
+			argv: ["gh", "pr", "create", "--fill", "--base", "main"],
+			environment: {},
 		})
 	})
 
