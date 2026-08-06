@@ -11,6 +11,39 @@ export interface DeliveryCommandVariables {
 	readonly identifier: string
 }
 
+export const repositoryFromRemote = (remote: string) =>
+	remote
+		.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
+		.replace(/^[^:]+:/, "")
+		.replace(/\.git\/?$/, "")
+		.replace(/\/$/, "")
+
+export const resolveGitHubCreateCommand = ({
+	base,
+	branch,
+	repository,
+	draft,
+	vcs,
+}: {
+	readonly base: string
+	readonly branch: string
+	readonly repository: string
+	readonly draft: boolean
+	readonly vcs: "git" | "jj"
+}) => ({
+	argv: [
+		"gh",
+		"pr",
+		"create",
+		"--fill",
+		"--base",
+		base,
+		...(vcs === "jj" ? ["--head", branch, "--repo", repository] : []),
+		...(draft ? ["--draft"] : []),
+	],
+	environment: {},
+})
+
 const PLACEHOLDERS = new Set<keyof DeliveryCommandVariables>([
 	"repository",
 	"branch",

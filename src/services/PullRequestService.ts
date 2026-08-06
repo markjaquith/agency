@@ -16,19 +16,14 @@ import {
 	normalizePullRequestRecord,
 	parsePullRequestRecord,
 	recordFromGitHubUrl,
+	repositoryFromRemote,
 	resolveDeliveryCommand,
+	resolveGitHubCreateCommand,
 } from "../workbase/delivery-command"
 
 class PullRequestError extends Data.TaggedError("PullRequestError")<{
 	readonly message: string
 }> {}
-
-const repositoryFromRemote = (remote: string) =>
-	remote
-		.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
-		.replace(/^[^:]+:/, "")
-		.replace(/\.git\/?$/, "")
-		.replace(/\/$/, "")
 
 interface PullRequestOptions extends BaseCommandOptions {
 	readonly force?: boolean
@@ -197,18 +192,13 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								url: "",
 								identifier: "",
 							})
-						: {
-								argv: [
-									"gh",
-									"pr",
-									"create",
-									"--fill",
-									"--base",
-									execution.base,
-									...(draft ? ["--draft"] : []),
-								],
-								environment: {},
-							}
+						: resolveGitHubCreateCommand({
+								base: execution.base,
+								branch: execution.branch,
+								repository,
+								draft,
+								vcs: config.vcs ?? "git",
+							})
 					const created = yield* fs.runCommand(resolved.argv, {
 						cwd: workspace.writablePath,
 						captureOutput: true,
