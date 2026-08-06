@@ -1177,7 +1177,7 @@ status: open
 					cwd: contract.cwd,
 					env: environment,
 				})
-				expect(probe.exitCode).toBe(0)
+				expect(probe.exitCode, probe.stderr.toString()).toBe(0)
 				const agent = JSON.parse(probe.stdout.toString())
 				expect(agent.permission).toEqual(
 					expect.arrayContaining([

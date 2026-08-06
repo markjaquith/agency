@@ -98,6 +98,8 @@ const createHarness = (options: HarnessOptions = {}) => {
 		cwd: string
 	}> = []
 	const launchEnvironments: Array<Readonly<Record<string, string>>> = []
+	const launchProcessEnvironments: Array<Record<string, string | undefined>> =
+		[]
 	const materializeOptions: Array<
 		Parameters<WorktreeService["materialize"]>[3]
 	> = []
@@ -265,6 +267,11 @@ const createHarness = (options: HarnessOptions = {}) => {
 		events.push(`launch:${cli}`)
 		launches.push({ cli, args, cwd })
 		launchEnvironments.push(environment)
+		launchProcessEnvironments.push({
+			AGENCY_SESSION_ID: process.env.AGENCY_SESSION_ID,
+			AGENCY_TARGET: process.env.AGENCY_TARGET,
+			AGENCY_PROMPT: process.env.AGENCY_PROMPT,
+		})
 		if (options.launchError) throw options.launchError
 	}
 	const defaultPick: PickWorkTarget = () => Effect.succeed(null)
@@ -307,6 +314,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		probes,
 		launches,
 		launchEnvironments,
+		launchProcessEnvironments,
 		materializeOptions,
 		statusUpdates,
 		taskStatuses,
@@ -484,7 +492,7 @@ describe("work command", () => {
 			args: [
 				"opencode",
 				"--prompt",
-				"Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
+				"Agency worker launch target: epic:delivery. Work on the epic. Read /workbase/epics/delivery/EPIC.md.",
 			],
 			cwd: "/workbase/epics/delivery",
 		})
@@ -538,7 +546,7 @@ describe("work command", () => {
 			args: [
 				"opencode",
 				"--prompt",
-				"Work on the task. Read /workbase/tasks/delivery/TASK.md.",
+				"Agency worker launch target: task:delivery. Work on the task. Read /workbase/tasks/delivery/TASK.md.",
 			],
 			cwd: "/workbase/tasks/delivery",
 		})
@@ -565,7 +573,7 @@ describe("work command", () => {
 			args: [
 				"opencode",
 				"--prompt",
-				"Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+				"Agency worker launch target: execution-unit:phase/example/implementation. Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
 			cwd: phaseDirectory,
 		})
@@ -797,11 +805,17 @@ describe("work command", () => {
 		expect(harness.launches[0]?.args).toEqual([
 			"opencode",
 			"--prompt",
-			"Start the task. Read /workbase/tasks/example/TASK.md.",
+			"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.",
 		])
 		expect(harness.launchEnvironments[0]?.AGENCY_PROMPT).toBe(
-			"Start the task. Read /workbase/tasks/example/TASK.md.",
+			"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.",
 		)
+		expect(harness.launchProcessEnvironments[0]).toEqual({
+			AGENCY_SESSION_ID: harness.launchEnvironments[0]?.AGENCY_SESSION_ID,
+			AGENCY_TARGET: "execution-unit:task/example",
+			AGENCY_PROMPT:
+				"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.",
+		})
 	})
 
 	test("continues existing work with the resume command", async () => {
@@ -813,10 +827,10 @@ describe("work command", () => {
 			"opencode",
 			"--continue",
 			"--prompt",
-			"Continue the task. Read /workbase/tasks/example/TASK.md.",
+			"Agency worker launch target: execution-unit:task/example. Continue the task. Read /workbase/tasks/example/TASK.md.",
 		])
 		expect(harness.launchEnvironments[0]?.AGENCY_PROMPT).toBe(
-			"Continue the task. Read /workbase/tasks/example/TASK.md.",
+			"Agency worker launch target: execution-unit:task/example. Continue the task. Read /workbase/tasks/example/TASK.md.",
 		)
 	})
 
@@ -840,7 +854,7 @@ describe("work command", () => {
 				"opencode",
 				"--continue",
 				"--prompt",
-				"Continue the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
+				"Agency worker launch target: execution-unit:phase/example/implementation. Continue the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
 			cwd: phaseDirectory,
 		})
@@ -870,7 +884,7 @@ describe("work command", () => {
 				"codex",
 				"--task",
 				"example",
-				"Start the task. Read /workbase/tasks/example/TASK.md.",
+				"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.",
 			],
 			cwd: taskDirectory,
 		})

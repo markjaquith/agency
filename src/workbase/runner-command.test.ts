@@ -95,9 +95,12 @@ describe("runner commands", () => {
 		expect(environment).toMatchObject({
 			AGENCY_RUNNER: "custom",
 			AGENCY_CLAIMANT: "orchestrator",
+			AGENCY_SESSION_ID: "session-1",
+			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:phase/task/build",
 			AGENCY_TASK_ID: "task",
 			AGENCY_PHASE_ID: "build",
+			AGENCY_PROMPT: "Read the task.",
 		})
 		expect(printableEnvironment(environment).VISIBLE).toBe("yes")
 		expect(printableEnvironment(environment).ACCESS_TOKEN).toBeUndefined()
