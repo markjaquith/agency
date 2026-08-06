@@ -264,6 +264,7 @@ export const work = (
 			launchPath = dirname(workspace.phasePath ?? workspace.taskPath)
 			writablePath = workspace.writablePath ?? undefined
 		}
+		prompt = `Agency worker launch target: ${targetNodeId(target)}. ${prompt}`
 
 		const explicitlyRequested = Boolean(
 			options.runner ||

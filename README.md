@@ -276,6 +276,19 @@ Execution-unit runners also receive `AGENCY_WRITABLE_CHECKOUT` with the
 authoritative writable checkout path.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
+Autonomous prompts begin `Agency worker launch target: <target>.`, carrying the
+same canonical target as `AGENCY_TARGET`. This is the process-local fallback for
+runner clients that attach to a long-lived process and lose launch environment
+variables. A worker must verify either signal against `agency context . --json`
+before acting; a matching worker performs the task directly and must not invoke
+`agency work` for the same target. Managed guidance also fails safe for older
+generated prompts when their document paths, current directory, and active valid
+context all agree. Herdr is not part of this identity contract.
+The managed OpenCode plugin validates the marker against Agency context, binds it
+to the receiving OpenCode session, injects an explicit active-worker system
+instruction, and restores Agency identity for that session's shell environment.
+This session bridge is necessary because an OpenCode client can attach to a
+long-lived server process that did not inherit the client's launch environment.
 The `opencode` runner remains rooted in its task or epic working directory so
 the workbase `AGENTS.md` and managed OpenCode config are discovered normally.
 Agency's managed OpenCode plugin grants the active workbase external-directory

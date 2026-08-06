@@ -129,6 +129,36 @@ describe("IntegrationService", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"config.skills.paths = [...new Set",
 		)
+		expect(managedWorkbaseOpencodePlugin).toContain('"chat.message"')
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"if (!Array.isArray(parts)) return",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'"experimental.chat.system.transform"',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain('"shell.env"')
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"if (context?.target !== launchTarget) return",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"agencyContext(directory, false)",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"result.validation?.valid !== true",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"dirname(document) !== resolve(directory)",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"!result.authority?.writable?.checkoutPath",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain('status !== "working"')
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"output.env.AGENCY_SESSION_ID = sessionID",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"Do not invoke agency work for this target",
+		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			".map((path) => `${path}${sep}.`)",
 		)
@@ -140,6 +170,121 @@ describe("IntegrationService", () => {
 				managedWorkbaseOpencodePlugin.replace("config.skills ??= {}", ""),
 			),
 		).toBe(false)
+	})
+
+	test("binds validated worker identity to an OpenCode session", async () => {
+		const path = join(root, "agency-repository-skills.ts")
+		const contextResponse = JSON.stringify({
+			version: 1,
+			ok: true,
+			result: {
+				workbase: { root },
+				target: {
+					kind: "task",
+					taskId: "example",
+					path: join(root, "TASK.md"),
+				},
+				authority: {
+					mode: "execution",
+					writable: { checkoutPath: join(root, "tasks/example/code/agency") },
+				},
+				documents: { task: { data: { status: "working" } } },
+				validation: { valid: true, warnings: [] },
+			},
+		})
+		await Bun.write(
+			path,
+			managedWorkbaseOpencodePlugin
+				.replace("const contextTarget =", "export const contextTarget =")
+				.replace("const agencyContext =", "export const agencyContext =")
+				.replace(
+					"const workerLaunchTarget =",
+					"export const workerLaunchTarget =",
+				),
+		)
+		const originalSpawn = Bun.spawn
+		Bun.spawn = (() =>
+			({
+				stdout: new Response(contextResponse).body!,
+				exited: Promise.resolve(0),
+			}) as ReturnType<typeof Bun.spawn>) as typeof Bun.spawn
+		try {
+			const generated = await import(
+				`${pathToFileURL(path).href}?worker-identity`
+			)
+			expect(
+				generated.workerLaunchTarget([
+					{
+						type: "text",
+						text: "Agency worker launch target: execution-unit:task/example. Start the task.",
+					},
+				]),
+			).toBe("execution-unit:task/example")
+			expect(generated.workerLaunchTarget(undefined)).toBeUndefined()
+			expect(
+				generated.contextTarget({
+					target: { kind: "task", taskId: "example" },
+					authority: { mode: "execution" },
+				}),
+			).toBe("execution-unit:task/example")
+			expect(await generated.agencyContext(root)).toMatchObject({
+				root,
+				target: "execution-unit:task/example",
+				task: "example",
+			})
+			const hooks = await generated.default({ directory: root } as never)
+			await hooks["chat.message"]!(
+				{ sessionID: "worker-session" } as never,
+				{
+					parts: [
+						{
+							type: "text",
+							text: "Agency worker launch target: execution-unit:task/example. Start the task.",
+						},
+					],
+				} as never,
+			)
+			await hooks["chat.message"]!(
+				{ sessionID: "mismatched-session" } as never,
+				{
+					parts: [
+						{
+							type: "text",
+							text: "Agency worker launch target: execution-unit:task/other. Start the task.",
+						},
+					],
+				} as never,
+			)
+
+			const system = { system: [] as string[] }
+			await hooks["experimental.chat.system.transform"]!(
+				{ sessionID: "worker-session" } as never,
+				system,
+			)
+			expect(system.system).toEqual([
+				expect.stringContaining(
+					"active worker for execution-unit:task/example",
+				),
+			])
+			const mismatchedSystem = { system: [] as string[] }
+			await hooks["experimental.chat.system.transform"]!(
+				{ sessionID: "mismatched-session" } as never,
+				mismatchedSystem,
+			)
+			expect(mismatchedSystem.system).toEqual([])
+
+			const shell = { env: {} as Record<string, string> }
+			await hooks["shell.env"]!({ sessionID: "worker-session" } as never, shell)
+			expect(shell.env).toMatchObject({
+				AGENCY_SESSION_ID: "worker-session",
+				AGENCY_TARGET: "execution-unit:task/example",
+				AGENCY_WORKBASE: root,
+				AGENCY_TASK_ID: "example",
+				AGENCY_WRITABLE_CHECKOUT: join(root, "tasks/example/code/agency"),
+			})
+		} finally {
+			Bun.spawn = originalSpawn
+		}
 	})
 
 	test("registers a TUI-only /agency-debug diagnostic", async () => {
@@ -268,6 +413,11 @@ describe("IntegrationService", () => {
 		expect(body).toContain("Preserve parent backlinks")
 		expect(body).toContain("dirty-worktree, active-claim, revision")
 		expect(body).toContain("`agency work` is the human launch flow")
+		expect(body).toContain("Agency worker launch target: <target>.")
+		expect(body).toContain("environment variables and a generated")
+		expect(body).toContain("the initial instruction is a generated")
+		expect(body).toContain("Herdr state is never part of worker identity")
+		expect(body).toMatch(/If the prompt\s+and context disagree/)
 		expect(body).toContain("marks execution work")
 		expect(body).toContain("without creating a claim")
 		expect(body).toContain("formatting, type checks, build, dead-code checks")

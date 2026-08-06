@@ -76,6 +76,28 @@ task launches remain orchestration-only. External orchestrators instead claim
 an execution unit, launch and monitor their runner separately, and finish or
 release the claim with the current document revision.
 
+An Agency-launched runner receives process-local worker identity through both
+the `AGENCY_SESSION_ID` and `AGENCY_TARGET` environment variables and a generated
+prompt beginning `Agency worker launch target: <target>.` Treat either form as
+launch evidence only after `agency context . --json` confirms the same target,
+document paths, valid context, and expected write authority. Once confirmed,
+perform the assigned work directly and never invoke `agency work` to start the
+same target again.
+
+Some runner clients attach to a long-lived process and may not preserve launch
+environment variables. If the variables and prompt marker are absent, fail safe
+when the initial instruction is a generated `Start`, `Continue`, or `Work on`
+prompt whose absolute document paths match the current directory and the active,
+valid `agency context`: treat the process as the current worker and do not
+recursively launch. Herdr state is never part of worker identity. If the prompt
+and context disagree, stop and ask the user rather than launching.
+
+For OpenCode, Agency's managed plugin validates the generated marker against
+`agency context`, binds that identity to the OpenCode session, injects an
+active-worker system instruction, and supplies Agency identity to that session's
+shell environment. This avoids relying on the environment of OpenCode's
+long-lived server process.
+
 ## Closeout
 
 An execution unit remains `working` after implementation is committed and while
