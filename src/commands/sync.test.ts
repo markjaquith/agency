@@ -9,6 +9,7 @@ import {
 	createTempDir,
 	runTestEffect,
 } from "../test-utils"
+import type { Progress } from "../utils/progress"
 import { sync } from "./sync"
 
 const git = async (args: string[], cwd: string) => {
@@ -96,5 +97,31 @@ describe("sync command", () => {
 				}),
 			],
 		})
+	})
+
+	test("reports human-readable progress without polluting JSON output", async () => {
+		const updates: string[] = []
+		const progress: Progress = {
+			start: (message) => updates.push(`start:${message}`),
+			succeed: (message) => updates.push(`succeed:${message}`),
+			fail: (message) => updates.push(`fail:${message}`),
+		}
+
+		await captureLogs(() =>
+			runTestEffect(sync({ cwd: root, silent: false }, progress)),
+		)
+		expect(updates).toEqual([
+			"start:Validating workbase",
+			"start:Inspected 1 repositories",
+			"start:Queried pull requests 1/1 (task:example)",
+			"start:Reconciled execution units 1/1 (task:example)",
+			"succeed:Synchronized 1 execution units",
+		])
+
+		updates.length = 0
+		await captureLogs(() =>
+			runTestEffect(sync({ cwd: root, dryRun: true, json: true }, progress)),
+		)
+		expect(updates).toEqual([])
 	})
 })

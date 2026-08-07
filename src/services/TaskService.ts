@@ -3,6 +3,7 @@ import { Data, Effect, Either } from "effect"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
+import { VersionControlService } from "./VersionControlService"
 import { EpicService, type EpicRecord } from "./EpicService"
 import {
 	EntityId,
@@ -88,11 +89,16 @@ const reviewPinStep = (
 	root: string,
 	taskId: string,
 	review: ReviewRecord,
+	environment: Record<string, string>,
 ): TransactionStep => {
 	const repositoryPath = join(root, "repos", review.repo)
 	const ref = reviewPinRef(taskId)
 	const run = async (args: readonly string[]) => {
-		const child = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe" })
+		const child = Bun.spawn([...args], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...process.env, ...environment },
+		})
 		const [exitCode, stderr] = await Promise.all([
 			child.exited,
 			new Response(child.stderr).text(),
@@ -132,6 +138,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				const fs = yield* FileSystemService
 				const workbase = yield* WorkbaseService
 				const epics = yield* EpicService
+				const versionControl = yield* VersionControlService
 				const root = yield* workbase.discover(startPath)
 				const id = yield* decodeId(input.id)
 				const directory = join(root, "tasks", id)
@@ -257,13 +264,22 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					const updated = formatMarkdownDocument(epicData, parsed.body)
 					writes.push({ path: parentEpic.path, content: updated })
 				}
+				let reviewEnvironment: Record<string, string> = {}
+				if (input.review) {
+					const backend = yield* versionControl.forWorkbase(root)
+					reviewEnvironment = yield* backend.gitEnvironment(
+						join(root, "repos", input.review.repo),
+					)
+				}
 				yield* runLifecycleTransaction({
 					root,
 					preconditions: parentEpic
 						? [{ path: parentEpic.path, revision: parentEpic.revision }]
 						: [],
 					steps: [
-						...(input.review ? [reviewPinStep(root, id, input.review)] : []),
+						...(input.review
+							? [reviewPinStep(root, id, input.review, reviewEnvironment)]
+							: []),
 						documentWriteStep(root, writes),
 					],
 				})

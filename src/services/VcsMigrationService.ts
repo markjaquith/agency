@@ -309,6 +309,15 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 				remote: repository.declaredRemote ?? repository.remote,
 			})
 			if (source === "jj" && target === "git" && initialized) {
+				const gitEnvironment: Record<string, string> =
+					yield* sourceBackend.gitEnvironment(targetPath)
+				if (gitEnvironment.GIT_DIR?.includes(`${join(targetPath, ".jj")}/`)) {
+					blockers.push({
+						kind: "repository",
+						target: `repository:${repository.alias}`,
+						message: `Repository '${repository.alias}' is non-colocated; migrate it to colocated jj before converting the workbase to Git`,
+					})
+				}
 				const dirty = yield* sourceBackend.workspaceDirty(targetPath)
 				if (dirty !== false) {
 					blockers.push({

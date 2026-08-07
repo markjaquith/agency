@@ -12,11 +12,35 @@ export interface RegisteredWorkspace {
 	readonly dirty?: boolean
 }
 
+interface PullRequestDefaults {
+	readonly title: string
+	readonly body: string
+}
+
+interface RepositoryInspection {
+	readonly kind: "bare" | "repository"
+	readonly remote: string | null
+}
+
 export interface VersionControlBackend {
 	readonly kind: VersionControlKind
+	readonly cloneRepository: (
+		source: string,
+		destination: string,
+	) => Effect.Effect<void, unknown, any>
 	readonly initializeRepository: (
 		path: string,
 	) => Effect.Effect<void, unknown, any>
+	readonly inspectRepository: (
+		path: string,
+	) => Effect.Effect<RepositoryInspection | null, unknown, any>
+	readonly gitEnvironment: (
+		path: string,
+	) => Effect.Effect<Record<string, string>, unknown, any>
+	readonly pullRequestDefaults: (
+		workspacePath: string,
+		base: string,
+	) => Effect.Effect<PullRequestDefaults | null, unknown, any>
 	readonly listWorkspaces: (
 		repositoryPath: string,
 	) => Effect.Effect<readonly RegisteredWorkspace[], unknown, any>
@@ -59,6 +83,11 @@ export interface VersionControlBackend {
 		repositoryPath: string,
 		remote: string,
 	) => Effect.Effect<string | null, unknown, any>
+	readonly setRemoteUrl: (
+		repositoryPath: string,
+		remote: string,
+		url: string | null,
+	) => Effect.Effect<void, unknown, any>
 }
 
 class VersionControlError extends Data.TaggedError("VersionControlError")<{
@@ -122,7 +151,43 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 		sync: () =>
 			({
 				kind: "git",
+				cloneRepository: (source, destination) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						yield* requireSuccess(
+							"Failed to clone Git repository",
+							fs.runCommand(
+								["git", "clone", "--bare", "--", source, destination],
+								{
+									captureOutput: true,
+								},
+							),
+						)
+					}),
 				initializeRepository: () => Effect.void,
+				inspectRepository: (path) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const valid = yield* fs.runCommand(
+							["git", "-C", path, "rev-parse", "--git-dir"],
+							{ captureOutput: true },
+						)
+						if (valid.exitCode !== 0) return null
+						const bare = yield* fs.runCommand(
+							["git", "-C", path, "rev-parse", "--is-bare-repository"],
+							{ captureOutput: true },
+						)
+						const remote = yield* fs.runCommand(
+							["git", "-C", path, "remote", "get-url", "origin"],
+							{ captureOutput: true },
+						)
+						return {
+							kind: bare.stdout.trim() === "true" ? "bare" : "repository",
+							remote: remote.exitCode === 0 ? remote.stdout.trim() : null,
+						} as const
+					}),
+				gitEnvironment: () => Effect.succeed({}),
+				pullRequestDefaults: () => Effect.succeed(null),
 				listWorkspaces: (repositoryPath) =>
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
@@ -272,6 +337,30 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 						)
 						return result.exitCode === 0 ? result.stdout.trim() : null
 					}),
+				setRemoteUrl: (repositoryPath, remote, url) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const previous = yield* fs.runCommand(
+							["git", "-C", repositoryPath, "remote", "get-url", remote],
+							{ captureOutput: true },
+						)
+						const command =
+							url === null
+								? ["git", "-C", repositoryPath, "remote", "remove", remote]
+								: [
+										"git",
+										"-C",
+										repositoryPath,
+										"remote",
+										previous.exitCode === 0 ? "set-url" : "add",
+										remote,
+										url,
+									]
+						yield* requireSuccess(
+							`Failed to update Git remote '${remote}'`,
+							fs.runCommand(command, { captureOutput: true }),
+						)
+					}),
 			}) satisfies VersionControlBackend,
 	},
 ) {}
@@ -290,6 +379,25 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 		sync: () =>
 			({
 				kind: "jj",
+				cloneRepository: (source, destination) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						yield* requireSuccess(
+							"Failed to clone jj repository",
+							fs.runCommand(
+								[
+									"jj",
+									"git",
+									"clone",
+									"--no-colocate",
+									"--",
+									source,
+									destination,
+								],
+								{ captureOutput: true },
+							),
+						)
+					}),
 				initializeRepository: (path) =>
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
@@ -300,6 +408,72 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 								captureOutput: true,
 							}),
 						)
+					}),
+				inspectRepository: (path) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const root = yield* fs.runCommand(jjCommand(path, ["root"]), {
+							captureOutput: true,
+						})
+						if (root.exitCode !== 0) return null
+						const remote = yield* fs.runCommand(
+							jjCommand(path, ["git", "remote", "list"]),
+							{ captureOutput: true },
+						)
+						return {
+							kind: "repository",
+							remote:
+								remote.exitCode === 0
+									? (remote.stdout
+											.split("\n")
+											.find((line) => line.startsWith("origin "))
+											?.slice("origin ".length)
+											.trim() ?? null)
+									: null,
+						} as const
+					}),
+				gitEnvironment: (path) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const result = yield* requireSuccess(
+							"Failed to locate jj backing Git repository",
+							fs.runCommand(jjCommand(path, ["git", "root"]), {
+								captureOutput: true,
+							}),
+						)
+						return { GIT_DIR: result.stdout.trim() }
+					}),
+				pullRequestDefaults: (workspacePath, base) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const result = yield* fs.runCommand(
+							jjCommand(workspacePath, [
+								"log",
+								"--ignore-working-copy",
+								"--no-graph",
+								"-r",
+								`${base}..@-`,
+								"-T",
+								'description.first_line() ++ "\\n"',
+							]),
+							{ captureOutput: true },
+						)
+						if (result.exitCode !== 0) return null
+						const commits = result.stdout
+							.split("\n")
+							.map((line) => line.trim())
+							.filter(Boolean)
+						if (commits.length === 0) return null
+						return {
+							title: commits.at(-1)!,
+							body:
+								commits.length === 1
+									? ""
+									: `Commits:\n${commits
+											.toReversed()
+											.map((commit) => `- ${commit}`)
+											.join("\n")}`,
+						} satisfies PullRequestDefaults
 					}),
 				listWorkspaces: (repositoryPath) =>
 					Effect.gen(function* () {
@@ -457,6 +631,20 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
 						yield* requireSuccess(
+							"Failed to set jj delivery bookmark",
+							fs.runCommand(
+								jjCommand(workspacePath, [
+									"bookmark",
+									"set",
+									"--allow-backwards",
+									branch,
+									"-r",
+									"@-",
+								]),
+								{ captureOutput: true },
+							),
+						)
+						yield* requireSuccess(
 							"Failed to push branch",
 							fs.runCommand(
 								jjCommand(workspacePath, [
@@ -464,8 +652,8 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 									"push",
 									"--remote",
 									remote,
-									"--named",
-									`${branch}=@-`,
+									"--bookmark",
+									branch,
 								]),
 								{ captureOutput: true },
 							),
@@ -485,6 +673,27 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 								.find((line) => line.startsWith(`${remote} `))
 								?.slice(remote.length + 1)
 								.trim() ?? null
+						)
+					}),
+				setRemoteUrl: (repositoryPath, remote, url) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const previous = yield* fs.runCommand(
+							jjCommand(repositoryPath, ["git", "remote", "list"]),
+							{ captureOutput: true },
+						)
+						const exists = previous.stdout
+							.split("\n")
+							.some((line) => line.startsWith(`${remote} `))
+						const args =
+							url === null
+								? ["git", "remote", "remove", remote]
+								: ["git", "remote", exists ? "set-url" : "add", remote, url]
+						yield* requireSuccess(
+							`Failed to update jj Git remote '${remote}'`,
+							fs.runCommand(jjCommand(repositoryPath, args), {
+								captureOutput: true,
+							}),
 						)
 					}),
 			}) satisfies VersionControlBackend,

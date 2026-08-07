@@ -59,6 +59,7 @@ describe("SyncService", () => {
 		await Bun.write(
 			gh,
 			`#!/bin/sh
+if [ -n "$GH_CAPTURE" ]; then printf '%s\n' "$@" "GIT_DIR=$GIT_DIR" > "$GH_CAPTURE"; fi
 case "$*" in
 *mergeable*) ;;
 *) echo "mergeable field was not requested" >&2; exit 2 ;;
@@ -82,6 +83,7 @@ JSON
 	afterEach(async () => {
 		if (originalPath === undefined) delete process.env.PATH
 		else process.env.PATH = originalPath
+		delete process.env.GH_CAPTURE
 		await cleanupTempDir(root)
 	})
 
@@ -125,8 +127,14 @@ pr: null
 		if (!Bun.which("jj")) return
 		const repository = join(root, "repos/agency")
 		await rm(repository, { recursive: true, force: true })
-		await git(["clone", join(root, "source"), repository])
-		await jj(["git", "init", "--colocate", repository])
+		await jj([
+			"git",
+			"clone",
+			"--no-colocate",
+			join(root, "source"),
+			repository,
+		])
+		expect(await Bun.file(join(repository, ".git")).exists()).toBe(false)
 		await Bun.write(
 			join(root, "agency.json"),
 			JSON.stringify({ version: 2, vcs: "jj" }),
@@ -147,6 +155,8 @@ pr: null
 				),
 			),
 		)
+		const capture = join(root, "gh-capture")
+		process.env.GH_CAPTURE = capture
 
 		const planned = await runTestEffect(
 			SyncService.pipe(
@@ -160,6 +170,10 @@ pr: null
 				status: "planned",
 			}),
 		)
+		const invocation = await Bun.file(capture).text()
+		expect(invocation).toContain("--repo\n")
+		expect(invocation).toContain("GIT_DIR=")
+		expect(invocation).toContain(".jj")
 
 		const applied = await runTestEffect(
 			SyncService.pipe(
@@ -174,6 +188,7 @@ pr: null
 			branch: "task/jj-sync",
 			dirty: false,
 		})
+		delete process.env.GH_CAPTURE
 	})
 
 	test("observes drift without mutation and applies only safe transitions", async () => {
@@ -795,5 +810,120 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 				),
 			),
 		).toMatchObject({ valid: true, issues: [] })
+	})
+
+	test("reads each repository workspace inventory once", async () => {
+		for (const id of ["first", "second"]) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: null,
+								repo: "agency",
+								branch: `feat/${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) => service.materialize(id, undefined, root)),
+				),
+			)
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus(id, "done", root, {
+							summary: `Completed ${id}`,
+						}),
+					),
+				),
+			)
+		}
+
+		const callsPath = join(root, "workspace-list-calls")
+		const realGit = Bun.which("git")!
+		const gitWrapper = join(root, "bin", "git")
+		await Bun.write(
+			gitWrapper,
+			`#!/bin/sh
+case "$*" in
+*"worktree list --porcelain -z"*) printf 'call\\n' >> ${JSON.stringify(callsPath)} ;;
+esac
+exec ${JSON.stringify(realGit)} "$@"
+`,
+		)
+		await chmod(gitWrapper, 0o755)
+
+		await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(
+			1,
+		)
+	})
+
+	test("queries pull request providers concurrently", async () => {
+		for (const id of ["first", "second", "third"]) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: null,
+								repo: "agency",
+								branch: `feat/${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+		}
+
+		const barrier = join(root, "query-barrier")
+		await mkdir(barrier)
+		await Bun.write(
+			join(root, "bin", "gh"),
+			`#!/bin/sh
+branch=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--head" ]; then branch="$2"; break; fi
+  shift
+done
+id="\${branch##*/}"
+touch ${JSON.stringify(barrier)}/"\${id}"
+attempt=0
+while [ "$attempt" -lt 200 ]; do
+  set -- ${JSON.stringify(barrier)}/*
+  if [ -e "$1" ] && [ "$#" -ge 3 ]; then printf '[]\\n'; exit 0; fi
+  attempt=$((attempt + 1))
+  sleep 0.01
+done
+echo "provider queries were serialized" >&2
+exit 9
+`,
+		)
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const result = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(
+			result.warnings.filter(
+				(warning) => warning.kind === "pr-discovery-unavailable",
+			),
+		).toEqual([])
 	})
 })

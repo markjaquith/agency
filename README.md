@@ -142,9 +142,17 @@ or credential:
 
 New workbases select `"jj"` when the `jj` executable is available and otherwise
 select `"git"`. Existing version 2 workbases without `vcs` remain Git workbases.
-The selected backend is a workbase-level invariant: jj workbases initialize
-managed clones with `jj git init` and create jj workspaces, while Git workbases
-continue to use Git worktrees.
+The selected backend is a workbase-level invariant: jj workbases create
+non-colocated managed clones and jj workspaces, while Git workbases continue to
+use bare repositories and Git worktrees. Existing colocated jj repositories are
+also supported.
+
+Agency uses jj-native commands for repository validity, workspace registration,
+working-copy state, revisions, bookmarks, ancestry, fetch, and push. Raw Git is
+limited to backing-store plumbing such as durable review refs and integrations
+that require Git, including GitHub CLI commit discovery. For those operations,
+Agency obtains the backing repository with `jj git root` and supplies it as
+`GIT_DIR`; it does not use raw Git to infer jj workspace state.
 
 Inspect the current backend and migration readiness with:
 
@@ -162,6 +170,9 @@ target backend, and updates `agency.json` last. Migration from jj to Git also
 blocks jj-only heads that are not preserved by a bookmark or workspace. Failed
 migrations restore the source repositories and workspaces when rollback is
 possible and report explicit manual recovery paths otherwise.
+Converting a non-colocated jj workbase to Git is currently blocked before any
+mutation because its backing Git object store is inside `.jj`; first convert the
+repositories to colocated jj so the Git store survives metadata removal.
 
 Existing version 2 workbases without `repositories` remain valid. Run
 `agency repo setup` to preview deterministic adoption of legacy local aliases;

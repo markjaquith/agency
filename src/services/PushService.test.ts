@@ -74,21 +74,16 @@ describe("PushService", () => {
 		await requireCommand(["git", "commit", "-m", "Initial commit"], seed)
 		await requireCommand(["git", "remote", "add", "origin", remote], seed)
 		await requireCommand(["git", "push", "-u", "origin", "main"], seed)
-		await requireCommand(["git", "clone", "--bare", remote, repository])
 		if (vcs === "jj") {
-			await requireCommand(["jj", "git", "init", "--colocate", repository])
-			await requireCommand(
-				["jj", "git", "remote", "add", "origin", remote],
+			await requireCommand([
+				"jj",
+				"git",
+				"clone",
+				"--no-colocate",
+				remote,
 				repository,
-			)
-			await requireCommand(
-				["jj", "git", "fetch", "--remote", "origin"],
-				repository,
-			)
-			await requireCommand(
-				["jj", "bookmark", "create", "main", "-r", "main@origin"],
-				repository,
-			)
+			])
+			expect(await Bun.file(join(repository, ".git")).exists()).toBe(false)
 			await requireCommand(
 				["jj", "config", "set", "--repo", "user.name", "Agency Test"],
 				repository,
@@ -97,6 +92,8 @@ describe("PushService", () => {
 				["jj", "config", "set", "--repo", "user.email", "agency@example.com"],
 				repository,
 			)
+		} else {
+			await requireCommand(["git", "clone", "--bare", remote, repository])
 		}
 
 		await runTestEffect(

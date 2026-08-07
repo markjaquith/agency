@@ -45,8 +45,15 @@ const githubRepository = (remote: string) => {
 const pinRef = (taskId: string) =>
 	`refs/agency/reviews/${Buffer.from(taskId).toString("hex")}`
 
-const runGit = async (args: readonly string[]) => {
-	const child = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe" })
+const runGit = async (
+	args: readonly string[],
+	environment: Record<string, string> = {},
+) => {
+	const child = Bun.spawn([...args], {
+		stdout: "pipe",
+		stderr: "pipe",
+		env: { ...process.env, ...environment },
+	})
 	const [exitCode, stdout, stderr] = await Promise.all([
 		child.exited,
 		new Response(child.stdout).text(),
@@ -121,7 +128,7 @@ const restoreSnapshots = async (
 	}
 }
 
-const normalizeBranch = (input: string, repositoryPath: string) =>
+const normalizeBranch = (input: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		if (
@@ -150,7 +157,7 @@ const normalizeBranch = (input: string, repositoryPath: string) =>
 			})
 		}
 		const checked = yield* fs.runCommand(
-			["git", "-C", repositoryPath, "check-ref-format", "--branch", name],
+			["git", "check-ref-format", "--branch", name],
 			{ captureOutput: true },
 		)
 		if (checked.exitCode !== 0) {
@@ -168,6 +175,7 @@ const fetchCommit = (
 ) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
+		const environment = yield* backend.gitEnvironment(repoPath)
 		const temporaryRef = `refs/agency/review-fetch/${process.pid}-${randomUUID()}`
 		const fetched = yield* fs.runCommand(
 			[
@@ -179,12 +187,12 @@ const fetchCommit = (
 				"origin",
 				`+${sourceRef}:${temporaryRef}`,
 			],
-			{ captureOutput: true },
+			{ captureOutput: true, env: environment },
 		)
 		if (fetched.exitCode !== 0) {
 			const cleanup = yield* fs.runCommand(
 				["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
-				{ captureOutput: true },
+				{ captureOutput: true, env: environment },
 			)
 			return yield* new ReviewError({
 				message: `Review source '${sourceRef}' could not be fetched: ${fetched.stderr.trim()}${cleanup.exitCode === 0 ? "" : `; temporary ref cleanup failed: ${cleanup.stderr.trim()}`}`,
@@ -199,13 +207,13 @@ const fetchCommit = (
 				"--verify",
 				`${temporaryRef}^{commit}`,
 			],
-			{ captureOutput: true },
+			{ captureOutput: true, env: environment },
 		)
 		const commit = resolved.stdout.trim()
 		if (resolved.exitCode !== 0 || !/^[a-f0-9]{40}$/.test(commit)) {
 			yield* fs.runCommand(
 				["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
-				{ captureOutput: true },
+				{ captureOutput: true, env: environment },
 			)
 			return yield* new ReviewError({
 				message: `Review source '${sourceRef}' did not resolve to a commit`,
@@ -214,7 +222,7 @@ const fetchCommit = (
 		const imported = yield* Effect.either(backend.importGitRefs(repoPath))
 		const cleanup = yield* fs.runCommand(
 			["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
-			{ captureOutput: true },
+			{ captureOutput: true, env: environment },
 		)
 		if (cleanup.exitCode !== 0) {
 			return yield* new ReviewError({
@@ -284,7 +292,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 							fetchRef: sourceRef,
 						}
 					} else if (input.ref) {
-						sourceRef = yield* normalizeBranch(input.ref, repository.path)
+						sourceRef = yield* normalizeBranch(input.ref)
 						source = { kind: "branch", ref: sourceRef }
 					} else {
 						return yield* new ReviewError({
@@ -366,6 +374,11 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 								task.data.review.repo,
 								root,
 							)
+							const versionControl = yield* VersionControlService
+							const backend = yield* versionControl.forWorkbase(root)
+							const gitEnvironment = yield* backend.gitEnvironment(
+								repository.path,
+							)
 							const hadCheckout = inspection.checkouts.some(
 								(checkout) => checkout.exists || checkout.registered,
 							)
@@ -391,25 +404,31 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 							steps.push({
 								label: `advance review pin for ${taskId}`,
 								apply: () =>
-									runGit([
-										"git",
-										"-C",
-										repository.path,
-										"update-ref",
-										pinRef(taskId),
-										latest.commit,
-										previousReview.commit,
-									]).then(() => undefined),
+									runGit(
+										[
+											"git",
+											"-C",
+											repository.path,
+											"update-ref",
+											pinRef(taskId),
+											latest.commit,
+											previousReview.commit,
+										],
+										gitEnvironment,
+									).then(() => undefined),
 								rollback: () =>
-									runGit([
-										"git",
-										"-C",
-										repository.path,
-										"update-ref",
-										pinRef(taskId),
-										previousReview.commit,
-										latest.commit,
-									]).then(() => undefined),
+									runGit(
+										[
+											"git",
+											"-C",
+											repository.path,
+											"update-ref",
+											pinRef(taskId),
+											previousReview.commit,
+											latest.commit,
+										],
+										gitEnvironment,
+									).then(() => undefined),
 								manualRecovery: `Reset ${pinRef(taskId)} to ${previousReview.commit}`,
 							})
 							if (hadCheckout) {

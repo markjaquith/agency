@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { chmod, mkdir, realpath } from "node:fs/promises"
+import { chmod, mkdir, realpath, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { PullRequestService } from "../services/PullRequestService"
 import {
@@ -31,6 +31,7 @@ describe("pr command", () => {
 			join(bin, "gh"),
 			`#!/bin/sh
 printf '%s\n' "$PWD" "$@" > "$GH_CAPTURE"
+if [ -n "$GIT_DIR" ]; then printf 'GIT_DIR=%s\n' "$GIT_DIR" >> "$GH_CAPTURE"; fi
 exit "\${GH_EXIT:-0}"
 `,
 		)
@@ -109,6 +110,41 @@ status: open
 # Build
 `,
 		)
+		if (vcs === "jj") {
+			const repository = join(root, "repos/agency")
+			await rm(join(root, "tasks/single/code/agency"), { recursive: true })
+			await rm(join(root, "tasks/multi/phases/build/code/agency"), {
+				recursive: true,
+			})
+			const initialized = Bun.spawn(
+				["jj", "git", "init", "--no-colocate", repository],
+				{ stdout: "pipe", stderr: "pipe" },
+			)
+			if ((await initialized.exited) !== 0)
+				throw new Error(await new Response(initialized.stderr).text())
+			for (const [name, path] of [
+				["single", join(root, "tasks/single/code/agency")],
+				["build", join(root, "tasks/multi/phases/build/code/agency")],
+			] as const) {
+				const workspace = Bun.spawn(
+					[
+						"jj",
+						"-R",
+						repository,
+						"workspace",
+						"add",
+						"--name",
+						name,
+						"-r",
+						"root()",
+						path,
+					],
+					{ stdout: "pipe", stderr: "pipe" },
+				)
+				if ((await workspace.exited) !== 0)
+					throw new Error(await new Response(workspace.stderr).text())
+			}
+		}
 		return root
 	}
 
@@ -187,6 +223,7 @@ status: open
 			"--repo",
 			"example/agency",
 			"--web",
+			expect.stringMatching(/^GIT_DIR=.*\.jj/),
 		])
 
 		expect(
@@ -202,6 +239,7 @@ status: open
 			"example/agency",
 			"--title",
 			"Example",
+			expect.stringMatching(/^GIT_DIR=.*\.jj/),
 		])
 	})
 
@@ -215,6 +253,7 @@ status: open
 			await realpath(join(task, "code/agency")),
 			"pr",
 			...args,
+			expect.stringMatching(/^GIT_DIR=.*\.jj/),
 		])
 	})
 
