@@ -36,6 +36,14 @@ describe("archive command", () => {
 				silent: true,
 			}),
 		)
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["example", "dropped"],
+				cwd: root,
+				silent: true,
+			}),
+		)
 	})
 
 	afterEach(async () => cleanupTempDir(root))
@@ -85,10 +93,40 @@ describe("archive command", () => {
 		)
 	})
 
+	test("outputs one deterministic bulk archive object and a concise human summary", async () => {
+		const jsonLogs = await captureLogs(() =>
+			runTestEffect(
+				archive({
+					type: "tasks",
+					args: [],
+					cwd: root,
+					dryRun: true,
+					json: true,
+				}),
+			),
+		)
+		expect(jsonLogs).toHaveLength(1)
+		expect(JSON.parse(jsonLogs[0]!)).toMatchObject({
+			operation: "archive",
+			kind: "tasks",
+			dryRun: true,
+			tasks: [{ id: "example", disposition: "planned" }],
+		})
+
+		const humanLogs = await captureLogs(() =>
+			runTestEffect(
+				archive({ type: "tasks", args: [], cwd: root, dryRun: true }),
+			),
+		)
+		expect(humanLogs).toEqual([
+			"Would archive 1 task: example\nSkipped 0 tasks",
+		])
+	})
+
 	test("requires a supported work item type", async () => {
 		await expect(
 			runTestEffect(archive({ args: [], cwd: root, silent: true })),
-		).rejects.toThrow("Available: list, show, epic, task, phase")
+		).rejects.toThrow("Available: list, show, epic, task, tasks, phase")
 	})
 
 	test("rejects an extra archive show identifier", async () => {

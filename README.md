@@ -848,6 +848,7 @@ agency archive show <epic|task> <id>
 agency archive show phase <task-id> <phase-id>
 agency archive epic <epic-id> [--dry-run] [--json]
 agency archive task <task-id> [--dry-run] [--json]
+agency archive tasks [--dry-run] [--json]
 agency archive phase <task-id> <phase-id> [--dry-run] [--json]
 agency restore epic <epic-id> [--dry-run] [--json]
 agency restore task <task-id> [--dry-run] [--json]
@@ -855,12 +856,26 @@ agency restore phase <task-id> <phase-id> [--dry-run] [--json]
 ```
 
 Archived work keeps its hierarchy under `archive/`. Epic archiving includes its
-listed tasks. Task and phase archiving update the active parent document and
-reject items that active siblings depend on. Agency removes registered worktrees
-before moving files, refuses dirty worktrees, and preserves branches. Archive and
-restore preflight all destinations and graph references before changing files.
-Versioned lifecycle provenance preserves parent declarations and dependency edges
-for restoration. Archived IDs are reserved until restored.
+listed tasks. A task can be archived only when its effective status is terminal
+(`done` or `dropped`). Multi-phase task status is derived from its phases, every
+phase must be terminal, and a task with no phases is not eligible.
+
+`archive tasks` plans the maximal safe cohort of terminal tasks and applies by
+default; `--dry-run` performs the same preflight without mutation. A dependency
+is work required by a candidate, while a dependent is work that requires the
+candidate. Dependencies within the selected cohort can be archived together,
+but a retained dependent excludes its dependency, including exclusions that
+propagate through a dependency chain. Active claims, dirty or otherwise unsafe
+managed checkouts, and occupied archive destinations are reported as per-task
+skips. Invalid workbase structure and infrastructure failures abort the command.
+
+Task and phase archiving update active parent documents. Agency removes
+registered worktrees before moving files, refuses dirty worktrees, and preserves
+branches. Bulk application updates shared parents once and archives the entire
+selected cohort in one rollback-capable transaction; it never archives an empty
+parent epic implicitly. Versioned lifecycle provenance preserves parent
+declarations and dependency edges for restoration. Archived IDs are reserved
+until restored.
 
 ### Work, Publication, and Pull Requests
 
