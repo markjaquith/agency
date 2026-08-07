@@ -774,6 +774,81 @@ const jjWorkspaceName = (
 	repo: string,
 ) => `agency-${taskId}-${phaseId ?? "task"}-${repo}`
 
+// A process can stop after `jj workspace forget` but before checkout deletion.
+// Only recover that residual when its repository and complete tree still match.
+const inspectJjResidual = (
+	root: string,
+	repositoryPath: string,
+	workspacePath: string,
+	revision: string,
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const repoPointer = join(workspacePath, ".jj", "repo")
+		if (!(yield* fs.exists(repoPointer))) return "unowned" as const
+
+		const pointer = (yield* fs.readFile(repoPointer)).trim()
+		if (!pointer) return "unowned" as const
+		const linkedRepository = resolve(dirname(repoPointer), pointer)
+		const expectedRepository = join(repositoryPath, ".jj", "repo")
+		if (
+			!(yield* fs.exists(linkedRepository)) ||
+			(yield* fs.realPath(linkedRepository)) !==
+				(yield* fs.realPath(expectedRepository))
+		)
+			return "unowned" as const
+
+		const comparisonPath = join(
+			root,
+			`.agency-jj-residual-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+		)
+		const comparisonName = basename(comparisonPath)
+		return yield* Effect.gen(function* () {
+			const created = yield* fs.runCommand(
+				[
+					"jj",
+					"-R",
+					repositoryPath,
+					"workspace",
+					"add",
+					"--name",
+					comparisonName,
+					"-r",
+					revision,
+					comparisonPath,
+				],
+				{ captureOutput: true },
+			)
+			if (created.exitCode !== 0) {
+				return yield* new WorktreeError({
+					message: `Cannot verify unregistered jj checkout ${workspacePath}: ${created.stderr}`,
+				})
+			}
+			const comparison = yield* fs.runCommand(
+				["diff", "-qr", "-x", ".jj", workspacePath, comparisonPath],
+				{ captureOutput: true },
+			)
+			if (comparison.exitCode > 1) {
+				return yield* new WorktreeError({
+					message: `Cannot verify unregistered jj checkout ${workspacePath}: ${comparison.stderr}`,
+				})
+			}
+			return comparison.exitCode === 0
+				? ("clean" as const)
+				: ("modified" as const)
+		}).pipe(
+			Effect.ensuring(
+				Effect.gen(function* () {
+					yield* fs.runCommand(
+						["jj", "-R", repositoryPath, "workspace", "forget", comparisonName],
+						{ captureOutput: true },
+					)
+					yield* fs.deleteDirectory(comparisonPath)
+				}).pipe(Effect.ignore),
+			),
+		)
+	})
+
 const buildInspectionContext = (
 	startPath: string,
 	skipWritableRevisionResolution: boolean,
@@ -1107,10 +1182,63 @@ const removeJj = (
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const versionControl = yield* VersionControlService
+		const tasks = yield* TaskService
+		const phases = yield* PhaseService
 		const backend = yield* versionControl.forWorkbase(root)
 		const inspection = yield* inspectExecution(taskId, phaseId, root)
-		const blocking = inspection.conflicts.filter(
-			(conflict) => conflict.kind !== "stale-registration",
+		const task = yield* tasks.show(taskId, root)
+		const execution =
+			"phases" in task.data && phaseId
+				? (yield* phases.show(taskId, phaseId, root)).data
+				: task.data
+		const recoverable = new Map<string, string>()
+		const modifiedResiduals = new Map<string, string>()
+		for (const checkout of inspection.checkouts) {
+			const recoveryRevision =
+				checkout.expectedCommit ??
+				(checkout.kind === "writable" && "base" in execution
+					? yield* backend.resolveRevision(
+							join(root, "repos", checkout.repo),
+							execution.base,
+						)
+					: null)
+			if (
+				!checkout.conflicts.some(
+					(conflict) => conflict.kind === "unregistered-checkout",
+				) ||
+				!recoveryRevision
+			)
+				continue
+			const repositoryPath = join(root, "repos", checkout.repo)
+			const residual = yield* inspectJjResidual(
+				root,
+				repositoryPath,
+				checkout.path,
+				recoveryRevision,
+			)
+			if (residual === "clean") recoverable.set(checkout.path, recoveryRevision)
+			else if (residual === "modified")
+				modifiedResiduals.set(checkout.path, recoveryRevision)
+		}
+		const blocking = inspection.checkouts.flatMap((checkout) =>
+			checkout.conflicts
+				.filter(
+					(conflict) =>
+						conflict.kind !== "stale-registration" &&
+						!(
+							conflict.kind === "unregistered-checkout" &&
+							recoverable.has(checkout.path)
+						),
+				)
+				.map((conflict) =>
+					conflict.kind === "unregistered-checkout" &&
+					modifiedResiduals.has(checkout.path)
+						? {
+								...conflict,
+								message: `Cannot remove unregistered jj checkout ${checkout.path}; its contents do not match expected revision '${modifiedResiduals.get(checkout.path)}'`,
+							}
+						: conflict,
+				),
 		)
 		if (blocking.length > 0) {
 			return yield* new WorktreeError({
@@ -1125,6 +1253,7 @@ const removeJj = (
 			workspaceName: string
 			head: string
 			branch: string | null
+			registered: boolean
 		}[] = []
 		for (const checkout of inspection.checkouts) {
 			if (checkout.dirty) {
@@ -1132,8 +1261,20 @@ const removeJj = (
 					message: `Failed to remove workspace for '${checkout.repo}': checkout has uncommitted changes`,
 				})
 			}
-			if (!checkout.registeredPath) continue
 			const repositoryPath = join(root, "repos", checkout.repo)
+			if (!checkout.registeredPath) {
+				const recoveryRevision = recoverable.get(checkout.path)
+				if (!recoveryRevision) continue
+				plans.push({
+					repositoryPath,
+					workspacePath: checkout.path,
+					workspaceName: jjWorkspaceName(taskId, phaseId, checkout.repo),
+					head: recoveryRevision,
+					branch: checkout.actualBranch,
+					registered: false,
+				})
+				continue
+			}
 			const registered = (yield* backend.listWorkspaces(repositoryPath)).find(
 				(workspace) => workspace.path === checkout.registeredPath,
 			)
@@ -1148,6 +1289,7 @@ const removeJj = (
 				workspaceName: registered.name,
 				head: checkout.actualCommit,
 				branch: checkout.actualBranch,
+				registered: true,
 			})
 		}
 
@@ -1166,11 +1308,15 @@ const removeJj = (
 		const completed: typeof plans = []
 		return yield* Effect.gen(function* () {
 			for (const plan of plans) {
-				yield* backend.removeWorkspace({
-					repositoryPath: plan.repositoryPath,
-					workspacePath: plan.workspacePath,
-					workspaceName: plan.workspaceName,
-				})
+				if (plan.registered) {
+					yield* backend.removeWorkspace({
+						repositoryPath: plan.repositoryPath,
+						workspacePath: plan.workspacePath,
+						workspaceName: plan.workspaceName,
+					})
+				} else {
+					yield* fs.deleteDirectory(plan.workspacePath)
+				}
 				completed.push(plan)
 			}
 			yield* fs.deleteDirectoryIfEmpty(inspection.codePath)
