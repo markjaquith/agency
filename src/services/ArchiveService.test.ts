@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { ArchiveService } from "./ArchiveService"
@@ -13,6 +13,17 @@ import { WorktreeService } from "./WorktreeService"
 const git = async (args: string[], cwd?: string) => {
 	const process = Bun.spawn(["git", ...args], {
 		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await process.exited
+	if (process.exitCode !== 0) {
+		throw new Error(await new Response(process.stderr).text())
+	}
+}
+
+const jj = async (args: string[]) => {
+	const process = Bun.spawn(["jj", ...args], {
 		stdout: "pipe",
 		stderr: "pipe",
 	})
@@ -263,6 +274,166 @@ describe("ArchiveService", () => {
 				"refs/heads/task/child",
 			]).exitCode,
 		).toBe(0)
+	})
+
+	test("retries archive after a jj workspace was forgotten but not deleted", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", join(root, "source"), repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "interrupted",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/interrupted",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("interrupted", "dropped", root),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("interrupted", undefined, root),
+				),
+			),
+		)
+		await jj([
+			"-R",
+			repository,
+			"workspace",
+			"forget",
+			"agency-interrupted-task-agency",
+		])
+
+		const preview = await runTestEffect(
+			ArchiveService.pipe(
+				Effect.flatMap((service) =>
+					service.archiveTask("interrupted", root, { dryRun: true }),
+				),
+			),
+		)
+		expect(preview.removedWorktrees).toEqual([workspace.writablePath!])
+
+		await runTestEffect(
+			ArchiveService.pipe(
+				Effect.flatMap((service) => service.archiveTask("interrupted", root)),
+			),
+		)
+		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
+		expect(
+			await Bun.file(join(root, "archive/tasks/interrupted/TASK.md")).exists(),
+		).toBe(true)
+	})
+
+	test("refuses a modified residual jj checkout after workspace removal", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", join(root, "source"), repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "modified-residual",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/modified-residual",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("modified-residual", "dropped", root),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("modified-residual", undefined, root),
+				),
+			),
+		)
+		await jj([
+			"-R",
+			repository,
+			"workspace",
+			"forget",
+			"agency-modified-residual-task-agency",
+		])
+		await Bun.write(join(workspace.writablePath!, "keep.txt"), "keep me\n")
+
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) =>
+						service.archiveTask("modified-residual", root),
+					),
+				),
+			),
+		).rejects.toThrow("contents do not match expected revision")
+		expect(
+			await Bun.file(join(workspace.writablePath!, "keep.txt")).text(),
+		).toBe("keep me\n")
+		expect(
+			await Bun.file(join(root, "tasks/modified-residual/TASK.md")).exists(),
+		).toBe(true)
+		expect(
+			await Bun.file(
+				join(
+					root,
+					`.agency-worktree-${Buffer.from("modified-residual:task").toString("hex")}.lock`,
+				),
+			).exists(),
+		).toBe(false)
+
+		await rm(join(workspace.writablePath!, "keep.txt"))
+		await rm(join(workspace.writablePath!, ".jj"), {
+			recursive: true,
+			force: true,
+		})
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) =>
+						service.archiveTask("modified-residual", root),
+					),
+				),
+			),
+		).rejects.toThrow("is not registered as a jj workspace")
+		expect(
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
+		).toBe(true)
 	})
 
 	test("archives a phase in the mirrored task hierarchy", async () => {
