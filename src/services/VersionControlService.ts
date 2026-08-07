@@ -12,6 +12,11 @@ export interface RegisteredWorkspace {
 	readonly dirty?: boolean
 }
 
+export interface PullRequestDefaults {
+	readonly title: string
+	readonly body: string
+}
+
 interface RepositoryInspection {
 	readonly kind: "bare" | "repository"
 	readonly remote: string | null
@@ -32,6 +37,10 @@ export interface VersionControlBackend {
 	readonly gitEnvironment: (
 		path: string,
 	) => Effect.Effect<Record<string, string>, unknown, any>
+	readonly pullRequestDefaults: (
+		workspacePath: string,
+		base: string,
+	) => Effect.Effect<PullRequestDefaults | null, unknown, any>
 	readonly listWorkspaces: (
 		repositoryPath: string,
 	) => Effect.Effect<readonly RegisteredWorkspace[], unknown, any>
@@ -178,6 +187,7 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 						} as const
 					}),
 				gitEnvironment: () => Effect.succeed({}),
+				pullRequestDefaults: () => Effect.succeed(null),
 				listWorkspaces: (repositoryPath) =>
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
@@ -432,6 +442,38 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 							}),
 						)
 						return { GIT_DIR: result.stdout.trim() }
+					}),
+				pullRequestDefaults: (workspacePath, base) =>
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const result = yield* fs.runCommand(
+							jjCommand(workspacePath, [
+								"log",
+								"--ignore-working-copy",
+								"--no-graph",
+								"-r",
+								`${base}..@-`,
+								"-T",
+								'description.first_line() ++ "\\n"',
+							]),
+							{ captureOutput: true },
+						)
+						if (result.exitCode !== 0) return null
+						const commits = result.stdout
+							.split("\n")
+							.map((line) => line.trim())
+							.filter(Boolean)
+						if (commits.length === 0) return null
+						return {
+							title: commits.at(-1)!,
+							body:
+								commits.length === 1
+									? ""
+									: `Commits:\n${commits
+											.toReversed()
+											.map((commit) => `- ${commit}`)
+											.join("\n")}`,
+						} satisfies PullRequestDefaults
 					}),
 				listWorkspaces: (repositoryPath) =>
 					Effect.gen(function* () {

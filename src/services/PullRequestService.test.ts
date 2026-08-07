@@ -258,6 +258,13 @@ process.exit(${exitCode})
 			JSON.stringify({ version: 2, vcs: "jj" }),
 		)
 		await createTask("jj-example", "task/jj-example")
+		const workspace = await materialize("jj-example")
+		await Bun.write(join(workspace.writablePath!, "CHANGE.md"), "jj change\n")
+		await requireCommand(
+			["jj", "describe", "-m", "feat: add jj example"],
+			workspace.writablePath!,
+		)
+		await requireCommand(["jj", "new"], workspace.writablePath!)
 		const url = "https://github.com/example/agency/pull/44"
 		await writeFakeGh({ stdout: `${url}\n` })
 

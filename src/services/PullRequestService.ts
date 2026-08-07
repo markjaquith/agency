@@ -172,6 +172,19 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					}
 
 					yield* backend.push(workspace.writablePath, remote, execution.branch)
+					const defaults =
+						backend.kind === "jj"
+							? yield* backend.pullRequestDefaults(
+									workspace.writablePath,
+									execution.base,
+								)
+							: null
+					if (backend.kind === "jj" && !defaults) {
+						return yield* new PullRequestError({
+							message:
+								"Failed to derive pull request title and body from jj commits",
+						})
+					}
 
 					const remoteUrl = yield* backend.remoteUrl(
 						workspace.writablePath,
@@ -198,6 +211,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								repository,
 								draft,
 								vcs: config.vcs ?? "git",
+								...(defaults ? { defaults } : {}),
 							})
 					const gitEnvironment = config.delivery
 						? {}
