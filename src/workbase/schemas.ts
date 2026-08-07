@@ -24,6 +24,7 @@ export const RepositoryRemote = NonEmptyString.pipe(
 
 export const RepositoryDeclaration = Schema.Struct({
 	remote: RepositoryRemote,
+	postCheckoutCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 })
 
 export const RepositoryReference = Schema.Struct({

@@ -235,6 +235,56 @@ Supplemental read-only repositories remain detached Git worktrees at their
 declared refs so they do not acquire writable branches. Jj workbases always use
 jj workspaces and ignore this Git-specific customization.
 
+### Post-checkout Commands
+
+Each repository declaration may provide a VCS-neutral `postCheckoutCommand` argv
+template for repository-specific setup. Agency invokes it directly, without a
+shell, with the new checkout as its working directory:
+
+```json
+{
+	"version": 2,
+	"repositories": {
+		"frontend": {
+			"remote": "git@example.com:team/frontend.git",
+			"postCheckoutCommand": ["bun", "install", "--frozen-lockfile"]
+		}
+	}
+}
+```
+
+The hook runs for each newly created managed checkout, including writable and
+reference checkouts, after Git worktree or jj workspace creation has completed
+and Agency has validated the checkout. It does not run for a reused checkout or
+for inspection-only commands. A custom `worktreeCreateCommand` completes and is
+validated before this hook runs.
+
+Available placeholders and matching environment variables are:
+
+| Placeholder        | Environment              | Value                                          |
+| ------------------ | ------------------------ | ---------------------------------------------- |
+| `{repoAlias}`      | `AGENCY_REPO_ALIAS`      | Repository alias                               |
+| `{repositoryPath}` | `AGENCY_REPOSITORY_PATH` | Absolute source repository path under `repos/` |
+| `{checkoutPath}`   | `AGENCY_CHECKOUT_PATH`   | Absolute managed checkout path                 |
+| `{checkoutKind}`   | `AGENCY_CHECKOUT_KIND`   | `writable` or `reference`                      |
+| `{requestedRef}`   | `AGENCY_REQUESTED_REF`   | Requested branch, reference, or review commit  |
+| `{base}`           | `AGENCY_BASE`            | Configured execution base                      |
+| `{vcs}`            | `AGENCY_VCS`             | `git` or `jj`                                  |
+| `{workbaseRoot}`   | `AGENCY_WORKBASE_ROOT`   | Absolute workbase root                         |
+| `{taskId}`         | `AGENCY_TASK_ID`         | Task ID                                        |
+| `{phaseId}`        | `AGENCY_PHASE_ID`        | Phase ID                                       |
+
+`{base}` and `{phaseId}` and their environment variables are empty strings when
+they do not apply. Dry runs report a planned `post-checkout` operation but never
+execute it. Verbose output identifies the repository and expanded command.
+
+Hook success is part of checkout creation. A non-zero exit or failure to start
+rolls back the checkout and any branch created by the same operation; if cleanup
+also fails, Agency reports the exact manual recovery action. A later command
+retries checkout creation and the hook rather than reusing an uninitialized
+checkout. Hook commands should be idempotent so a retry is safe after any
+external effects the failed invocation may have completed.
+
 ### Agent Runners
 
 OpenCode and Claude Code are built-in runner presets. Select either preset or a

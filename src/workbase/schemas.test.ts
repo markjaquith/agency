@@ -187,6 +187,40 @@ describe("body-of-work descriptions", () => {
 	})
 })
 
+describe("repository post-checkout configuration", () => {
+	test("accepts a per-repository argv command", () => {
+		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
+			version: 2,
+			repositories: {
+				agency: {
+					remote: "https://example.com/agency.git",
+					postCheckoutCommand: ["bun", "install", "--frozen-lockfile"],
+				},
+			},
+		})
+
+		expect(config.repositories?.agency?.postCheckoutCommand).toEqual([
+			"bun",
+			"install",
+			"--frozen-lockfile",
+		])
+	})
+
+	test("rejects shell strings in place of argv arrays", () => {
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseConfig)({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: "bun install",
+					},
+				},
+			}),
+		).toThrow()
+	})
+})
+
 describe("runner configuration", () => {
 	test("accepts named argv commands with resume commands and environment", () => {
 		const config = Schema.decodeUnknownSync(WorkbaseConfig)({

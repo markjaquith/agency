@@ -104,6 +104,126 @@ describe("WorktreeService", () => {
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
 	})
 
+	test("runs repository hooks for new writable and reference checkouts", async () => {
+		await ensureEffectRepository()
+		const hook = [
+			"sh",
+			"-c",
+			'printf "%s\\n" "$@" > post-checkout-argv; env | grep "^AGENCY_" | sort > post-checkout-env; printf x >> post-checkout-count',
+			"post-checkout",
+			"{repoAlias}",
+			"{repositoryPath}",
+			"{checkoutPath}",
+			"{checkoutKind}",
+			"{requestedRef}",
+			"{base}",
+			"{vcs}",
+			"{workbaseRoot}",
+			"{taskId}",
+			"{phaseId}",
+		]
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: hook,
+					},
+					effect: {
+						remote: "https://example.com/effect.git",
+						postCheckoutCommand: hook,
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "hooked",
+							ticketUrl: null,
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/hooked",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("hooked", undefined, root),
+				),
+			),
+		)
+		const writable = workspace.writablePath!
+		const reference = join(workspace.codePath, "effect")
+		expect(await Bun.file(join(writable, "post-checkout-argv")).text()).toBe(
+			[
+				"agency",
+				join(root, "repos/agency"),
+				writable,
+				"writable",
+				"task/hooked",
+				"main",
+				"git",
+				root,
+				"hooked",
+				"",
+				"",
+			].join("\n"),
+		)
+		expect(
+			await Bun.file(join(reference, "post-checkout-argv")).text(),
+		).toContain("reference\nmain\nmain\ngit")
+		const environment = await Bun.file(
+			join(writable, "post-checkout-env"),
+		).text()
+		expect(environment).toContain(`AGENCY_CHECKOUT_PATH=${writable}\n`)
+		expect(environment).toContain("AGENCY_CHECKOUT_KIND=writable\n")
+		expect(environment).toContain("AGENCY_PHASE_ID=\n")
+		expect(workspace.operations).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					action: "post-checkout",
+					repo: "agency",
+					status: "completed",
+				}),
+				expect.objectContaining({
+					action: "post-checkout",
+					repo: "effect",
+					status: "completed",
+				}),
+			]),
+		)
+
+		const reused = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("hooked", undefined, root),
+				),
+			),
+		)
+		expect(
+			reused.operations.filter(
+				(operation) => operation.action === "post-checkout",
+			),
+		).toEqual([])
+		expect(await Bun.file(join(writable, "post-checkout-count")).text()).toBe(
+			"x",
+		)
+		expect(await Bun.file(join(reference, "post-checkout-count")).text()).toBe(
+			"x",
+		)
+	})
+
 	test("materializes and removes a jj workspace for a jj workbase", async () => {
 		if (!Bun.which("jj")) return
 		const repository = join(root, "repos/agency")
@@ -112,7 +232,20 @@ describe("WorktreeService", () => {
 		await jj(["git", "init", "--colocate", repository])
 		await Bun.write(
 			join(root, "agency.json"),
-			JSON.stringify({ version: 2, vcs: "jj" }),
+			JSON.stringify({
+				version: 2,
+				vcs: "jj",
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: [
+							"sh",
+							"-c",
+							'printf "%s:%s" "$AGENCY_VCS" "$AGENCY_CHECKOUT_KIND" > post-checkout',
+						],
+					},
+				},
+			}),
 		)
 		await runTestEffect(
 			TaskService.pipe(
@@ -140,6 +273,9 @@ describe("WorktreeService", () => {
 		)
 		const jjMetadata = await stat(join(workspace.writablePath!, ".jj"))
 		expect(jjMetadata.isFile() || jjMetadata.isDirectory()).toBe(true)
+		expect(
+			await Bun.file(join(workspace.writablePath!, "post-checkout")).text(),
+		).toBe("jj:writable")
 		const inspection = await runTestEffect(
 			WorktreeService.pipe(
 				Effect.flatMap((service) =>
@@ -440,6 +576,22 @@ describe("WorktreeService", () => {
 	})
 
 	test("selects phases and rejects missing or unexpected phase IDs", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: [
+							"sh",
+							"-c",
+							'printf "%s:%s" "$AGENCY_TASK_ID" "$AGENCY_PHASE_ID" > post-checkout-owner',
+						],
+					},
+				},
+			}),
+		)
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -503,6 +655,11 @@ describe("WorktreeService", () => {
 		expect(workspace.writablePath).toBe(
 			join(root, "tasks/multi/phases/selected/code/agency"),
 		)
+		expect(
+			await Bun.file(
+				join(workspace.writablePath!, "post-checkout-owner"),
+			).text(),
+		).toBe("multi:selected")
 
 		await runTestEffect(
 			TaskService.pipe(
@@ -661,6 +818,231 @@ pr: null
 				"refs/heads/task/compensated",
 			]).exitCode,
 		).not.toBe(0)
+	})
+
+	test("reports a planned hook in dry runs without executing it", async () => {
+		const marker = join(root, "dry-run-hook")
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: ["sh", "-c", 'touch "$1"', "hook", marker],
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "dry-hook",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/dry-hook",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const materializeDry = () =>
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("dry-hook", undefined, root, {
+							dryRun: true,
+							verbose: true,
+						}),
+					),
+				),
+			)
+		let workspace!: Awaited<ReturnType<typeof materializeDry>>
+		const logs = await captureErrors(async () => {
+			workspace = await materializeDry()
+		})
+		expect(workspace.operations).toContainEqual({
+			action: "post-checkout",
+			repo: "agency",
+			command: ["sh", "-c", 'touch "$1"', "hook", marker],
+			status: "planned",
+		})
+		expect(await Bun.file(marker).exists()).toBe(false)
+		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
+		expect(logs).toEqual([
+			expect.stringContaining("Planning post-checkout command for 'agency':"),
+		])
+	})
+
+	test("rolls back a failed hook and runs it again on retry", async () => {
+		const retryMarker = join(root, "retry-hook")
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: [
+							"sh",
+							"-c",
+							'if [ ! -f "$1" ]; then touch partial-bootstrap "$1"; echo bootstrap-failed >&2; exit 7; fi',
+							"hook",
+							retryMarker,
+						],
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "retry-hook",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/retry-hook",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const checkoutPath = join(root, "tasks/retry-hook/code/agency")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("retry-hook", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("bootstrap-failed")
+		expect(await Bun.file(checkoutPath).exists()).toBe(false)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/retry-hook",
+			]).exitCode,
+		).not.toBe(0)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("retry-hook", undefined, root),
+					),
+				),
+			),
+		).resolves.toMatchObject({ writablePath: checkoutPath })
+	})
+
+	test("does not run a hook when checkout validation fails", async () => {
+		const marker = join(root, "invalid-checkout-hook")
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeCreateCommand: [
+					"git",
+					"-C",
+					"{repo}",
+					"worktree",
+					"add",
+					"--detach",
+					"{worktree}",
+					"{base}",
+				],
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: ["sh", "-c", 'touch "$1"', "hook", marker],
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "invalid-hook-order",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/invalid-hook-order",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("invalid-hook-order", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("failed validation")
+		expect(await Bun.file(marker).exists()).toBe(false)
+	})
+
+	test("rolls back when a hook executable cannot be started", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: ["agency-missing-hook-executable"],
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "missing-hook-command",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/missing-hook-command",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const checkoutPath = join(root, "tasks/missing-hook-command/code/agency")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("missing-hook-command", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("Failed to start post-checkout command for 'agency'")
+		expect(await Bun.file(checkoutPath).exists()).toBe(false)
 	})
 
 	test("moves and repairs an existing worktree when converting a task", async () => {

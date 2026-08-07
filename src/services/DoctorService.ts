@@ -173,6 +173,18 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 									] as const,
 								]
 							: []),
+						...Object.entries(config.repositories ?? {}).flatMap(
+							([alias, repository]) =>
+								repository.postCheckoutCommand
+									? [
+											[
+												`integration.repository.${alias}.post-checkout`,
+												repository.postCheckoutCommand,
+												`Repository '${alias}' post-checkout hook`,
+											] as const,
+										]
+									: [],
+						),
 						...Object.entries(config.runners ?? {}).map(
 							([name, runner]) =>
 								[
