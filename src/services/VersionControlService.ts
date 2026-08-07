@@ -12,7 +12,7 @@ export interface RegisteredWorkspace {
 	readonly dirty?: boolean
 }
 
-export interface PullRequestDefaults {
+interface PullRequestDefaults {
 	readonly title: string
 	readonly body: string
 }
