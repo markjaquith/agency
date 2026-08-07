@@ -339,20 +339,34 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 										env: resolved.environment,
 									})
 								} else if (!config.delivery && existing) {
-									result = yield* runExternal([
-										"gh",
-										"pr",
-										"view",
-										existing.url,
-										"--json",
-										"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
-									])
+									const environment = yield* Effect.either(
+										backend.gitEnvironment(repositoryPath),
+									)
+									result = yield* runExternal(
+										[
+											"gh",
+											"pr",
+											"view",
+											existing.url,
+											"--json",
+											"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
+										],
+										{
+											cwd: repositoryPath,
+											env: Either.isRight(environment) ? environment.right : {},
+										},
+									)
 								} else if (!config.delivery) {
+									const environment = yield* Effect.either(
+										backend.gitEnvironment(repositoryPath),
+									)
 									result = yield* runExternal(
 										[
 											"gh",
 											"pr",
 											"list",
+											"--repo",
+											remoteRepository,
 											"--head",
 											data.branch,
 											"--state",
@@ -360,7 +374,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 											"--json",
 											"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
 										],
-										{ cwd: repositoryPath },
+										{
+											cwd: repositoryPath,
+											env: Either.isRight(environment) ? environment.right : {},
+										},
 									)
 								}
 								return [
@@ -531,14 +548,18 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						let resolvedCommit: string | null = null
 						if ("ref" in checkout) {
 							if (!isCommitId(checkout.ref)) {
-								const remoteRef = yield* runExternal([
-									"git",
-									"-C",
+								const remote = yield* backend.remoteUrl(
 									repositoryPath,
-									"ls-remote",
 									"origin",
-									originRef(checkout.ref),
-								])
+								)
+								const remoteRef = remote
+									? yield* runExternal([
+											"git",
+											"ls-remote",
+											remote,
+											originRef(checkout.ref),
+										])
+									: { exitCode: -1, stdout: "", stderr: "origin unavailable" }
 								resolvedCommit =
 									remoteRef.stdout.match(/^([0-9a-f]{40,64})\s/m)?.[1] ?? null
 								if (!resolvedCommit) {
@@ -998,12 +1019,14 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 					const repositoryPath = join(root, "repos", data.review.repo)
+					const reviewRemote = yield* backend.remoteUrl(
+						repositoryPath,
+						"origin",
+					)
 					const source = yield* runExternal([
 						"git",
-						"-C",
-						repositoryPath,
 						"ls-remote",
-						"origin",
+						reviewRemote ?? "origin",
 						data.review.source.kind === "pull-request"
 							? data.review.source.fetchRef
 							: originRef(data.review.source.ref),

@@ -97,7 +97,7 @@ describe("PullRequestService", () => {
 		await Bun.write(
 			path,
 			`#!/usr/bin/env bun
-await Bun.write(${JSON.stringify(ghCallPath)}, JSON.stringify({ args: Bun.argv.slice(2), cwd: process.cwd() }))
+await Bun.write(${JSON.stringify(ghCallPath)}, JSON.stringify({ args: Bun.argv.slice(2), cwd: process.cwd(), ...(process.env.GIT_DIR ? { gitDir: process.env.GIT_DIR } : {}) }))
 process.stdout.write(${JSON.stringify(stdout)})
 process.stderr.write(${JSON.stringify(stderr)})
 process.exit(${exitCode})
@@ -110,6 +110,7 @@ process.exit(${exitCode})
 		(await Bun.file(ghCallPath).json()) as {
 			args: string[]
 			cwd: string
+			gitDir?: string
 		}
 
 	const expectRemoteBranch = async (branch: string, exists = true) => {
@@ -239,6 +240,34 @@ process.exit(${exitCode})
 		expect(updated).toContain("pr:\n  provider: github")
 		expect(updated).toContain("url: https://github.com/example/agency/pull/42")
 		expect(updated.endsWith(`${body}\n`)).toBe(true)
+	})
+
+	test("creates a PR from a non-colocated jj workspace with backing Git context", async () => {
+		if (!Bun.which("jj")) return
+		await rm(join(root, "repos/agency"), { recursive: true, force: true })
+		await requireCommand([
+			"jj",
+			"git",
+			"clone",
+			"--no-colocate",
+			remotePath,
+			join(root, "repos/agency"),
+		])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await createTask("jj-example", "task/jj-example")
+		const url = "https://github.com/example/agency/pull/44"
+		await writeFakeGh({ stdout: `${url}\n` })
+
+		expect(await createPullRequest("jj-example")).toBe(url)
+		await expectRemoteBranch("task/jj-example")
+		const ghCall = await readGhCall()
+		expect(ghCall.args).toContain("--head")
+		expect(ghCall.args).toContain("--repo")
+		expect(ghCall.gitDir).toContain(".jj")
+		expect(await Bun.file(join(root, "repos/agency/.git")).exists()).toBe(false)
 	})
 
 	test("passes --draft to gh", async () => {

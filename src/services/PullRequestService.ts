@@ -199,10 +199,13 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								draft,
 								vcs: config.vcs ?? "git",
 							})
+					const gitEnvironment = config.delivery
+						? {}
+						: yield* backend.gitEnvironment(workspace.writablePath)
 					const created = yield* fs.runCommand(resolved.argv, {
 						cwd: workspace.writablePath,
 						captureOutput: true,
-						env: resolved.environment,
+						env: { ...gitEnvironment, ...resolved.environment },
 					})
 					if (created.exitCode !== 0) {
 						return yield* new PullRequestError({

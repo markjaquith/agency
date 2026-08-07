@@ -171,9 +171,12 @@ const inspectRemote = (path: string) =>
 		return result.exitCode === 0 ? result.stdout.trim() : null
 	})
 
-const portableRemote = (path: string) =>
+const portableRemote = (path: string, backend?: VersionControlBackend) =>
 	Effect.gen(function* () {
-		const remote = yield* inspectRemote(path)
+		const backendRemote = backend
+			? yield* backend.remoteUrl(path, "origin")
+			: null
+		const remote = backendRemote ?? (yield* inspectRemote(path))
 		if (!remote) {
 			return yield* new RepositoryError({
 				message: `Repository '${path}' has no portable origin remote`,
@@ -219,7 +222,7 @@ const removalBlockers = (
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const graph = yield* GraphService
-		const report = yield* graph.get({ cwd: startPath })
+		const report = yield* graph.get({ cwd: startPath, backend })
 		const repositoryId = `repository:${repository.alias}`
 		const references = report.edges
 			.filter(
@@ -373,50 +376,30 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						: resolve(startPath, remote)
 					const declaredRemote = inputIsPortable
 						? yield* validateRemote(remote)
-						: yield* portableRemote(cloneSource)
+						: yield* portableRemote(cloneSource, backend)
 					const staging = join(
 						state.root,
 						"repos",
 						`.agency-clone-${validAlias}-${process.pid}-${Date.now()}`,
 					)
 					yield* fs.createDirectory(join(state.root, "repos"))
-					const cloned = yield* fs.runCommand(
-						[
-							"git",
-							"clone",
-							...(backend.kind === "git" ? ["--bare"] : []),
-							"--",
-							cloneSource,
-							staging,
-						],
-						{ captureOutput: true },
+					yield* backend.cloneRepository(cloneSource, staging).pipe(
+						Effect.catchAll((cause) =>
+							fs.deleteDirectory(staging).pipe(
+								Effect.ignore,
+								Effect.zipRight(
+									Effect.fail(
+										new RepositoryError({
+											message: `Failed to clone repository '${remote}': ${cause instanceof Error ? cause.message : String(cause)}`,
+											cause,
+										}),
+									),
+								),
+							),
+						),
 					)
-					if (cloned.exitCode !== 0) {
-						yield* fs.deleteDirectory(staging).pipe(Effect.ignore)
-						return yield* new RepositoryError({
-							message: `Failed to clone repository '${remote}': ${cloned.stderr.trim()}`,
-						})
-					}
-					yield* backend.initializeRepository(staging)
 					if (declaredRemote !== remote) {
-						const setRemote = yield* fs.runCommand(
-							[
-								"git",
-								"-C",
-								staging,
-								"remote",
-								"set-url",
-								"origin",
-								declaredRemote,
-							],
-							{ captureOutput: true },
-						)
-						if (setRemote.exitCode !== 0) {
-							yield* fs.deleteDirectory(staging).pipe(Effect.ignore)
-							return yield* new RepositoryError({
-								message: `Failed to record portable remote for repository '${validAlias}': ${setRemote.stderr.trim()}`,
-							})
-						}
+						yield* backend.setRemoteUrl(staging, "origin", declaredRemote)
 					}
 					const config = withDeclarations(state.config, {
 						...(state.config.repositories ?? {}),
@@ -465,19 +448,21 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							message: `Repository path does not exist: ${resolvedTarget}`,
 						})
 					}
-					const git = yield* fs.runCommand(
-						["git", "-C", resolvedTarget, "rev-parse", "--git-dir"],
-						{ captureOutput: true },
-					)
-					if (git.exitCode !== 0) {
+					const inspection = yield* backend.inspectRepository(resolvedTarget)
+					if (!inspection && backend.kind === "git") {
 						return yield* new RepositoryError({
-							message: `Path is not a Git repository: ${resolvedTarget}`,
+							message: `Path is not a ${backend.kind} repository: ${resolvedTarget}`,
 						})
 					}
 					yield* backend.initializeRepository(resolvedTarget)
+					if (!(yield* backend.inspectRepository(resolvedTarget))) {
+						return yield* new RepositoryError({
+							message: `Path is not a ${backend.kind} repository: ${resolvedTarget}`,
+						})
+					}
 					const declaredRemote =
 						state.config.repositories?.[validAlias]?.remote ??
-						(yield* portableRemote(resolvedTarget))
+						(yield* portableRemote(resolvedTarget, backend))
 					const staging = join(
 						state.root,
 						"repos",
@@ -522,6 +507,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const { root, config } = yield* WorkbaseService.pipe(
 						Effect.flatMap((service) => service.loadConfig(startPath)),
 					)
+					const versionControl = yield* VersionControlService
+					const backend = yield* versionControl.forWorkbase(root)
 					const reposPath = join(root, "repos")
 					const entries = (yield* fs.isDirectory(reposPath))
 						? (yield* fs.readDirectory(reposPath)).filter(
@@ -569,20 +556,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						const target = entry.isSymlink
 							? yield* fs.readSymlinkTarget(path)
 							: null
-						const git = yield* fs.runCommand(
-							["git", "-C", path, "rev-parse", "--git-dir"],
-							{ captureOutput: true },
-						)
-						const bare = yield* fs.runCommand(
-							["git", "-C", path, "rev-parse", "--is-bare-repository"],
-							{ captureOutput: true },
-						)
-						const remote =
-							git.exitCode === 0 ? yield* inspectRemote(path) : null
+						const inspection = yield* backend.inspectRepository(path)
+						const remote = inspection?.remote ?? null
 						const states: RepositoryState[] = []
 						if (declaredRemote) states.push("declared")
 						states.push(entry.isSymlink ? "linked" : "materialized")
-						if (git.exitCode !== 0) states.push("invalid")
+						if (!inspection) states.push("invalid")
 						if (declaredRemote && remote !== declaredRemote)
 							states.push("remote-drifted")
 						repositories.push({
@@ -590,9 +569,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							path,
 							kind: entry.isSymlink
 								? "symlink"
-								: bare.stdout.trim() === "true"
-									? "bare"
-									: "repository",
+								: (inspection?.kind ?? "repository"),
 							remote,
 							declaredRemote,
 							target,
@@ -760,10 +737,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
+					const versionControl = yield* VersionControlService
 					const repository = yield* find(alias, startPath)
 					if (remote === undefined) return repository
 					const portable = yield* validateRemote(remote)
 					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
 					const config = withDeclarations(state.config, {
 						...(state.config.repositories ?? {}),
 						[repository.alias]: { remote: portable },
@@ -777,30 +756,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						const previous = repository.remote
 						const update = (value: string | null) =>
 							Effect.runPromise(
-								fs.runCommand(
-									value === null
-										? [
-												"git",
-												"-C",
-												repository.path,
-												"remote",
-												"remove",
-												"origin",
-											]
-										: [
-												"git",
-												"-C",
-												repository.path,
-												"remote",
-												previous === null ? "add" : "set-url",
-												"origin",
-												value,
-											],
-									{ captureOutput: true },
-								),
-							).then((result) => {
-								if (result.exitCode !== 0) throw new Error(result.stderr.trim())
-							})
+								backend
+									.setRemoteUrl(repository.path, "origin", value)
+									.pipe(
+										Effect.provideService(FileSystemService, fs),
+									) as Effect.Effect<void, unknown, never>,
+							)
 						steps.push({
 							label: `update origin for repos/${repository.alias}`,
 							preflight: async () => {
@@ -810,21 +771,11 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 										`Repository alias '${repository.alias}' changed to a linked checkout; retry the remote update`,
 									)
 								}
-								const current = await Effect.runPromise(
-									fs.runCommand(
-										[
-											"git",
-											"-C",
-											repository.path,
-											"remote",
-											"get-url",
-											"origin",
-										],
-										{ captureOutput: true },
-									),
+								const currentRemote = await Effect.runPromise(
+									backend
+										.remoteUrl(repository.path, "origin")
+										.pipe(Effect.provideService(FileSystemService, fs)),
 								)
-								const currentRemote =
-									current.exitCode === 0 ? current.stdout.trim() : null
 								if (currentRemote !== previous) {
 									throw new Error(
 										`Origin for repository '${repository.alias}' changed; retry the remote update`,
@@ -847,7 +798,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					if (repository.states.includes("missing"))
 						issues.push("Local materialization is missing")
 					if (repository.states.includes("invalid"))
-						issues.push("Path is not a Git repository")
+						issues.push("Path is not a valid repository")
 					if (!repository.declaredRemote)
 						issues.push("Portable remote is not declared")
 					if (repository.states.includes("remote-drifted"))
@@ -877,7 +828,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							unresolved.push({
 								alias: repository.alias,
 								state: "invalid",
-								message: `Local path for '${repository.alias}' is not a valid Git repository`,
+								message: `Local path for '${repository.alias}' is not a valid repository`,
 								action: `Repair the path or run 'agency repo remove ${repository.alias}' before setup`,
 							})
 							continue
@@ -936,25 +887,17 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 								`.agency-setup-${action.alias}-${process.pid}-${Date.now()}`,
 							)
 							yield* fs.createDirectory(join(state.root, "repos"))
-							const cloned = yield* fs.runCommand(
-								[
-									"git",
-									"clone",
-									...(backend.kind === "git" ? ["--bare"] : []),
-									"--",
-									action.remote,
-									from,
-								],
-								{ captureOutput: true },
-							)
-							if (cloned.exitCode !== 0) {
+							const cloned = yield* backend
+								.cloneRepository(action.remote, from)
+								.pipe(Effect.either)
+							if (Either.isLeft(cloned)) {
 								for (const item of staging)
 									yield* fs.deleteDirectory(item.from).pipe(Effect.ignore)
 								return yield* new RepositoryError({
-									message: `Failed to materialize repository '${action.alias}': ${cloned.stderr.trim()}`,
+									message: `Failed to materialize repository '${action.alias}': ${cloned.left instanceof Error ? cloned.left.message : String(cloned.left)}`,
+									cause: cloned.left,
 								})
 							}
-							yield* backend.initializeRepository(from)
 							staging.push({
 								alias: action.alias,
 								from,

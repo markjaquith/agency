@@ -59,6 +59,7 @@ describe("SyncService", () => {
 		await Bun.write(
 			gh,
 			`#!/bin/sh
+if [ -n "$GH_CAPTURE" ]; then printf '%s\n' "$@" "GIT_DIR=$GIT_DIR" > "$GH_CAPTURE"; fi
 case "$*" in
 *mergeable*) ;;
 *) echo "mergeable field was not requested" >&2; exit 2 ;;
@@ -82,6 +83,7 @@ JSON
 	afterEach(async () => {
 		if (originalPath === undefined) delete process.env.PATH
 		else process.env.PATH = originalPath
+		delete process.env.GH_CAPTURE
 		await cleanupTempDir(root)
 	})
 
@@ -125,8 +127,14 @@ pr: null
 		if (!Bun.which("jj")) return
 		const repository = join(root, "repos/agency")
 		await rm(repository, { recursive: true, force: true })
-		await git(["clone", join(root, "source"), repository])
-		await jj(["git", "init", "--colocate", repository])
+		await jj([
+			"git",
+			"clone",
+			"--no-colocate",
+			join(root, "source"),
+			repository,
+		])
+		expect(await Bun.file(join(repository, ".git")).exists()).toBe(false)
 		await Bun.write(
 			join(root, "agency.json"),
 			JSON.stringify({ version: 2, vcs: "jj" }),
@@ -147,6 +155,8 @@ pr: null
 				),
 			),
 		)
+		const capture = join(root, "gh-capture")
+		process.env.GH_CAPTURE = capture
 
 		const planned = await runTestEffect(
 			SyncService.pipe(
@@ -160,6 +170,10 @@ pr: null
 				status: "planned",
 			}),
 		)
+		const invocation = await Bun.file(capture).text()
+		expect(invocation).toContain("--repo\n")
+		expect(invocation).toContain("GIT_DIR=")
+		expect(invocation).toContain(".jj")
 
 		const applied = await runTestEffect(
 			SyncService.pipe(
@@ -174,6 +188,7 @@ pr: null
 			branch: "task/jj-sync",
 			dirty: false,
 		})
+		delete process.env.GH_CAPTURE
 	})
 
 	test("observes drift without mutation and applies only safe transitions", async () => {

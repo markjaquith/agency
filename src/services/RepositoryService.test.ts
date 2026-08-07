@@ -119,13 +119,18 @@ describe("RepositoryService", () => {
 			),
 		)
 		expect((await stat(join(destination, ".jj"))).isDirectory()).toBe(true)
+		expect(await Bun.file(join(destination, ".git")).exists()).toBe(false)
 		expect(
 			await runTestEffect(
 				RepositoryService.pipe(
 					Effect.flatMap((service) => service.show("agency", root)),
 				),
 			),
-		).toMatchObject({ kind: "repository" })
+		).toMatchObject({
+			kind: "repository",
+			remote: portableRemote("jj-agency"),
+			states: ["declared", "materialized"],
+		})
 	})
 
 	test("links an existing repository", async () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { lstat, mkdir } from "node:fs/promises"
+import { lstat, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { ClaimService } from "./ClaimService"
@@ -194,6 +194,63 @@ describe("VcsMigrationService", () => {
 				)
 			).conflicts,
 		).toEqual([])
+	})
+
+	test("blocks non-colocated jj to Git migration before mutation", async () => {
+		if (!Bun.which("jj")) return
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) => service.remove("example", undefined, root)),
+			),
+		)
+		for (const alias of ["agency", "effect"]) {
+			const repository = join(root, "repos", alias)
+			await rm(repository, { recursive: true, force: true })
+			await run([
+				"jj",
+				"git",
+				"clone",
+				"--no-colocate",
+				join(root, "source"),
+				repository,
+			])
+			expect(await exists(join(repository, ".git"))).toBe(false)
+		}
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+
+		const planned = await runTestEffect(
+			VcsMigrationService.pipe(
+				Effect.flatMap((service) => service.migrate("git", root)),
+			),
+		)
+		expect(planned.blockers).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					target: "repository:agency",
+					message: expect.stringContaining("non-colocated"),
+				}),
+				expect.objectContaining({
+					target: "repository:effect",
+					message: expect.stringContaining("non-colocated"),
+				}),
+			]),
+		)
+		expect((await Bun.file(join(root, "agency.json")).json()).vcs).toBe("jj")
+		expect(await exists(join(root, "repos/agency/.jj"))).toBe(true)
+		await expect(
+			runTestEffect(
+				VcsMigrationService.pipe(
+					Effect.flatMap((service) =>
+						service.migrate("git", root, { apply: true }),
+					),
+				),
+			),
+		).rejects.toThrow("non-colocated")
+		expect((await Bun.file(join(root, "agency.json")).json()).vcs).toBe("jj")
+		expect(await exists(join(root, "repos/agency/.jj"))).toBe(true)
 	})
 
 	test("allows clean unclaimed working workspaces", async () => {
