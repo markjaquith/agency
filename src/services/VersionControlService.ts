@@ -594,6 +594,7 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 								jjCommand(workspacePath, [
 									"bookmark",
 									"set",
+									"--allow-backwards",
 									branch,
 									"-r",
 									"@-",
