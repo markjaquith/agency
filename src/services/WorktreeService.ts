@@ -449,11 +449,7 @@ const inspectExecution = (
 						: yield* backend.workspaceHead(checkoutPath)
 					: null
 				const dirty =
-					exists && atPath
-						? atPath.dirty !== undefined
-							? atPath.dirty
-							: yield* backend.workspaceDirty(checkoutPath)
-						: null
+					exists && atPath ? yield* backend.workspaceDirty(checkoutPath) : null
 				const expectedCommit =
 					"branch" in checkout && context?.skipWritableRevisionResolution
 						? actualCommit

@@ -691,7 +691,7 @@ const commands = {
 		},
 	},
 	archive: {
-		usage: "agency archive <list|show|epic|task|phase>",
+		usage: "agency archive <list|show|epic|task|tasks|phase>",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
@@ -727,6 +727,12 @@ const commands = {
 				minArgs: 1,
 				maxArgs: 1,
 				options: ["dry-run", "json", "task"],
+			},
+			tasks: {
+				usage: "agency archive tasks [--dry-run] [--json]",
+				minArgs: 0,
+				maxArgs: 0,
+				options: ["dry-run", "json"],
 			},
 			phase: {
 				usage: "agency archive phase <task-id> <phase-id> [--dry-run] [--json]",
