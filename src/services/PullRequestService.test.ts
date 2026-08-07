@@ -253,6 +253,14 @@ process.exit(${exitCode})
 			remotePath,
 			join(root, "repos/agency"),
 		])
+		await requireCommand(
+			["jj", "config", "set", "--repo", "user.name", "Agency Test"],
+			join(root, "repos/agency"),
+		)
+		await requireCommand(
+			["jj", "config", "set", "--repo", "user.email", "agency@example.com"],
+			join(root, "repos/agency"),
+		)
 		await Bun.write(
 			join(root, "agency.json"),
 			JSON.stringify({ version: 2, vcs: "jj" }),
