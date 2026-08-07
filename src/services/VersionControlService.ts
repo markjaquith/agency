@@ -589,6 +589,19 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
 						yield* requireSuccess(
+							"Failed to set jj delivery bookmark",
+							fs.runCommand(
+								jjCommand(workspacePath, [
+									"bookmark",
+									"set",
+									branch,
+									"-r",
+									"@-",
+								]),
+								{ captureOutput: true },
+							),
+						)
+						yield* requireSuccess(
 							"Failed to push branch",
 							fs.runCommand(
 								jjCommand(workspacePath, [
@@ -596,8 +609,8 @@ export class JjVersionControlService extends Effect.Service<JjVersionControlServ
 									"push",
 									"--remote",
 									remote,
-									"--named",
-									`${branch}=@-`,
+									"--bookmark",
+									branch,
 								]),
 								{ captureOutput: true },
 							),
