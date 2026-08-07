@@ -36,6 +36,14 @@ describe("restore command", () => {
 			}),
 		)
 		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["example", "dropped"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
 			archive({ type: "task", args: ["example"], cwd: root, silent: true }),
 		)
 	})

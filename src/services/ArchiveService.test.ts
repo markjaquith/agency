@@ -35,6 +35,20 @@ const jj = async (args: string[]) => {
 
 describe("ArchiveService", () => {
 	let root: string
+	const dropTask = (id: string) =>
+		runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.setStatus(id, "dropped", root)),
+			),
+		)
+	const dropPhase = (taskId: string, id: string) =>
+		runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus(taskId, id, "dropped", root),
+				),
+			),
+		)
 
 	beforeEach(async () => {
 		root = await createTempDir()
@@ -52,6 +66,142 @@ describe("ArchiveService", () => {
 	})
 
 	afterEach(async () => cleanupTempDir(root))
+
+	test("requires terminal effective status for singular task archival", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "status-check",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/status-check",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) =>
+						service.archiveTask("status-check", root),
+					),
+				),
+			),
+		).rejects.toThrow("status=open")
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("status-check", "working", root),
+				),
+			),
+		)
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) =>
+						service.archiveTask("status-check", root),
+					),
+				),
+			),
+		).rejects.toThrow("status=working")
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("status-check", "dropped", root),
+				),
+			),
+		)
+		const result = await runTestEffect(
+			ArchiveService.pipe(
+				Effect.flatMap((service) =>
+					service.archiveTask("status-check", root, { dryRun: true }),
+				),
+			),
+		)
+		expect(result.dryRun).toBe(true)
+
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "done-check",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/done-check",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const donePath = join(root, "tasks/done-check/TASK.md")
+		await Bun.write(
+			donePath,
+			(await Bun.file(donePath).text()).replace("status: open", "status: done"),
+		)
+		const doneResult = await runTestEffect(
+			ArchiveService.pipe(
+				Effect.flatMap((service) =>
+					service.archiveTask("done-check", root, { dryRun: true }),
+				),
+			),
+		)
+		expect(doneResult.dryRun).toBe(true)
+	})
+
+	test("rejects empty and partially terminal multi-phase tasks in singular archival", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{ id: "empty", ticketUrl: null, multiPhase: true },
+						root,
+					),
+				),
+			),
+		)
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) => service.archiveTask("empty", root)),
+				),
+			),
+		).rejects.toThrow("has no phases")
+
+		for (const id of ["terminal", "open"]) {
+			await runTestEffect(
+				PhaseService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								taskId: "empty",
+								id,
+								repo: "agency",
+								branch: `task/empty-${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+		}
+		await dropPhase("empty", "terminal")
+		await expect(
+			runTestEffect(
+				ArchiveService.pipe(
+					Effect.flatMap((service) => service.archiveTask("empty", root)),
+				),
+			),
+		).rejects.toThrow("phase:open:status=open")
+	})
 
 	test("archives a task after removing its worktree and preserves its branch", async () => {
 		await runTestEffect(
@@ -90,6 +240,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await dropTask("child")
 
 		const result = await runTestEffect(
 			ArchiveService.pipe(
@@ -151,6 +302,13 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("interrupted", "dropped", root),
+				),
+			),
+		)
 		const workspace = await runTestEffect(
 			WorktreeService.pipe(
 				Effect.flatMap((service) =>
@@ -209,6 +367,13 @@ describe("ArchiveService", () => {
 						},
 						root,
 					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("modified-residual", "dropped", root),
 				),
 			),
 		)
@@ -473,6 +638,7 @@ describe("ArchiveService", () => {
 			),
 		)
 		await Bun.write(join(workspace.writablePath!, "dirty.txt"), "keep me\n")
+		await dropTask("dirty")
 
 		await expect(
 			runTestEffect(
@@ -506,6 +672,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await dropTask("preview")
 
 		const archivePreview = await runTestEffect(
 			ArchiveService.pipe(
@@ -573,6 +740,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await dropTask("child")
 		await runTestEffect(
 			ArchiveService.pipe(
 				Effect.flatMap((service) => service.archiveTask("child", root)),
@@ -583,7 +751,11 @@ describe("ArchiveService", () => {
 			ArchiveService.pipe(
 				Effect.flatMap((service) =>
 					service.list(
-						{ kinds: ["task"], repositories: ["agency"], statuses: ["open"] },
+						{
+							kinds: ["task"],
+							repositories: ["agency"],
+							statuses: ["dropped"],
+						},
 						root,
 					),
 				),
@@ -845,6 +1017,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await dropTask("reserved")
 		await runTestEffect(
 			ArchiveService.pipe(
 				Effect.flatMap((service) => service.archiveTask("reserved", root)),
@@ -894,6 +1067,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await dropTask("locked")
 		await Bun.write(join(root, ".agency-archive.lock"), "held\n")
 
 		await expect(
@@ -941,6 +1115,7 @@ describe("ArchiveService", () => {
 				),
 			),
 		)
+		await dropTask("child")
 		await runTestEffect(
 			ArchiveService.pipe(
 				Effect.flatMap((service) => service.archiveTask("child", root)),
@@ -1052,6 +1227,8 @@ describe("ArchiveService", () => {
 			join(root, "tasks/multi-dirty/phases/dirty/code/agency/dirty.txt"),
 			"keep me\n",
 		)
+		await dropPhase("multi-dirty", "clean")
+		await dropPhase("multi-dirty", "dirty")
 
 		await expect(
 			runTestEffect(

@@ -282,6 +282,7 @@ describe("strict CLI parsing", () => {
 			],
 			[["archive", "epic", "one", "two"], "agency archive epic"],
 			[["archive", "task", "one", "two"], "agency archive task"],
+			[["archive", "tasks", "one"], "agency archive tasks"],
 			[["archive", "phase", "one", "two", "three"], "agency archive phase"],
 			[["archive", "list", "extra"], "agency archive list"],
 			[
@@ -412,6 +413,13 @@ describe("strict CLI parsing", () => {
 			{
 				commandName: "archive",
 				values: { "dry-run": true },
+			},
+		)
+		expect(parseCli(["archive", "tasks", "--dry-run", "--json"])).toMatchObject(
+			{
+				commandName: "archive",
+				args: ["tasks"],
+				values: { "dry-run": true, json: true },
 			},
 		)
 	})

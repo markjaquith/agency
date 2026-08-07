@@ -92,6 +92,11 @@ export const archive = (options: ArchiveOptions) =>
 					dryRun: options.dryRun,
 				})
 				break
+			case "tasks":
+				result = yield* archives.archiveTasks(cwd, {
+					dryRun: options.dryRun,
+				})
+				break
 			case "phase":
 				if (!id || !phaseId)
 					return yield* Effect.fail(
@@ -104,11 +109,28 @@ export const archive = (options: ArchiveOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Archive operation is required. Available: list, show, epic, task, phase",
+						"Archive operation is required. Available: list, show, epic, task, tasks, phase",
 					),
 				)
 		}
 
+		if (result.kind === "tasks") {
+			const selected = result.tasks.filter(
+				(task) => task.disposition !== "skipped",
+			)
+			const skipped = result.tasks.filter(
+				(task) => task.disposition === "skipped",
+			)
+			log(
+				options.json
+					? JSON.stringify(result, null, 2)
+					: [
+							`${result.dryRun ? "Would archive" : "Archived"} ${selected.length} task${selected.length === 1 ? "" : "s"}${selected.length ? `: ${selected.map((task) => task.id).join(", ")}` : ""}`,
+							`Skipped ${skipped.length} task${skipped.length === 1 ? "" : "s"}${skipped.length ? `: ${skipped.map((task) => `${task.id} (${task.reason!.code})`).join(", ")}` : ""}`,
+						].join("\n"),
+			)
+			return
+		}
 		log(
 			options.json
 				? JSON.stringify(result, null, 2)
@@ -119,7 +141,7 @@ export const archive = (options: ArchiveOptions) =>
 	})
 
 export const help = `
-Usage: agency archive <list|show|epic|task|phase>
+Usage: agency archive <list|show|epic|task|tasks|phase>
 
 Browse or archive work items after preflighting worktrees and graph references.
 
@@ -129,6 +151,7 @@ Commands:
   show phase <task-id> <phase-id>        Show an archived phase
   epic <epic-id>                         Archive an epic and its tasks
   task <task-id>                         Archive a task
+  tasks                                 Archive all eligible terminal tasks
   phase <task-id> <phase-id>             Archive a phase
 
 Options:

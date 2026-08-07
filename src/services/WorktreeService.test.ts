@@ -276,6 +276,10 @@ describe("WorktreeService", () => {
 		expect(
 			await Bun.file(join(workspace.writablePath!, "post-checkout")).text(),
 		).toBe("jj:writable")
+		await jj(
+			["commit", "-m", "record post-checkout output"],
+			workspace.writablePath!,
+		)
 		const inspection = await runTestEffect(
 			WorktreeService.pipe(
 				Effect.flatMap((service) =>

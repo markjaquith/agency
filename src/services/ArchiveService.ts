@@ -44,6 +44,7 @@ import {
 	type TransactionStep,
 } from "./LifecycleTransaction"
 import { withWorktreeLocks } from "./WorktreeLock"
+import { aggregateProgress, isTerminalStatus } from "../readiness"
 
 class ArchiveError extends Data.TaggedError("ArchiveError")<{
 	readonly message: string
@@ -104,6 +105,36 @@ interface LifecycleOptions {
 	readonly dryRun?: boolean
 }
 
+type TaskArchiveSkipCode =
+	| "non-terminal"
+	| "active-claim"
+	| "dirty-worktree"
+	| "checkout-preflight-failed"
+	| "retained-dependent"
+	| "destination-exists"
+
+interface TaskArchiveDisposition {
+	readonly id: string
+	readonly disposition: "archived" | "planned" | "skipped"
+	readonly reason?: {
+		readonly code: TaskArchiveSkipCode
+		readonly details: readonly string[]
+	}
+	readonly path?: string
+	readonly affectedPaths: readonly string[]
+	readonly removedWorktrees: readonly string[]
+}
+
+interface BulkTaskArchiveResult {
+	readonly operation: "archive"
+	readonly kind: "tasks"
+	readonly tasks: readonly TaskArchiveDisposition[]
+	readonly affectedPaths: readonly string[]
+	readonly removedWorktrees: readonly string[]
+	readonly dryRun: boolean
+	readonly at: string
+}
+
 export interface ArchiveFilters {
 	readonly kinds?: readonly string[]
 	readonly statuses?: readonly string[]
@@ -127,6 +158,69 @@ interface Write {
 	readonly path: string
 	readonly content: string
 }
+
+interface TaskArchiveContext {
+	readonly task: TaskRecord
+	readonly phases: readonly PhaseRecord[]
+	readonly executionUnits: readonly { taskId: string; phaseId?: string }[]
+	readonly terminal: boolean
+	readonly terminalDetails: readonly string[]
+	readonly activeClaims: readonly string[]
+}
+
+const loadTaskArchiveContext = (task: TaskRecord, root: string) =>
+	Effect.gen(function* () {
+		const phases = yield* PhaseService
+		if (!("phases" in task.data)) {
+			return {
+				task,
+				phases: [],
+				executionUnits: [{ taskId: task.id }],
+				terminal: isTerminalStatus(task.data.status),
+				terminalDetails: [`status=${task.data.status}`],
+				activeClaims:
+					task.data.claim?.state === "active" ? [`task:${task.id}`] : [],
+			} satisfies TaskArchiveContext
+		}
+
+		const phaseRecords: PhaseRecord[] = []
+		for (const declaration of task.data.phases) {
+			phaseRecords.push(yield* phases.show(task.id, declaration.id, root))
+		}
+		const statuses = phaseRecords.map((phase) => phase.data.status)
+		const effectiveStatus = aggregateProgress(statuses).status
+		return {
+			task,
+			phases: phaseRecords,
+			executionUnits: phaseRecords.map((phase) => ({
+				taskId: task.id,
+				phaseId: phase.id,
+			})),
+			terminal: phaseRecords.length > 0 && isTerminalStatus(effectiveStatus),
+			terminalDetails:
+				phaseRecords.length === 0
+					? ["multi-phase task has no phases"]
+					: phaseRecords.map(
+							(phase) => `phase:${phase.id}:status=${phase.data.status}`,
+						),
+			activeClaims: phaseRecords
+				.filter((phase) => phase.data.claim?.state === "active")
+				.map((phase) => `phase:${task.id}/${phase.id}`),
+		} satisfies TaskArchiveContext
+	})
+
+const archiveEligibilityError = (context: TaskArchiveContext) => {
+	if (!context.terminal) {
+		return `Task '${context.task.id}' is not terminal (${context.terminalDetails.join(", ")}); only done or dropped tasks can be archived`
+	}
+	if (context.activeClaims.length > 0) {
+		return `Task '${context.task.id}' has active claims (${context.activeClaims.join(", ")}); release or finish them before archiving`
+	}
+	return undefined
+}
+
+const executionPhaseId = (unit: { taskId: string; phaseId?: string }) =>
+	unit.phaseId
 
 const decode = <S extends Schema.Schema.AnyNoContext>(
 	schema: S,
@@ -735,6 +829,336 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					} satisfies LifecycleResult
 				}),
 
+			archiveTasks: (
+				startPath: string = process.cwd(),
+				options: LifecycleOptions = {},
+			) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const epics = yield* EpicService
+					const tasks = yield* TaskService
+					const worktrees = yield* WorktreeService
+					const root = yield* workbase.discover(startPath)
+					const validation = yield* workbase.validate(root)
+					if (!validation.valid) {
+						return yield* new ArchiveError({
+							message: `Cannot plan bulk task archive because the workbase is invalid:\n${validation.issues
+								.map((issue) => `- ${issue.path}: ${issue.message}`)
+								.join("\n")}`,
+						})
+					}
+
+					const taskRecords = yield* tasks.list(root)
+					const epicRecords = yield* epics.list(root)
+					const epicById = new Map(epicRecords.map((epic) => [epic.id, epic]))
+					const contexts = new Map<string, TaskArchiveContext>()
+					const skipped = new Map<
+						string,
+						NonNullable<TaskArchiveDisposition["reason"]>
+					>()
+					const removedByTask = new Map<string, string[]>()
+
+					for (const task of taskRecords) {
+						const context = yield* loadTaskArchiveContext(task, root)
+						contexts.set(task.id, context)
+						if (!context.terminal) {
+							skipped.set(task.id, {
+								code: "non-terminal",
+								details: context.terminalDetails,
+							})
+							continue
+						}
+						if (context.activeClaims.length > 0) {
+							skipped.set(task.id, {
+								code: "active-claim",
+								details: context.activeClaims,
+							})
+							continue
+						}
+						const destination = archivedTaskDirectory(root, task.id)
+						if (yield* fs.exists(destination)) {
+							skipped.set(task.id, {
+								code: "destination-exists",
+								details: [destination],
+							})
+							continue
+						}
+
+						const removed: string[] = []
+						let preflightFailure: unknown
+						for (const unit of context.executionUnits) {
+							const result = yield* worktrees
+								.remove(unit.taskId, executionPhaseId(unit), root, {
+									dryRun: true,
+								})
+								.pipe(Effect.either)
+							if (Either.isLeft(result)) {
+								preflightFailure = result.left
+								break
+							}
+							removed.push(...result.right)
+						}
+						if (preflightFailure) {
+							if (
+								typeof preflightFailure !== "object" ||
+								preflightFailure === null ||
+								!("_tag" in preflightFailure) ||
+								preflightFailure._tag !== "WorktreeError"
+							) {
+								return yield* Effect.fail(preflightFailure)
+							}
+							const message =
+								"message" in preflightFailure &&
+								typeof preflightFailure.message === "string"
+									? preflightFailure.message
+									: "Managed checkout removal preflight failed"
+							const conflicts =
+								"conflicts" in preflightFailure &&
+								Array.isArray(preflightFailure.conflicts)
+									? preflightFailure.conflicts
+									: []
+							if (
+								/^Failed to inspect worktrees/.test(message) ||
+								conflicts.some(
+									(conflict) =>
+										typeof conflict === "object" &&
+										conflict !== null &&
+										"kind" in conflict &&
+										conflict.kind === "inspection-failed",
+								)
+							) {
+								return yield* Effect.fail(preflightFailure)
+							}
+							const dirty =
+								/uncommitted changes|dirty/i.test(message) ||
+								conflicts.some(
+									(conflict) =>
+										typeof conflict === "object" &&
+										conflict !== null &&
+										"dirty" in conflict &&
+										conflict.dirty === true,
+								)
+							skipped.set(task.id, {
+								code: dirty ? "dirty-worktree" : "checkout-preflight-failed",
+								details: [message],
+							})
+							continue
+						}
+						removedByTask.set(task.id, [...new Set(removed)].sort())
+					}
+
+					const cohort = new Set(
+						taskRecords
+							.filter((task) => !skipped.has(task.id))
+							.map((task) => task.id),
+					)
+					let changed = true
+					while (changed) {
+						changed = false
+						for (const taskId of [...cohort].sort()) {
+							const task = contexts.get(taskId)!.task
+							if (!task.data.epic) continue
+							const parent = epicById.get(task.data.epic)!
+							const dependents = parent.data.tasks
+								.filter((candidate) => candidate.dependsOn?.includes(taskId))
+								.map((candidate) => candidate.id)
+								.filter((dependent) => !cohort.has(dependent))
+								.sort()
+							if (dependents.length === 0) continue
+							cohort.delete(taskId)
+							skipped.set(taskId, {
+								code: "retained-dependent",
+								details: dependents,
+							})
+							changed = true
+						}
+					}
+
+					const selected = [...cohort].sort().map((id) => contexts.get(id)!)
+					const at = new Date().toISOString()
+					const writes: (Write & { create?: boolean })[] = []
+					const selectedByEpic = new Map<string, Set<string>>()
+					for (const context of selected) {
+						const epicId = context.task.data.epic
+						if (!epicId) continue
+						const ids = selectedByEpic.get(epicId) ?? new Set<string>()
+						ids.add(context.task.id)
+						selectedByEpic.set(epicId, ids)
+					}
+					for (const [epicId, ids] of [...selectedByEpic].sort(([a], [b]) =>
+						a.localeCompare(b),
+					)) {
+						const parent = epicById.get(epicId)!
+						const remaining = parent.data.tasks.filter(
+							(task) => !ids.has(task.id),
+						)
+						const dependencyIssue = validateDependencies(remaining, "Tasks")
+						if (dependencyIssue) {
+							return yield* new ArchiveError({
+								message: `Cannot archive task cohort from epic '${epicId}': ${dependencyIssue}`,
+							})
+						}
+						writes.push({
+							path: parent.path,
+							content: yield* declarationContent(parent, {
+								...parent.data,
+								tasks: remaining,
+							}),
+						})
+					}
+
+					for (const context of selected) {
+						const task = context.task
+						const destination = archivedTaskDirectory(root, task.id)
+						const parent = task.data.epic
+							? epicById.get(task.data.epic)
+							: undefined
+						const declaration = parent?.data.tasks.find(
+							(candidate) => candidate.id === task.id,
+						)
+						const manifestPath = lifecycleManifestPath(dirname(task.path))
+						writes.push({
+							path: manifestPath,
+							create: !(yield* fs.exists(manifestPath)),
+							content: json(
+								manifestFor(
+									yield* readManifest(dirname(task.path)),
+									{
+										kind: "task",
+										id: task.id,
+										...(parent && declaration
+											? {
+													parent: {
+														kind: "epic" as const,
+														id: parent.id,
+														declaration,
+													},
+												}
+											: {}),
+									},
+									event(root, "archive", at, dirname(task.path), destination),
+								),
+							),
+						})
+					}
+					writes.sort((a, b) => a.path.localeCompare(b.path))
+
+					const executionUnits = selected
+						.flatMap((context) => context.executionUnits)
+						.sort((a, b) =>
+							`${a.taskId}/${a.phaseId ?? ""}`.localeCompare(
+								`${b.taskId}/${b.phaseId ?? ""}`,
+							),
+						)
+					if (!options.dryRun && selected.length > 0) {
+						const snapshots: WorktreeRemovalSnapshot[] = []
+						const steps: TransactionStep[] = [
+							documentWriteStep(root, writes),
+							{
+								label: "remove worktrees for task archive cohort",
+								apply: async () => {
+									try {
+										for (const unit of executionUnits) {
+											await runWorktreeEffect(
+												worktrees.remove(unit.taskId, unit.phaseId, root, {
+													snapshots,
+													lockHeld: true,
+												}),
+											)
+										}
+									} catch (cause) {
+										await restoreWorktreeSnapshots(snapshots)
+										throw cause
+									}
+								},
+								rollback: () => restoreWorktreeSnapshots(snapshots),
+								manualRecovery:
+									"Run agency work prepare for each archived execution unit",
+							},
+						]
+						for (const context of selected) {
+							steps.push(
+								directoryMoveStep(
+									root,
+									dirname(context.task.path),
+									archivedTaskDirectory(root, context.task.id),
+								),
+							)
+						}
+						const parentPreconditions = [...selectedByEpic.keys()]
+							.sort()
+							.map((id) => epicById.get(id)!)
+							.map((epic) => ({ path: epic.path, revision: epic.revision }))
+						yield* withLifecycleLock(
+							root,
+							withWorktreeLocks(
+								root,
+								executionUnits,
+								runLifecycleTransaction({
+									root,
+									preconditions: [
+										...parentPreconditions,
+										...selected.flatMap((context) => [
+											{
+												path: context.task.path,
+												revision: context.task.revision,
+											},
+											...context.phases.map((phase) => ({
+												path: phase.path,
+												revision: phase.revision,
+											})),
+										]),
+									],
+									steps,
+								}),
+							),
+						)
+					}
+
+					const dispositions = taskRecords
+						.map((task): TaskArchiveDisposition => {
+							const reason = skipped.get(task.id)
+							if (reason) {
+								return {
+									id: task.id,
+									disposition: "skipped",
+									reason,
+									affectedPaths: [],
+									removedWorktrees: [],
+								}
+							}
+							const path = archivedTaskDirectory(root, task.id)
+							const parentPath = task.data.epic
+								? epicById.get(task.data.epic)?.path
+								: undefined
+							return {
+								id: task.id,
+								disposition: options.dryRun ? "planned" : "archived",
+								path,
+								affectedPaths: [
+									path,
+									...(parentPath ? [parentPath] : []),
+								].sort(),
+								removedWorktrees: removedByTask.get(task.id) ?? [],
+							}
+						})
+						.sort((a, b) => a.id.localeCompare(b.id))
+					return {
+						operation: "archive",
+						kind: "tasks",
+						tasks: dispositions,
+						affectedPaths: [
+							...new Set(dispositions.flatMap((item) => item.affectedPaths)),
+						].sort(),
+						removedWorktrees: [
+							...new Set(dispositions.flatMap((item) => item.removedWorktrees)),
+						].sort(),
+						dryRun: options.dryRun === true,
+						at,
+					} satisfies BulkTaskArchiveResult
+				}),
+
 			archiveTask: (
 				id: string,
 				startPath: string = process.cwd(),
@@ -748,9 +1172,11 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					const worktrees = yield* WorktreeService
 					const root = yield* workbase.discover(startPath)
 					const task = yield* tasks.show(id, root)
-					if ("claim" in task.data && task.data.claim?.state === "active") {
+					const archiveContext = yield* loadTaskArchiveContext(task, root)
+					const eligibilityError = archiveEligibilityError(archiveContext)
+					if (eligibilityError) {
 						return yield* new ArchiveError({
-							message: `Task '${id}' has an active claim; release or finish it before archiving`,
+							message: eligibilityError,
 						})
 					}
 					const destination = archivedTaskDirectory(root, id)
@@ -775,32 +1201,19 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						}
 					}
 
-					const executionUnits: { taskId: string; phaseId?: string }[] = []
-					const phaseRecords: PhaseRecord[] = []
-					if ("phases" in task.data) {
-						for (const phase of task.data.phases) {
-							const record = yield* (yield* PhaseService).show(
-								id,
-								phase.id,
-								root,
-							)
-							if (record.data.claim?.state === "active") {
-								return yield* new ArchiveError({
-									message: `Phase '${phase.id}' has an active claim; release or finish it before archiving`,
-								})
-							}
-							phaseRecords.push(record)
-							executionUnits.push({ taskId: id, phaseId: phase.id })
-						}
-					} else {
-						executionUnits.push({ taskId: id })
-					}
+					const executionUnits = archiveContext.executionUnits
+					const phaseRecords = archiveContext.phases
 					const removedWorktrees: string[] = []
 					for (const unit of executionUnits)
 						removedWorktrees.push(
-							...(yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
-								dryRun: true,
-							})),
+							...(yield* worktrees.remove(
+								unit.taskId,
+								executionPhaseId(unit),
+								root,
+								{
+									dryRun: true,
+								},
+							)),
 						)
 					const at = new Date().toISOString()
 					const writes: (Write & { create?: boolean })[] = []
@@ -847,10 +1260,15 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 									try {
 										for (const unit of executionUnits)
 											await runWorktreeEffect(
-												worktrees.remove(unit.taskId, unit.phaseId, root, {
-													snapshots,
-													lockHeld: true,
-												}),
+												worktrees.remove(
+													unit.taskId,
+													executionPhaseId(unit),
+													root,
+													{
+														snapshots,
+														lockHeld: true,
+													},
+												),
 											)
 									} catch (cause) {
 										await restoreWorktreeSnapshots(snapshots)
