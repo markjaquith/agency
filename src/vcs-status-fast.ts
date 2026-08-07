@@ -132,19 +132,14 @@ const inspectRepository = async (root: string, alias: string) => {
 		return null
 	}
 	if (!stats.isDirectory() && !stats.isSymbolicLink()) return null
-	const [git, bare] = await Promise.all([
-		run(["git", "-C", path, "rev-parse", "--git-dir"]),
-		run(["git", "-C", path, "rev-parse", "--is-bare-repository"]),
-	])
-	if (git.exitCode !== 0 || bare.exitCode !== 0) return null
+	const jj = await run(["jj", "-R", path, "root"])
+	if (jj.exitCode !== 0) return null
 	return {
 		alias,
 		path,
 		kind: stats.isSymbolicLink()
 			? ("symlink" as const)
-			: bare.stdout === "true"
-				? ("bare" as const)
-				: ("repository" as const),
+			: ("repository" as const),
 		initialized: await directoryExists(join(path, ".jj")),
 	}
 }

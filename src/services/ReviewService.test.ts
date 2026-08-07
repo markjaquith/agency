@@ -166,11 +166,11 @@ describe("ReviewService", () => {
 		if (!Bun.which("jj")) return
 		const repository = join(root, "repos/agency")
 		await rm(repository, { recursive: true, force: true })
-		await git(["clone", source, repository])
 		await git(["switch", "-c", "jj-review"], source)
 		await Bun.write(join(source, "README.md"), "jj review one\n")
 		await git(["commit", "-am", "jj review one"], source)
-		await jj(["git", "init", "--colocate", repository])
+		await jj(["git", "clone", "--no-colocate", source, repository])
+		expect(await Bun.file(join(repository, ".git")).exists()).toBe(false)
 		await Bun.write(
 			join(root, "agency.json"),
 			JSON.stringify({ version: 2, vcs: "jj" }),

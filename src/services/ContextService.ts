@@ -973,17 +973,34 @@ export class ContextService extends Effect.Service<ContextService>()(
 							...(yield* inspectCheckout(repositoryPath, checkoutPath)),
 						})
 					}
-					const reviewSourceCommit = reviewData
-						? yield* runGit(fs, join(root, "repos", reviewData.repo), [
-								"ls-remote",
-								"origin",
-								reviewData.source.kind === "pull-request"
-									? reviewData.source.fetchRef
-									: reviewData.source.ref
-											.replace(/^refs\/remotes\/origin\//, "")
-											.replace(/^origin\//, ""),
-							])
+					const reviewRepository = reviewData
+						? repositories.get(reviewData.repo)
 						: null
+					const reviewSourceCommit =
+						reviewData && reviewRepository?.remote
+							? yield* fs
+									.runCommand(
+										[
+											"git",
+											"ls-remote",
+											reviewRepository.remote,
+											reviewData.source.kind === "pull-request"
+												? reviewData.source.fetchRef
+												: reviewData.source.ref
+														.replace(/^refs\/remotes\/origin\//, "")
+														.replace(/^origin\//, ""),
+										],
+										{ captureOutput: true },
+									)
+									.pipe(
+										Effect.map((result) =>
+											result.exitCode === 0
+												? result.stdout.trim() || null
+												: null,
+										),
+										Effect.catchAll(() => Effect.succeed(null)),
+									)
+							: null
 
 					const checkoutStates = [writable, ...referenceCheckouts].filter(
 						(value): value is NonNullable<typeof value> => value !== null,

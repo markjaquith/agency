@@ -24,18 +24,22 @@ export const resolveGitHubCreateCommand = ({
 	repository,
 	draft,
 	vcs,
+	defaults,
 }: {
 	readonly base: string
 	readonly branch: string
 	readonly repository: string
 	readonly draft: boolean
 	readonly vcs: "git" | "jj"
+	readonly defaults?: { readonly title: string; readonly body: string }
 }) => ({
 	argv: [
 		"gh",
 		"pr",
 		"create",
-		"--fill",
+		...(defaults
+			? ["--title", defaults.title, "--body", defaults.body]
+			: ["--fill"]),
 		"--base",
 		base,
 		...(vcs === "jj" ? ["--head", branch, "--repo", repository] : []),

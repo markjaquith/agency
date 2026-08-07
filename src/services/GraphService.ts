@@ -33,6 +33,10 @@ import {
 	type WorkStatus,
 } from "../workbase/schemas"
 import { FileSystemService } from "./FileSystemService"
+import {
+	VersionControlService,
+	type VersionControlBackend,
+} from "./VersionControlService"
 import { WorkbaseService, type ValidationReport } from "./WorkbaseService"
 
 class GraphError extends Data.TaggedError("GraphError")<{
@@ -68,6 +72,7 @@ export interface GraphOptions {
 	readonly repositories?: readonly string[]
 	readonly kinds?: readonly GraphNodeKind[]
 	readonly include?: readonly GraphInclude[]
+	readonly backend?: VersionControlBackend
 }
 
 const epicNodeId = (id: string) => `epic:${id}`
@@ -127,6 +132,11 @@ export class GraphService extends Effect.Service<GraphService>()(
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const { root, config } = yield* workbase.loadConfig(options.cwd)
+					const backend =
+						options.backend ??
+						(yield* VersionControlService.pipe(
+							Effect.flatMap((service) => service.forWorkbase(root)),
+						))
 					const includes = [...new Set(options.include ?? [])].sort()
 					const include = new Set(includes)
 					const epics = new Map<string, Document<EpicData>>()
@@ -623,38 +633,20 @@ export class GraphService extends Effect.Service<GraphService>()(
 
 					const inspectGit = (path: string) =>
 						Effect.gen(function* () {
-							const bare = yield* run(fs, [
-								"git",
-								"-C",
-								path,
-								"rev-parse",
-								"--is-bare-repository",
-							])
+							const inspection = yield* backend.inspectRepository(path)
+							const workspaces = inspection
+								? yield* backend
+										.listWorkspaces(path)
+										.pipe(Effect.catchAll(() => Effect.succeed([])))
+								: []
+							const primary = workspaces.find(
+								(workspace) => workspace.path === path,
+							)
 							return {
-								kind:
-									bare === null
-										? null
-										: bare === "true"
-											? "bare"
-											: "repository",
-								remote: yield* run(fs, [
-									"git",
-									"-C",
-									path,
-									"remote",
-									"get-url",
-									"origin",
-								]),
-								head: yield* run(fs, ["git", "-C", path, "rev-parse", "HEAD"]),
-								branch: yield* run(fs, [
-									"git",
-									"-C",
-									path,
-									"symbolic-ref",
-									"--quiet",
-									"--short",
-									"HEAD",
-								]),
+								kind: inspection?.kind ?? null,
+								remote: inspection?.remote ?? null,
+								head: inspection ? yield* backend.workspaceHead(path) : null,
+								branch: primary?.branch?.replace(/^refs\/heads\//, "") ?? null,
 							} satisfies GraphRepositoryGit
 						})
 
@@ -678,6 +670,27 @@ export class GraphService extends Effect.Service<GraphService>()(
 								}
 							}
 							if (include.has("git")) {
+								const remote = yield* backend.remoteUrl(
+									repositoryPath,
+									"origin",
+								)
+								const canonicalCheckoutPath = materialized
+									? yield* fs.realPath(checkoutPath)
+									: checkoutPath
+								const actualBranch = materialized
+									? yield* backend.listWorkspaces(repositoryPath).pipe(
+											Effect.map(
+												(workspaces) =>
+													workspaces
+														.find(
+															(workspace) =>
+																workspace.path === canonicalCheckoutPath,
+														)
+														?.branch?.replace(/^refs\/heads\//, "") ?? null,
+											),
+											Effect.catchAll(() => Effect.succeed(null)),
+										)
+									: null
 								result.git =
 									"review" in data
 										? {
@@ -686,10 +699,8 @@ export class GraphService extends Effect.Service<GraphService>()(
 													value?.split(/\s+/)[0] ?? null)(
 													yield* run(fs, [
 														"git",
-														"-C",
-														repositoryPath,
 														"ls-remote",
-														"origin",
+														remote ?? "origin",
 														data.review.source.kind === "pull-request"
 															? data.review.source.fetchRef
 															: data.review.source.ref
@@ -698,86 +709,33 @@ export class GraphService extends Effect.Service<GraphService>()(
 													]),
 												),
 												checkoutCommit: materialized
-													? yield* run(fs, [
-															"git",
-															"-C",
-															checkoutPath,
-															"rev-parse",
-															"HEAD",
-														])
+													? yield* backend.workspaceHead(checkoutPath)
 													: null,
-												checkoutBranch: materialized
-													? yield* run(fs, [
-															"git",
-															"-C",
-															checkoutPath,
-															"symbolic-ref",
-															"--quiet",
-															"--short",
-															"HEAD",
-														])
-													: null,
+												checkoutBranch: null,
 												dirty: materialized
-													? ((status) =>
-															status === null ? null : status.length > 0)(
-															yield* runText(fs, [
-																"git",
-																"-C",
-																checkoutPath,
-																"status",
-																"--porcelain",
-															]),
-														)
+													? yield* backend.workspaceDirty(checkoutPath)
 													: null,
 											}
 										: {
 												branch: data.branch,
 												base: data.base,
-												branchCommit: yield* run(fs, [
-													"git",
-													"-C",
+												branchCommit: yield* backend.resolveRevision(
 													repositoryPath,
-													"rev-parse",
-													`${data.branch}^{commit}`,
-												]),
-												baseCommit: yield* run(fs, [
-													"git",
-													"-C",
+													data.branch,
+												),
+												baseCommit: yield* backend.resolveRevision(
 													repositoryPath,
-													"rev-parse",
-													`${data.base}^{commit}`,
-												]),
+													data.base,
+												),
 												checkoutCommit: materialized
-													? yield* run(fs, [
-															"git",
-															"-C",
-															checkoutPath,
-															"rev-parse",
-															"HEAD",
-														])
+													? yield* backend.workspaceHead(checkoutPath)
 													: null,
-												checkoutBranch: materialized
-													? yield* run(fs, [
-															"git",
-															"-C",
-															checkoutPath,
-															"symbolic-ref",
-															"--quiet",
-															"--short",
-															"HEAD",
-														])
-													: null,
+												checkoutBranch:
+													backend.kind === "jj" && materialized
+														? data.branch
+														: actualBranch,
 												dirty: materialized
-													? ((status) =>
-															status === null ? null : status.length > 0)(
-															yield* runText(fs, [
-																"git",
-																"-C",
-																checkoutPath,
-																"status",
-																"--porcelain",
-															]),
-														)
+													? yield* backend.workspaceDirty(checkoutPath)
 													: null,
 											}
 							}

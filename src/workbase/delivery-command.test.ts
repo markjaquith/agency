@@ -39,12 +39,21 @@ describe("delivery commands", () => {
 			repository: "example/agency",
 			draft: false,
 		} as const
-		expect(resolveGitHubCreateCommand({ ...input, vcs: "jj" })).toEqual({
+		expect(
+			resolveGitHubCreateCommand({
+				...input,
+				vcs: "jj",
+				defaults: { title: "Add example", body: "Details" },
+			}),
+		).toEqual({
 			argv: [
 				"gh",
 				"pr",
 				"create",
-				"--fill",
+				"--title",
+				"Add example",
+				"--body",
+				"Details",
 				"--base",
 				"main",
 				"--head",

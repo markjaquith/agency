@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import { ContextService } from "../services/ContextService"
 import { FileSystemService } from "../services/FileSystemService"
 import { PullRequestService } from "../services/PullRequestService"
+import { VersionControlService } from "../services/VersionControlService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
@@ -84,6 +85,7 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 		const contexts = yield* ContextService
 		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
+		const versionControl = yield* VersionControlService
 		const invocationCwd = resolve(cwd)
 		const context = yield* contexts
 			.get({ cwd: invocationCwd, target: ".", compact: true })
@@ -94,6 +96,7 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 				: null
 		const focusedCwd = writableCheckout ?? invocationCwd
 		let forwardedArgs = args
+		let environment: Record<string, string> = {}
 		if (
 			writableCheckout &&
 			context?.workbase.vcs === "jj" &&
@@ -111,10 +114,13 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 					repositoryFromRemote(remote),
 				)
 			}
+			const backend = yield* versionControl.forWorkbase(context.workbase.root)
+			environment = yield* backend.gitEnvironment(writableCheckout)
 		}
 		const result = yield* fs.runCommand(["gh", "pr", ...forwardedArgs], {
 			cwd: focusedCwd,
 			passthrough: true,
+			env: environment,
 		})
 		return result.exitCode
 	})

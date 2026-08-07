@@ -396,17 +396,12 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						for (const source of reviewSources.filter(
 							(item) => item.repo === repository.alias,
 						)) {
-							const observed = yield* fs.runCommand(
-								[
-									"git",
-									"-C",
-									repository.path,
-									"ls-remote",
-									"origin",
-									source.ref,
-								],
-								{ captureOutput: true },
-							)
+							const observed = repository.remote
+								? yield* fs.runCommand(
+										["git", "ls-remote", repository.remote, source.ref],
+										{ captureOutput: true },
+									)
+								: { exitCode: -1, stdout: "", stderr: "origin unavailable" }
 							const available =
 								observed.exitCode === 0 && Boolean(observed.stdout.trim())
 							add({

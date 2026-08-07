@@ -97,4 +97,42 @@ describe("VersionControlService", () => {
 		)
 		expect(await Bun.file(workspace).exists()).toBe(false)
 	})
+
+	test("clones non-colocated jj repositories and exposes their backing Git directory", async () => {
+		if (!Bun.which("jj")) return
+		const root = await createTempDir()
+		roots.push(root)
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		const source = join(root, "source")
+		const repository = join(root, "repository")
+		await mkdir(source)
+		await run(["git", "init", "--initial-branch=main"], source)
+		await run(["git", "config", "user.email", "test@example.com"], source)
+		await run(["git", "config", "user.name", "Test"], source)
+		await Bun.write(join(source, "README.md"), "example\n")
+		await run(["git", "add", "README.md"], source)
+		await run(["git", "commit", "-m", "initial"], source)
+
+		const backend = await runTestEffect(
+			VersionControlService.pipe(
+				Effect.flatMap((service) => service.forWorkbase(root)),
+			),
+		)
+		await runTestEffect(backend.cloneRepository(source, repository))
+
+		expect((await stat(join(repository, ".jj"))).isDirectory()).toBe(true)
+		expect(await Bun.file(join(repository, ".git")).exists()).toBe(false)
+		const environment: Record<string, string> = await runTestEffect(
+			backend.gitEnvironment(repository),
+		)
+		expect(environment.GIT_DIR).toContain(join(repository, ".jj"))
+		expect((await stat(environment.GIT_DIR!)).isDirectory()).toBe(true)
+		expect(await runTestEffect(backend.inspectRepository(repository))).toEqual({
+			kind: "repository",
+			remote: await realpath(source),
+		})
+	})
 })
