@@ -2,19 +2,54 @@ import { Effect } from "effect"
 import { SyncService } from "../services/SyncService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import { createProgress, type Progress } from "../utils/progress"
 
 interface SyncCommandOptions extends BaseCommandOptions {
 	readonly dryRun?: boolean
 }
 
-export const sync = (options: SyncCommandOptions = {}) =>
+export const sync = (
+	options: SyncCommandOptions = {},
+	progress: Progress = createProgress({
+		silent: options.silent || options.json,
+	}),
+) =>
 	Effect.gen(function* () {
 		const service = yield* SyncService
 		const { log } = createLoggers(options)
-		const result = yield* service.reconcile({
-			cwd: options.cwd,
-			apply: options.dryRun !== true,
-		})
+		const showProgress = !options.silent && !options.json
+		if (showProgress) progress.start("Validating workbase")
+		const result = yield* service
+			.reconcile({
+				cwd: options.cwd,
+				apply: options.dryRun !== true,
+				onProgress: showProgress
+					? ({ stage, current, total, target }) => {
+							if (stage === "repositories") {
+								progress.start(`Inspected ${total} repositories`)
+							} else if (stage === "pull-requests") {
+								progress.start(
+									`Queried pull requests ${current}/${total}${target ? ` (${target})` : ""}`,
+								)
+							} else {
+								progress.start(
+									`Reconciled execution units ${current}/${total}${target ? ` (${target})` : ""}`,
+								)
+							}
+						}
+					: undefined,
+			})
+			.pipe(
+				Effect.tapError(() =>
+					Effect.sync(() => {
+						if (showProgress) progress.fail("Workbase sync failed")
+					}),
+				),
+			)
+		if (showProgress)
+			progress.succeed(
+				`Synchronized ${result.executions.length} execution units`,
+			)
 		if (options.json) return log(JSON.stringify(result, null, 2))
 
 		for (const action of result.repositories.actions) {

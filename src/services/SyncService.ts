@@ -48,6 +48,7 @@ interface RegisteredWorktree {
 	readonly path: string
 	readonly head: string | null
 	readonly branch: string | null
+	readonly dirty?: boolean
 }
 
 interface SyncChange {
@@ -106,6 +107,13 @@ interface SyncResult {
 	readonly repositories: RepositorySetupResult
 }
 
+export interface SyncProgress {
+	readonly stage: "repositories" | "pull-requests" | "executions"
+	readonly current: number
+	readonly total: number
+	readonly target?: string
+}
+
 const parseWorktrees = (output: string): RegisteredWorktree[] => {
 	const worktrees: RegisteredWorktree[] = []
 	let current: RegisteredWorktree | undefined
@@ -152,6 +160,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				readonly cwd?: string
 				readonly apply?: boolean
 				readonly now?: Date
+				readonly onProgress?: (progress: SyncProgress) => void
 			} = {},
 		) =>
 			Effect.gen(function* () {
@@ -177,6 +186,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					cwd: root,
 					apply: options.apply === true,
 				})
+				options.onProgress?.({
+					stage: "repositories",
+					current: repositorySetup.repositories.length,
+					total: repositorySetup.repositories.length,
+				})
 
 				const apply = options.apply === true
 				const now = options.now ?? new Date()
@@ -192,6 +206,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					})
 				}
 				const executions: ExecutionSyncState[] = []
+				const registeredByRepository = new Map<
+					string,
+					RegisteredWorktree[] | null
+				>()
 				const runExternal = (
 					args: readonly string[],
 					commandOptions?: {
@@ -214,8 +232,9 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								}),
 							),
 						)
+				const taskRecords = yield* tasks.list(root)
 				const records: ExecutionRecord[] = []
-				for (const task of yield* tasks.list(root)) {
+				for (const task of taskRecords) {
 					if ("phases" in task.data) {
 						for (const phase of yield* phases.list(task.id, root)) {
 							records.push({
@@ -236,6 +255,147 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							data: task.data,
 						})
 					}
+				}
+				const listRegistered = (repositoryPath: string) =>
+					Effect.gen(function* () {
+						if (registeredByRepository.has(repositoryPath))
+							return registeredByRepository.get(repositoryPath)!
+						const listed = yield* Effect.either(
+							backend.listWorkspaces(repositoryPath),
+						)
+						if (Either.isLeft(listed)) {
+							registeredByRepository.set(repositoryPath, null)
+							return null
+						}
+						const registered: RegisteredWorktree[] = []
+						for (const item of listed.right) {
+							registered.push({
+								head: backend.kind === "jj" ? (item.head ?? null) : item.commit,
+								branch: item.branch,
+								path: (yield* fs.exists(item.path))
+									? yield* fs.realPath(item.path)
+									: resolve(item.path),
+								...(item.dirty === undefined ? {} : { dirty: item.dirty }),
+							})
+						}
+						registeredByRepository.set(repositoryPath, registered)
+						return registered
+					})
+				const queryRecords = records.filter((record) => !record.data.completion)
+				let queriedPullRequests = 0
+				const remoteName = config.delivery?.remote ?? "origin"
+				const repositoryPaths = [
+					...new Set(
+						queryRecords.map((record) => join(root, "repos", record.data.repo)),
+					),
+				]
+				const remoteUrls = new Map(
+					yield* Effect.forEach(
+						repositoryPaths,
+						(repositoryPath) =>
+							backend
+								.remoteUrl(repositoryPath, remoteName)
+								.pipe(
+									Effect.map(
+										(remoteUrl) => [repositoryPath, remoteUrl] as const,
+									),
+								),
+						{ concurrency: 8 },
+					),
+				)
+				const prQueries = new Map(
+					yield* Effect.forEach(
+						queryRecords,
+						(record) =>
+							Effect.gen(function* () {
+								const data = record.data
+								const repositoryPath = join(root, "repos", data.repo)
+								const remoteUrl = remoteUrls.get(repositoryPath) ?? null
+								const remoteRepository = (remoteUrl ?? "")
+									.trim()
+									.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
+									.replace(/^[^:]+:/, "")
+									.replace(/\.git\/?$/, "")
+									.replace(/\/$/, "")
+								const existing = data.pr
+									? normalizePullRequestRecord(data.pr)
+									: null
+								let result
+								if (config.delivery && remoteUrl) {
+									const resolved = resolveDeliveryCommand(
+										config.delivery,
+										"query",
+										{
+											repository: remoteRepository,
+											branch: data.branch,
+											base: data.base,
+											draft: existing ? String(existing.draft) : "",
+											url: existing?.url ?? "",
+											identifier: existing?.identifier ?? "",
+										},
+									)
+									result = yield* runExternal(resolved.argv, {
+										cwd: repositoryPath,
+										env: resolved.environment,
+									})
+								} else if (!config.delivery && existing) {
+									result = yield* runExternal([
+										"gh",
+										"pr",
+										"view",
+										existing.url,
+										"--json",
+										"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
+									])
+								} else if (!config.delivery) {
+									result = yield* runExternal(
+										[
+											"gh",
+											"pr",
+											"list",
+											"--head",
+											data.branch,
+											"--state",
+											"all",
+											"--json",
+											"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
+										],
+										{ cwd: repositoryPath },
+									)
+								}
+								return [
+									record.key,
+									{ remoteUrl, remoteRepository, result },
+								] as const
+							}).pipe(
+								Effect.tap(() =>
+									Effect.sync(() => {
+										queriedPullRequests += 1
+										options.onProgress?.({
+											stage: "pull-requests",
+											current: queriedPullRequests,
+											total: queryRecords.length,
+											target: record.key,
+										})
+									}),
+								),
+							),
+						{ concurrency: 8 },
+					),
+				)
+				const reviewRecords = taskRecords.filter(
+					(task) => "review" in task.data,
+				)
+				const executionTotal = records.length + reviewRecords.length
+				let reconciledExecutions = 0
+				const reportExecution = (target: string) => {
+					reconciledExecutions += 1
+					options.onProgress?.({
+						stage: "executions",
+						current: reconciledExecutions,
+						total: executionTotal,
+						target,
+					})
 				}
 
 				for (const record of records.sort((a, b) =>
@@ -271,10 +431,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							workspaceConflict = true
 							continue
 						}
-						const listed = yield* Effect.either(
-							backend.listWorkspaces(repositoryPath),
-						)
-						if (Either.isLeft(listed)) {
+						const registered = yield* listRegistered(repositoryPath)
+						if (registered === null) {
 							unresolved.push({
 								kind: "worktree-inspection-failed",
 								target: record.key,
@@ -284,26 +442,21 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							continue
 						}
 						const exists = yield* fs.isDirectory(checkoutPath)
-						const registered: RegisteredWorktree[] = []
-						for (const item of listed.right) {
-							registered.push({
-								head: item.commit,
-								branch:
-									backend.kind === "jj" && "branch" in checkout
-										? checkout.branch
-										: item.branch,
-								path: (yield* fs.exists(item.path))
-									? yield* fs.realPath(item.path)
-									: resolve(item.path),
-							})
-						}
 						const expectedPath = exists
 							? yield* fs.realPath(checkoutPath)
 							: (yield* fs.isDirectory(codePath))
 								? join(yield* fs.realPath(codePath), checkout.repo)
 								: resolve(checkoutPath)
 						let atPath = registered.find((item) => item.path === expectedPath)
-						if (backend.kind === "jj" && atPath && exists) {
+						if (backend.kind === "jj" && atPath && "branch" in checkout) {
+							atPath = { ...atPath, branch: checkout.branch }
+						}
+						if (
+							backend.kind === "jj" &&
+							atPath &&
+							exists &&
+							atPath.head === null
+						) {
 							atPath = {
 								...atPath,
 								head: yield* backend.workspaceHead(checkoutPath),
@@ -415,7 +568,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 
 						const dirty =
 							exists && atPath
-								? yield* backend.workspaceDirty(checkoutPath)
+								? (atPath.dirty ??
+									(yield* backend.workspaceDirty(checkoutPath)))
 								: null
 						if (exists && atPath && dirty === null) {
 							warnings.push({
@@ -487,6 +641,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								{ silent: true },
 							)
 							for (const checkout of workspace.checkouts) {
+								const repositoryPath = join(root, "repos", checkout.repo)
 								const index = checkoutStates.findIndex(
 									(item) => item.repo === checkout.repo,
 								)
@@ -503,6 +658,20 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 												? checkout.requestedRef
 												: null,
 										dirty: false,
+									}
+									const cached = registeredByRepository.get(repositoryPath)
+									if (cached) {
+										cached.push({
+											path: yield* fs.realPath(checkout.path),
+											head: checkout.resolvedCommit,
+											branch:
+												checkout.kind === "writable"
+													? backend.kind === "jj"
+														? checkout.requestedRef
+														: `refs/heads/${checkout.requestedRef}`
+													: null,
+											dirty: false,
+										})
 									}
 								}
 							}
@@ -569,6 +738,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							checkouts: checkoutStates,
 							pr: { url: null, state: "none" },
 						})
+						reportExecution(record.key)
 						continue
 					}
 
@@ -579,15 +749,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						state: "none",
 					}
 					let prConflict = false
-					const repositoryPath = join(root, "repos", data.repo)
-					const remoteName = config.delivery?.remote ?? "origin"
-					const remoteUrl = yield* backend.remoteUrl(repositoryPath, remoteName)
-					const remoteRepository = (remoteUrl ?? "")
-						.trim()
-						.replace(/^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?[^/]+\//i, "")
-						.replace(/^[^:]+:/, "")
-						.replace(/\.git\/?$/, "")
-						.replace(/\/$/, "")
+					const query = prQueries.get(record.key)!
+					const { remoteUrl, remoteRepository } = query
 
 					if (
 						existing &&
@@ -609,18 +772,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							message: `Could not inspect delivery remote '${remoteName}'`,
 						})
 					} else if (config.delivery) {
-						const resolved = resolveDeliveryCommand(config.delivery, "query", {
-							repository: remoteRepository,
-							branch: data.branch,
-							base: data.base,
-							draft: existing ? String(existing.draft) : "",
-							url: existing?.url ?? "",
-							identifier: existing?.identifier ?? "",
-						})
-						const queried = yield* runExternal(resolved.argv, {
-							cwd: repositoryPath,
-							env: resolved.environment,
-						})
+						const queried = query.result!
 						if (queried.exitCode === 0) {
 							const parsed = yield* Effect.try({
 								try: () => parseOptionalPullRequestRecord(queried.stdout),
@@ -668,14 +820,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							})
 						}
 					} else if (existing) {
-						const viewed = yield* runExternal([
-							"gh",
-							"pr",
-							"view",
-							existing.url,
-							"--json",
-							"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
-						])
+						const viewed = query.result!
 						if (viewed.exitCode === 0) {
 							const detail = parseJson<Record<string, unknown>>(
 								viewed.stdout,
@@ -704,20 +849,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							})
 						}
 					} else {
-						const listed = yield* runExternal(
-							[
-								"gh",
-								"pr",
-								"list",
-								"--head",
-								data.branch,
-								"--state",
-								"all",
-								"--json",
-								"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
-							],
-							{ cwd: repositoryPath },
-						)
+						const listed = query.result!
 						if (listed.exitCode === 0) {
 							const matches = parseJson<Record<string, unknown>[]>(
 								listed.stdout,
@@ -816,11 +948,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						checkouts: checkoutStates,
 						pr,
 					})
+					reportExecution(record.key)
 				}
 
-				for (const task of (yield* tasks.list(root)).filter(
-					(task) => "review" in task.data,
-				)) {
+				for (const task of reviewRecords) {
 					if (!("review" in task.data)) continue
 					let data = task.data
 					let revision = task.revision
@@ -915,6 +1046,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							sourceAvailable: sourceCommit !== null,
 						},
 					})
+					reportExecution(`task:${task.id}`)
 				}
 
 				return {
