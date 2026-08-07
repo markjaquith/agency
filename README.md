@@ -812,12 +812,13 @@ restore preflight all destinations and graph references before changing files.
 Versioned lifecycle provenance preserves parent declarations and dependency edges
 for restoration. Archived IDs are reserved until restored.
 
-### Work and Pull Requests
+### Work, Publication, and Pull Requests
 
 ```text
 agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
 agency work prepare [target] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
+agency push [--json]
 agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
 agency pr [args...]
 ```
@@ -864,6 +865,22 @@ Read-only references use `<alias>:<ref>` on the CLI and `{ repo, ref }` in YAML.
 Agency resolves the ref to a commit and creates a detached worktree. Existing
 reference worktrees are reused only while their commit still matches the declared
 ref; use a commit SHA as `ref` when reproducibility matters.
+
+`agency push` publishes the execution unit identified by current Agency context
+without creating a pull request. It requires a valid, registered writable
+checkout in `working` state, fetches the configured delivery remote, verifies
+that the declared base is in the publication history, validates every outgoing
+commit's description, author, and conflict state, and refuses non-fast-forward
+updates.
+
+For Git, YAML `branch` must exactly match the checked-out local branch, the
+worktree must be clean, and `HEAD` is pushed with upstream tracking. For jj, YAML
+`branch` is the authoritative delivery bookmark and need not exist before
+publication. Agency publishes `@` unless it is the canonical empty, undescribed
+post-commit working copy, in which case it publishes `@-`; described empty
+changes remain intentional publication tips. Missing descriptions or authors
+stop with exact change IDs and remediation commands. Agency creates or safely
+advances only the declared bookmark and never invents a `push-*` bookmark.
 
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
 including readiness checks and durable PR recording. Other `agency pr`

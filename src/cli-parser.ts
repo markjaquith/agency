@@ -913,6 +913,16 @@ const commands = {
 			},
 		},
 	},
+	push: {
+		usage: "agency push [--json]",
+		options: outputOptions,
+		command: {
+			usage: "agency push [--json]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["json"],
+		},
+	},
 	next: {
 		usage: "agency next [--select] [--json]",
 		options: {

@@ -616,6 +616,15 @@ describe("strict CLI parsing", () => {
 		).toThrow("cannot be combined")
 	})
 
+	test("parses push without accepting an alternate target", () => {
+		expect(parseCli(["push", "--json"])).toMatchObject({
+			commandName: "push",
+			args: [],
+			values: { json: true },
+		})
+		expectUsageError(["push", "example"], "agency push")
+	})
+
 	test("accepts runner selection and command inspection for work", () => {
 		expect(
 			parseCli([
