@@ -254,11 +254,13 @@ const originRef = (ref: string) =>
 interface MaterializeOptions extends BaseCommandOptions {
 	readonly force?: boolean
 	readonly lockHeld?: boolean
+	readonly allowReferenceDrift?: boolean
 }
 
 interface RemoveOptions extends BaseCommandOptions {
 	readonly snapshots?: WorktreeRemovalSnapshot[]
 	readonly lockHeld?: boolean
+	readonly allowReferenceDrift?: boolean
 }
 
 interface LifecycleOptions extends BaseCommandOptions {
@@ -1010,12 +1012,32 @@ const materializeJj = (options: {
 					})
 				}
 				if (exists && registered) {
+					const actualCommit = yield* backend.workspaceHead(workspacePath)
+					if ("ref" in checkout) {
+						const expectedCommit = yield* backend.resolveRevision(
+							repositoryPath,
+							checkout.ref,
+						)
+						if (!expectedCommit) {
+							return yield* new WorktreeError({
+								message: `Reference '${checkout.ref}' for repository '${checkout.repo}' does not resolve to a commit; run 'agency repo fetch ${checkout.repo}' and retry`,
+							})
+						}
+						if (
+							actualCommit !== expectedCommit &&
+							!options.commandOptions.allowReferenceDrift
+						) {
+							return yield* new WorktreeError({
+								message: `Existing checkout ${workspacePath} does not match reference '${checkout.ref}' (${expectedCommit})`,
+							})
+						}
+					}
 					reports.push({
 						repo: checkout.repo,
 						kind: "branch" in checkout ? "writable" : "reference",
 						path: workspacePath,
 						requestedRef: "branch" in checkout ? checkout.branch : checkout.ref,
-						resolvedCommit: yield* backend.workspaceHead(workspacePath),
+						resolvedCommit: actualCommit,
 						action: "reused",
 					})
 					continue
@@ -1221,6 +1243,9 @@ const removeJj = (
 				.filter(
 					(conflict) =>
 						conflict.kind !== "stale-registration" &&
+						!(
+							options.allowReferenceDrift && conflict.kind === "reference-drift"
+						) &&
 						!(
 							conflict.kind === "unregistered-checkout" &&
 							recoverable.has(checkout.path)
@@ -2392,7 +2417,12 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 										root,
 									)
 									const blockingConflicts = inspection.conflicts.filter(
-										(conflict) => conflict.kind !== "stale-registration",
+										(conflict) =>
+											conflict.kind !== "stale-registration" &&
+											!(
+												options.allowReferenceDrift &&
+												conflict.kind === "reference-drift"
+											),
 									)
 									if (blockingConflicts.length > 0) {
 										return yield* new WorktreeError({
@@ -2723,21 +2753,29 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						)
 					}
 					const inspection = yield* inspectExecution(taskId, phaseId, root)
-					const dirty = inspection.checkouts.filter(
-						(checkout) => checkout.dirty === true,
+					const notProvablyClean = inspection.checkouts.filter(
+						(checkout) => checkout.exists && checkout.dirty !== false,
 					)
-					if (dirty.length > 0) {
+					if (notProvablyClean.length > 0) {
+						const unknown = notProvablyClean.some(
+							(checkout) => checkout.dirty === null,
+						)
 						return yield* new WorktreeError({
-							message: `Cannot rebuild ${dirty.map((checkout) => checkout.path).join(", ")}; checkout has uncommitted changes`,
-							conflicts: dirty.flatMap((checkout) => checkout.conflicts),
+							message: `Cannot rebuild ${notProvablyClean.map((checkout) => checkout.path).join(", ")}; ${unknown ? "checkout cleanliness could not be verified" : "checkout has uncommitted changes"}`,
+							conflicts: notProvablyClean.flatMap(
+								(checkout) => checkout.conflicts,
+							),
 						})
 					}
-					if (inspection.conflicts.length > 0) {
+					const blockingConflicts = inspection.conflicts.filter(
+						(conflict) => conflict.kind !== "reference-drift",
+					)
+					if (blockingConflicts.length > 0) {
 						return yield* new WorktreeError({
-							message: inspection.conflicts
+							message: blockingConflicts
 								.map(({ message }) => message)
 								.join("\n"),
-							conflicts: inspection.conflicts,
+							conflicts: blockingConflicts,
 						})
 					}
 					yield* service.materialize(taskId, phaseId, inspection.root, {
@@ -2745,6 +2783,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						dryRun: true,
 						silent: true,
 						lockHeld: true,
+						allowReferenceDrift: true,
 					})
 					if (options.dryRun) {
 						return {
@@ -2768,6 +2807,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							...options,
 							snapshots,
 							lockHeld: true,
+							allowReferenceDrift: true,
 						},
 					)
 					const workspace = yield* service

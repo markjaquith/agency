@@ -1882,6 +1882,111 @@ pr: null
 		).toBe(true)
 	})
 
+	test("rebuilds clean drifted jj references without discarding changes", async () => {
+		if (!Bun.which("jj")) return
+		const first = new TextDecoder()
+			.decode(
+				Bun.spawnSync(["git", "-C", source, "rev-parse", "HEAD"], {
+					stdout: "pipe",
+				}).stdout,
+			)
+			.trim()
+		await Bun.write(join(source, "README.md"), "updated\n")
+		await git(["add", "README.md"], source)
+		await git(["-c", "commit.gpgsign=false", "commit", "-m", "update"], source)
+		const second = new TextDecoder()
+			.decode(
+				Bun.spawnSync(["git", "-C", source, "rev-parse", "HEAD"], {
+					stdout: "pipe",
+				}).stdout,
+			)
+			.trim()
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await jj(["git", "clone", "--no-colocate", source, repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		const createDriftedReview = async (id: string) => {
+			const task = await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: null,
+								review: {
+									repo: "agency",
+									source: {
+										kind: "branch",
+										ref: "refs/heads/main",
+									},
+									commit: first,
+									refreshedAt: "2026-08-10T00:00:00.000Z",
+								},
+							},
+							root,
+						),
+					),
+				),
+			)
+			const workspace = await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) => service.materialize(id, undefined, root)),
+				),
+			)
+			await Bun.write(task.path, task.content.replace(first, second))
+			return workspace
+		}
+
+		const workspace = await createDriftedReview("drifted-review")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("drifted-review", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("does not match reference")
+		const inspection = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("drifted-review", undefined, root),
+				),
+			),
+		)
+		expect(inspection.conflicts).toEqual([
+			expect.objectContaining({ kind: "reference-drift" }),
+		])
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.rebuild("drifted-review", undefined, root),
+				),
+			),
+		)
+		expect(
+			await Bun.file(join(workspace.reviewPath!, "README.md")).text(),
+		).toBe("updated\n")
+
+		const dirtyWorkspace = await createDriftedReview("dirty-drifted-review")
+		const dirtyPath = join(dirtyWorkspace.reviewPath!, "dirty.txt")
+		await Bun.write(dirtyPath, "preserve me\n")
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.rebuild("dirty-drifted-review", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("checkout has uncommitted changes")
+		expect(await Bun.file(dirtyPath).text()).toBe("preserve me\n")
+	})
+
 	test("restores removed worktrees when rebuild creation fails", async () => {
 		await runTestEffect(
 			TaskService.pipe(
