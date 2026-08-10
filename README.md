@@ -925,6 +925,15 @@ conflicting worktrees. Repair is deliberately conservative: it repairs safe Git
 registration issues and materializes missing checkouts, but never switches a
 branch, resets a commit, or discards uncommitted work.
 
+For jj, explicit removal is a suspend operation. Agency records each workspace's
+exact `@` commit and stable change ID in `.agency-jj-resume.json`, roots that
+commit with an internal local bookmark, and only then forgets the workspace.
+The next `work prepare` validates all three identities, restores the workspace by
+editing the recorded commit, and consumes the resume metadata and bookmarks.
+Missing, ambiguous, or conflicting resume state stops instead of falling back to
+the declared delivery bookmark, `@-`, or the base. Unknown checkout cleanliness
+also stops removal. Git worktree removal and preparation are unchanged.
+
 Agency launches every agent beside its epic or task document. Single-phase tasks
 and phases first fetch repositories and create or reuse worktrees under `code/`,
 then launch the execution agent from the task directory with absolute context

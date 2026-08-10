@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, realpath, rename, rm, stat } from "node:fs/promises"
+import { chmod, mkdir, realpath, rename, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureErrors,
@@ -32,6 +32,21 @@ const jj = async (args: string[], cwd?: string) => {
 	await process.exited
 	if (process.exitCode !== 0)
 		throw new Error(await new Response(process.stderr).text())
+}
+
+const jjOutput = async (args: string[], cwd?: string) => {
+	const process = Bun.spawn(["jj", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	const [exitCode, stdout, stderr] = await Promise.all([
+		process.exited,
+		new Response(process.stdout).text(),
+		new Response(process.stderr).text(),
+	])
+	if (exitCode !== 0) throw new Error(stderr)
+	return stdout.trim()
 }
 
 describe("WorktreeService", () => {
@@ -302,6 +317,293 @@ describe("WorktreeService", () => {
 			),
 		)
 		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
+	})
+
+	test("suspends and resumes the exact jj working-copy target", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-resume",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-resume",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-resume", undefined, root),
+				),
+			),
+		)
+		await jj(["new", "-m", "local-only parent"], workspace.writablePath!)
+		await Bun.write(join(workspace.writablePath!, "local.txt"), "preserve me\n")
+		await jj(
+			["describe", "-m", "local working target"],
+			workspace.writablePath!,
+		)
+		const target = await jjOutput(
+			["log", "--no-graph", "-r", "@", "-T", 'commit_id ++ "\\t" ++ change_id'],
+			workspace.writablePath!,
+		)
+		const [commitId, changeId] = target.split("\t")
+		if (!commitId || !changeId)
+			throw new Error(`Unexpected jj identity: ${target}`)
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("jj-resume", undefined, root),
+				),
+			),
+		)
+		const resumePath = join(root, "tasks/jj-resume/.agency-jj-resume.json")
+		const resume = await Bun.file(resumePath).json()
+		expect(resume.checkouts[0]).toMatchObject({ commitId, changeId })
+		expect(
+			await jjOutput(
+				[
+					"log",
+					"--no-graph",
+					"-r",
+					resume.checkouts[0].bookmark,
+					"-T",
+					"commit_id",
+				],
+				repository,
+			),
+		).toBe(commitId)
+		expect(
+			await jjOutput(
+				["log", "--no-graph", "-r", "task/jj-resume", "-T", "commit_id"],
+				repository,
+			).catch(() => null),
+		).toBeNull()
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-resume", undefined, root),
+				),
+			),
+		)
+		expect(
+			await jjOutput(
+				["log", "--no-graph", "-r", "@", "-T", "commit_id"],
+				workspace.writablePath!,
+			),
+		).toBe(commitId)
+		expect(
+			await Bun.file(join(workspace.writablePath!, "local.txt")).text(),
+		).toBe("preserve me\n")
+		expect(await Bun.file(resumePath).exists()).toBe(false)
+		expect(
+			await jjOutput(
+				[
+					"log",
+					"--no-graph",
+					"-r",
+					resume.checkouts[0].bookmark,
+					"-T",
+					"commit_id",
+				],
+				repository,
+			).catch(() => null),
+		).toBeNull()
+
+		await jj(["new", "-m", "temporary successor"], workspace.writablePath!)
+		await jj(["edit", commitId!], workspace.writablePath!)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("jj-resume", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-resume", undefined, root),
+				),
+			),
+		)
+		expect(
+			await jjOutput(
+				["log", "--no-graph", "-r", "@", "-T", "commit_id"],
+				workspace.writablePath!,
+			),
+		).toBe(commitId)
+	})
+
+	test("refuses stale jj resume identity and stale registrations", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		for (const id of ["stale-resume", "stale-registration"]) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: null,
+								repo: "agency",
+								branch: `task/${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+		}
+		const suspended = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("stale-resume", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("stale-resume", undefined, root),
+				),
+			),
+		)
+		const resumePath = join(root, "tasks/stale-resume/.agency-jj-resume.json")
+		const resume = await Bun.file(resumePath).json()
+		await jj([
+			"-R",
+			repository,
+			"bookmark",
+			"delete",
+			resume.checkouts[0].bookmark,
+		])
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("stale-resume", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("recorded commit, change ID, path, or internal bookmark")
+		expect(await Bun.file(resumePath).exists()).toBe(true)
+		expect(await Bun.file(suspended.writablePath!).exists()).toBe(false)
+
+		const stale = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("stale-registration", undefined, root),
+				),
+			),
+		)
+		await rm(join(stale.writablePath!, ".jj"), { recursive: true, force: true })
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("stale-registration", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("checkout cleanliness could not be verified")
+	})
+
+	test("retains jj resume state when workspace deletion and rollback fail", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-rollback",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-rollback",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-rollback", undefined, root),
+				),
+			),
+		)
+		await Bun.write(join(workspace.writablePath!, "local.txt"), "preserved\n")
+		const fakeBin = join(root, "fake-bin")
+		await mkdir(fakeBin)
+		const fakeRm = join(fakeBin, "rm")
+		await Bun.write(
+			fakeRm,
+			`#!/bin/sh\nif [ "$1" = "-rf" ] && [ "$2" = ${JSON.stringify(workspace.writablePath!)} ]; then exit 1; fi\nexec ${JSON.stringify(Bun.which("rm")!)} "$@"\n`,
+		)
+		await chmod(fakeRm, 0o755)
+		const originalPath = process.env.PATH
+		process.env.PATH = `${fakeBin}:${originalPath}`
+		try {
+			await expect(
+				runTestEffect(
+					WorktreeService.pipe(
+						Effect.flatMap((service) =>
+							service.remove("jj-rollback", undefined, root),
+						),
+					),
+				),
+			).rejects.toThrow("requires manual recovery")
+		} finally {
+			process.env.PATH = originalPath
+		}
+		const resumePath = join(root, "tasks/jj-rollback/.agency-jj-resume.json")
+		expect(await Bun.file(resumePath).exists()).toBe(true)
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-rollback", undefined, root),
+				),
+			),
+		)
+		expect(
+			await Bun.file(join(workspace.writablePath!, "local.txt")).text(),
+		).toBe("preserved\n")
+		expect(await Bun.file(resumePath).exists()).toBe(false)
 	})
 
 	test("recommends a repository fetch when jj cannot resolve a base", async () => {
