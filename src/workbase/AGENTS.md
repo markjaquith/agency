@@ -20,10 +20,26 @@ At the workbase root, use `agency next --json` or `agency graph --json` to choos
 work, then inspect the returned document path or explicit entity selectors. Use
 `agency --help` and `agency <command> --help` for exact command syntax.
 
-If context or doctor reports a declared but missing repository, run
-`agency repo setup --dry-run` and obtain explicit approval before
-`agency repo setup --apply`. Missing declared aliases are setup state, not a
-reason to edit `agency.json` or `repos/` by hand.
+## Adding a Repository
+
+Add and materialize a new repository alias with:
+
+```bash
+agency repo add <alias> <remote> --json
+```
+
+`agency repo add` mutates immediately and does not accept `--apply`. Do not edit
+`agency.json` or `repos/` manually. `agency repo setup --dry-run` and
+`agency repo setup --apply` are only for repositories that are already declared
+but locally missing; obtain explicit approval before applying setup.
+
+After adding a repository, run only these checks, in order, unless
+`agency context` reports a relevant problem:
+
+```bash
+agency repo verify <alias> --json
+agency validate --json
+```
 
 ## Authority
 
