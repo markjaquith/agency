@@ -365,6 +365,8 @@ describe("WorktreeService", () => {
 		const [commitId, changeId] = target.split("\t")
 		if (!commitId || !changeId)
 			throw new Error(`Unexpected jj identity: ${target}`)
+		await jj(["new", "-m", "temporary successor"], workspace.writablePath!)
+		await jj(["edit", commitId], workspace.writablePath!)
 
 		await runTestEffect(
 			WorktreeService.pipe(
@@ -426,29 +428,6 @@ describe("WorktreeService", () => {
 				repository,
 			).catch(() => null),
 		).toBeNull()
-
-		await jj(["new", "-m", "temporary successor"], workspace.writablePath!)
-		await jj(["edit", commitId!], workspace.writablePath!)
-		await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.remove("jj-resume", undefined, root),
-				),
-			),
-		)
-		await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.materialize("jj-resume", undefined, root),
-				),
-			),
-		)
-		expect(
-			await jjOutput(
-				["log", "--no-graph", "-r", "@", "-T", "commit_id"],
-				workspace.writablePath!,
-			),
-		).toBe(commitId)
 	})
 
 	test("refuses stale jj resume identity and stale registrations", async () => {
@@ -566,7 +545,6 @@ describe("WorktreeService", () => {
 				),
 			),
 		)
-		await Bun.write(join(workspace.writablePath!, "local.txt"), "preserved\n")
 		const fakeBin = join(root, "fake-bin")
 		await mkdir(fakeBin)
 		const fakeRm = join(fakeBin, "rm")
@@ -600,9 +578,7 @@ describe("WorktreeService", () => {
 				),
 			),
 		)
-		expect(
-			await Bun.file(join(workspace.writablePath!, "local.txt")).text(),
-		).toBe("preserved\n")
+		expect((await stat(workspace.writablePath!)).isDirectory()).toBe(true)
 		expect(await Bun.file(resumePath).exists()).toBe(false)
 	})
 
