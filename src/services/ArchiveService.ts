@@ -413,6 +413,7 @@ const restoreWorktreeSnapshots = async (
 				snapshot.head,
 				snapshot.path,
 			])
+			await runGit(["jj", "-R", snapshot.path, "edit", snapshot.head])
 			continue
 		}
 		await runGit(
@@ -723,6 +724,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						removedWorktrees.push(
 							...(yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
 								dryRun: true,
+								persistResume: false,
 							})),
 						)
 					}
@@ -781,6 +783,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 												worktrees.remove(unit.taskId, unit.phaseId, root, {
 													snapshots,
 													lockHeld: true,
+													persistResume: false,
 												}),
 											)
 									} catch (cause) {
@@ -891,6 +894,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							const result = yield* worktrees
 								.remove(unit.taskId, executionPhaseId(unit), root, {
 									dryRun: true,
+									persistResume: false,
 								})
 								.pipe(Effect.either)
 							if (Either.isLeft(result)) {
@@ -1064,6 +1068,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 												worktrees.remove(unit.taskId, unit.phaseId, root, {
 													snapshots,
 													lockHeld: true,
+													persistResume: false,
 												}),
 											)
 										}
@@ -1212,6 +1217,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 								root,
 								{
 									dryRun: true,
+									persistResume: false,
 								},
 							)),
 						)
@@ -1267,6 +1273,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 													{
 														snapshots,
 														lockHeld: true,
+														persistResume: false,
 													},
 												),
 											)
@@ -1359,6 +1366,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					yield* rejectExistingDestination(destination, "Archive")
 					const removedWorktrees = yield* worktrees.remove(taskId, id, root, {
 						dryRun: true,
+						persistResume: false,
 					})
 					const at = new Date().toISOString()
 					const content = yield* declarationContent(task, {
@@ -1407,6 +1415,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 													worktrees.remove(taskId, id, root, {
 														snapshots,
 														lockHeld: true,
+														persistResume: false,
 													}),
 												)
 											},

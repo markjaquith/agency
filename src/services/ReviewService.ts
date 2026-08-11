@@ -101,6 +101,7 @@ const restoreSnapshots = async (
 				snapshot.head,
 				snapshot.path,
 			])
+			await runGit(["jj", "-R", snapshot.path, "edit", snapshot.head])
 			continue
 		}
 		await runGit(
@@ -392,6 +393,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 											worktrees.remove(taskId, undefined, root, {
 												snapshots,
 												lockHeld: true,
+												persistResume: false,
 											}),
 										).then(() => undefined),
 									rollback: () => restoreSnapshots(snapshots),
