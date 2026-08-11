@@ -445,6 +445,28 @@ describe("IntegrationService", () => {
 		expect(body).not.toContain(".opencode/command/agency.md")
 	})
 
+	test("generates repository add and setup guidance", () => {
+		const body = managedBody(managedWorkbaseAgents)
+
+		expect(body).toContain("## Adding a Repository")
+		expect(body).toContain("agency repo add <alias> <remote> --json")
+		expect(body).toContain(
+			"`agency repo add` mutates immediately and does not accept `--apply`",
+		)
+		expect(body).toContain("agency repo setup --dry-run")
+		expect(body).toContain("agency repo setup --apply")
+		expect(body).toMatch(
+			/repositories that are already declared\s+but locally missing/,
+		)
+		expect(body).toContain("Do not edit\n`agency.json` or `repos/` manually")
+		expect(body).toMatch(
+			/agency repo verify <alias> --json\s+agency validate --json/,
+		)
+		expect(body).toMatch(
+			/run only these checks, in order, unless\s+`agency context` reports a relevant problem/,
+		)
+	})
+
 	test("configures Agency agents with complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
