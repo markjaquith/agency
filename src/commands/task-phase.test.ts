@@ -86,6 +86,55 @@ describe("task and phase command JSON output", () => {
 		})
 	})
 
+	test("returns complete handoff JSON without preparing work", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["investigate"],
+				repo: "agency",
+				purpose: "investigation",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				task({
+					subcommand: "handoff",
+					args: ["investigate", "implement"],
+					repo: "agency",
+					cwd: root,
+					json: true,
+				}),
+			),
+		)
+		const output = JSON.parse(logs[0]!)
+		expect(output).toMatchObject({
+			task: {
+				id: "implement",
+				selector: "task/implement",
+				directory: join(root, "tasks/implement"),
+				documentPath: join(root, "tasks/implement/TASK.md"),
+				branch: "task/implement",
+				base: "main",
+			},
+			source: {
+				selector: "task/investigate",
+				documentPath: join(root, "tasks/investigate/TASK.md"),
+			},
+			validation: { valid: true },
+			worktreePrepare: {
+				target: "task/implement",
+				command: ["agency", "worktree", "prepare", "implement"],
+			},
+		})
+		expect(output.task.revision).toMatch(/^[a-f0-9]{64}$/)
+		expect(output.source.revision).toMatch(/^[a-f0-9]{64}$/)
+		expect(await Bun.file(join(root, "tasks/implement/code")).exists()).toBe(
+			false,
+		)
+	})
+
 	test("lists and shows phase metadata without Markdown content", async () => {
 		const listLogs = await captureLogs(() =>
 			runTestEffect(

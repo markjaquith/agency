@@ -494,6 +494,8 @@ const commands: Record<string, Command> = {
 					references: options.reference,
 					branch: options.branch,
 					base: options.base,
+					purpose: options.purpose,
+					sourcePhase: options["source-phase"],
 					clearReferences: options["clear-references"],
 					prUrl: options["pr-url"],
 					clearPr: options["clear-pr"],

@@ -818,6 +818,36 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						validateRepositories(task)
 						validateBranchOwnership(task)
 						validateCompletion(task)
+						if (task.data.handoff && task.data.purpose !== "implementation") {
+							issue(
+								task.path,
+								"Task handoff provenance requires purpose 'implementation'",
+							)
+						}
+						if (task.data.purpose === "implementation" && !task.data.handoff) {
+							issue(
+								task.path,
+								"Implementation-purpose tasks require handoff provenance",
+							)
+						}
+						if (
+							task.data.handoff?.source.kind === "task" &&
+							task.data.handoff.source.taskId === task.id
+						) {
+							issue(
+								task.path,
+								"Task handoff provenance cannot reference itself",
+							)
+						}
+						if (
+							task.data.handoff?.source.kind === "phase" &&
+							task.data.handoff.source.taskId === task.id
+						) {
+							issue(
+								task.path,
+								"Task handoff provenance cannot reference one of its own phases",
+							)
+						}
 						if (task.data.epic) {
 							const parent = epics.get(task.data.epic)
 							if (!parent) {

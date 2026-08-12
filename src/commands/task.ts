@@ -45,6 +45,8 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly noPullRequest?: boolean
 	readonly summary?: string
 	readonly evidenceUrl?: string
+	readonly purpose?: string
+	readonly sourcePhase?: string
 }
 
 export interface TaskInteraction {
@@ -189,6 +191,7 @@ export const task = (
 						repos: parseRepositoryReferences(options.references),
 						branch: multiPhase ? undefined : (options.branch ?? `task/${id}`),
 						base: multiPhase ? undefined : (options.base ?? "main"),
+						purpose: options.purpose as "investigation" | undefined,
 					},
 					cwd,
 				)
@@ -245,6 +248,7 @@ export const task = (
 								? undefined
 								: (options.branch ?? `task/${id}`),
 						base: multiPhase || review ? undefined : (options.base ?? "main"),
+						purpose: options.purpose as "investigation" | undefined,
 					},
 					cwd,
 				)
@@ -253,6 +257,40 @@ export const task = (
 					options.json
 						? JSON.stringify(output, null, 2)
 						: `Created task '${record.id}'`,
+				)
+				return
+			}
+			case "handoff": {
+				const [sourceTaskId, id] = options.args
+				if (!sourceTaskId || !id) {
+					return yield* Effect.fail(
+						new Error("Source task ID and new task ID are required"),
+					)
+				}
+				if (!options.repo) {
+					return yield* Effect.fail(
+						new Error("Writable repository is required for task handoff"),
+					)
+				}
+				const output = yield* tasks.handoff(
+					{
+						sourceTaskId,
+						sourcePhaseId: options.sourcePhase,
+						id,
+						ticketUrl: options.ticketUrl?.trim() || null,
+						description: options.description?.trim() || undefined,
+						epic: options.epic,
+						repo: options.repo,
+						repos: parseRepositoryReferences(options.references),
+						branch: options.branch ?? `task/${id}`,
+						base: options.base ?? "main",
+					},
+					cwd,
+				)
+				log(
+					options.json
+						? JSON.stringify(output, null, 2)
+						: `Created implementation task '${id}' from '${output.source.selector}'`,
 				)
 				return
 			}
@@ -442,7 +480,7 @@ export const task = (
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available: new, create, list, show, status, update, rename, move, dependency",
+						"Subcommand is required. Available: new, create, handoff, list, show, status, update, rename, move, dependency",
 					),
 				)
 		}
@@ -454,6 +492,7 @@ Usage: agency task <subcommand>
 Subcommands:
   new [id]              Create a task with guided input
   create <id>           Create a task without prompting
+  handoff <source> <id> Create implementation work from an investigation
   list                  List tasks
   show <id>             Show a task
   status <id> <status>  Set open, working, dropped, or explicit non-PR done
@@ -474,6 +513,8 @@ Non-PR completion options (status done only):
 Create options:
   --ticket-url <url>    External ticket URL (optional)
   --description <text>  Short description of the task
+	--purpose investigation
+	                       Generate an investigation-only task
   --epic <id>           Parent epic
   --repo <alias>        Writable repository
   --reference <alias>:<ref>
@@ -487,6 +528,11 @@ Create options:
 	--ref <remote-ref>    Review a branch or other fetchable origin ref
   --work                Start work on the new task after creating it
   --auto                Pass --auto to work; requires --work
+
+Handoff options:
+  --source-phase <id>   Use a phase document as the source evidence
+  --repo <alias>        Writable implementation repository
+  --reference, --branch, --base, --ticket-url, --description, --epic
 
 Update options:
   --ticket-url <url> / --clear-ticket

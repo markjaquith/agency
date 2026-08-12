@@ -46,7 +46,9 @@ const IsoTimestamp = NonEmptyString.pipe(
 
 const GitCommit = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/))
 
-const DocumentRevision = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{64}$/))
+export const DocumentRevision = Schema.String.pipe(
+	Schema.pattern(/^[a-f0-9]{64}$/),
+)
 
 export const ClaimRecord = Schema.Struct({
 	claimant: NonEmptyString,
@@ -155,6 +157,30 @@ const ExecutionUnit = {
 	completion: Schema.optional(CompletionRecord),
 }
 
+export const TaskPurpose = Schema.Literal("investigation", "implementation")
+
+export const TaskHandoffSource = Schema.Union(
+	Schema.Struct({
+		kind: Schema.Literal("task"),
+		taskId: EntityId,
+	}),
+	Schema.Struct({
+		kind: Schema.Literal("phase"),
+		taskId: EntityId,
+		phaseId: EntityId,
+	}),
+)
+
+export const TaskHandoff = Schema.Struct({
+	source: TaskHandoffSource,
+	sourceRevision: DocumentRevision,
+})
+
+const TaskMetadata = {
+	purpose: Schema.optional(TaskPurpose),
+	handoff: Schema.optional(TaskHandoff),
+}
+
 export const EpicFrontmatter = Schema.Struct({
 	ticketUrl: Url,
 	description: Description,
@@ -166,6 +192,7 @@ const SinglePhaseTaskFrontmatter = Schema.Struct({
 	ticketUrl: Schema.NullOr(Url),
 	description: Description,
 	epic: Schema.optional(EntityId),
+	...TaskMetadata,
 	...ExecutionUnit,
 })
 
@@ -173,6 +200,7 @@ const MultiPhaseTaskFrontmatter = Schema.Struct({
 	ticketUrl: Schema.NullOr(Url),
 	description: Description,
 	epic: Schema.optional(EntityId),
+	...TaskMetadata,
 	phases: Schema.Array(Dependency),
 })
 
@@ -221,6 +249,7 @@ const ReviewTaskFrontmatter = Schema.Struct({
 	ticketUrl: Schema.NullOr(Url),
 	description: Description,
 	epic: Schema.optional(EntityId),
+	...TaskMetadata,
 	review: ReviewRecord,
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
 	claim: Schema.optional(ClaimRecord),
@@ -254,6 +283,9 @@ export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>
 export type ReviewSource = Schema.Schema.Type<typeof ReviewSource>
 export type ReviewRecord = Schema.Schema.Type<typeof ReviewRecord>
 export type CompletionRecord = Schema.Schema.Type<typeof CompletionRecord>
+export type TaskPurpose = Schema.Schema.Type<typeof TaskPurpose>
+export type TaskHandoffSource = Schema.Schema.Type<typeof TaskHandoffSource>
+export type TaskHandoff = Schema.Schema.Type<typeof TaskHandoff>
 export type EpicFrontmatter = Schema.Schema.Type<typeof EpicFrontmatter>
 export type TaskFrontmatter = Schema.Schema.Type<typeof TaskFrontmatter>
 export type PhaseFrontmatter = Schema.Schema.Type<typeof PhaseFrontmatter>

@@ -85,7 +85,35 @@ export const formatMarkdownDocument = (data: object, body: string) =>
 export const formatWorkDocumentBody = (
 	title: string,
 	kind: "epic" | "task" | "phase",
-) => `# ${title}
+	purpose?: "investigation" | "implementation",
+) =>
+	purpose === "investigation"
+		? `# ${title}
+
+## Investigation Boundary
+
+State the question, scope, and implementation excluded from this investigation.
+
+## Evidence
+
+Record inspected sources, commands, observations, and supporting links.
+
+## Findings
+
+Record findings, confidence, uncertainty, and relevant constraints.
+
+## Recommendation
+
+Recommend implementation, no change, or further investigation.
+
+## Implementation Handoff
+
+Record any distinct implementation task created from this investigation.
+
+## Important Decisions
+
+Record consequential decisions and their rationale.`
+		: `# ${title}
 
 ## Outcome
 

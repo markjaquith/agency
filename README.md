@@ -427,6 +427,24 @@ status: open
 ---
 ```
 
+Tasks may also record a purpose and one-way investigation handoff provenance:
+
+```yaml
+purpose: implementation
+handoff:
+  source:
+    kind: phase
+    taskId: investigate-checkout
+    phaseId: reproduce
+  sourceRevision: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+The source revision is historical evidence, not a readiness dependency or a
+claim that the source still has that content. Source rename, archive, restore,
+or later edits do not rewrite it. Destination rename, archive, and restore
+preserve it unchanged. Task show, context, and graph JSON expose the record as
+task metadata; graph output does not add an edge for it.
+
 ### Multi-Phase Task
 
 ```yaml
@@ -683,6 +701,38 @@ agency task create <id> --repo <alias>
 The branch defaults to `task/<id>` and the base defaults to `main`.
 `task create` is always noninteractive and requires `--repo` for a single-phase
 task. Use it instead of `task new` in scripts and agent workflows.
+
+Create investigation-only work with the existing task architecture:
+
+```text
+agency task create <id> --purpose investigation --repo <alias> [options]
+```
+
+This records `purpose: investigation` and generates explicit Investigation
+Boundary, Evidence, Findings, Recommendation, Implementation Handoff, and
+Important Decisions sections. A no-change recommendation is a valid result;
+implementation does not belong in the investigation task merely because that
+task has execution authority.
+
+Create a distinct implementation task from an investigation task or phase:
+
+```text
+agency task handoff <investigation-task> <new-task> --repo <alias> [options] --json
+agency task handoff <investigation-task> <new-task> --source-phase <phase> --repo <alias> [options] --json
+```
+
+The destination ID must be new across active and archived work; Agency never
+restores, reopens, renames, or reuses a matching item. Explicit requests for a
+new, separate, or follow-up item always override reuse, even when the subject or
+suggested ID matches existing work. The transaction writes only the destination
+task and any requested epic backlink, while revision-checking the source.
+
+JSON returns the exact destination selector, directory and document path,
+branch/base and revision; source selector, document path and captured revision;
+the validation report; and the later `worktree prepare` target and command.
+Handoff creation does not prepare a worktree, change status, launch an agent, or
+perform UI actions. Run `agency context <new-task> --json` to verify authority,
+and prepare or launch only when separately requested.
 
 Create a multi-phase task container:
 

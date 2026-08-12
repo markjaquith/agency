@@ -734,6 +734,11 @@ describe("ArchiveService", () => {
 							repo: "agency",
 							branch: "task/child",
 							base: "main",
+							purpose: "implementation",
+							handoff: {
+								source: { kind: "task", taskId: "investigation" },
+								sourceRevision: "a".repeat(64),
+							},
 						},
 						root,
 					),
@@ -787,6 +792,18 @@ describe("ArchiveService", () => {
 			),
 		)
 		expect(epic.data.tasks).toEqual([{ id: "child" }])
+		const restoredTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("child", root)),
+			),
+		)
+		expect(restoredTask.data).toMatchObject({
+			purpose: "implementation",
+			handoff: {
+				source: { kind: "task", taskId: "investigation" },
+				sourceRevision: "a".repeat(64),
+			},
+		})
 		const provenance = await Bun.file(
 			join(root, "tasks/child/.agency-lifecycle.json"),
 		).json()
@@ -1040,7 +1057,7 @@ describe("ArchiveService", () => {
 					),
 				),
 			),
-		).rejects.toThrow("is archived; restore it")
+		).rejects.toThrow("is archived; explicit creation requires a different ID")
 	})
 
 	test("does not remove worktrees when another lifecycle mutation holds the lock", async () => {

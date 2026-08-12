@@ -405,6 +405,13 @@ describe("IntegrationService", () => {
 		expect(body).toContain("authority.writable.checkoutPath")
 		expect(body).toContain("Only `done` satisfies a dependency")
 		expect(body).toContain("Require explicit user intent")
+		expect(body).toContain(
+			"explicit request for a new, separate, or follow-up item",
+		)
+		expect(body).toContain("agency task handoff")
+		expect(body).toContain(
+			"Creation and handoff do not imply worktree preparation",
+		)
 		expect(body).toContain("changing repository")
 		expect(body).toMatch(
 			/archiving, restoring,\s+dropping, reopening, or completing work without a pull request/,
@@ -502,6 +509,9 @@ describe("IntegrationService", () => {
 		})
 		expect(config.agent.agency.model).toBeUndefined()
 		expect(config.agent.agency.permission).toBeUndefined()
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"Explicit-new intent overrides reuse",
+		)
 		expect(config.agent.agency.hidden).toBeUndefined()
 		expect(config.agent.agency.steps).toBeUndefined()
 		expect(config.agent.agency.prompt).toContain(

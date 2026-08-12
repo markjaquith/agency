@@ -4,6 +4,25 @@
   ["next", "--json"],
   ["graph", "--ready", "--json"],
   [
+    "task",
+    "create",
+    "investigate-checkout",
+    "--purpose",
+    "investigation",
+    "--repo",
+    "agency",
+    "--json"
+  ],
+  [
+    "task",
+    "handoff",
+    "investigate-checkout",
+    "implement-checkout",
+    "--repo",
+    "agency",
+    "--json"
+  ],
+  [
     "claim",
     "checkout",
     "ui",
