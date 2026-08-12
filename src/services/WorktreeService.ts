@@ -272,6 +272,7 @@ interface MaterializeOptions extends BaseCommandOptions {
 	readonly force?: boolean
 	readonly lockHeld?: boolean
 	readonly allowReferenceDrift?: boolean
+	readonly validationAlreadyPerformed?: boolean
 }
 
 interface RemoveOptions extends BaseCommandOptions {
@@ -1850,12 +1851,14 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 					const { root, config } = yield* workbase.loadConfig(startPath)
 					const backend = yield* versionControl.forWorkbase(root)
 					const materialization = Effect.gen(function* () {
-						const report = yield* workbase.validate(root)
-						const validationIssue = report.issues[0]
-						if (validationIssue && !options.force) {
-							return yield* new WorktreeError({
-								message: `${validationIssue.path}: ${validationIssue.message}`,
-							})
+						if (!options.validationAlreadyPerformed) {
+							const report = yield* workbase.validate(root)
+							const validationIssue = report.issues[0]
+							if (validationIssue && !options.force) {
+								return yield* new WorktreeError({
+									message: `${validationIssue.path}: ${validationIssue.message}`,
+								})
+							}
 						}
 						const task = yield* tasks.show(taskId, root)
 

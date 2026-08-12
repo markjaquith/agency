@@ -44,6 +44,9 @@
     "./schemas/agency-graph-v1.json": {
       "default": "./schemas/agency-graph-v1.schema.json"
     },
+    "./schemas/agency-kickoff-v1.json": {
+      "default": "./schemas/agency-kickoff-v1.schema.json"
+    },
     "./fixtures/protocol/success.json": {
       "default": "./fixtures/protocol/success.json"
     },

@@ -29,6 +29,13 @@ import {
 	resolveRunnerCommand,
 	runnerEnvironment,
 } from "../workbase/runner-command"
+import {
+	assessValidationEvidence,
+	buildKickoffPlan,
+	buildValidationEvidence,
+	normalizeRecalledContext,
+	readValidationEvidence,
+} from "../workbase/kickoff-contract"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -41,6 +48,7 @@ export interface WorkOptions extends BaseCommandOptions {
 	readonly printCommand?: boolean
 	readonly auto?: boolean
 	readonly force?: boolean
+	readonly evidence?: string
 }
 
 export type StartWork = (options: WorkOptions) => ReturnType<typeof work>
@@ -422,6 +430,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		const tasks = yield* TaskService
 		const phases = yield* PhaseService
 		const worktrees = yield* WorktreeService
+		const readiness = yield* ReadinessService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const targetPath = options.directory ? resolve(cwd, options.directory) : cwd
@@ -461,22 +470,111 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			)
 		}
 
+		const task = yield* tasks.show(taskId, root)
+		const phase = phaseId
+			? yield* phases.show(taskId, phaseId, root)
+			: undefined
+		if ("phases" in task.data && !phase) {
+			return yield* Effect.fail(
+				new Error(`Task '${taskId}' has multiple phases; phase ID is required`),
+			)
+		}
+		if (!("phases" in task.data) && phaseId) {
+			return yield* Effect.fail(
+				new Error(
+					`Task '${taskId}' is single-phase and does not accept a phase ID`,
+				),
+			)
+		}
+		const target = phase
+			? `execution-unit:phase/${taskId}/${phase.id}`
+			: `execution-unit:task/${taskId}`
+		const document = phase ?? task
+		const suppliedEvidence = options.evidence
+			? yield* readValidationEvidence(options.evidence, cwd)
+			: undefined
+		if (
+			suppliedEvidence?.recalledContext.repo &&
+			(!("repo" in document.data) ||
+				suppliedEvidence.recalledContext.repo !== document.data.repo)
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"Recalled repository conflicts with the current execution unit",
+				),
+			)
+		}
+		if (
+			suppliedEvidence?.recalledContext.base &&
+			(!("base" in document.data) ||
+				suppliedEvidence.recalledContext.base !== document.data.base)
+		) {
+			return yield* Effect.fail(
+				new Error("Recalled base conflicts with the current execution unit"),
+			)
+		}
+		const assessment = yield* assessValidationEvidence({
+			evidence: suppliedEvidence,
+			startPath: root,
+			target,
+			documentPath: document.path,
+			documentRevision: document.revision,
+		})
+		let validation: unknown = { valid: true, source: "evidence" }
+		if (assessment.disposition.status === "refreshed") {
+			validation = yield* workbase.validate(root)
+			if (!(validation as { valid: boolean }).valid && !options.force) {
+				return yield* Effect.fail(new Error("Workbase validation failed"))
+			}
+		}
+		yield* readiness.guardWorkTarget(target, root, options.force)
 		const workspace = yield* worktrees.materialize(taskId, phaseId, root, {
 			...options,
 			dryRun: options.dryRun,
+			validationAlreadyPerformed: true,
 		})
+		const recalledContext =
+			suppliedEvidence?.recalledContext ??
+			normalizeRecalledContext({
+				id: taskId,
+				repo: "repo" in document.data ? document.data.repo : undefined,
+				base: "base" in document.data ? document.data.base : undefined,
+			})
+		const evidence = yield* buildValidationEvidence({
+			startPath: root,
+			target,
+			documentPath: document.path,
+			documentRevision: document.revision,
+			recalledContext,
+		})
+		const result = {
+			...workspace,
+			workspace,
+			validation,
+			validationEvidence: { ...assessment.disposition, evidence },
+			kickoff: buildKickoffPlan({
+				workbaseRoot: root,
+				target,
+				taskId,
+				phaseId: phase?.id,
+				taskPath: task.path,
+				phasePath: phase?.path,
+				checkoutPath: workspace.writablePath ?? workspace.reviewPath,
+				documentRevision: document.revision,
+			}),
+		}
 		if (options.json) {
-			log(JSON.stringify(workspace, null, 2))
+			log(JSON.stringify(result, null, 2))
 		} else {
 			log(
-				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath ?? workspace.reviewPath}`,
+				`${workspace.dryRun ? "Kickoff plan" : "Workspace ready"}: ${workspace.writablePath ?? workspace.reviewPath}`,
 			)
 		}
 	})
 
 export const help = `
 Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto]
-       agency work prepare [target] [--dry-run] [--json]
+       agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
@@ -487,6 +585,10 @@ Agency's project plugin; Agency context remains authoritative for writes.
 The prepare subcommand resolves and materializes an execution workspace without
 launching an agent or changing lifecycle status. --dry-run reports planned Git
 changes without fetching, creating branches, or creating worktrees.
+It emits revision-bound validation evidence and an idempotent external-orchestrator
+contract. Evidence is reused only while the target, workbase, configuration, and
+repository mapping remain unchanged. Dynamic readiness and workspace safety checks
+always run.
 
 Options:
   --epic <id>          Work on an epic
@@ -500,6 +602,7 @@ Options:
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset
   --force              Override readiness; reopen terminal execution units
+	--evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
   --no-input           Never open an interactive selector
 
 Without interactive input, provide an explicit workbase or cwd and an entity

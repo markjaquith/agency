@@ -85,6 +85,10 @@ const taskCreateOptions = {
 	review: { type: "string" },
 	"pull-request": { type: "string" },
 	ref: { type: "string" },
+	"context-repo": { type: "string" },
+	"context-base": { type: "string" },
+	"context-slug": { type: "string" },
+	"authoritative-source": { type: "string", multiple: true },
 } satisfies OptionConfig
 
 const phaseCreateOptions = {
@@ -396,7 +400,7 @@ const commands = {
 			},
 			create: {
 				usage:
-					"agency task create <id> (--repo <alias> | --multi-phase | --review <alias> (--pull-request <value> | --ref <remote-ref>)) [options]",
+					"agency task create <id> (--repo <alias> | --context-repo <alias> | --multi-phase | --review <alias> (--pull-request <value> | --ref <remote-ref>)) [options]",
 				minArgs: 1,
 				maxArgs: 1,
 				options: [
@@ -411,9 +415,13 @@ const commands = {
 					"review",
 					"pull-request",
 					"ref",
+					"context-repo",
+					"context-base",
+					"context-slug",
+					"authoritative-source",
 					"json",
 				],
-				repeatable: ["reference"],
+				repeatable: ["reference", "authoritative-source"],
 			},
 			list: {
 				usage: "agency task list [filters] [--json]",
@@ -873,6 +881,7 @@ const commands = {
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
 			force: { type: "boolean" },
+			evidence: { type: "string" },
 		},
 		command: {
 			usage:
@@ -891,6 +900,7 @@ const commands = {
 				"opencode",
 				"claude",
 				"force",
+				"evidence",
 			],
 			conflicts: [
 				["opencode", "claude"],
@@ -1262,9 +1272,13 @@ function validateTaskCreate(
 				)
 			}
 		}
-	} else if (requireRepo && values.repo === undefined) {
+	} else if (
+		requireRepo &&
+		values.repo === undefined &&
+		values["context-repo"] === undefined
+	) {
 		throw usageError(
-			"Option '--repo' is required unless '--multi-phase' is used.",
+			"Option '--repo' or '--context-repo' is required unless '--multi-phase' is used.",
 			spec.usage,
 		)
 	}
@@ -1620,9 +1634,12 @@ export function parseCli(args: readonly string[]): ParsedCli {
 				spec.usage,
 			)
 		}
-		if (!preparing && (parsed.values.json || parsed.values["dry-run"])) {
+		if (
+			!preparing &&
+			(parsed.values.json || parsed.values["dry-run"] || parsed.values.evidence)
+		) {
 			throw usageError(
-				"Options '--json' and '--dry-run' are only valid with 'agency work prepare'.",
+				"Options '--json', '--dry-run', and '--evidence' are only valid with 'agency work prepare'.",
 				spec.usage,
 			)
 		}

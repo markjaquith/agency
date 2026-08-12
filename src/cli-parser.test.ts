@@ -809,7 +809,7 @@ describe("strict CLI parsing", () => {
 
 	test("rejects required-option omissions and explicit conflicts", () => {
 		expect(() => parseCli(["task", "create", "example"])).toThrow(
-			"--repo' is required",
+			"--repo' or '--context-repo' is required",
 		)
 		for (const option of ["repo", "reference", "branch", "base"] as const) {
 			const value = option === "reference" ? "other:main" : "value"

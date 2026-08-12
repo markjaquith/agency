@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-kickoff-v1.schema.json",
+  "title": "Agency kickoff contract v1",
+  "oneOf": [
+    { "$ref": "#/$defs/validationEvidence" },
+    { "$ref": "#/$defs/kickoffPlan" }
+  ],
+  "$defs": {
+    "recalledContext": {
+      "type": "object",
+      "required": ["preferredSlug", "authoritativeSources"],
+      "properties": {
+        "repo": { "type": "string", "minLength": 1 },
+        "base": { "type": "string", "minLength": 1 },
+        "preferredSlug": { "type": "string", "minLength": 1 },
+        "authoritativeSources": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "validationEvidence": {
+      "type": "object",
+      "required": [
+        "version",
+        "workbaseRoot",
+        "target",
+        "documentPath",
+        "documentRevision",
+        "workbaseRevision",
+        "configRevision",
+        "repositoryMappingRevision",
+        "valid",
+        "recalledContext",
+        "digest"
+      ],
+      "properties": {
+        "version": { "const": 1 },
+        "workbaseRoot": { "type": "string" },
+        "target": { "type": "string" },
+        "documentPath": { "type": "string" },
+        "documentRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "workbaseRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "configRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "repositoryMappingRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "valid": { "const": true },
+        "recalledContext": { "$ref": "#/$defs/recalledContext" },
+        "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "kickoffPlan": {
+      "type": "object",
+      "required": [
+        "version",
+        "idempotencyKey",
+        "workbaseRoot",
+        "target",
+        "documentRevision",
+        "sourceLocations",
+        "taskDirectory",
+        "taskDocument",
+        "phaseDocument",
+        "preparedCheckout",
+        "orchestrator",
+        "steps",
+        "successFields"
+      ],
+      "properties": {
+        "version": { "const": 1 },
+        "idempotencyKey": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "workbaseRoot": { "type": "string" },
+        "target": { "type": "string" },
+        "documentRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sourceLocations": { "type": "array", "items": { "type": "string" } },
+        "taskDirectory": { "type": "string" },
+        "taskDocument": { "type": "string" },
+        "phaseDocument": { "type": ["string", "null"] },
+        "preparedCheckout": { "type": ["string", "null"] },
+        "orchestrator": {
+          "type": "object",
+          "required": [
+            "capability",
+            "knownCurrentCommandsBypassDiscovery",
+            "fallback"
+          ],
+          "properties": {
+            "capability": { "const": "agency-kickoff-v1" },
+            "knownCurrentCommandsBypassDiscovery": { "const": true },
+            "fallback": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 6,
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "argv": { "type": "array", "items": { "type": "string" } },
+              "cwd": { "type": "string" },
+              "action": { "type": "string" },
+              "path": { "type": "string" },
+              "retry": { "type": "string" },
+              "recovery": { "type": "string" },
+              "idempotencyKey": { "type": "string" },
+              "exactlyOnce": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "successFields": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}
