@@ -784,13 +784,6 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 				),
 			),
 		)
-		await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.materialize("forked", undefined, root),
-				),
-			),
-		)
 		await Bun.write(
 			join(root, "bin", "gh"),
 			`#!/bin/sh
@@ -812,6 +805,7 @@ JSON
 			applied.unresolved.filter((notice) => notice.target === "task:forked"),
 		).toEqual([])
 		expect(applied.changes.map((change) => change.kind)).toEqual([
+			"materialize-workspace",
 			"record-pr",
 			"mark-done",
 		])
