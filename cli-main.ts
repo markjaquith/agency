@@ -494,6 +494,10 @@ const commands: Record<string, Command> = {
 					references: options.reference,
 					branch: options.branch,
 					base: options.base,
+					contextRepo: options["context-repo"],
+					contextBase: options["context-base"],
+					contextSlug: options["context-slug"],
+					authoritativeSources: options["authoritative-source"],
 					purpose: options.purpose,
 					sourcePhase: options["source-phase"],
 					clearReferences: options["clear-references"],
@@ -562,6 +566,7 @@ const commands: Record<string, Command> = {
 					cwd: options.cwd,
 					taskId: options.task,
 					phaseId: options.phase,
+					evidence: options.evidence,
 				}),
 			)
 		},

@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
 import { task, type TaskInteraction } from "./task"
 
 describe("task creation input", () => {
@@ -123,6 +128,77 @@ describe("task creation input", () => {
 		expect(content).toContain("ticketUrl: null")
 		expect(content).toContain("branch: task/scripted-task")
 		expect(content).toContain("base: main")
+	})
+
+	test("returns revision-bound validation evidence and normalized recalled context", async () => {
+		const [output] = await captureLogs(() =>
+			runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["scripted-context"],
+					contextRepo: "agency",
+					contextBase: "main",
+					contextSlug: "scripted-context",
+					authoritativeSources: [
+						"https://example.com/spec",
+						join(root, "SOURCE.md"),
+					],
+					cwd: root,
+					json: true,
+				}),
+			),
+		)
+		const result = JSON.parse(output!)
+		expect(result.selector).toBe("execution-unit:task/scripted-context")
+		expect(result.documentPath).toBe(
+			join(root, "tasks/scripted-context/TASK.md"),
+		)
+		expect(result.validation.valid).toBe(true)
+		expect(result.evidence).toEqual(
+			expect.objectContaining({
+				version: 1,
+				target: "execution-unit:task/scripted-context",
+				documentRevision: result.revision,
+				valid: true,
+				digest: expect.any(String),
+			}),
+		)
+		expect(result.recalledContext).toEqual({
+			repo: "agency",
+			base: "main",
+			preferredSlug: "scripted-context",
+			authoritativeSources: [
+				join(root, "SOURCE.md"),
+				"https://example.com/spec",
+			],
+		})
+	})
+
+	test("rejects stale or conflicting recalled context", async () => {
+		await expect(
+			runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["conflict"],
+					repo: "agency",
+					contextRepo: "other",
+					cwd: root,
+					silent: true,
+				}),
+			),
+		).rejects.toThrow("conflicts with --repo")
+		await expect(
+			runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["conflict"],
+					contextRepo: "agency",
+					contextSlug: "stale-slug",
+					cwd: root,
+					silent: true,
+				}),
+			),
+		).rejects.toThrow("conflicts with task ID")
 	})
 
 	test("never prompts when scripted creation is incomplete", async () => {

@@ -702,6 +702,32 @@ The branch defaults to `task/<id>` and the base defaults to `main`.
 `task create` is always noninteractive and requires `--repo` for a single-phase
 task. Use it instead of `task new` in scripts and agent workflows.
 
+For deterministic callers, creation also accepts recalled context:
+
+```text
+agency task create <id>
+  --context-repo <alias> --context-base <base> --context-slug <id>
+  [--authoritative-source <absolute-path-or-http-url>...] --json
+```
+
+Recalled values are used instead of rediscovery but must agree with equivalent
+explicit flags. The preferred slug must equal the created ID, repository aliases
+are validated by normal task creation, and authoritative sources must be absolute
+paths or HTTP(S) URLs.
+
+Machine output adds fields without changing the version 1 protocol envelope. It
+includes `selector`, absolute `documentPath`, the document `revision`, full
+`validation`, normalized `recalledContext`, and `evidence`. Evidence version 1 is
+an auditable local payload containing the canonical workbase root, target and
+document identities, aggregate workbase revision, configuration revision,
+repository-mapping revision, kickoff-contract version, validity result, recalled
+context, and a digest over those fields. It is not a signature or an authority
+grant. A different workbase, target, document revision, document set,
+configuration, repository mapping, contract version, or payload digest
+invalidates reuse. Older creation output without evidence remains compatible;
+preflight simply validates again. The published machine schema is
+`schemas/agency-kickoff-v1.schema.json`.
+
 Create investigation-only work with the existing task architecture:
 
 ```text
@@ -942,7 +968,7 @@ until restored.
 
 ```text
 agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
-agency work prepare [target] [--dry-run] [--json]
+agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
 agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
@@ -962,9 +988,25 @@ their built-in presets. Launches are interactive and promptless by default; use
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without
 launching an agent or changing status.
-Its JSON result includes document and checkout paths, resolved commits, actions,
-and Git operations. Use `--dry-run` to report planned fetch, branch, and worktree
-changes without applying them.
+Its JSON result includes the workspace, validation result, whether supplied
+evidence was `reused` or `refreshed` with stable reason strings, refreshed
+evidence, and a versioned `agency-kickoff-v1` orchestration plan. The plan has a
+deterministic idempotency key and ordered, retry-safe actions for worktree
+preflight/preparation, a background tab, side-by-side task document,
+`agency work . --auto`, and exactly one final `agency context <document> --json`.
+The evidence argument may be an evidence object, task-creation JSON, or a path to
+either. Use `--dry-run` to report planned fetch, branch, and worktree changes
+without applying them. Validation reuse never skips readiness, active-claim,
+repository, ownership, reference-drift, dirty-workspace, or worktree safety
+checks.
+
+The authoritative implementation locations for this contract are
+`src/commands/task.ts` (creation output),
+`src/workbase/kickoff-contract.ts` (evidence and orchestration schemas),
+`src/commands/work.ts` (launch preflight),
+`src/services/WorktreeService.ts` (workspace safety), and
+`src/workbase/AGENTS.md` (generated OpenCode guidance). These paths are the
+deterministic source-location fixture for compatible orchestrators.
 
 `agency worktree list` and `inspect` report each declared checkout's expected and
 registered path, branch, commit, Agency owner, dirtiness, and conflicts. `prepare`

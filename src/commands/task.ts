@@ -12,6 +12,10 @@ import { getWorkViews } from "../work-view"
 import { GraphMutationService } from "../services/GraphMutationService"
 import { work as startWork, type StartWork } from "./work"
 import { ReviewService } from "../services/ReviewService"
+import {
+	buildValidationEvidence,
+	normalizeRecalledContext,
+} from "../workbase/kickoff-contract"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -45,6 +49,10 @@ interface TaskOptions extends BaseCommandOptions {
 	readonly noPullRequest?: boolean
 	readonly summary?: string
 	readonly evidenceUrl?: string
+	readonly contextRepo?: string
+	readonly contextBase?: string
+	readonly contextSlug?: string
+	readonly authoritativeSources?: readonly string[]
 	readonly purpose?: string
 	readonly sourcePhase?: string
 }
@@ -219,7 +227,43 @@ export const task = (
 					return yield* Effect.fail(new Error("Task ID is required"))
 				}
 				const multiPhase = options.multiPhase ?? false
-				if (!multiPhase && !options.repo && !options.review) {
+				if (
+					options.repo &&
+					options.contextRepo &&
+					options.repo !== options.contextRepo
+				) {
+					return yield* Effect.fail(
+						new Error(
+							`Recalled repository '${options.contextRepo}' conflicts with --repo '${options.repo}'`,
+						),
+					)
+				}
+				if (
+					options.base &&
+					options.contextBase &&
+					options.base !== options.contextBase
+				) {
+					return yield* Effect.fail(
+						new Error(
+							`Recalled base '${options.contextBase}' conflicts with --base '${options.base}'`,
+						),
+					)
+				}
+				const repo = options.repo ?? options.contextRepo
+				const base = options.base ?? options.contextBase ?? "main"
+				const recalledContext = yield* Effect.try({
+					try: () =>
+						normalizeRecalledContext({
+							id,
+							repo,
+							base: multiPhase || options.review ? undefined : base,
+							preferredSlug: options.contextSlug,
+							authoritativeSources: options.authoritativeSources,
+						}),
+					catch: (cause) =>
+						cause instanceof Error ? cause : new Error(String(cause)),
+				})
+				if (!multiPhase && !repo && !options.review) {
 					return yield* Effect.fail(
 						new Error("Writable repository is required for task create"),
 					)
@@ -239,7 +283,7 @@ export const task = (
 						epic: options.epic,
 						multiPhase,
 						review,
-						repo: options.repo,
+						repo: review ? undefined : repo,
 						repos: review
 							? undefined
 							: parseRepositoryReferences(options.references),
@@ -247,12 +291,33 @@ export const task = (
 							multiPhase || review
 								? undefined
 								: (options.branch ?? `task/${id}`),
-						base: multiPhase || review ? undefined : (options.base ?? "main"),
+						base: multiPhase || review ? undefined : base,
 						purpose: options.purpose as "investigation" | undefined,
 					},
 					cwd,
 				)
-				const { content: _, ...output } = record
+				const validation = yield* workbase.validate(cwd)
+				const selector = multiPhase
+					? `task:${record.id}`
+					: `execution-unit:task/${record.id}`
+				const evidence = validation.valid
+					? yield* buildValidationEvidence({
+							startPath: cwd,
+							target: selector,
+							documentPath: record.path,
+							documentRevision: record.revision,
+							recalledContext,
+						})
+					: null
+				const { content: _, ...created } = record
+				const output = {
+					...created,
+					selector,
+					documentPath: record.path,
+					validation,
+					evidence,
+					recalledContext,
+				}
 				log(
 					options.json
 						? JSON.stringify(output, null, 2)
@@ -521,6 +586,11 @@ Create options:
                         Read-only repository reference; repeatable
   --branch <name>       Working branch (default: task/<id>)
   --base <name>         Base branch (default: main)
+	--context-repo <alias> Recalled repository; must agree with --repo
+	--context-base <name>  Recalled base; must agree with --base
+	--context-slug <id>    Recalled preferred slug; must equal the task ID
+	--authoritative-source <path-or-url>
+	                       Authoritative input location; repeatable
 	--multi-phase         Create a task container for phases
 	--review <alias>      Create a pinned read-only review task
 	--pull-request <url-or-number>
@@ -543,8 +613,8 @@ Update options:
   --base <name>         Replace the base branch
   --pr-url <url> / --clear-pr
 
-Task creation is noninteractive. Single-phase tasks require --repo; use
---multi-phase instead for a task container. Guided input is available only
+Task creation is noninteractive. Single-phase tasks require --repo or
+--context-repo; use --multi-phase instead for a task container. Guided input is available only
 through task new, which fails when --no-input is set or no TTY is available.
 
 Options:

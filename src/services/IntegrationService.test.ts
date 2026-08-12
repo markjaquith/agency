@@ -107,6 +107,21 @@ describe("IntegrationService", () => {
 		])
 	})
 
+	test("generates the canonical Agency kickoff recipe with precedence", () => {
+		expect(managedWorkbaseAgents).toContain(
+			"takes precedence over generic Herdr defaults",
+		)
+		expect(managedWorkbaseAgents).toContain(
+			"agency work prepare <slug> --evidence",
+		)
+		expect(managedWorkbaseAgents).toContain("agency-kickoff-v1")
+		expect(managedWorkbaseAgents).toContain(
+			"call Herdr help, skill, or CLI discovery",
+		)
+		expect(managedWorkbaseAgents).toContain("exactly one final")
+		expect(managedWorkbaseAgents).toContain("leave the runner in the")
+	})
+
 	test("generates a dynamic workbase plugin", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"process.env.AGENCY_WRITABLE_CHECKOUT",

@@ -82,6 +82,7 @@ interface HarnessOptions {
 	readonly phaseStatuses?: Readonly<
 		Record<string, "open" | "working" | "delegated" | "done" | "dropped">
 	>
+	readonly taskRepo?: string
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -138,6 +139,16 @@ const createHarness = (options: HarnessOptions = {}) => {
 					runners: options.runners,
 				},
 			}),
+		repositoryAliases: () => Effect.succeed(["agency"]),
+		validate: () =>
+			Effect.succeed({
+				root: "/workbase",
+				issues: [],
+				epicCount: 0,
+				taskCount: 1,
+				phaseCount: 0,
+				valid: true,
+			}),
 	}
 	const epics = {
 		show: (id: string) =>
@@ -154,10 +165,11 @@ const createHarness = (options: HarnessOptions = {}) => {
 			return Effect.succeed({
 				id,
 				path: `/workbase/tasks/${id}/TASK.md`,
+				revision: "a".repeat(64),
 				data: options.multiPhaseTasks?.includes(id)
 					? { phases: [] }
 					: {
-							repo: "agency",
+							repo: options.taskRepo ?? "agency",
 							branch: `task/${id}`,
 							base: "main",
 							status: taskStatuses[id] ?? options.taskStatus ?? "open",
@@ -182,6 +194,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				taskId,
 				id,
 				path: `/workbase/tasks/${taskId}/phases/${id}/PHASE.md`,
+				revision: "b".repeat(64),
 				data: {
 					repo: "agency",
 					branch: `task/${id}`,
@@ -246,7 +259,16 @@ const createHarness = (options: HarnessOptions = {}) => {
 	}
 	const fs = {
 		isDirectory: (path: string) =>
-			Effect.succeed(options.existingDirectories?.includes(path) ?? true),
+			Effect.succeed(
+				path === "/workbase/epics" || path === "/workbase/tasks"
+					? false
+					: (options.existingDirectories?.includes(path) ?? true),
+			),
+		readFile: (path: string) =>
+			Effect.succeed(path.endsWith("agency.json") ? '{"version":2}\n' : ""),
+		readDirectory: () => Effect.succeed([]),
+		exists: () => Effect.succeed(false),
+		realPath: (path: string) => Effect.succeed(path),
 		runCommand: (args: readonly string[]) => {
 			const cli = args[1]!
 			events.push(`probe:${cli}`)
@@ -306,6 +328,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(WorkbaseService, workbase as never),
 				Effect.provideService(TaskService, tasks as never),
 				Effect.provideService(PhaseService, phases as never),
+				Effect.provideService(ReadinessService, readiness as never),
 			) as Effect.Effect<void, unknown, never>,
 		)
 
@@ -458,7 +481,7 @@ describe("work command", () => {
 	test("prepares without launching or changing lifecycle status", async () => {
 		const harness = createHarness({ existingDirectories: [] })
 
-		await captureLogs(() =>
+		const [output] = await captureLogs(() =>
 			harness.runPrepare({
 				cwd: "/workbase",
 				directory: "example",
@@ -473,7 +496,43 @@ describe("work command", () => {
 		expect(harness.materializeOptions[0]).toMatchObject({
 			json: true,
 			dryRun: true,
+			validationAlreadyPerformed: true,
 		})
+		const result = JSON.parse(output!)
+		expect(result.validationEvidence.status).toBe("refreshed")
+		expect(result.validationEvidence.reasons).toEqual(["not-supplied"])
+		expect(result.kickoff.target).toBe("execution-unit:task/example")
+		expect(
+			result.kickoff.steps.filter(
+				({ id }: { id: string }) => id === "final-context-verification",
+			),
+		).toHaveLength(1)
+
+		const [reusedOutput] = await captureLogs(() =>
+			harness.runPrepare({
+				cwd: "/workbase",
+				directory: "example",
+				json: true,
+				dryRun: true,
+				evidence: JSON.stringify(result.validationEvidence.evidence),
+			}),
+		)
+		expect(JSON.parse(reusedOutput!).validationEvidence).toEqual(
+			expect.objectContaining({ status: "reused", reasons: [] }),
+		)
+
+		const conflicting = createHarness({
+			existingDirectories: [],
+			taskRepo: "other",
+		})
+		await expect(
+			conflicting.runPrepare({
+				cwd: "/workbase",
+				directory: "example",
+				dryRun: true,
+				evidence: JSON.stringify(result.validationEvidence.evidence),
+			}),
+		).rejects.toThrow("Recalled repository conflicts")
 	})
 
 	test("launches an epic agent from an epic directory", async () => {
