@@ -72,6 +72,10 @@ const GitHubPullRequestUrl = NonEmptyString.pipe(
 export const PullRequestRecord = Schema.Struct({
 	provider: EntityId,
 	repository: NonEmptyString,
+	headRepository: Schema.optional(NonEmptyString),
+	headBranch: Schema.optional(NonEmptyString),
+	baseRepository: Schema.optional(NonEmptyString),
+	baseBranch: Schema.optional(NonEmptyString),
 	identifier: NonEmptyString,
 	url: Url,
 	state: Schema.Literal("open", "closed", "merged"),

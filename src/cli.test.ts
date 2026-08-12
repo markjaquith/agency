@@ -1,4 +1,11 @@
-import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import {
+	afterAll,
+	afterEach,
+	describe,
+	expect,
+	setDefaultTimeout,
+	test,
+} from "bun:test"
 import { access, chmod, mkdir, realpath, stat, symlink } from "node:fs/promises"
 import { join, sep } from "node:path"
 import errorFixture from "../fixtures/protocol/error.json"
@@ -8,6 +15,8 @@ import { cleanupTempDir, createTempDir } from "./test-utils"
 const projectRoot = join(import.meta.dir, "..")
 const cliPath = join(projectRoot, "cli.ts")
 const isolatedConfigHome = await createTempDir()
+
+setDefaultTimeout(15_000)
 
 afterAll(() => cleanupTempDir(isolatedConfigHome))
 

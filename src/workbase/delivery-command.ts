@@ -156,11 +156,24 @@ export const recordFromGitHubUrl = (url: string): PullRequestRecord => {
 export const recordFromGitHubJson = (value: Record<string, unknown>) => {
 	const url = typeof value.url === "string" ? value.url : ""
 	const record = recordFromGitHubUrl(url)
+	const repositoryName = (repository: unknown) => {
+		if (!repository || typeof repository !== "object") return undefined
+		const nameWithOwner = (repository as Record<string, unknown>).nameWithOwner
+		return typeof nameWithOwner === "string" && nameWithOwner
+			? nameWithOwner
+			: undefined
+	}
 	const githubState = String(value.state ?? "OPEN").toLowerCase()
 	const merged = githubState === "merged" || value.mergedAt != null
 	const mergeable = String(value.mergeable ?? "UNKNOWN").toLowerCase()
 	return {
 		...record,
+		headRepository: repositoryName(value.headRepository),
+		headBranch:
+			typeof value.headRefName === "string" ? value.headRefName : undefined,
+		baseRepository: repositoryName(value.baseRepository) ?? record.repository,
+		baseBranch:
+			typeof value.baseRefName === "string" ? value.baseRefName : undefined,
 		state: merged ? "merged" : githubState === "closed" ? "closed" : "open",
 		draft: value.isDraft === true,
 		merged,

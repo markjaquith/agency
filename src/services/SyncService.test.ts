@@ -66,12 +66,12 @@ case "$*" in
 esac
 if [ "$2" = "view" ]; then
 cat <<'JSON'
-{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}
+{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"baseRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}
 JSON
 exit 0
 fi
 cat <<'JSON'
-[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
+[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"baseRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
 JSON
 `,
 		)
@@ -307,6 +307,10 @@ pr: null
 				state: "merged",
 				draft: false,
 				merged: true,
+				headRepository: "example/agency",
+				headBranch: "feat/example",
+				baseRepository: "example/agency",
+				baseBranch: "main",
 				mergeable: true,
 			},
 			claim: { state: "released", sessionId: "session-1" },
@@ -357,7 +361,7 @@ pr: null
 			join(root, "bin", "gh"),
 			`#!/bin/sh
 cat <<'JSON'
-{"number":42,"state":"OPEN","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","url":"https://github.com/example/agency/pull/42","mergedAt":null,"mergeCommit":null,"mergeable":"CONFLICTING"}
+{"number":42,"state":"OPEN","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"baseRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":null,"mergeCommit":null,"mergeable":"CONFLICTING"}
 JSON
 `,
 		)
@@ -745,6 +749,89 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 			),
 		)
 		expect(task.data).toMatchObject({ status: "open" })
+	})
+
+	test("reconciles a merged upstream PR whose head is the writable fork", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "forked",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/polish-readme",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("forked", undefined, root),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:markjaquith/Pasted.git"],
+			join(root, "repos/agency"),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"forked",
+						undefined,
+						"https://github.com/getpasted/pasted/pull/17",
+						root,
+					),
+				),
+			),
+		)
+		await Bun.write(
+			join(root, "bin", "gh"),
+			`#!/bin/sh
+cat <<'JSON'
+{"number":17,"state":"MERGED","title":"Polish README","isDraft":false,"headRefName":"task/polish-readme","baseRefName":"main","headRepository":{"nameWithOwner":"markjaquith/Pasted"},"baseRepository":{"nameWithOwner":"getpasted/pasted"},"url":"https://github.com/getpasted/pasted/pull/17","mergedAt":"2026-08-11T00:00:00Z","mergeCommit":{"oid":"241d45da1115ef685c91a5e6882d118c16801550"},"mergeable":"UNKNOWN"}
+JSON
+`,
+		)
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+			),
+		)
+		expect(
+			applied.unresolved.filter((notice) => notice.target === "task:forked"),
+		).toEqual([])
+		expect(applied.changes.map((change) => change.kind)).toEqual([
+			"record-pr",
+			"mark-done",
+		])
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("forked", root)),
+			),
+		)
+		expect(task.data).toMatchObject({
+			status: "done",
+			pr: {
+				repository: "getpasted/pasted",
+				headRepository: "markjaquith/Pasted",
+				headBranch: "task/polish-readme",
+				baseRepository: "getpasted/pasted",
+				baseBranch: "main",
+				state: "merged",
+				merged: true,
+			},
+		})
 	})
 
 	test("leaves non-PR completion unchanged when a matching PR is discoverable", async () => {

@@ -349,7 +349,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 											"view",
 											existing.url,
 											"--json",
-											"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
+											"number,state,title,isDraft,headRefName,baseRefName,headRepository,baseRepository,url,mergedAt,mergeCommit,mergeable",
 										],
 										{
 											cwd: repositoryPath,
@@ -372,7 +372,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 											"--state",
 											"all",
 											"--json",
-											"number,state,title,isDraft,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeable",
+											"number,state,title,isDraft,headRefName,baseRefName,headRepository,baseRepository,url,mergedAt,mergeCommit,mergeable",
 										],
 										{
 											cwd: repositoryPath,
@@ -773,19 +773,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					const query = prQueries.get(record.key)!
 					const { remoteUrl, remoteRepository } = query
 
-					if (
-						existing &&
-						remoteRepository.toLowerCase() !== existing.repository.toLowerCase()
-					) {
-						prConflict = true
-						unresolved.push({
-							kind: "pr-repository-conflict",
-							target: record.key,
-							message: `Recorded PR repository does not match writable repository remote '${remoteName}'`,
-							action: "Correct the configured remote or recorded PR",
-						})
-					}
-
 					if (config.delivery && !remoteUrl) {
 						warnings.push({
 							kind: "delivery-remote-unavailable",
@@ -812,8 +799,9 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							} else if (
 								parsed.right &&
 								(parsed.right.provider !== config.delivery.provider ||
-									parsed.right.repository.toLowerCase() !==
-										remoteRepository.toLowerCase())
+									(
+										parsed.right.headRepository ?? parsed.right.repository
+									).toLowerCase() !== remoteRepository.toLowerCase())
 							) {
 								if (parsed.right) {
 									prConflict = true
@@ -850,14 +838,18 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							current = recordFromGitHubJson(detail)
 							pr = { ...detail, ...current }
 							if (
-								detail.headRefName !== data.branch ||
-								detail.baseRefName !== data.base
+								current.headRepository?.toLowerCase() !==
+									remoteRepository.toLowerCase() ||
+								current.headBranch !== data.branch ||
+								current.baseRepository?.toLowerCase() !==
+									current.repository.toLowerCase() ||
+								current.baseBranch !== data.base
 							) {
 								prConflict = true
 								unresolved.push({
-									kind: "pr-branch-conflict",
+									kind: "pr-repository-conflict",
 									target: record.key,
-									message: `Recorded PR branches do not match '${data.branch}' -> '${data.base}'`,
+									message: `Recorded PR head does not match '${remoteRepository}:${data.branch}' or base '${current.repository}:${data.base}'`,
 									action: "Correct the declaration or recorded PR URL",
 								})
 							}
@@ -883,6 +875,20 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							if (matches.length === 1) {
 								current = recordFromGitHubJson(matches[0]!)
 								pr = { ...matches[0], ...current }
+								if (
+									current.headRepository?.toLowerCase() !==
+										remoteRepository.toLowerCase() ||
+									current.baseRepository?.toLowerCase() !==
+										current.repository.toLowerCase()
+								) {
+									prConflict = true
+									unresolved.push({
+										kind: "pr-repository-conflict",
+										target: record.key,
+										message: `Discovered PR repositories do not match writable repository '${remoteRepository}' and base '${current.repository}'`,
+										action: "Record the authoritative PR URL manually",
+									})
+								}
 							} else if (matches.length > 1) {
 								unresolved.push({
 									kind: "multiple-prs",
