@@ -326,6 +326,54 @@ describe("GraphMutationService", () => {
 		)
 	})
 
+	test("preserves historical handoff provenance across source and destination renames", async () => {
+		await runTestEffect(
+			Effect.gen(function* () {
+				const tasks = yield* TaskService
+				yield* tasks.create(
+					{
+						id: "investigation",
+						ticketUrl: null,
+						repo: "agency",
+						branch: "task/investigation",
+						base: "main",
+						purpose: "investigation",
+					},
+					root,
+				)
+				yield* tasks.handoff(
+					{
+						sourceTaskId: "investigation",
+						id: "implementation",
+						ticketUrl: null,
+						repo: "docs",
+						branch: "task/implementation",
+						base: "main",
+					},
+					root,
+				)
+				const before = yield* tasks.show("implementation", root)
+				const mutations = yield* GraphMutationService
+				yield* mutations.renameTask(
+					"investigation",
+					"investigation-renamed",
+					root,
+				)
+				yield* mutations.renameTask(
+					"implementation",
+					"implementation-renamed",
+					root,
+				)
+				const after = yield* tasks.show("implementation-renamed", root)
+				expect(after.data.handoff).toEqual(before.data.handoff)
+				expect(after.data.handoff?.source).toEqual({
+					kind: "task",
+					taskId: "investigation",
+				})
+			}),
+		)
+	})
+
 	test("moves task membership in both directions", async () => {
 		await runTestEffect(
 			Effect.gen(function* () {

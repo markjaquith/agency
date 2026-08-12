@@ -249,6 +249,8 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 								? { description: task.data.description }
 								: {}),
 							...(task.data.epic ? { epic: task.data.epic } : {}),
+							...(task.data.purpose ? { purpose: task.data.purpose } : {}),
+							...(task.data.handoff ? { handoff: task.data.handoff } : {}),
 							phases: [
 								{ id: firstPhaseId! },
 								{

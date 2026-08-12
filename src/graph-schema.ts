@@ -5,6 +5,7 @@ import {
 	PullRequestRecord,
 	ClaimRecord,
 	ReviewRecord,
+	TaskHandoff,
 	TaskFrontmatter,
 	WorkStatus,
 } from "./workbase/schemas"
@@ -80,6 +81,10 @@ export const GraphExecutionData = Schema.Union(
 			phaseId: Schema.optional(Schema.String),
 			ticketUrl: Schema.optional(Schema.NullOr(Schema.String)),
 			epic: Schema.optional(Schema.String),
+			purpose: Schema.optional(
+				Schema.Literal("investigation", "implementation"),
+			),
+			handoff: Schema.optional(TaskHandoff),
 		}),
 	),
 	Schema.Struct({
@@ -87,6 +92,8 @@ export const GraphExecutionData = Schema.Union(
 		ticketUrl: Schema.NullOr(Schema.String),
 		description: Schema.optional(Schema.String),
 		epic: Schema.optional(Schema.String),
+		purpose: Schema.optional(Schema.Literal("investigation", "implementation")),
+		handoff: Schema.optional(TaskHandoff),
 		review: ReviewRecord,
 		status: WorkStatus,
 		claim: Schema.optional(ClaimRecord),

@@ -333,6 +333,8 @@
         "ticketUrl": { "type": ["string", "null"] },
         "description": { "type": "string" },
         "epic": { "type": "string" },
+        "purpose": { "$ref": "#/$defs/taskPurpose" },
+        "handoff": { "$ref": "#/$defs/taskHandoff" },
         "repo": { "type": "string" },
         "repos": {
           "type": "array",
@@ -354,6 +356,8 @@
         "ticketUrl": { "type": ["string", "null"] },
         "description": { "type": "string" },
         "epic": { "type": "string" },
+        "purpose": { "$ref": "#/$defs/taskPurpose" },
+        "handoff": { "$ref": "#/$defs/taskHandoff" },
         "phases": {
           "type": "array",
           "items": { "$ref": "#/$defs/dependency" }
@@ -416,6 +420,8 @@
         "ticketUrl": { "type": ["string", "null"] },
         "description": { "type": "string" },
         "epic": { "type": "string" },
+        "purpose": { "$ref": "#/$defs/taskPurpose" },
+        "handoff": { "$ref": "#/$defs/taskHandoff" },
         "review": { "$ref": "#/$defs/reviewRecord" },
         "status": { "$ref": "#/$defs/status" },
         "claim": { "$ref": "#/$defs/claim" },
@@ -452,6 +458,8 @@
             "phaseId": { "type": "string" },
             "ticketUrl": { "type": ["string", "null"] },
             "epic": { "type": "string" },
+            "purpose": { "$ref": "#/$defs/taskPurpose" },
+            "handoff": { "$ref": "#/$defs/taskHandoff" },
             "description": { "type": "string" },
             "repo": { "type": "string" },
             "repos": {
@@ -474,12 +482,57 @@
             "ticketUrl": { "type": ["string", "null"] },
             "description": { "type": "string" },
             "epic": { "type": "string" },
+            "purpose": { "$ref": "#/$defs/taskPurpose" },
+            "handoff": { "$ref": "#/$defs/taskHandoff" },
             "review": { "$ref": "#/$defs/reviewRecord" },
             "status": { "$ref": "#/$defs/status" },
             "claim": { "$ref": "#/$defs/claim" }
           }
         }
       ]
+    },
+    "taskPurpose": {
+      "enum": ["investigation", "implementation"]
+    },
+    "taskHandoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sourceRevision"],
+      "properties": {
+        "source": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "taskId"],
+              "properties": {
+                "kind": { "const": "task" },
+                "taskId": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "taskId", "phaseId"],
+              "properties": {
+                "kind": { "const": "phase" },
+                "taskId": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+                },
+                "phaseId": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+                }
+              }
+            }
+          ]
+        },
+        "sourceRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
     },
     "claim": {
       "type": "object",

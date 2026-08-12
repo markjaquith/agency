@@ -64,6 +64,42 @@ describe("portable repository declarations", () => {
 })
 
 describe("body-of-work descriptions", () => {
+	test("decodes strict task purpose and handoff provenance", () => {
+		const handoff = {
+			source: { kind: "phase", taskId: "investigate", phaseId: "evidence" },
+			sourceRevision: "a".repeat(64),
+		}
+		const task = Schema.decodeUnknownSync(TaskFrontmatter, {
+			onExcessProperty: "error",
+		})({
+			ticketUrl: null,
+			purpose: "implementation",
+			handoff,
+			repo: "agency",
+			branch: "task/implement",
+			base: "main",
+			pr: null,
+		})
+		expect(task).toMatchObject({ purpose: "implementation", handoff })
+
+		for (const invalid of [
+			{ ...handoff, sourceRevision: "short" },
+			{ ...handoff, source: { kind: "phase", taskId: "investigate" } },
+			{ ...handoff, source: { kind: "task", taskId: "../unsafe" } },
+		]) {
+			expect(() =>
+				Schema.decodeUnknownSync(TaskFrontmatter, {
+					onExcessProperty: "error",
+				})({
+					ticketUrl: null,
+					purpose: "implementation",
+					handoff: invalid,
+					phases: [],
+				}),
+			).toThrow()
+		}
+	})
+
 	test("decodes review tasks strictly and rejects writable execution fields", () => {
 		const review = {
 			ticketUrl: null,

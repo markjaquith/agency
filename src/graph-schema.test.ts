@@ -27,6 +27,14 @@ describe("graph contract", () => {
 			readiness: { type: "null" },
 			aggregate: { type: "null" },
 		})
+		expect(jsonSchema.$defs.taskHandoff).toMatchObject({
+			additionalProperties: false,
+			required: ["source", "sourceRevision"],
+		})
+		expect(jsonSchema.$defs.singleTaskData.properties).toMatchObject({
+			purpose: { $ref: "#/$defs/taskPurpose" },
+			handoff: { $ref: "#/$defs/taskHandoff" },
+		})
 	})
 
 	test("streams records that reconstruct graph semantics", () => {

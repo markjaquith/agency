@@ -62,6 +62,31 @@ agent from an active agent session; creating a pull request; archiving, restorin
 dropping, reopening, or completing work without a pull request; or using `--force`
 to override readiness.
 
+## Investigation Handoffs
+
+An explicit request for a new, separate, or follow-up item overrides reuse of
+every active or archived item, even when the subject or suggested ID matches.
+Existing work may be inspected for duplicate scope, but do not mutate or select
+it as the destination unless the user explicitly asks to reuse it.
+
+Use this ordered flow for investigation-to-implementation work:
+
+1. Create investigation-only work with `agency task create <id> --purpose
+investigation ...`.
+2. Record its boundary, evidence, findings, recommendation, and any no-change
+   outcome in the generated task sections.
+3. Create a distinct implementation task with `agency task handoff
+<investigation-task> <new-task> ...`; add `--source-phase <phase>` when the
+   evidence belongs to one phase.
+4. Verify the returned new selector, source selector and revision, validation
+   result, and then confirm authority with `agency context <new-task> --json`.
+5. Prepare, open, or launch the new item only when separately requested.
+
+Creation and handoff do not imply worktree preparation, status changes, agent
+launch, or UI actions. Handoff provenance is one-way historical evidence, not a
+dependency: source rename or content changes can make its selector unresolved or
+revision stale, and Agency must not silently rewrite that evidence.
+
 ## Safety
 
 - Stop on validation errors, dependency blockers, an unexpected writable

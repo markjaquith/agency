@@ -25,6 +25,18 @@ export interface TransactionStep {
 	readonly manualRecovery?: string
 }
 
+export const pathMustNotExistStep = (
+	root: string,
+	path: string,
+	message: string,
+): TransactionStep => ({
+	label: `verify ${relative(root, path)} is available`,
+	preflight: async () => {
+		if (await exists(path)) throw new Error(message)
+	},
+	apply: async () => {},
+})
+
 interface DocumentWrite {
 	readonly path: string
 	readonly content: string

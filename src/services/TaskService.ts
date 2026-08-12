@@ -1,15 +1,19 @@
 import { Schema, TreeFormatter } from "@effect/schema"
 import { Data, Effect, Either } from "effect"
+import { readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
-import { WorkbaseService } from "./WorkbaseService"
+import { WorkbaseService, type ValidationReport } from "./WorkbaseService"
 import { VersionControlService } from "./VersionControlService"
 import { EpicService, type EpicRecord } from "./EpicService"
 import {
 	EntityId,
+	PhaseFrontmatter,
 	TaskFrontmatter,
 	type RepositoryReference,
 	type ReviewRecord,
+	type TaskHandoff,
+	type TaskPurpose,
 	type TaskFrontmatter as TaskData,
 	WorkStatus,
 } from "../workbase/schemas"
@@ -17,6 +21,7 @@ import {
 	formatMarkdownDocument,
 	formatWorkDocumentBody,
 	parseFrontmatter,
+	parseFrontmatterSync,
 } from "../workbase/frontmatter"
 import { canTransitionStatus } from "../readiness"
 import { documentRevision } from "../workbase/document-revision"
@@ -27,6 +32,7 @@ import {
 } from "../workbase/completion"
 import {
 	documentWriteStep,
+	pathMustNotExistStep,
 	runLifecycleTransaction,
 	type TransactionStep,
 } from "./LifecycleTransaction"
@@ -54,6 +60,27 @@ export interface CreateTaskInput {
 	readonly branch?: string
 	readonly base?: string
 	readonly review?: ReviewRecord
+	readonly purpose?: TaskPurpose
+	readonly handoff?: TaskHandoff
+	readonly preconditions?: readonly {
+		readonly path: string
+		readonly revision: string
+	}[]
+	readonly transactionSteps?: readonly TransactionStep[]
+	readonly postWriteSteps?: readonly TransactionStep[]
+}
+
+export interface HandoffTaskInput {
+	readonly sourceTaskId: string
+	readonly sourcePhaseId?: string
+	readonly id: string
+	readonly ticketUrl: string | null
+	readonly description?: string
+	readonly epic?: string
+	readonly repo: string
+	readonly repos?: readonly RepositoryReference[]
+	readonly branch: string
+	readonly base: string
 }
 
 const decodeTask = (input: unknown) => {
@@ -81,6 +108,72 @@ const decodeStatus = (status: string) => {
 		? Effect.fail(new TaskError({ message: `Invalid work status '${status}'` }))
 		: Effect.succeed(result.right)
 }
+
+const decodePhase = (input: unknown) => {
+	const result = Schema.decodeUnknownEither(PhaseFrontmatter, {
+		errors: "all",
+		onExcessProperty: "error",
+	})(input)
+	return Either.isLeft(result)
+		? Effect.fail(
+				new TaskError({ message: TreeFormatter.formatErrorSync(result.left) }),
+			)
+		: Effect.succeed(result.right)
+}
+
+const branchAvailableStep = (
+	root: string,
+	repo: string,
+	branch: string,
+	destinationId: string,
+): TransactionStep => ({
+	label: `verify branch ${repo}:${branch} is available`,
+	preflight: async () => {
+		const taskEntries = await readdir(join(root, "tasks"), {
+			withFileTypes: true,
+		}).catch(() => [])
+		for (const taskEntry of taskEntries) {
+			if (!taskEntry.isDirectory() || taskEntry.name === destinationId) continue
+			const taskPath = join(root, "tasks", taskEntry.name, "TASK.md")
+			const taskContent = await Bun.file(taskPath).text()
+			const taskData = Schema.decodeUnknownSync(TaskFrontmatter, {
+				errors: "all",
+				onExcessProperty: "error",
+			})(parseFrontmatterSync(taskContent, taskPath).data)
+			if (
+				"repo" in taskData &&
+				taskData.repo === repo &&
+				taskData.branch === branch
+			) {
+				throw new Error(
+					`Writable branch '${branch}' for repository '${repo}' is already owned by task '${taskEntry.name}'`,
+				)
+			}
+			if (!("phases" in taskData)) continue
+			for (const phase of taskData.phases) {
+				const phasePath = join(
+					root,
+					"tasks",
+					taskEntry.name,
+					"phases",
+					phase.id,
+					"PHASE.md",
+				)
+				const phaseContent = await Bun.file(phasePath).text()
+				const phaseData = Schema.decodeUnknownSync(PhaseFrontmatter, {
+					errors: "all",
+					onExcessProperty: "error",
+				})(parseFrontmatterSync(phaseContent, phasePath).data)
+				if (phaseData.repo === repo && phaseData.branch === branch) {
+					throw new Error(
+						`Writable branch '${branch}' for repository '${repo}' is already owned by phase '${taskEntry.name}/${phase.id}'`,
+					)
+				}
+			}
+		}
+	},
+	apply: async () => {},
+})
 
 const reviewPinRef = (taskId: string) =>
 	`refs/agency/reviews/${Buffer.from(taskId).toString("hex")}`
@@ -151,7 +244,22 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				}
 				if (yield* fs.exists(archivedTaskDirectory(root, id))) {
 					return yield* new TaskError({
-						message: `Task '${id}' is archived; restore it before reusing this ID`,
+						message: `Task '${id}' is archived; explicit creation requires a different ID`,
+					})
+				}
+				const taskMetadata = {
+					...(input.purpose ? { purpose: input.purpose } : {}),
+					...(input.handoff ? { handoff: input.handoff } : {}),
+				}
+				if (input.handoff && input.purpose !== "implementation") {
+					return yield* new TaskError({
+						message:
+							"Task handoff provenance requires purpose 'implementation'",
+					})
+				}
+				if (input.purpose === "implementation" && !input.handoff) {
+					return yield* new TaskError({
+						message: "Implementation-purpose tasks require handoff provenance",
 					})
 				}
 
@@ -175,6 +283,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 							? { description: input.description }
 							: {}),
 						...(input.epic ? { epic: input.epic } : {}),
+						...taskMetadata,
 						review: input.review,
 					})
 				} else if (input.multiPhase) {
@@ -184,6 +293,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 							? { description: input.description }
 							: {}),
 						...(input.epic ? { epic: input.epic } : {}),
+						...taskMetadata,
 						phases: [],
 					})
 				} else {
@@ -198,6 +308,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 							? { description: input.description }
 							: {}),
 						...(input.epic ? { epic: input.epic } : {}),
+						...taskMetadata,
 						repo: input.repo,
 						...(input.repos?.length ? { repos: input.repos } : {}),
 						branch: input.branch,
@@ -245,7 +356,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					.join(" ")
 				const content = formatMarkdownDocument(
 					data,
-					formatWorkDocumentBody(title, "task"),
+					formatWorkDocumentBody(title, "task", input.purpose),
 				)
 				const writes: {
 					path: string
@@ -273,14 +384,29 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				}
 				yield* runLifecycleTransaction({
 					root,
-					preconditions: parentEpic
-						? [{ path: parentEpic.path, revision: parentEpic.revision }]
-						: [],
+					preconditions: [
+						...(input.preconditions ?? []),
+						...(parentEpic
+							? [{ path: parentEpic.path, revision: parentEpic.revision }]
+							: []),
+					],
 					steps: [
+						...(input.transactionSteps ?? []),
+						pathMustNotExistStep(
+							root,
+							directory,
+							`Task '${id}' already exists`,
+						),
+						pathMustNotExistStep(
+							root,
+							archivedTaskDirectory(root, id),
+							`Task '${id}' is archived; explicit creation requires a different ID`,
+						),
 						...(input.review
 							? [reviewPinStep(root, id, input.review, reviewEnvironment)]
 							: []),
 						documentWriteStep(root, writes),
+						...(input.postWriteSteps ?? []),
 					],
 				})
 
@@ -291,6 +417,139 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					revision: documentRevision(content),
 					data,
 				} satisfies TaskRecord
+			}),
+
+		handoff: (input: HandoffTaskInput, startPath: string = process.cwd()) =>
+			Effect.gen(function* () {
+				const fs = yield* FileSystemService
+				const workbase = yield* WorkbaseService
+				const service = yield* TaskService
+				const root = yield* workbase.discover(startPath)
+				const sourceTaskId = yield* decodeId(input.sourceTaskId)
+				const sourceTask = yield* service.show(sourceTaskId, root)
+				const validation = yield* workbase.validate(root)
+				if (!validation.valid) {
+					return yield* new TaskError({
+						message: "Cannot create a handoff in an invalid workbase",
+					})
+				}
+				if (sourceTask.data.purpose !== "investigation") {
+					return yield* new TaskError({
+						message: `Task '${sourceTaskId}' is not an investigation task`,
+					})
+				}
+
+				const preconditions = [
+					{ path: sourceTask.path, revision: sourceTask.revision },
+				]
+				let source: TaskHandoff["source"]
+				let committedValidation: ValidationReport | undefined
+				let sourcePath = sourceTask.path
+				let sourceRevision = sourceTask.revision
+				if (input.sourcePhaseId) {
+					const phaseId = yield* decodeId(input.sourcePhaseId)
+					if (
+						!("phases" in sourceTask.data) ||
+						!sourceTask.data.phases.some((phase) => phase.id === phaseId)
+					) {
+						return yield* new TaskError({
+							message: `Phase '${sourceTaskId}/${phaseId}' does not exist`,
+						})
+					}
+					sourcePath = join(
+						root,
+						"tasks",
+						sourceTaskId,
+						"phases",
+						phaseId,
+						"PHASE.md",
+					)
+					const sourceContent = yield* fs.readFile(sourcePath)
+					const parsed = yield* parseFrontmatter(sourceContent, sourcePath)
+					yield* decodePhase(parsed.data)
+					sourceRevision = documentRevision(sourceContent)
+					preconditions.push({ path: sourcePath, revision: sourceRevision })
+					source = { kind: "phase", taskId: sourceTaskId, phaseId }
+				} else {
+					source = { kind: "task", taskId: sourceTaskId }
+				}
+
+				const record = yield* service.create(
+					{
+						id: input.id,
+						ticketUrl: input.ticketUrl,
+						description: input.description,
+						epic: input.epic,
+						repo: input.repo,
+						repos: input.repos,
+						branch: input.branch,
+						base: input.base,
+						purpose: "implementation",
+						handoff: { source, sourceRevision },
+						preconditions,
+						transactionSteps: [
+							branchAvailableStep(root, input.repo, input.branch, input.id),
+						],
+						postWriteSteps: [
+							{
+								label: "validate resulting workbase",
+								apply: async () => {
+									const report = await Effect.runPromise(
+										workbase
+											.validate(root)
+											.pipe(
+												Effect.provideService(FileSystemService, fs),
+												Effect.provideService(WorkbaseService, workbase),
+											),
+									)
+									if (!report.valid) {
+										throw new Error(
+											`Handoff would create an invalid workbase: ${report.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`,
+										)
+									}
+									committedValidation = report
+								},
+							},
+						],
+					},
+					root,
+				)
+				if (!("repo" in record.data)) {
+					return yield* new TaskError({
+						message: `Task '${record.id}' is not an implementation execution unit`,
+					})
+				}
+				if (!committedValidation) {
+					return yield* new TaskError({
+						message: "Handoff validation did not produce a result",
+					})
+				}
+				const taskDirectory = join(root, "tasks", record.id)
+				const sourceSelector =
+					source.kind === "phase"
+						? `phase/${source.taskId}/${source.phaseId}`
+						: `task/${source.taskId}`
+				return {
+					task: {
+						id: record.id,
+						selector: `task/${record.id}`,
+						directory: taskDirectory,
+						documentPath: record.path,
+						revision: record.revision,
+						branch: record.data.branch,
+						base: record.data.base,
+					},
+					source: {
+						selector: sourceSelector,
+						documentPath: sourcePath,
+						revision: sourceRevision,
+					},
+					validation: committedValidation,
+					worktreePrepare: {
+						target: `task/${record.id}`,
+						command: ["agency", "worktree", "prepare", record.id],
+					},
+				}
 			}),
 
 		list: (startPath: string = process.cwd()) =>

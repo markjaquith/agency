@@ -759,8 +759,56 @@ describe("strict CLI parsing", () => {
 		)
 		expectUsageError(
 			["task", "crate"],
-			"agency task <new|create|list|show|status|update|rename|move|dependency>",
+			"agency task <new|create|handoff|list|show|status|update|rename|move|dependency>",
 		)
+	})
+
+	test("parses investigation creation and explicit handoff commands", () => {
+		expect(
+			parseCli([
+				"task",
+				"create",
+				"investigate",
+				"--purpose",
+				"investigation",
+				"--repo",
+				"agency",
+			]),
+		).toMatchObject({
+			args: ["create", "investigate"],
+			values: { purpose: "investigation", repo: ["agency"] },
+		})
+		expect(
+			parseCli([
+				"task",
+				"handoff",
+				"investigate",
+				"implement",
+				"--source-phase",
+				"evidence",
+				"--repo",
+				"agency",
+				"--json",
+			]),
+		).toMatchObject({
+			args: ["handoff", "investigate", "implement"],
+			values: {
+				"source-phase": "evidence",
+				repo: ["agency"],
+				json: true,
+			},
+		})
+		expect(() =>
+			parseCli([
+				"task",
+				"create",
+				"investigate",
+				"--purpose",
+				"unknown",
+				"--repo",
+				"agency",
+			]),
+		).toThrow("Invalid '--purpose' value")
 	})
 
 	test("parses graph mutation commands and rejects unsafe ambiguity", () => {

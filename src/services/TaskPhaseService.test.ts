@@ -116,6 +116,234 @@ describe("task and phase services", () => {
 		expect(epic.data.tasks).toEqual([])
 	})
 
+	test("creates revision-bound task and phase investigation handoffs", async () => {
+		const source = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "investigate",
+							ticketUrl: null,
+							multiPhase: true,
+							purpose: "investigation",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const phase = await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "investigate",
+							id: "evidence",
+							repo: "agency",
+							branch: "task/investigate-evidence",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const currentSource = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("investigate", root)),
+			),
+		)
+		const sourceContent = await Bun.file(source.path).text()
+		const phaseContent = await Bun.file(phase.path).text()
+
+		const fromTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.handoff(
+						{
+							sourceTaskId: "investigate",
+							id: "implement-task",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/implement-task",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const fromPhase = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.handoff(
+						{
+							sourceTaskId: "investigate",
+							sourcePhaseId: "evidence",
+							id: "implement-phase",
+							ticketUrl: null,
+							repo: "effect",
+							branch: "task/implement-phase",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		expect(fromTask.source).toEqual({
+			selector: "task/investigate",
+			documentPath: source.path,
+			revision: currentSource.revision,
+		})
+		expect(fromPhase.source).toEqual({
+			selector: "phase/investigate/evidence",
+			documentPath: phase.path,
+			revision: phase.revision,
+		})
+		expect(fromPhase.validation.valid).toBe(true)
+		expect(fromPhase.worktreePrepare.command).toEqual([
+			"agency",
+			"worktree",
+			"prepare",
+			"implement-phase",
+		])
+		expect(await Bun.file(source.path).text()).toBe(sourceContent)
+		expect(await Bun.file(phase.path).text()).toBe(phaseContent)
+		expect(
+			await Bun.file(join(root, "tasks/implement-phase/code")).exists(),
+		).toBe(false)
+
+		const created = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("implement-phase", root)),
+			),
+		)
+		expect(created.data).toMatchObject({
+			purpose: "implementation",
+			handoff: {
+				source: {
+					kind: "phase",
+					taskId: "investigate",
+					phaseId: "evidence",
+				},
+				sourceRevision: phase.revision,
+			},
+			status: "open",
+		})
+		await Bun.write(
+			phase.path,
+			phaseContent.replace(
+				"Describe the phase outcome.",
+				"Recorded evidence remains stale-safe.",
+			),
+		)
+		const staleSource = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("implement-phase", root)),
+			),
+		)
+		expect(staleSource.data.handoff?.sourceRevision).toBe(phase.revision)
+
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.handoff(
+							{
+								sourceTaskId: "investigate",
+								id: "implement-task",
+								ticketUrl: null,
+								repo: "agency",
+								branch: "task/duplicate",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("already exists")
+
+		await mkdir(join(root, "archive/tasks/reserved"), { recursive: true })
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.handoff(
+							{
+								sourceTaskId: "investigate",
+								id: "reserved",
+								ticketUrl: null,
+								repo: "agency",
+								branch: "task/reserved",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("explicit creation requires a different ID")
+	})
+
+	test("rolls back handoff creation when a source revision is stale", async () => {
+		const source = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "stale-investigation",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/stale-investigation",
+							base: "main",
+							purpose: "investigation",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const staleRevision = source.revision
+		await Bun.write(
+			source.path,
+			`${source.content}\nChanged after inspection.\n`,
+		)
+
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id: "stale-implementation",
+								ticketUrl: null,
+								repo: "effect",
+								branch: "task/stale-implementation",
+								base: "main",
+								purpose: "implementation",
+								handoff: {
+									source: {
+										kind: "task",
+										taskId: "stale-investigation",
+									},
+									sourceRevision: staleRevision,
+								},
+								preconditions: [{ path: source.path, revision: staleRevision }],
+							},
+							root,
+						),
+					),
+				),
+			),
+		).rejects.toThrow("Revision conflict")
+		expect(
+			await Bun.file(join(root, "tasks/stale-implementation/TASK.md")).exists(),
+		).toBe(false)
+	})
+
 	test("creates and sequences phases on a multi-phase task", async () => {
 		await runTestEffect(
 			TaskService.pipe(
@@ -192,6 +420,11 @@ describe("task and phase services", () => {
 							repos: [{ repo: "effect", ref: "main" }],
 							branch: "task/single",
 							base: "main",
+							purpose: "implementation",
+							handoff: {
+								source: { kind: "task", taskId: "investigation" },
+								sourceRevision: "a".repeat(64),
+							},
 						},
 						root,
 					),
@@ -256,6 +489,11 @@ describe("task and phase services", () => {
 		expect(task.data).toEqual({
 			ticketUrl: "https://example.com/task",
 			description: "Deliver the complete task.",
+			purpose: "implementation",
+			handoff: {
+				source: { kind: "task", taskId: "investigation" },
+				sourceRevision: "a".repeat(64),
+			},
 			phases: [
 				{ id: "implementation" },
 				{ id: "extra", dependsOn: ["implementation"] },

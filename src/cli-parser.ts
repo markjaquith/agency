@@ -89,6 +89,8 @@ const taskCreateOptions = {
 	"context-base": { type: "string" },
 	"context-slug": { type: "string" },
 	"authoritative-source": { type: "string", multiple: true },
+	purpose: { type: "string" },
+	"source-phase": { type: "string" },
 } satisfies OptionConfig
 
 const phaseCreateOptions = {
@@ -367,7 +369,7 @@ const commands = {
 	},
 	task: {
 		usage:
-			"agency task <new|create|list|show|status|update|rename|move|dependency>",
+			"agency task <new|create|handoff|list|show|status|update|rename|move|dependency>",
 		options: {
 			...taskCreateOptions,
 			...newWorkOptions,
@@ -390,6 +392,7 @@ const commands = {
 					"reference",
 					"branch",
 					"base",
+					"purpose",
 					"multi-phase",
 					"work",
 					"auto",
@@ -411,6 +414,7 @@ const commands = {
 					"reference",
 					"branch",
 					"base",
+					"purpose",
 					"multi-phase",
 					"review",
 					"pull-request",
@@ -422,6 +426,25 @@ const commands = {
 					"json",
 				],
 				repeatable: ["reference", "authoritative-source"],
+			},
+			handoff: {
+				usage:
+					"agency task handoff <source-task-id> <new-task-id> --repo <alias> [--source-phase <phase-id>] [options]",
+				minArgs: 2,
+				maxArgs: 2,
+				options: [
+					"ticket-url",
+					"description",
+					"epic",
+					"repo",
+					"reference",
+					"branch",
+					"base",
+					"source-phase",
+					"json",
+				],
+				required: ["repo"],
+				repeatable: ["reference"],
 			},
 			list: {
 				usage: "agency task list [filters] [--json]",
@@ -1231,6 +1254,12 @@ function validateTaskCreate(
 	spec: LeafCommand,
 	requireRepo: boolean,
 ) {
+	if (values.purpose !== undefined && values.purpose !== "investigation") {
+		throw usageError(
+			`Invalid '--purpose' value '${String(values.purpose)}'. Expected: investigation.`,
+			spec.usage,
+		)
+	}
 	const review = values.review !== undefined
 	const pullRequest = values["pull-request"] !== undefined
 	const ref = values.ref !== undefined

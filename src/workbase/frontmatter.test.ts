@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { parseFrontmatter } from "./frontmatter"
+import { formatWorkDocumentBody, parseFrontmatter } from "./frontmatter"
 
 describe("parseFrontmatter", () => {
 	test("parses YAML 1.2 frontmatter and body", async () => {
@@ -46,5 +46,22 @@ describe("parseFrontmatter", () => {
 		await expect(
 			Effect.runPromise(parseFrontmatter("# Task\n", "TASK.md")),
 		).rejects.toThrow("must begin with YAML frontmatter")
+	})
+})
+
+describe("formatWorkDocumentBody", () => {
+	test("generates explicit investigation sections", () => {
+		const body = formatWorkDocumentBody(
+			"Investigate Checkout",
+			"task",
+			"investigation",
+		)
+
+		expect(body).toContain("## Investigation Boundary")
+		expect(body).toContain("## Evidence")
+		expect(body).toContain("## Findings")
+		expect(body).toContain("## Recommendation")
+		expect(body).toContain("## Implementation Handoff")
+		expect(body).not.toContain("Describe the task outcome")
 	})
 })

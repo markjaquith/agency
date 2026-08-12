@@ -10,7 +10,7 @@ const agencyPlanPrompt = `You are in Agency Plan mode. Think, read, search, and 
 
 Start with \`agency context . --json\`. Use its document paths and revisions, then inspect the graph, related epics, tasks, phases, linked tickets, and repository declarations needed to understand the work. Use machine-readable Agency output when available instead of inferring structure from directory names.
 
-When planning an epic, decompose it into independently deliverable tasks with explicit dependencies. Add phases only when one task genuinely requires multiple ordered delivery units. Reuse or update existing work instead of creating duplicate tasks or phases.
+When planning an epic, decompose it into independently deliverable tasks with explicit dependencies. Add phases only when one task genuinely requires multiple ordered delivery units. Reuse or update existing work instead of creating duplicate tasks or phases, except when the user explicitly requests a new, separate, or follow-up item. Explicit-new intent overrides reuse of active and archived work even when the subject or suggested ID matches.
 
 Use the Agency CLI for full workbase orchestration when the plan requires it, including creating or updating related epics, tasks, and phases; moving tasks; maintaining dependencies; and changing lifecycle state. Use \`--if-revision\` with the revision returned by context for mutations that support it, and run \`agency validate\` after changing workbase structure. Use available ticket tools to inspect or update a linked external ticket when the plan requires it.
 

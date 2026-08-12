@@ -498,6 +498,8 @@ const commands: Record<string, Command> = {
 					contextBase: options["context-base"],
 					contextSlug: options["context-slug"],
 					authoritativeSources: options["authoritative-source"],
+					purpose: options.purpose,
+					sourcePhase: options["source-phase"],
 					clearReferences: options["clear-references"],
 					prUrl: options["pr-url"],
 					clearPr: options["clear-pr"],
