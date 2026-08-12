@@ -239,7 +239,15 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 							})
 							if (!url)
 								throw new Error("GitHub CLI did not return a pull request URL")
-							return { ...normalizePullRequestRecord(url), draft }
+							const normalized = normalizePullRequestRecord(url)
+							return {
+								...normalized,
+								headRepository: repository,
+								headBranch: execution.branch,
+								baseRepository: normalized.repository,
+								baseBranch: execution.base,
+								draft,
+							}
 						},
 						catch: (cause) =>
 							new PullRequestError({
@@ -249,7 +257,8 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					if (
 						config.delivery &&
 						(record.provider !== config.delivery.provider ||
-							record.repository.toLowerCase() !== repository.toLowerCase())
+							(record.headRepository ?? record.repository).toLowerCase() !==
+								repository.toLowerCase())
 					) {
 						return yield* new PullRequestError({
 							message:

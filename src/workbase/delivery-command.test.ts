@@ -104,8 +104,24 @@ describe("delivery commands", () => {
 			isDraft: false,
 		}
 		expect(
-			recordFromGitHubJson({ ...base, state: "OPEN", mergeable: "MERGEABLE" }),
-		).toMatchObject({ state: "open", merged: false, mergeable: true })
+			recordFromGitHubJson({
+				...base,
+				state: "OPEN",
+				headRefName: "feat/example",
+				baseRefName: "main",
+				headRepository: { nameWithOwner: "fork/agency" },
+				baseRepository: { nameWithOwner: "example/agency" },
+				mergeable: "MERGEABLE",
+			}),
+		).toMatchObject({
+			state: "open",
+			merged: false,
+			headRepository: "fork/agency",
+			headBranch: "feat/example",
+			baseRepository: "example/agency",
+			baseBranch: "main",
+			mergeable: true,
+		})
 		expect(
 			recordFromGitHubJson({
 				...base,
