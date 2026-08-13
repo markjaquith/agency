@@ -1,6 +1,8 @@
 import { Effect } from "effect"
+import { isAbsolute, relative, resolve, sep } from "node:path"
 import type { GraphNode } from "../graph-schema"
 import { isTerminalStatus } from "../readiness"
+import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import type { BaseCommandOptions } from "../utils/command"
@@ -29,6 +31,7 @@ export interface ActInteraction {
 }
 
 interface ActOptions extends BaseCommandOptions {
+	readonly directory?: string
 	readonly auto?: boolean
 	readonly draft?: boolean
 	readonly dryRun?: boolean
@@ -49,13 +52,49 @@ const entityDescription = (node: EntityNode) =>
 		? ` - ${node.data.description}`
 		: ""
 
+const orderedEntities = (
+	nodes: readonly EntityNode[],
+	edges: readonly {
+		readonly kind: string
+		readonly from: string
+		readonly to: string
+	}[],
+) => {
+	const byId = new Map(nodes.map((node) => [node.id, node]))
+	const children = new Map<string, EntityNode[]>()
+	const owned = new Set<string>()
+	for (const edge of edges) {
+		if (edge.kind !== "owns") continue
+		const parent = byId.get(edge.from)
+		const child = byId.get(edge.to)
+		if (!parent || !child) continue
+		children.set(edge.from, [...(children.get(edge.from) ?? []), child])
+		owned.add(child.id)
+	}
+
+	const ordered: { readonly node: EntityNode; readonly depth: number }[] = []
+	const append = (node: EntityNode, depth: number) => {
+		ordered.push({ node, depth })
+		for (const child of children.get(node.id) ?? []) append(child, depth + 1)
+	}
+	for (const node of nodes) {
+		if (!owned.has(node.id)) append(node, 0)
+	}
+	return ordered
+}
+
 const entityChoices = (
 	nodes: readonly EntityNode[],
+	edges: readonly {
+		readonly kind: string
+		readonly from: string
+		readonly to: string
+	}[],
 ): readonly Choice<string>[] =>
-	nodes.map((node, index) => ({
+	orderedEntities(nodes, edges).map(({ node, depth }, index) => ({
 		key: String(index),
 		label: `[${node.status}] ${node.kind} ${node.key}${entityDescription(node)}`,
-		depth: node.kind === "phase" ? 1 : 0,
+		depth,
 		segments: [
 			{ text: `[${node.status}] `, color: macchiato.overlay1 },
 			{ text: `${node.kind} `, color: macchiato.sapphire },
@@ -229,6 +268,26 @@ const selectedEntityKey = (options: ActOptions) =>
 				? `task:${options.taskId}`
 				: undefined
 
+const pathEntityKey = (
+	directory: string | undefined,
+	isDirectory: boolean,
+	root: string,
+	startPath: string,
+) => {
+	if (!directory) return undefined
+	if (!isDirectory) return `task:${directory}`
+	const path = relative(root, startPath)
+	const parts =
+		!path || isAbsolute(path) || path.startsWith(`..${sep}`)
+			? []
+			: path.split(sep)
+	if (parts[0] === "epics" && parts[1]) return `epic:${parts[1]}`
+	if (parts[0] !== "tasks" || !parts[1]) return undefined
+	return parts[2] === "phases" && parts[3]
+		? `phase:${parts[1]}/${parts[3]}`
+		: `task:${parts[1]}`
+}
+
 const sameActions = (
 	left: readonly Choice<ActAction>[],
 	right: readonly Choice<ActAction>[],
@@ -250,11 +309,19 @@ export const act = (
 			)
 		}
 		const cwd = options.cwd ?? process.cwd()
+		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
 		const graphs = yield* GraphService
 		const { log } = createLoggers(options)
-		const { config } = yield* workbase.loadConfig(cwd)
-		const graph = yield* graphs.get({ cwd })
+		const directoryPath = options.directory
+			? resolve(cwd, options.directory)
+			: undefined
+		const isDirectory = directoryPath
+			? yield* fs.isDirectory(directoryPath)
+			: false
+		const startPath = isDirectory && directoryPath ? directoryPath : cwd
+		const { root, config } = yield* workbase.loadConfig(startPath)
+		const graph = yield* graphs.get({ cwd: root })
 		const nodes = graph.nodes.filter(
 			(node): node is EntityNode =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
@@ -269,7 +336,9 @@ export const act = (
 			)
 		}
 
-		const requestedKey = selectedEntityKey(options)
+		const requestedKey =
+			selectedEntityKey(options) ??
+			pathEntityKey(options.directory, isDirectory, root, startPath)
 		const matchingNodes = requestedKey
 			? nodes.filter((node) => entityKey(node) === requestedKey)
 			: nodes
@@ -293,11 +362,21 @@ export const act = (
 			return
 		}
 
+		const selectableNodes = nodes.filter(
+			(node) => actionChoices(node, graph.nodes).length > 0,
+		)
+		if (!requestedKey && selectableNodes.length === 0) {
+			return yield* Effect.fail(
+				new Error(
+					"No work items with available actions found in this workbase",
+				),
+			)
+		}
 		const selectedKey =
 			requestedKey ??
 			(yield* interaction.select(
 				"Act on",
-				entityChoices(nodes),
+				entityChoices(selectableNodes, graph.edges),
 				config.chooserCommand,
 			))
 		if (selectedKey === null) return
@@ -424,10 +503,12 @@ export const act = (
 	})
 
 export const help = `
-Usage: agency act [--epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]
+Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]
 
 Interactively choose an active work item and a state-aware lifecycle action.
-Selectors skip work-item selection. --dry-run prints the selected action's exact
+An existing positional directory selects its containing epic, task, or phase;
+otherwise the positional value is a task ID. Selectors skip work-item selection.
+--dry-run prints the selected action's exact
 Agency command without executing it. --json lists targets, available actions,
 and command argv without prompting or executing.
 

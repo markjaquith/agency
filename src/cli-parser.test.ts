@@ -31,7 +31,10 @@ describe("strict CLI parsing", () => {
 			},
 		})
 		expect(parseCli(["act", "--json"]).values.json).toBe(true)
-		expectUsageError(["act", "task-id"], "agency act")
+		expect(parseCli(["act", "task-id"]).args).toEqual(["task-id"])
+		expect(parseCli(["act", "."]).args).toEqual(["."])
+		expectUsageError(["act", "one", "two"], "agency act")
+		expectUsageError(["act", ".", "--task", "example"], "agency act")
 		expectUsageError(["act", "--phase", "build"], "agency act")
 		expectUsageError(
 			["act", "--epic", "roadmap", "--task", "example"],

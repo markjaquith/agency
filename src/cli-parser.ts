@@ -148,7 +148,7 @@ const commands = {
 	},
 	act: {
 		usage:
-			"agency act [--epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
+			"agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
@@ -158,9 +158,9 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency act [--epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
+				"agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
 			minArgs: 0,
-			maxArgs: 0,
+			maxArgs: 1,
 			options: ["epic", "task", "phase", "dry-run", "json", "auto", "draft"],
 			conflicts: [
 				["dry-run", "json"],
@@ -1198,7 +1198,7 @@ function applyEntitySelectors(
 			spec.usage,
 		)
 	}
-	if (commandName === "work" || commandName === "context") {
+	if (["act", "work", "context"].includes(commandName)) {
 		if (
 			positionals.length >
 			(commandName === "work" && positionals[0] === "prepare" ? 1 : 0)

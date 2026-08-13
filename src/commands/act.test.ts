@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureLogs,
@@ -116,6 +117,100 @@ describe("act command", () => {
 		expect(prompts).toEqual(["Act on task example"])
 		expect(logs).toEqual(["agency task status example dropped"])
 		expect(await readTaskStatus("example")).toBe("open")
+	})
+
+	test("resolves a positional path and task ID without prompting for an item", async () => {
+		await createTask("example")
+		await mkdir(join(root, "tasks/example/code/agency"), { recursive: true })
+		for (const options of [
+			{ cwd: join(root, "tasks/example"), directory: "." },
+			{ cwd: join(root, "tasks/example"), directory: "code/agency" },
+			{ cwd: root, directory: "example" },
+		]) {
+			const prompts: string[] = []
+			await runTestEffect(
+				act(
+					{ ...options, inputAllowed: true, dryRun: true, silent: true },
+					scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+				),
+			)
+			expect(prompts).toEqual(["Act on task example"])
+		}
+	})
+
+	test("resolves a positional phase path without prompting for an item", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "build"],
+				repo: "agency",
+				branch: "task/multi-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const prompts: string[] = []
+		await runTestEffect(
+			act(
+				{
+					cwd: join(root, "tasks/multi/phases/build"),
+					directory: ".",
+					inputAllowed: true,
+					dryRun: true,
+					silent: true,
+				},
+				scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+			),
+		)
+
+		expect(prompts).toEqual(["Act on phase multi/build"])
+	})
+
+	test("orders owned items hierarchically and omits items without actions", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "build"],
+				repo: "agency",
+				branch: "task/multi-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		let choices: readonly Choice<unknown>[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true },
+				scriptedInteraction([null], (_prompt, offered) => {
+					choices = offered
+				}),
+			),
+		)
+
+		expect(choices.map((choice) => [choice.value, choice.depth])).toEqual([
+			["task:multi", 0],
+			["phase:multi/build", 1],
+		])
 	})
 
 	test("returns structured actions and argv for agents", async () => {
