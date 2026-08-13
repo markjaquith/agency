@@ -164,7 +164,12 @@ const plugin: Plugin = async ({ directory }) => {
       const context = workerSessions.get(sessionID)
       if (!context?.target) return
       output.system.push(
-        \`Agency verified this OpenCode session as the active worker for \${context.target}. Perform the assigned work directly. Do not invoke agency work for this target or launch a replacement worker.\`,
+        [
+          \`Agency verified this OpenCode session as the active worker for \${context.target}. Perform the assigned work directly. Do not invoke agency work for this target or launch a replacement worker.\`,
+          context.checkout
+            ? \`OpenCode remains rooted in the task or phase directory for Agency instructions and context. Treat \${context.checkout} as the default implementation directory: use it for source reads, edits, repository status, builds, tests, formatting, and other repository-local commands. Set each tool's working directory to that checkout when supported; otherwise use absolute paths. Run Agency lifecycle and context commands from the task or phase directory. Any reference checkouts reported by Agency context are read-only.\`
+            : undefined,
+        ].filter(Boolean).join(" "),
       )
     },
     "shell.env": async ({ sessionID }, output) => {
