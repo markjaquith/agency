@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdir, rm } from "node:fs/promises"
+import { mkdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
 	captureLogs,
@@ -340,6 +340,123 @@ status: dropped
 		const result = JSON.parse(logs[0]!)
 		expect(result.target).toMatchObject({ kind: "task", taskId: "foundations" })
 		expect(result.authority.writable.branch).toBe("foundations")
+	})
+
+	test("resolves archived tasks without granting mutation or execution authority", async () => {
+		await mkdir(join(root, "archive/tasks"), { recursive: true })
+		await rename(
+			join(root, "tasks/foundations"),
+			join(root, "archive/tasks/foundations"),
+		)
+
+		const result = await readContext(root, "foundations")
+
+		expect(result.target).toMatchObject({
+			kind: "task",
+			taskId: "foundations",
+			archived: true,
+			path: join(root, "archive/tasks/foundations/TASK.md"),
+		})
+		expect(result.documents.task.body).toContain("# Foundations")
+		expect(result.authority).toMatchObject({
+			mode: "orchestration",
+			writable: null,
+			references: [],
+			documents: { writable: [] },
+		})
+		expect(result.workspace).toMatchObject({
+			materialization: "absent",
+			writable: null,
+			references: [],
+		})
+		expect(result.graph.readiness).toMatchObject({
+			ready: false,
+			blocked: true,
+		})
+		expect(result.graph.readiness.blockers).toContainEqual({
+			kind: "status",
+			id: "foundations",
+			reason: "Target is archived; restore it before mutation or execution",
+		})
+		expect(result.pr).toMatchObject({
+			url: "https://github.com/example/agency/pull/1",
+			state: "open",
+		})
+	})
+
+	test("resolves archived phases with their active parent context", async () => {
+		await mkdir(join(root, "archive/tasks/agent-contract/phases"), {
+			recursive: true,
+		})
+		await rename(
+			join(root, "tasks/agent-contract/phases/context-command"),
+			join(root, "archive/tasks/agent-contract/phases/context-command"),
+		)
+
+		const result = await readContext(
+			root,
+			"archive/tasks/agent-contract/phases/context-command",
+		)
+
+		expect(result.target).toMatchObject({
+			kind: "phase",
+			taskId: "agent-contract",
+			phaseId: "context-command",
+			archived: true,
+			path: join(
+				root,
+				"archive/tasks/agent-contract/phases/context-command/PHASE.md",
+			),
+		})
+		expect(result.documents.task.body).toContain("Task prose.")
+		expect(result.documents.phase.body).toContain("Phase prose.")
+		expect(result.graph.parent).toEqual({ kind: "task", id: "agent-contract" })
+		expect(result.graph.readiness).toMatchObject({
+			ready: false,
+			blocked: true,
+		})
+		expect(result.authority).toMatchObject({
+			mode: "orchestration",
+			writable: null,
+			references: [],
+			documents: { writable: [] },
+		})
+	})
+
+	test("resolves archived epics with archived descendant graph context", async () => {
+		await mkdir(join(root, "archive/epics"), { recursive: true })
+		await mkdir(join(root, "archive/tasks"), { recursive: true })
+		await rename(
+			join(root, "epics/contract"),
+			join(root, "archive/epics/contract"),
+		)
+		for (const taskId of ["agent-contract", "foundations"]) {
+			await rename(
+				join(root, "tasks", taskId),
+				join(root, "archive/tasks", taskId),
+			)
+		}
+
+		const result = await readContext(root, "epics/contract")
+
+		expect(result.target).toMatchObject({
+			kind: "epic",
+			epicId: "contract",
+			archived: true,
+			path: join(root, "archive/epics/contract/EPIC.md"),
+		})
+		expect(result.documents.epic.body).toContain("# Contract")
+		expect(result.graph.aggregate).toMatchObject({ total: 3, done: 2, open: 1 })
+		expect(result.graph.readiness).toMatchObject({
+			ready: false,
+			blocked: true,
+		})
+		expect(result.authority).toMatchObject({
+			mode: "orchestration",
+			writable: null,
+			references: [],
+			documents: { writable: [] },
+		})
 	})
 
 	test("computes orchestration readiness from runnable descendants", async () => {

@@ -20,6 +20,11 @@ import {
 	type TaskFrontmatter as TaskData,
 	type WorkStatus,
 } from "../workbase/schemas"
+import {
+	archivedEpicDirectory,
+	archivedPhaseDirectory,
+	archivedTaskDirectory,
+} from "../workbase/archive"
 
 class ContextError extends Data.TaggedError("ContextError")<{
 	readonly message: string
@@ -36,6 +41,7 @@ interface Document<T> {
 
 interface Target {
 	readonly kind: "epic" | "task" | "phase"
+	readonly archived: boolean
 	readonly epicId?: string
 	readonly taskId?: string
 	readonly phaseId?: string
@@ -240,15 +246,45 @@ export class ContextService extends Effect.Service<ContextService>()(
 						if (!candidateExists && !suppliedTarget.includes(sep)) {
 							return {
 								kind: "task",
+								archived: false,
 								taskId: suppliedTarget,
 								path: join(root, "tasks", suppliedTarget, "TASK.md"),
 							}
 						}
 						if (!isWithin(root, candidate)) return null
 						const parts = relative(root, candidate).split(sep)
+						if (parts[0] === "archive" && parts[1] === "epics" && parts[2]) {
+							return {
+								kind: "epic",
+								archived: true,
+								epicId: parts[2],
+								path: join(archivedEpicDirectory(root, parts[2]), "EPIC.md"),
+							}
+						}
+						if (parts[0] === "archive" && parts[1] === "tasks" && parts[2]) {
+							if (parts[3] === "phases" && parts[4]) {
+								return {
+									kind: "phase",
+									archived: true,
+									taskId: parts[2],
+									phaseId: parts[4],
+									path: join(
+										archivedPhaseDirectory(root, parts[2], parts[4]),
+										"PHASE.md",
+									),
+								}
+							}
+							return {
+								kind: "task",
+								archived: true,
+								taskId: parts[2],
+								path: join(archivedTaskDirectory(root, parts[2]), "TASK.md"),
+							}
+						}
 						if (parts[0] === "epics" && parts[1]) {
 							return {
 								kind: "epic",
+								archived: false,
 								epicId: parts[1],
 								path: join(root, "epics", parts[1], "EPIC.md"),
 							}
@@ -257,6 +293,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							if (parts[2] === "phases" && parts[3]) {
 								return {
 									kind: "phase",
+									archived: false,
 									taskId: parts[1],
 									phaseId: parts[3],
 									path: join(
@@ -271,6 +308,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							}
 							return {
 								kind: "task",
+								archived: false,
 								taskId: parts[1],
 								path: join(root, "tasks", parts[1], "TASK.md"),
 							}
@@ -278,12 +316,31 @@ export class ContextService extends Effect.Service<ContextService>()(
 						return null
 					}
 
-					const target = inferTarget()
-					if (!target) {
+					const inferredTarget = inferTarget()
+					if (!inferredTarget) {
 						return yield* new ContextError({
 							target: suppliedTarget,
 							message: `Cannot infer an Agency target from ${candidate}`,
 						})
+					}
+					let target = inferredTarget
+					if (!target.archived && !(yield* fs.exists(target.path))) {
+						const archivedPath =
+							target.kind === "epic"
+								? join(archivedEpicDirectory(root, target.epicId!), "EPIC.md")
+								: target.kind === "phase"
+									? join(
+											archivedPhaseDirectory(
+												root,
+												target.taskId!,
+												target.phaseId!,
+											),
+											"PHASE.md",
+										)
+									: join(archivedTaskDirectory(root, target.taskId!), "TASK.md")
+						if (yield* fs.exists(archivedPath)) {
+							target = { ...target, archived: true, path: archivedPath }
+						}
 					}
 
 					const readDocument = <S extends Schema.Schema.AnyNoContext>(
@@ -334,26 +391,22 @@ export class ContextService extends Effect.Service<ContextService>()(
 							return yield* readDocument(id, path, schema)
 						})
 
-					const task = target.taskId
-						? yield* readDocument(
-								target.taskId,
-								join(root, "tasks", target.taskId, "TASK.md"),
-								TaskFrontmatter,
-							)
+					const activeTaskPath = target.taskId
+						? join(root, "tasks", target.taskId, "TASK.md")
 						: null
+					const taskPath = target.taskId
+						? target.kind === "task"
+							? target.path
+							: activeTaskPath && (yield* fs.exists(activeTaskPath))
+								? activeTaskPath
+								: join(archivedTaskDirectory(root, target.taskId), "TASK.md")
+						: null
+					const task =
+						target.taskId && taskPath
+							? yield* readDocument(target.taskId, taskPath, TaskFrontmatter)
+							: null
 					const phase = target.phaseId
-						? yield* readDocument(
-								target.phaseId,
-								join(
-									root,
-									"tasks",
-									target.taskId!,
-									"phases",
-									target.phaseId,
-									"PHASE.md",
-								),
-								PhaseFrontmatter,
-							)
+						? yield* readDocument(target.phaseId, target.path, PhaseFrontmatter)
 						: null
 					const epicId =
 						target.epicId ??
@@ -361,7 +414,11 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const epic = epicId
 						? yield* readOptionalDocument(
 								epicId,
-								join(root, "epics", epicId, "EPIC.md"),
+								target.kind === "epic"
+									? target.path
+									: (yield* fs.exists(join(root, "epics", epicId, "EPIC.md")))
+										? join(root, "epics", epicId, "EPIC.md")
+										: join(archivedEpicDirectory(root, epicId), "EPIC.md"),
 								EpicFrontmatter,
 							)
 						: null
@@ -374,8 +431,11 @@ export class ContextService extends Effect.Service<ContextService>()(
 
 					const taskDocuments = new Map<string, Document<TaskData>>()
 					const phaseDocuments = new Map<string, Document<PhaseData>>()
-					const taskRoot = join(root, "tasks")
-					if (yield* fs.isDirectory(taskRoot)) {
+					for (const taskRoot of [
+						join(root, "tasks"),
+						join(root, "archive", "tasks"),
+					]) {
+						if (!(yield* fs.isDirectory(taskRoot))) continue
 						const entries = (yield* fs.readDirectory(taskRoot))
 							.filter((entry) => entry.isDirectory)
 							.sort((a, b) => a.name.localeCompare(b.name))
@@ -455,14 +515,18 @@ export class ContextService extends Effect.Service<ContextService>()(
 							{ concurrency: "unbounded" },
 						)
 						for (const document of documents) {
-							if (document.taskDocument) {
+							if (
+								document.taskDocument &&
+								!taskDocuments.has(document.taskDocument.id)
+							) {
 								taskDocuments.set(
 									document.taskDocument.id,
 									document.taskDocument,
 								)
 							}
 							for (const [key, phaseDocument] of document.phaseDocuments) {
-								phaseDocuments.set(key, phaseDocument)
+								if (!phaseDocuments.has(key))
+									phaseDocuments.set(key, phaseDocument)
 							}
 						}
 					}
@@ -751,6 +815,18 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const orchestrationTarget =
 						target.kind === "epic" ||
 						(target.kind === "task" && task !== null && "phases" in task.data)
+					if (target.archived) {
+						blockers.push({
+							kind: "status",
+							id:
+								target.phaseId ??
+								target.taskId ??
+								target.epicId ??
+								suppliedTarget,
+							reason:
+								"Target is archived; restore it before mutation or execution",
+						})
+					}
 					if (!orchestrationTarget && targetStatus !== "open") {
 						blockers.push({
 							kind: "status",
@@ -773,17 +849,22 @@ export class ContextService extends Effect.Service<ContextService>()(
 						})
 					}
 					const ready = orchestrationTarget
-						? descendantsReady &&
+						? !target.archived &&
+							descendantsReady &&
 							!blockers.some((blocker) => blocker.kind === "validation")
 						: targetStatus === "open" && blockers.length === 0
 
-					const executionData: ExecutionData | null = phase?.data
-						? phase.data
-						: task?.data && "repo" in task.data
-							? (task.data as ExecutionData)
-							: null
+					const executionData: ExecutionData | null = target.archived
+						? null
+						: phase?.data
+							? phase.data
+							: task?.data && "repo" in task.data
+								? (task.data as ExecutionData)
+								: null
 					const reviewData =
-						task?.data && "review" in task.data ? task.data.review : null
+						!target.archived && task?.data && "review" in task.data
+							? task.data.review
+							: null
 					const writableDocuments = reviewData
 						? task
 							? [task.path]
@@ -793,11 +874,13 @@ export class ContextService extends Effect.Service<ContextService>()(
 								? [task.path, phase.path]
 								: [task.path]
 							: []
-					const references: readonly RepositoryReference[] = reviewData
-						? [{ repo: reviewData.repo, ref: reviewData.commit }]
-						: executionData
-							? (executionData.repos ?? [])
-							: (epic?.data.repos ?? [])
+					const references: readonly RepositoryReference[] = target.archived
+						? []
+						: reviewData
+							? [{ repo: reviewData.repo, ref: reviewData.commit }]
+							: executionData
+								? (executionData.repos ?? [])
+								: (epic?.data.repos ?? [])
 					const entityDirectory = target.path.replace(
 						/\/(?:EPIC|TASK|PHASE)\.md$/,
 						"",
@@ -1035,6 +1118,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 									}
 								: document
 							: null
+					const pullRequestData =
+						phase?.data ??
+						(task?.data && "repo" in task.data ? task.data : null)
 
 					return {
 						projection: options.compact ? "compact" : "complete",
@@ -1124,8 +1210,8 @@ export class ContextService extends Effect.Service<ContextService>()(
 									checkout: referenceCheckouts[0] ?? null,
 								}
 							: null,
-						pr: executionData?.pr
-							? normalizePullRequestRecord(executionData.pr)
+						pr: pullRequestData?.pr
+							? normalizePullRequestRecord(pullRequestData.pr)
 							: { url: null, state: "none" },
 						validation: {
 							valid: validation.valid,
