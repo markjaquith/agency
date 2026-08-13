@@ -175,6 +175,18 @@ describe("IntegrationService", () => {
 			"Do not invoke agency work for this target",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
+			"as the default implementation directory",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"Set each tool's working directory to that checkout when supported",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"Run Agency lifecycle and context commands from the task or phase directory",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"reference checkouts reported by Agency context are read-only",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
 			".map((path) => `${path}${sep}.`)",
 		)
 		expect(
@@ -187,23 +199,39 @@ describe("IntegrationService", () => {
 		).toBe(false)
 	})
 
-	test("binds validated worker identity to an OpenCode session", async () => {
+	const testWorkerIdentity = async ({
+		target,
+		launchTarget,
+		phase,
+	}: {
+		readonly target:
+			| { readonly kind: "task"; readonly taskId: string }
+			| {
+					readonly kind: "phase"
+					readonly taskId: string
+					readonly phaseId: string
+			  }
+		readonly launchTarget: string
+		readonly phase?: string
+	}) => {
 		const path = join(root, "agency-repository-skills.ts")
+		const checkoutPath = join(root, "code/agency")
 		const contextResponse = JSON.stringify({
 			version: 1,
 			ok: true,
 			result: {
 				workbase: { root },
 				target: {
-					kind: "task",
-					taskId: "example",
-					path: join(root, "TASK.md"),
+					...target,
+					path: join(root, phase ? "PHASE.md" : "TASK.md"),
 				},
 				authority: {
 					mode: "execution",
-					writable: { checkoutPath: join(root, "tasks/example/code/agency") },
+					writable: { checkoutPath },
 				},
-				documents: { task: { data: { status: "working" } } },
+				documents: phase
+					? { phase: { data: { status: "working" } } }
+					: { task: { data: { status: "working" } } },
 				validation: { valid: true, warnings: [] },
 			},
 		})
@@ -225,27 +253,28 @@ describe("IntegrationService", () => {
 			}) as ReturnType<typeof Bun.spawn>) as typeof Bun.spawn
 		try {
 			const generated = await import(
-				`${pathToFileURL(path).href}?worker-identity`
+				`${pathToFileURL(path).href}?worker-identity=${encodeURIComponent(launchTarget)}`
 			)
 			expect(
 				generated.workerLaunchTarget([
 					{
 						type: "text",
-						text: "Agency worker launch target: execution-unit:task/example. Start the task.",
+						text: `Agency worker launch target: ${launchTarget}. Start the task.`,
 					},
 				]),
-			).toBe("execution-unit:task/example")
+			).toBe(launchTarget)
 			expect(generated.workerLaunchTarget(undefined)).toBeUndefined()
 			expect(
 				generated.contextTarget({
-					target: { kind: "task", taskId: "example" },
+					target,
 					authority: { mode: "execution" },
 				}),
-			).toBe("execution-unit:task/example")
+			).toBe(launchTarget)
 			expect(await generated.agencyContext(root)).toMatchObject({
 				root,
-				target: "execution-unit:task/example",
+				target: launchTarget,
 				task: "example",
+				phase,
 			})
 			const hooks = await generated.default({ directory: root } as never)
 			await hooks["chat.message"]!(
@@ -254,7 +283,7 @@ describe("IntegrationService", () => {
 					parts: [
 						{
 							type: "text",
-							text: "Agency worker launch target: execution-unit:task/example. Start the task.",
+							text: `Agency worker launch target: ${launchTarget}. Start the task.`,
 						},
 					],
 				} as never,
@@ -276,11 +305,17 @@ describe("IntegrationService", () => {
 				{ sessionID: "worker-session" } as never,
 				system,
 			)
-			expect(system.system).toEqual([
-				expect.stringContaining(
-					"active worker for execution-unit:task/example",
-				),
-			])
+			expect(system.system).toHaveLength(1)
+			expect(system.system[0]).toContain(`active worker for ${launchTarget}`)
+			expect(system.system[0]).toContain(
+				`${checkoutPath} as the default implementation directory`,
+			)
+			expect(system.system[0]).toContain(
+				"Run Agency lifecycle and context commands from the task or phase directory",
+			)
+			expect(system.system[0]).toContain(
+				"reference checkouts reported by Agency context are read-only",
+			)
 			const mismatchedSystem = { system: [] as string[] }
 			await hooks["experimental.chat.system.transform"]!(
 				{ sessionID: "mismatched-session" } as never,
@@ -292,15 +327,29 @@ describe("IntegrationService", () => {
 			await hooks["shell.env"]!({ sessionID: "worker-session" } as never, shell)
 			expect(shell.env).toMatchObject({
 				AGENCY_SESSION_ID: "worker-session",
-				AGENCY_TARGET: "execution-unit:task/example",
+				AGENCY_TARGET: launchTarget,
 				AGENCY_WORKBASE: root,
 				AGENCY_TASK_ID: "example",
-				AGENCY_WRITABLE_CHECKOUT: join(root, "tasks/example/code/agency"),
+				AGENCY_WRITABLE_CHECKOUT: checkoutPath,
 			})
+			if (phase) expect(shell.env.AGENCY_PHASE_ID).toBe(phase)
 		} finally {
 			Bun.spawn = originalSpawn
 		}
-	})
+	}
+
+	test("binds validated task worker identity to an OpenCode session", () =>
+		testWorkerIdentity({
+			target: { kind: "task", taskId: "example" },
+			launchTarget: "execution-unit:task/example",
+		}))
+
+	test("binds validated phase worker identity to an OpenCode session", () =>
+		testWorkerIdentity({
+			target: { kind: "phase", taskId: "example", phaseId: "build" },
+			launchTarget: "execution-unit:phase/example/build",
+			phase: "build",
+		}))
 
 	test("registers a TUI-only /agency-debug diagnostic", async () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencodeTui))
