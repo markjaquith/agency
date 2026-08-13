@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { chmod, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { TaskService } from "../services/TaskService"
 import {
@@ -97,6 +97,44 @@ describe("sync command", () => {
 				}),
 			],
 		})
+	})
+
+	test("groups repeated human-readable warnings by affected target", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "second",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/second",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const originalPath = process.env.PATH
+		const bin = join(root, "bin")
+		await mkdir(bin)
+		await Bun.write(
+			join(bin, "gh"),
+			'#!/bin/sh\necho "provider unavailable" >&2\nexit 1\n',
+		)
+		await chmod(join(bin, "gh"), 0o755)
+		process.env.PATH = `${bin}:${originalPath}`
+		try {
+			const logs = await captureLogs(() =>
+				runTestEffect(sync({ cwd: root, dryRun: true })),
+			)
+			expect(
+				logs.filter((line) => line.includes("provider unavailable")),
+			).toEqual(["Warning 'task:example', 'task:second': provider unavailable"])
+		} finally {
+			process.env.PATH = originalPath
+		}
 	})
 
 	test("reports human-readable progress without polluting JSON output", async () => {

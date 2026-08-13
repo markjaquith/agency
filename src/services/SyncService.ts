@@ -153,6 +153,15 @@ const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
 const originRef = (ref: string) =>
 	ref.replace(/^refs\/remotes\/origin\//, "").replace(/^origin\//, "")
 
+const GITHUB_PR_FIELDS =
+	"number,state,title,isDraft,headRefName,baseRefName,headRepository,url,mergedAt,mergeCommit,mergeable"
+
+const commandErrorSummary = (stderr: string, fallback: string) =>
+	stderr
+		.split("\n")
+		.map((line) => line.trim())
+		.find(Boolean) ?? fallback
+
 export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 	sync: () => ({
 		reconcile: (
@@ -349,7 +358,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 											"view",
 											existing.url,
 											"--json",
-											"number,state,title,isDraft,headRefName,baseRefName,headRepository,baseRepository,url,mergedAt,mergeCommit,mergeable",
+											GITHUB_PR_FIELDS,
 										],
 										{
 											cwd: repositoryPath,
@@ -372,7 +381,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 											"--state",
 											"all",
 											"--json",
-											"number,state,title,isDraft,headRefName,baseRefName,headRepository,baseRepository,url,mergedAt,mergeCommit,mergeable",
+											GITHUB_PR_FIELDS,
 										],
 										{
 											cwd: repositoryPath,
@@ -824,8 +833,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							warnings.push({
 								kind: existing ? "pr-unavailable" : "pr-discovery-unavailable",
 								target: record.key,
-								message:
-									queried.stderr.trim() || "Could not query delivery provider",
+								message: commandErrorSummary(
+									queried.stderr,
+									"Could not query delivery provider",
+								),
 							})
 						}
 					} else if (existing) {
@@ -858,7 +869,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							warnings.push({
 								kind: "pr-unavailable",
 								target: record.key,
-								message: `Could not inspect ${existing.url}: ${viewed.stderr.trim()}`,
+								message: `Could not inspect ${existing.url}: ${commandErrorSummary(viewed.stderr, "GitHub query failed")}`,
 							})
 						}
 					} else {
@@ -901,8 +912,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							warnings.push({
 								kind: "pr-discovery-unavailable",
 								target: record.key,
-								message:
-									listed.stderr.trim() || "Could not discover pull requests",
+								message: commandErrorSummary(
+									listed.stderr,
+									"Could not discover pull requests",
+								),
 							})
 						}
 					}
