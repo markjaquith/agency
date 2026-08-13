@@ -418,6 +418,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("agency next --json")
 		expect(body).toContain("agency <command> --help")
 		expect(body).toContain("authority.writable.checkoutPath")
+		expect(body).toContain("authority.documents.writable")
 		expect(body).toContain("Only `done` satisfies a dependency")
 		expect(body).toContain("Require explicit user intent")
 		expect(body).toContain(
