@@ -64,14 +64,17 @@ case "$*" in
 *mergeable*) ;;
 *) echo "mergeable field was not requested" >&2; exit 2 ;;
 esac
+case "$*" in
+*baseRepository*) echo "unsupported baseRepository field was requested" >&2; exit 3 ;;
+esac
 if [ "$2" = "view" ]; then
 cat <<'JSON'
-{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"baseRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}
+{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}
 JSON
 exit 0
 fi
 cat <<'JSON'
-[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"baseRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
+[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
 JSON
 `,
 		)
@@ -172,6 +175,7 @@ pr: null
 		)
 		const invocation = await Bun.file(capture).text()
 		expect(invocation).toContain("--repo\n")
+		expect(invocation).not.toContain("baseRepository")
 		expect(invocation).toContain("GIT_DIR=")
 		expect(invocation).toContain(".jj")
 
@@ -1012,5 +1016,45 @@ exit 9
 				(warning) => warning.kind === "pr-discovery-unavailable",
 			),
 		).toEqual([])
+	})
+
+	test("keeps pull request query failures concise", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "unavailable",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/unavailable",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await Bun.write(
+			join(root, "bin", "gh"),
+			`#!/bin/sh
+echo "Unknown JSON field: unsupported" >&2
+echo "Available fields:" >&2
+echo "  additions" >&2
+exit 1
+`,
+		)
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const result = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(result.warnings).toContainEqual({
+			kind: "pr-discovery-unavailable",
+			target: "task:unavailable",
+			message: "Unknown JSON field: unsupported",
+		})
 	})
 })

@@ -8,6 +8,27 @@ interface SyncCommandOptions extends BaseCommandOptions {
 	readonly dryRun?: boolean
 }
 
+interface Notice {
+	readonly kind: string
+	readonly target: string
+	readonly message: string
+	readonly action?: string
+}
+
+const groupedNotices = <T extends Notice>(notices: readonly T[]) => {
+	const groups = new Map<string, { notice: T; targets: string[] }>()
+	for (const notice of notices) {
+		const key = JSON.stringify([notice.kind, notice.message, notice.action])
+		const group = groups.get(key)
+		if (group) group.targets.push(notice.target)
+		else groups.set(key, { notice, targets: [notice.target] })
+	}
+	return groups.values()
+}
+
+const formatTargets = (targets: readonly string[]) =>
+	targets.map((target) => `'${target}'`).join(", ")
+
 export const sync = (
 	options: SyncCommandOptions = {},
 	progress: Progress = createProgress({
@@ -62,9 +83,11 @@ export const sync = (
 				`${change.status === "applied" ? "Applied" : "Planned"} ${change.kind} '${change.target}': ${change.message}`,
 			)
 		}
-		for (const warning of result.warnings) {
+		for (const { notice: warning, targets } of groupedNotices(
+			result.warnings,
+		)) {
 			log(
-				`Warning '${warning.target}': ${warning.message}${warning.action ? `. ${warning.action}` : ""}`,
+				`Warning ${formatTargets(targets)}: ${warning.message}${warning.action ? `. ${warning.action}` : ""}`,
 			)
 		}
 		for (const issue of result.repositories.unresolved) {
@@ -72,9 +95,11 @@ export const sync = (
 				`Unresolved repository '${issue.alias}': ${issue.message}. ${issue.action}`,
 			)
 		}
-		for (const issue of result.unresolved) {
+		for (const { notice: issue, targets } of groupedNotices(
+			result.unresolved,
+		)) {
 			log(
-				`Unresolved '${issue.target}': ${issue.message}${issue.action ? `. ${issue.action}` : ""}`,
+				`Unresolved ${formatTargets(targets)}: ${issue.message}${issue.action ? `. ${issue.action}` : ""}`,
 			)
 		}
 		if (
