@@ -527,6 +527,12 @@ and reference authority, local checkout and resolved-commit state, recorded PR
 state, and validation warnings. Only `done` satisfies a dependency; `dropped` is
 terminal but remains a blocker.
 
+`authority.writable` identifies the writable repository checkout, while
+`authority.documents.writable` lists the absolute paths of Agency documents the
+target may maintain. A single-phase task lists its `TASK.md`; a phase lists its
+owning `TASK.md` and active `PHASE.md`; orchestration targets list none. Use
+Agency commands rather than direct edits for structural frontmatter mutations.
+
 Complete output is the default for entity targets. Pass `--compact` explicitly
 to omit document prose and low-level Git details while retaining identity,
 hashes, authority, paths, graph state, materialization state, and validation

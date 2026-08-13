@@ -48,10 +48,11 @@ agency validate --json
 - A single-phase task or phase is an execution unit with one writable `repo` and
   optional read-only `repos`. Only `done` satisfies a dependency; `dropped` is
   terminal but leaves dependents blocked.
-- For an execution unit, write code only at
+- For an execution unit, write repository content only at
   `authority.writable.checkoutPath`. Every `authority.references` checkout is
   read-only, even if filesystem permissions allow writes.
-- Keep task-wide decisions in `TASK.md` and phase-specific delivery context in
+- Maintain only the Agency documents listed in `authority.documents.writable`:
+  keep task-wide decisions in `TASK.md` and phase-specific delivery context in
   `PHASE.md`. Use Agency commands for structural frontmatter mutations.
 
 ## Consent Boundaries

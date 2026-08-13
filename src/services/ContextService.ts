@@ -784,6 +784,15 @@ export class ContextService extends Effect.Service<ContextService>()(
 							: null
 					const reviewData =
 						task?.data && "review" in task.data ? task.data.review : null
+					const writableDocuments = reviewData
+						? task
+							? [task.path]
+							: []
+						: executionData && task
+							? phase
+								? [task.path, phase.path]
+								: [task.path]
+							: []
 					const references: readonly RepositoryReference[] = reviewData
 						? [{ repo: reviewData.repo, ref: reviewData.commit }]
 						: executionData
@@ -1078,7 +1087,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 								checkoutPath: reference.checkoutPath,
 							})),
 							documents: {
-								writable: reviewData && task ? [task.path] : [],
+								writable: writableDocuments,
 							},
 						},
 						workspace: options.compact

@@ -208,6 +208,10 @@ Phase prose.
 		expect(result.documents.task.body).toContain("Task prose.")
 		expect(result.documents.phase.body).toContain("Phase prose.")
 		expect(result.documents.phase.sha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(result.authority.documents.writable).toEqual([
+			join(root, "tasks/agent-contract/TASK.md"),
+			join(root, "tasks/agent-contract/phases/context-command/PHASE.md"),
+		])
 		expect(result.workspace.writable.branchCommit).toMatch(/^[a-f0-9]{40}$/)
 		expect(result.workspace.writable.baseCommit).toMatch(/^[a-f0-9]{40}$/)
 		expect(result.workspace.references[0].resolvedCommit).toMatch(
@@ -232,6 +236,10 @@ Phase prose.
 			registered: true,
 		})
 		expect(result.authority.writable.checkoutPath).toContain("code/agency")
+		expect(result.authority.documents.writable).toEqual([
+			join(root, "tasks/agent-contract/TASK.md"),
+			join(root, "tasks/agent-contract/phases/context-command/PHASE.md"),
+		])
 	})
 
 	test("reports dependency and validation blockers deterministically", async () => {
@@ -275,6 +283,12 @@ status: dropped
 			taskId: "agent-contract",
 		})
 		expect(task.graph.parent).toEqual({ kind: "epic", id: "contract" })
+		expect(task.authority.documents.writable).toEqual([])
+
+		const executionTask = await readContext(root, "foundations")
+		expect(executionTask.authority.documents.writable).toEqual([
+			join(root, "tasks/foundations/TASK.md"),
+		])
 
 		const workbase = await readContext(root, ".")
 		expect(workbase).toMatchObject({
