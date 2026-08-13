@@ -23,7 +23,9 @@ Usage: agency context [target] [options]
 
 Return complete, read-only context for a workbase, epic, task, or phase. The
 target defaults to the current directory and may be the workbase root, an entity
-path, or a task ID. Workbase context catalogs all epics, tasks, and phases.
+path, or a task ID. Archived entities are inspectable but never receive mutation
+or execution authority. Workbase context catalogs all active epics, tasks, and
+phases.
 
 Options:
   --json              Output a versioned machine result

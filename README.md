@@ -535,6 +535,10 @@ a discovery catalog of all epics, tasks, and phases, including frontmatter,
 paths, and document revisions. Elsewhere it returns context for an epic, task,
 or phase. The target defaults to the current directory; entity directories,
 document paths, checkout descendants, and bare task IDs are accepted.
+Archived entity paths and selectors are also accepted. Archived context is
+explicitly marked with `target.archived: true` and never grants writable
+document, repository checkout, or reference authority; restore the item before
+attempting mutation or execution.
 
 Root discovery is compact by default and includes a hint to run `agency context
 . --full --json` when document prose is needed. Entity context remains complete
