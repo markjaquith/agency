@@ -497,10 +497,14 @@ describe("CLI", () => {
 			expect(result.stderr).toContain("task new requires interactive input")
 			expect(result.stderr).toContain("agency task create")
 		}
+		const actResult = await runCli(["act", "--no-input"])
+		expect(actResult.exitCode).toBe(1)
+		expect(actResult.stderr).toContain("agency act requires interactive input")
 	})
 
 	test("routes command help and global options on either side of commands", async () => {
 		const commands = [
+			["act", "Usage: agency act"],
 			["init", "Usage: agency init"],
 			["workbase", "Usage: agency workbase"],
 			["integration", "Usage: agency integration"],

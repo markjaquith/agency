@@ -146,6 +146,29 @@ const commands = {
 			options: ["json"],
 		},
 	},
+	act: {
+		usage:
+			"agency act [--epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
+		options: {
+			...outputOptions,
+			...entitySelectorOptions,
+			"dry-run": { type: "boolean" },
+			auto: { type: "boolean" },
+			draft: { type: "boolean" },
+		},
+		command: {
+			usage:
+				"agency act [--epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["epic", "task", "phase", "dry-run", "json", "auto", "draft"],
+			conflicts: [
+				["dry-run", "json"],
+				["epic", "task"],
+				["epic", "phase"],
+			],
+		},
+	},
 	workbase: {
 		usage: "agency workbase <init|add|list|show|name|remove|prune|default>",
 		options: {
