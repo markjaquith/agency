@@ -54,6 +54,7 @@ import {
 import { review, help as reviewHelp } from "./src/commands/review"
 import { vcs, help as vcsHelp } from "./src/commands/vcs"
 import { VcsMigrationService } from "./src/services/VcsMigrationService"
+import { act, help as actHelp } from "./src/commands/act"
 import {
 	claimCommand,
 	claimHelp,
@@ -175,6 +176,21 @@ const VERSION = packageJson.version
 
 // Define commands
 const commands: Record<string, Command> = {
+	act: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) return console.log(actHelp)
+			await runCommand(
+				act({
+					auto: options.auto,
+					draft: options.draft,
+					inputAllowed: options.inputAllowed,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	claim: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(claimHelp)
@@ -753,6 +769,7 @@ agency v${VERSION}
 Usage: agency <command> [options]
 
 Commands:
+  act                    Interactively choose and act on work
   init [path]            Initialize an Agency workbase
   workbase <subcommand>  Manage registered workbases
   integration <command> Inspect or sync managed integration files

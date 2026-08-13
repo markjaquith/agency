@@ -146,6 +146,20 @@ const commands = {
 			options: ["json"],
 		},
 	},
+	act: {
+		usage: "agency act [--auto] [--draft]",
+		options: {
+			...commonOptions,
+			auto: { type: "boolean" },
+			draft: { type: "boolean" },
+		},
+		command: {
+			usage: "agency act [--auto] [--draft]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["auto", "draft"],
+		},
+	},
 	workbase: {
 		usage: "agency workbase <init|add|list|show|name|remove|prune|default>",
 		options: {

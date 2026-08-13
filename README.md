@@ -508,6 +508,20 @@ agency validate
 
 ## Commands
 
+### Interactive Actions
+
+`agency act` opens a filterable work-item chooser followed by an action palette
+derived from the selected item's current state and readiness. It offers only
+actions that can use existing lifecycle semantics, such as working, creating a
+pull request, dropping, reopening, or archiving. Cancelling either chooser makes
+no changes, and the command refreshes the graph before dispatch so a stale
+selection cannot act on changed work.
+
+`agency act` requires an interactive terminal and intentionally has no JSON or
+scripted mode. Use the explicit lifecycle commands for automation. `--auto` is
+forwarded when starting work, and `--draft` is forwarded when creating a pull
+request.
+
 ### Target Context
 
 `agency context [target] --json` returns complete bootstrap context without

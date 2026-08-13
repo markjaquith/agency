@@ -7,6 +7,16 @@ const expectUsageError = (args: string[], usage: string) => {
 }
 
 describe("strict CLI parsing", () => {
+	test("parses the interactive act command without positional arguments", () => {
+		expect(parseCli(["act", "--auto", "--draft"])).toMatchObject({
+			commandName: "act",
+			args: [],
+			values: { auto: true, draft: true },
+		})
+		expectUsageError(["act", "task-id"], "agency act [--auto] [--draft]")
+		expectUsageError(["act", "--json"], "agency act [--auto] [--draft]")
+	})
+
 	test("accepts review creation and refresh while enforcing one source", () => {
 		expect(
 			parseCli([
