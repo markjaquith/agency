@@ -183,6 +183,11 @@ const commands: Record<string, Command> = {
 				act({
 					auto: options.auto,
 					draft: options.draft,
+					dryRun: options["dry-run"],
+					json: options.json,
+					epicId: options.epic,
+					taskId: options.task,
+					phaseId: options.phase,
 					inputAllowed: options.inputAllowed,
 					silent: options.silent,
 					verbose: options.verbose,

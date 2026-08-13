@@ -5,6 +5,7 @@ import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import type { BaseCommandOptions } from "../utils/command"
 import { choose, type Choice } from "../utils/chooser"
+import { createLoggers } from "../utils/effect"
 import { macchiato } from "../utils/theme"
 import { archive as archiveCommand } from "./archive"
 import { phase as phaseCommand } from "./phase"
@@ -30,6 +31,11 @@ export interface ActInteraction {
 interface ActOptions extends BaseCommandOptions {
 	readonly auto?: boolean
 	readonly draft?: boolean
+	readonly dryRun?: boolean
+	readonly json?: boolean
+	readonly epicId?: string
+	readonly taskId?: string
+	readonly phaseId?: string
 }
 
 const defaultInteraction: ActInteraction = {
@@ -120,24 +126,17 @@ const actionChoices = (
 	nodes: readonly GraphNode[],
 ): readonly Choice<ActAction>[] => {
 	const choices: Choice<ActAction>[] = []
+	const execution = executionNode(node, nodes)
 	if (canWork(node, nodes)) {
 		choices.push({ key: "work", label: "Work on this item", value: "work" })
 	}
 	if (canCreatePr(node, nodes)) {
 		choices.push({ key: "pr", label: "Create pull request", value: "pr" })
 	}
-	if (
-		(node.kind === "task" || node.kind === "phase") &&
-		isTerminalStatus(node.status) &&
-		!activeClaim(node)
-	) {
+	if (execution && isTerminalStatus(node.status) && !activeClaim(node)) {
 		choices.push({ key: "reopen", label: "Reopen", value: "reopen" })
 	}
-	if (
-		(node.kind === "task" || node.kind === "phase") &&
-		!isTerminalStatus(node.status) &&
-		!activeClaim(node)
-	) {
+	if (execution && !isTerminalStatus(node.status) && !activeClaim(node)) {
 		choices.push({ key: "drop", label: "Drop", value: "drop" })
 	}
 	if (node.readiness.terminal) {
@@ -155,6 +154,81 @@ const entityParts = (node: EntityNode) => {
 	}
 }
 
+const actionCommand = (
+	node: EntityNode,
+	action: ActAction,
+	options: Pick<ActOptions, "auto" | "draft">,
+): readonly string[] => {
+	const { taskId, phaseId } = entityParts(node)
+	switch (action) {
+		case "work":
+			return [
+				"agency",
+				"work",
+				...(node.kind === "epic"
+					? ["--epic", node.key]
+					: ["--task", taskId, ...(phaseId ? ["--phase", phaseId] : [])]),
+				...(options.auto ? ["--auto"] : []),
+			]
+		case "pr":
+			return [
+				"agency",
+				"pr",
+				"create",
+				taskId,
+				...(phaseId ? [phaseId] : []),
+				...(options.draft ? ["--draft"] : []),
+			]
+		case "reopen":
+		case "drop": {
+			const status = action === "reopen" ? "open" : "dropped"
+			return phaseId
+				? ["agency", "phase", "status", taskId, phaseId, status]
+				: ["agency", "task", "status", taskId, status]
+		}
+		case "archive":
+			return node.kind === "phase"
+				? ["agency", "archive", "phase", taskId, phaseId!]
+				: ["agency", "archive", node.kind, node.key]
+	}
+}
+
+const shellCommand = (command: readonly string[]) =>
+	command
+		.map((argument) =>
+			/^[A-Za-z0-9_./:=+@%-]+$/.test(argument)
+				? argument
+				: `'${argument.replaceAll("'", `'\\''`)}'`,
+		)
+		.join(" ")
+
+const targetOutput = (
+	node: EntityNode,
+	nodes: readonly GraphNode[],
+	options: Pick<ActOptions, "auto" | "draft">,
+) => ({
+	kind: node.kind,
+	id: node.id,
+	key: node.key,
+	status: node.status,
+	readiness: node.readiness,
+	revision: node.data.sha256,
+	actions: actionChoices(node, nodes).map((choice) => ({
+		id: choice.value,
+		label: choice.label,
+		command: actionCommand(node, choice.value, options),
+	})),
+})
+
+const selectedEntityKey = (options: ActOptions) =>
+	options.epicId
+		? `epic:${options.epicId}`
+		: options.phaseId
+			? `phase:${options.taskId}/${options.phaseId}`
+			: options.taskId
+				? `task:${options.taskId}`
+				: undefined
+
 const sameActions = (
 	left: readonly Choice<ActAction>[],
 	right: readonly Choice<ActAction>[],
@@ -168,16 +242,17 @@ export const act = (
 	work: StartWork = startWork,
 ) =>
 	Effect.gen(function* () {
-		if (options.inputAllowed === false) {
+		if (!options.json && options.inputAllowed === false) {
 			return yield* Effect.fail(
 				new Error(
-					"agency act requires interactive input; use an explicit lifecycle command for automation",
+					"agency act requires interactive input; use --json to list actions for automation",
 				),
 			)
 		}
 		const cwd = options.cwd ?? process.cwd()
 		const workbase = yield* WorkbaseService
 		const graphs = yield* GraphService
+		const { log } = createLoggers(options)
 		const { config } = yield* workbase.loadConfig(cwd)
 		const graph = yield* graphs.get({ cwd })
 		const nodes = graph.nodes.filter(
@@ -185,16 +260,46 @@ export const act = (
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
 		)
 		if (nodes.length === 0) {
+			if (options.json) {
+				log(JSON.stringify({ targets: [] }, null, 2))
+				return
+			}
 			return yield* Effect.fail(
 				new Error("No active work items found in this workbase"),
 			)
 		}
 
-		const selectedKey = yield* interaction.select(
-			"Act on",
-			entityChoices(nodes),
-			config.chooserCommand,
-		)
+		const requestedKey = selectedEntityKey(options)
+		const matchingNodes = requestedKey
+			? nodes.filter((node) => entityKey(node) === requestedKey)
+			: nodes
+		if (requestedKey && matchingNodes.length === 0) {
+			return yield* Effect.fail(
+				new Error(`Selected work item '${requestedKey}' was not found`),
+			)
+		}
+		if (options.json) {
+			log(
+				JSON.stringify(
+					{
+						targets: matchingNodes.map((node) =>
+							targetOutput(node, graph.nodes, options),
+						),
+					},
+					null,
+					2,
+				),
+			)
+			return
+		}
+
+		const selectedKey =
+			requestedKey ??
+			(yield* interaction.select(
+				"Act on",
+				entityChoices(nodes),
+				config.chooserCommand,
+			))
 		if (selectedKey === null) return
 		const selected = nodes.find((node) => entityKey(node) === selectedKey)
 		if (!selected) {
@@ -241,6 +346,10 @@ export const act = (
 			)
 		}
 		const { taskId, phaseId } = entityParts(current)
+		if (options.dryRun) {
+			log(shellCommand(actionCommand(current, action, options)))
+			return
+		}
 
 		switch (action) {
 			case "work":
@@ -315,12 +424,19 @@ export const act = (
 	})
 
 export const help = `
-Usage: agency act [--auto] [--draft]
+Usage: agency act [--epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]
 
 Interactively choose an active work item and a state-aware lifecycle action.
-The selected action is revalidated immediately before it runs.
+Selectors skip work-item selection. --dry-run prints the selected action's exact
+Agency command without executing it. --json lists targets, available actions,
+and command argv without prompting or executing.
 
 Options:
+	--epic <id>           Select an epic
+	--task <id>           Select a task
+	--phase <id>          Select a phase; requires --task
+	--dry-run             Select an action and print its command without executing
+	--json                List available actions and command argv as JSON
   --auto                Pass --auto when starting or continuing work
   --draft               Create a draft pull request
 `

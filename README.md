@@ -517,10 +517,15 @@ pull request, dropping, reopening, or archiving. Cancelling either chooser makes
 no changes, and the command refreshes the graph before dispatch so a stale
 selection cannot act on changed work.
 
-`agency act` requires an interactive terminal and intentionally has no JSON or
-scripted mode. Use the explicit lifecycle commands for automation. `--auto` is
-forwarded when starting work, and `--draft` is forwarded when creating a pull
-request.
+Use `--epic <id>`, `--task <id>`, or `--task <id> --phase <id>` to skip work-item
+selection. `--dry-run` still prompts for an action but prints the exact Agency
+command instead of executing it. `--json` never prompts or executes; it returns
+matching targets, status and readiness details, document revisions, and each
+available action's command argv. With no selector, JSON includes every active
+work item.
+
+`--auto` is included in generated or executed work commands, and `--draft` is
+included in generated or executed pull request commands.
 
 ### Target Context
 

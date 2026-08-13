@@ -61,6 +61,13 @@ describe("act command", () => {
 		).rejects.toThrow("No active work items")
 	})
 
+	test("returns an empty target list as JSON without interactive input", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, inputAllowed: false, json: true })),
+		)
+		expect(JSON.parse(logs[0]!)).toEqual({ targets: [] })
+	})
+
 	test("cancellation exits without changing the selected item", async () => {
 		await createTask("example")
 		await runTestEffect(
@@ -87,6 +94,68 @@ describe("act command", () => {
 		expect(offered[1]).toEqual(["work", "pr", "drop"])
 		expect(logs).toEqual(["Marked task 'example' as dropped"])
 		expect(await readTaskStatus("example")).toBe("dropped")
+	})
+
+	test("accepts an explicit selector and prints dry-run command without mutation", async () => {
+		await createTask("example")
+		const prompts: string[] = []
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						inputAllowed: true,
+						taskId: "example",
+						dryRun: true,
+					},
+					scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+				),
+			),
+		)
+
+		expect(prompts).toEqual(["Act on task example"])
+		expect(logs).toEqual(["agency task status example dropped"])
+		expect(await readTaskStatus("example")).toBe("open")
+	})
+
+	test("returns structured actions and argv for agents", async () => {
+		await createTask("example")
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act({
+					cwd: root,
+					inputAllowed: false,
+					taskId: "example",
+					json: true,
+					auto: true,
+					draft: true,
+				}),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			targets: [
+				{
+					kind: "task",
+					key: "example",
+					status: "open",
+					actions: [
+						{
+							id: "work",
+							command: ["agency", "work", "--task", "example", "--auto"],
+						},
+						{
+							id: "pr",
+							command: ["agency", "pr", "create", "example", "--draft"],
+						},
+						{
+							id: "drop",
+							command: ["agency", "task", "status", "example", "dropped"],
+						},
+					],
+				},
+			],
+		})
 	})
 
 	test("offers reopen and archive for terminal work", async () => {
