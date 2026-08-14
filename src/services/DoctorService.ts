@@ -173,6 +173,15 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 									] as const,
 								]
 							: []),
+						...(config.workspaceCreateCommand
+							? [
+									[
+										"integration.workspace-create",
+										config.workspaceCreateCommand,
+										"Workspace creator",
+									] as const,
+								]
+							: []),
 						...Object.entries(config.repositories ?? {}).flatMap(
 							([alias, repository]) =>
 								repository.postCheckoutCommand

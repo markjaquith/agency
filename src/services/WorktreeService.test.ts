@@ -319,6 +319,198 @@ describe("WorktreeService", () => {
 		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
 	})
 
+	test("uses a custom jj workspace creator before the post-checkout hook", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				vcs: "jj",
+				workspaceCreateCommand: [
+					"sh",
+					"-c",
+					'jj -R "$1" workspace add --name "$3" -r "$4" "$2" && printf "%s\\n%s\\n" "$AGENCY_CHECKOUT_KIND" "$AGENCY_REQUESTED_REF" > "$2/creator-finished"',
+					"workspace-creator",
+					"{repo}",
+					"{workspace}",
+					"{name}",
+					"{revision}",
+					"{kind}",
+					"{requestedRef}",
+				],
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: [
+							"sh",
+							"-c",
+							'test -f creator-finished && printf "post-checkout" > hook-finished',
+						],
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-custom",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-custom",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("jj-custom", undefined, root),
+				),
+			),
+		)
+		expect(
+			await Bun.file(join(workspace.writablePath!, "creator-finished")).text(),
+		).toBe("writable\ntask/jj-custom\n")
+		expect(
+			await Bun.file(join(workspace.writablePath!, "hook-finished")).text(),
+		).toBe("post-checkout")
+		expect(workspace.operations[0]).toMatchObject({
+			action: "create-workspace",
+			command: expect.arrayContaining(["writable", "task/jj-custom"]),
+			status: "completed",
+		})
+	})
+
+	test("rolls back a jj workspace partially created by a custom command", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				vcs: "jj",
+				workspaceCreateCommand: [
+					"sh",
+					"-c",
+					'jj -R "$1" workspace add --name "$3" -r "$4" "$2" && echo adoption-failed >&2; exit 7',
+					"workspace-creator",
+					"{repo}",
+					"{workspace}",
+					"{name}",
+					"{revision}",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-custom-failure",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-custom-failure",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspacePath = join(root, "tasks/jj-custom-failure/code/agency")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("jj-custom-failure", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("adoption-failed")
+		expect(await Bun.file(workspacePath).exists()).toBe(false)
+		expect(
+			await jjOutput(["workspace", "list", "-T", 'name ++ "\\n"'], repository),
+		).not.toContain("agency-jj-custom-failure-task-agency")
+	})
+
+	test("rejects and rolls back a custom jj workspace at the wrong revision", async () => {
+		if (!Bun.which("jj")) return
+		const repository = join(root, "repos/agency")
+		await rm(repository, { recursive: true, force: true })
+		await git(["clone", source, repository])
+		await jj(["git", "init", "--colocate", repository])
+		const hookMarker = join(root, "wrong-revision-hook")
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				vcs: "jj",
+				workspaceCreateCommand: [
+					"sh",
+					"-c",
+					'jj -R "$1" workspace add --name "$3" -r "root()" "$2"',
+					"workspace-creator",
+					"{repo}",
+					"{workspace}",
+					"{name}",
+					"{revision}",
+				],
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: ["sh", "-c", 'touch "$1"', "hook", hookMarker],
+					},
+				},
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "jj-custom-wrong-revision",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/jj-custom-wrong-revision",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspacePath = join(
+			root,
+			"tasks/jj-custom-wrong-revision/code/agency",
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("jj-custom-wrong-revision", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("failed validation")
+		expect(await Bun.file(workspacePath).exists()).toBe(false)
+		expect(await Bun.file(hookMarker).exists()).toBe(false)
+	})
+
 	test("suspends and resumes the exact jj working-copy target", async () => {
 		if (!Bun.which("jj")) return
 		const repository = join(root, "repos/agency")
