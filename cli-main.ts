@@ -177,10 +177,11 @@ const VERSION = packageJson.version
 // Define commands
 const commands: Record<string, Command> = {
 	act: {
-		run: async (_args: string[], options: Record<string, any>) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(actHelp)
 			await runCommand(
 				act({
+					directory: args[0],
 					auto: options.auto,
 					draft: options.draft,
 					dryRun: options["dry-run"],

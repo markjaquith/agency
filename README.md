@@ -517,12 +517,13 @@ pull request, dropping, reopening, or archiving. Cancelling either chooser makes
 no changes, and the command refreshes the graph before dispatch so a stale
 selection cannot act on changed work.
 
-Use `--epic <id>`, `--task <id>`, or `--task <id> --phase <id>` to skip work-item
-selection. `--dry-run` still prompts for an action but prints the exact Agency
-command instead of executing it. `--json` never prompts or executes; it returns
-matching targets, status and readiness details, document revisions, and each
-available action's command argv. With no selector, JSON includes every active
-work item.
+Use an existing directory, a positional task ID, `--epic <id>`, `--task <id>`,
+or `--task <id> --phase <id>` to skip work-item selection. For example,
+`agency act .` selects the current task or phase. `--dry-run` still prompts for
+an action but prints the exact Agency command instead of executing it. `--json`
+never prompts or executes; it returns matching targets, status and readiness
+details, document revisions, and each available action's command argv. With no
+selector, JSON includes every active work item.
 
 `--auto` is included in generated or executed work commands, and `--draft` is
 included in generated or executed pull request commands.
