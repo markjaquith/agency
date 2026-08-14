@@ -811,7 +811,11 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 				}),
 
 			setup: (
-				options: { readonly cwd?: string; readonly apply?: boolean } = {},
+				options: {
+					readonly cwd?: string
+					readonly apply?: boolean
+					readonly aliases?: readonly string[]
+				} = {},
 			) =>
 				Effect.gen(function* () {
 					const service = yield* RepositoryService
@@ -819,7 +823,13 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const versionControl = yield* VersionControlService
 					const state = yield* configState(options.cwd ?? process.cwd())
 					const backend = yield* versionControl.forWorkbase(state.root)
-					const repositories = yield* service.list(state.root)
+					const requestedAliases = options.aliases
+						? new Set(options.aliases)
+						: null
+					const repositories = (yield* service.list(state.root)).filter(
+						(repository) =>
+							!requestedAliases || requestedAliases.has(repository.alias),
+					)
 					const planned: Omit<RepositorySetupAction, "status">[] = []
 					const unresolved: RepositorySetupIssue[] = []
 
@@ -933,7 +943,11 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						unresolved,
 						repositories:
 							options.apply === true
-								? yield* service.list(state.root)
+								? (yield* service.list(state.root)).filter(
+										(repository) =>
+											!requestedAliases ||
+											requestedAliases.has(repository.alias),
+									)
 								: repositories,
 					} satisfies RepositorySetupResult
 				}),

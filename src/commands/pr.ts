@@ -14,6 +14,10 @@ interface PrCreateOptions extends BaseCommandOptions {
 	readonly phaseId?: string
 	readonly draft?: boolean
 	readonly force?: boolean
+	readonly title?: string
+	readonly head?: string
+	readonly base?: string
+	readonly labels?: readonly string[]
 }
 
 const branchTargetCommands = new Set([
@@ -126,11 +130,21 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 	})
 
 export const help = `
-Usage: agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
+Usage: agency pr create <task-id> [phase-id] [options]
        agency pr [args...]
 
-Create records a pull request for an Agency execution unit. Other invocations
-run gh pr unchanged, focusing the writable repository checkout when invoked from
+Create records a pull request for an Agency execution unit and accepts the
+options listed below. Invocations without an Agency task target run gh pr
+unchanged, focusing the writable repository checkout when invoked from
 an Agency execution task or phase. In jj workbases, Agency supplies the declared
 branch and repository to gh subcommands that would otherwise infer Git context.
+
+Options:
+  --draft                   Create the pull request as a draft
+  --title <title>           Override the generated pull request title
+  --head <branch>           Confirm the declared head branch
+  --base <branch>           Confirm the declared base branch
+  --label <label>           Add a label (repeatable)
+  --force                   Override readiness checks
+  --json                    Output one versioned machine result
 `

@@ -2,12 +2,39 @@ import { Effect } from "effect"
 import { PushService } from "../services/PushService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import { createProgress, type Progress } from "../utils/progress"
 
-export const push = (options: BaseCommandOptions = {}) =>
+const stageMessage = {
+	context: "Inspecting Agency execution context",
+	fetch: "Fetching remote state",
+	inspect: "Selecting the publication tip",
+	validate: "Validating outgoing changes",
+	publish: "Publishing the declared branch",
+} as const
+
+export const push = (
+	options: BaseCommandOptions = {},
+	progress: Progress = createProgress({ silent: options.silent }),
+) =>
 	Effect.gen(function* () {
 		const publications = yield* PushService
 		const { log } = createLoggers(options)
-		const result = yield* publications.publish(options.cwd ?? process.cwd())
+		const showProgress = !options.silent
+		const result = yield* publications
+			.publish(options.cwd ?? process.cwd(), {
+				onProgress: showProgress
+					? (stage) => progress.start(stageMessage[stage])
+					: undefined,
+			})
+			.pipe(
+				Effect.tapError(() =>
+					Effect.sync(() => {
+						if (showProgress) progress.fail("Publication failed")
+					}),
+				),
+			)
+		if (showProgress)
+			progress.succeed(`Published ${result.branch} to ${result.remote}`)
 		log(
 			options.json
 				? JSON.stringify(result, null, 2)

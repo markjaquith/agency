@@ -376,6 +376,42 @@ describe("PushService", () => {
 				)
 			).stdout,
 		).toBe("true")
+
+		await requireCommand(["jj", "new", "@"], fixture.checkout)
+		await Bun.write(join(fixture.checkout, "follow-up.txt"), "follow up\n")
+		await requireCommand(
+			["jj", "describe", "-m", "Add follow-up"],
+			fixture.checkout,
+		)
+		const advanced = await publish(fixture.taskPath)
+		expect(advanced.tip).not.toBe(result.tip)
+		expect(await remoteBranch(fixture.remote)).toBe(advanced.tip)
+	}, 15_000)
+
+	test("diagnoses a jj stack whose remote base advanced", async () => {
+		if (!Bun.which("jj")) return
+		const fixture = await setup("jj")
+		await Bun.write(join(fixture.checkout, "feature.txt"), "local\n")
+		await requireCommand(
+			["jj", "describe", "-m", "Local feature"],
+			fixture.checkout,
+		)
+
+		const other = join(fixture.root, "other-main")
+		await requireCommand(["git", "clone", fixture.remote, other])
+		await requireCommand(["git", "config", "user.name", "Other"], other)
+		await requireCommand(
+			["git", "config", "user.email", "other@example.com"],
+			other,
+		)
+		await Bun.write(join(other, "remote.txt"), "remote\n")
+		await requireCommand(["git", "add", "remote.txt"], other)
+		await requireCommand(["git", "commit", "-m", "Advance main"], other)
+		await requireCommand(["git", "push", "origin", "main"], other)
+
+		await expect(publish(fixture.taskPath)).rejects.toThrow(
+			"jj rebase -s 'roots(main@origin..@)' -d main@origin",
+		)
 	})
 
 	test("selects the described parent of a canonical jj post-commit working copy", async () => {
@@ -424,7 +460,7 @@ describe("PushService", () => {
 		await expect(publish(undescribed.taskPath)).rejects.toThrow(
 			`Change ${changeId} has no description. Run: jj describe -r ${changeId}`,
 		)
-	})
+	}, 15_000)
 
 	test("rejects an empty jj task and remote bookmark divergence", async () => {
 		if (!Bun.which("jj")) return
@@ -463,7 +499,7 @@ describe("PushService", () => {
 		await expect(publish(fixture.taskPath)).rejects.toThrow(
 			"refusing to move it",
 		)
-	})
+	}, 15_000)
 
 	test("rejects conflicted jj changes with an actionable change ID", async () => {
 		if (!Bun.which("jj")) return

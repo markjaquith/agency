@@ -732,16 +732,17 @@ const commands = {
 		},
 	},
 	sync: {
-		usage: "agency sync [--dry-run] [--json]",
+		usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
 		options: {
 			...outputOptions,
+			...entitySelectorOptions,
 			"dry-run": { type: "boolean" },
 		},
 		command: {
-			usage: "agency sync [--dry-run] [--json]",
+			usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
 			minArgs: 0,
-			maxArgs: 0,
-			options: ["dry-run", "json"],
+			maxArgs: 2,
+			options: ["dry-run", "json", "task", "phase"],
 		},
 	},
 	archive: {
@@ -964,14 +965,28 @@ const commands = {
 			force: { type: "boolean" },
 			task: { type: "string" },
 			phase: { type: "string" },
+			title: { type: "string" },
+			head: { type: "string" },
+			base: { type: "string" },
+			label: { type: "string", multiple: true },
 		},
 		subcommands: {
 			create: {
-				usage:
-					"agency pr create <task-id> [phase-id] [--draft] [--force] [--json]",
+				usage: "agency pr create <task-id> [phase-id] [options]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["draft", "force", "json", "task", "phase"],
+				options: [
+					"draft",
+					"force",
+					"json",
+					"task",
+					"phase",
+					"title",
+					"head",
+					"base",
+					"label",
+				],
+				repeatable: ["label"],
 			},
 		},
 	},

@@ -6,6 +6,8 @@ import { createProgress, type Progress } from "../utils/progress"
 
 interface SyncCommandOptions extends BaseCommandOptions {
 	readonly dryRun?: boolean
+	readonly taskId?: string
+	readonly phaseId?: string
 }
 
 interface Notice {
@@ -44,6 +46,8 @@ export const sync = (
 			.reconcile({
 				cwd: options.cwd,
 				apply: options.dryRun !== true,
+				taskId: options.taskId,
+				phaseId: options.phaseId,
 				onProgress: showProgress
 					? ({ stage, current, total, target }) => {
 							if (stage === "repositories") {
@@ -118,11 +122,13 @@ export const sync = (
 	})
 
 export const help = `
-Usage: agency sync [--dry-run] [--json]
+Usage: agency sync [<task-id> [phase-id]] [--dry-run] [--json]
 
 Compare portable repository declarations and execution state with local Git
 repositories, worktrees, branches, references, claims, and pull requests.
 Safe reconciliation transitions are applied by default.
+When a task or phase is provided, only that target and its repositories are
+queried or reconciled. Task scope includes all phases of a multi-phase task.
 
 Options:
   --dry-run                 Report planned safe transitions without changing state

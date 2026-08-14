@@ -170,6 +170,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				readonly apply?: boolean
 				readonly now?: Date
 				readonly onProgress?: (progress: SyncProgress) => void
+				readonly taskId?: string
+				readonly phaseId?: string
 			} = {},
 		) =>
 			Effect.gen(function* () {
@@ -191,9 +193,66 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							.join("\n"),
 					})
 				}
+				if (options.phaseId && !options.taskId) {
+					return yield* new SyncError({
+						message: "A phase sync scope requires a task ID",
+					})
+				}
+				const allTaskRecords = yield* tasks.list(root)
+				const taskRecords = options.taskId
+					? allTaskRecords.filter((task) => task.id === options.taskId)
+					: allTaskRecords
+				if (options.taskId && taskRecords.length === 0) {
+					return yield* new SyncError({
+						message: `Task '${options.taskId}' does not exist`,
+					})
+				}
+				const records: ExecutionRecord[] = []
+				for (const task of taskRecords) {
+					if ("phases" in task.data) {
+						for (const phase of yield* phases.list(task.id, root)) {
+							if (options.phaseId && phase.id !== options.phaseId) continue
+							records.push({
+								key: `phase:${task.id}/${phase.id}`,
+								taskId: task.id,
+								phaseId: phase.id,
+								path: phase.path,
+								revision: documentRevision(phase.content),
+								data: phase.data,
+							})
+						}
+					} else if (!options.phaseId && !("review" in task.data)) {
+						records.push({
+							key: `task:${task.id}`,
+							taskId: task.id,
+							path: task.path,
+							revision: documentRevision(task.content),
+							data: task.data,
+						})
+					}
+				}
+				const reviewRecords = options.phaseId
+					? []
+					: taskRecords.filter((task) => "review" in task.data)
+				if (options.phaseId && records.length === 0) {
+					return yield* new SyncError({
+						message: `Phase '${options.taskId}/${options.phaseId}' does not exist`,
+					})
+				}
+				const repositoryAliases = new Set<string>()
+				for (const record of records) {
+					repositoryAliases.add(record.data.repo)
+					for (const reference of record.data.repos ?? [])
+						repositoryAliases.add(reference.repo)
+				}
+				for (const task of reviewRecords) {
+					if ("review" in task.data)
+						repositoryAliases.add(task.data.review.repo)
+				}
 				const repositorySetup = yield* repositories.setup({
 					cwd: root,
 					apply: options.apply === true,
+					...(options.taskId ? { aliases: [...repositoryAliases] } : {}),
 				})
 				options.onProgress?.({
 					stage: "repositories",
@@ -241,30 +300,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								}),
 							),
 						)
-				const taskRecords = yield* tasks.list(root)
-				const records: ExecutionRecord[] = []
-				for (const task of taskRecords) {
-					if ("phases" in task.data) {
-						for (const phase of yield* phases.list(task.id, root)) {
-							records.push({
-								key: `phase:${task.id}/${phase.id}`,
-								taskId: task.id,
-								phaseId: phase.id,
-								path: phase.path,
-								revision: documentRevision(phase.content),
-								data: phase.data,
-							})
-						}
-					} else if (!("review" in task.data)) {
-						records.push({
-							key: `task:${task.id}`,
-							taskId: task.id,
-							path: task.path,
-							revision: documentRevision(task.content),
-							data: task.data,
-						})
-					}
-				}
 				const listRegistered = (repositoryPath: string) =>
 					Effect.gen(function* () {
 						if (registeredByRepository.has(repositoryPath))
@@ -408,9 +443,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							),
 						{ concurrency: 8 },
 					),
-				)
-				const reviewRecords = taskRecords.filter(
-					(task) => "review" in task.data,
 				)
 				const executionTotal = records.length + reviewRecords.length
 				let reconciledExecutions = 0
