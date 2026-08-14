@@ -25,6 +25,9 @@ export const resolveGitHubCreateCommand = ({
 	draft,
 	vcs,
 	defaults,
+	title,
+	head,
+	labels = [],
 }: {
 	readonly base: string
 	readonly branch: string
@@ -32,18 +35,25 @@ export const resolveGitHubCreateCommand = ({
 	readonly draft: boolean
 	readonly vcs: "git" | "jj"
 	readonly defaults?: { readonly title: string; readonly body: string }
+	readonly title?: string
+	readonly head?: string
+	readonly labels?: readonly string[]
 }) => ({
 	argv: [
 		"gh",
 		"pr",
 		"create",
 		...(defaults
-			? ["--title", defaults.title, "--body", defaults.body]
-			: ["--fill"]),
+			? ["--title", title ?? defaults.title, "--body", defaults.body]
+			: title
+				? ["--fill", "--title", title]
+				: ["--fill"]),
 		"--base",
 		base,
-		...(vcs === "jj" ? ["--head", branch, "--repo", repository] : []),
+		...(vcs === "jj" || head ? ["--head", head ?? branch] : []),
+		...(vcs === "jj" ? ["--repo", repository] : []),
 		...(draft ? ["--draft"] : []),
+		...labels.flatMap((label) => ["--label", label]),
 	],
 	environment: {},
 })

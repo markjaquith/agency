@@ -37,6 +37,12 @@ interface PushResult {
 	readonly changeId?: string
 }
 
+type PushStage = "context" | "fetch" | "inspect" | "validate" | "publish"
+
+interface PushOptions {
+	readonly onProgress?: (stage: PushStage) => void
+}
+
 const validEmail = (email: string) => /^[^@\s]+@[^@\s]+$/.test(email)
 
 const requireCommand = (
@@ -153,8 +159,10 @@ const publishGit = (
 	remote: string,
 	branch: string,
 	base: string,
+	onProgress?: (stage: PushStage) => void,
 ) =>
 	Effect.gen(function* () {
+		onProgress?.("inspect")
 		const currentBranch = yield* git(
 			fs,
 			checkout,
@@ -179,6 +187,7 @@ const publishGit = (
 			})
 		}
 
+		onProgress?.("fetch")
 		yield* git(
 			fs,
 			checkout,
@@ -202,6 +211,7 @@ const publishGit = (
 			})
 		}
 
+		onProgress?.("validate")
 		const log = yield* git(
 			fs,
 			checkout,
@@ -228,6 +238,7 @@ const publishGit = (
 			})
 		}
 
+		onProgress?.("publish")
 		yield* git(
 			fs,
 			checkout,
@@ -361,14 +372,17 @@ const publishJj = (
 	remote: string,
 	branch: string,
 	base: string,
+	onProgress?: (stage: PushStage) => void,
 ) =>
 	Effect.gen(function* () {
+		onProgress?.("fetch")
 		yield* jj(
 			fs,
 			checkout,
 			["git", "fetch", "--remote", remote],
 			`Failed to fetch remote '${remote}'`,
 		)
+		onProgress?.("inspect")
 		const workingCopy = yield* jjRevision(fs, checkout, "@")
 		if (!workingCopy) {
 			return yield* new PushError({
@@ -403,10 +417,11 @@ const publishJj = (
 			!(yield* jjAncestor(fs, checkout, baseRevision.commitId, tip.commitId))
 		) {
 			return yield* new PushError({
-				message: `Declared base '${base}' (${baseRevision.commitId}) is not an ancestor of jj tip ${tip.changeId} (${tip.commitId})`,
+				message: `Declared base '${base}' (${baseRevision.commitId}) is not an ancestor of jj tip ${tip.changeId} (${tip.commitId}). Rebase the stack with: jj rebase -s 'roots(${baseBookmark}..@)' -d ${baseBookmark}`,
 			})
 		}
 
+		onProgress?.("validate")
 		const outgoing = yield* jjCommits(
 			fs,
 			checkout,
@@ -444,6 +459,7 @@ const publishJj = (
 			})
 		}
 
+		onProgress?.("publish")
 		yield* jj(
 			fs,
 			checkout,
@@ -467,8 +483,9 @@ const publishJj = (
 
 export class PushService extends Effect.Service<PushService>()("PushService", {
 	sync: () => ({
-		publish: (startPath: string = process.cwd()) =>
+		publish: (startPath: string = process.cwd(), options: PushOptions = {}) =>
 			Effect.gen(function* () {
+				options.onProgress?.("context")
 				const contexts = yield* ContextService
 				const fs = yield* FileSystemService
 				const tasks = yield* TaskService
@@ -554,6 +571,7 @@ export class PushService extends Effect.Service<PushService>()("PushService", {
 								remote,
 								execution.branch,
 								execution.base,
+								options.onProgress,
 							)
 						: yield* publishGit(
 								fs,
@@ -561,6 +579,7 @@ export class PushService extends Effect.Service<PushService>()("PushService", {
 								remote,
 								execution.branch,
 								execution.base,
+								options.onProgress,
 							)
 				return {
 					vcs: context.workbase.vcs,

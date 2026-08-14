@@ -650,8 +650,8 @@ detailed dependency, validation, or status blockers for orchestrators.
 
 `agency work` consults this shared readiness model before materializing. Blocked,
 done, and dropped targets are rejected unless `--force` is supplied explicitly.
-`agency pr` leaves command semantics to `gh`; run `agency context . --json` first
-when readiness or validation state needs inspection.
+Task-aware `agency pr create` applies Agency readiness and validation checks;
+untargeted `agency pr` invocations leave command semantics to `gh`.
 
 ### Reconciliation
 
@@ -662,6 +662,10 @@ expiry, and pull request state, merge state, and mergeability. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default mode applies safe reconciliation transitions; `--dry-run` is explicitly
 observational.
+
+Pass `<task-id>` to scope reconciliation to one task and its repositories. A
+multi-phase task scope includes all of its phases; add `[phase-id]` to select one
+phase. Scoped sync does not query, materialize, or reconcile unrelated work.
 
 `agency sync` performs only these safe transitions:
 
@@ -1050,7 +1054,7 @@ agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print
 agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
-agency pr create <task-id> [phase-id] [--draft] [--force] [--json]
+agency pr create <task-id> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
 agency pr [args...]
 ```
 
@@ -1137,9 +1141,16 @@ post-commit working copy, in which case it publishes `@-`; described empty
 changes remain intentional publication tips. Missing descriptions or authors
 stop with exact change IDs and remediation commands. Agency creates or safely
 advances only the declared bookmark and never invents a `push-*` bookmark.
+If the fetched remote base advanced outside the local stack, Agency prints the
+exact `jj rebase` command needed to move the stack onto `<base>@<remote>`. Push
+reports deterministic fetch, inspection, validation, and publication progress
+on stderr, including while `--json` reserves stdout for one machine result.
 
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
-including readiness checks and durable PR recording. Other `agency pr`
+including readiness checks and durable PR recording. It accepts draft, title,
+declared head/base confirmation, and repeatable label options; a contradicting
+head or base is rejected rather than recording inconsistent delivery metadata.
+Other `agency pr`
 invocations forward every argument to `gh pr`. From an execution task or phase
 directory, including descendants, passthrough runs in that execution unit's
 authoritative writable checkout. Otherwise it runs in the caller's current

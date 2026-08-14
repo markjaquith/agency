@@ -82,6 +82,41 @@ describe("sync command", () => {
 		).toBe(false)
 	})
 
+	test("scopes reconciliation to one task", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "second",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/second",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(sync({ cwd: root, taskId: "example", json: true })),
+		)
+		const result = JSON.parse(logs[0]!)
+		expect(result.executions.map((execution: any) => execution.target)).toEqual(
+			["task:example"],
+		)
+		expect(
+			await Bun.file(
+				join(root, "tasks/example/code/agency/README.md"),
+			).exists(),
+		).toBe(true)
+		expect(
+			await Bun.file(join(root, "tasks/second/code/agency/README.md")).exists(),
+		).toBe(false)
+	})
+
 	test("preserves structured output behind --json", async () => {
 		const logs = await captureLogs(() =>
 			runTestEffect(sync({ cwd: root, dryRun: true, json: true })),

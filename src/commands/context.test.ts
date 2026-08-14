@@ -219,6 +219,73 @@ Phase prose.
 		)
 	})
 
+	test("reports the current jj change without inventing a missing bookmark", async () => {
+		if (!Bun.which("jj")) return
+		await cleanupTempDir(root)
+		root = await createTempDir()
+		const remote = join(root, "remote.git")
+		const seed = join(root, "seed")
+		const repository = join(root, "repos/agency")
+		const checkout = join(root, "tasks/example/code/agency")
+		await mkdir(join(root, "repos"), { recursive: true })
+		await write(root, "agency.json", '{"version":2,"vcs":"jj"}\n')
+		await run(root, ["git", "init", "--bare", "--initial-branch=main", remote])
+		await run(root, ["git", "init", "--initial-branch=main", seed])
+		await run(seed, ["git", "config", "user.email", "test@example.com"])
+		await run(seed, ["git", "config", "user.name", "Test"])
+		await Bun.write(join(seed, "README.md"), "example\n")
+		await run(seed, ["git", "add", "README.md"])
+		await run(seed, ["git", "commit", "-m", "initial"])
+		await run(seed, ["git", "remote", "add", "origin", remote])
+		await run(seed, ["git", "push", "origin", "main"])
+		await run(root, ["jj", "git", "clone", "--no-colocate", remote, repository])
+		await write(
+			root,
+			"tasks/example/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: task/example
+base: main
+pr: null
+status: working
+---
+
+# Example
+`,
+		)
+		await mkdir(dirname(checkout), { recursive: true })
+		await run(repository, [
+			"jj",
+			"workspace",
+			"add",
+			"--name",
+			"task-example",
+			"-r",
+			"main",
+			checkout,
+		])
+		await Bun.write(join(checkout, "feature.txt"), "current change\n")
+		const current = Bun.spawn(
+			["jj", "log", "--no-graph", "-r", "@", "-T", "commit_id"],
+			{ cwd: checkout, stdout: "pipe", stderr: "pipe" },
+		)
+		const currentCommit = (await new Response(current.stdout).text()).trim()
+		expect(await current.exited).toBe(0)
+
+		const result = await readContext(root, "tasks/example")
+		expect(result.workspace.writable).toMatchObject({
+			branchCommit: null,
+			checkoutCommit: currentCommit,
+			checkoutBranch: null,
+			detached: true,
+			dirty: false,
+		})
+		expect(result.workspace.warnings).toContain(
+			`Unable to resolve branch 'task/example' in ${repository}`,
+		)
+	})
+
 	test("makes compact projection explicit without omitting essential identity", async () => {
 		const result = await readContext(
 			root,

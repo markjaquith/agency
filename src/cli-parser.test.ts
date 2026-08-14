@@ -334,7 +334,7 @@ describe("strict CLI parsing", () => {
 			[["context", "one", "two"], "agency context"],
 			[["graph", "extra"], "agency graph"],
 			[["next", "extra"], "agency next"],
-			[["sync", "extra"], "agency sync"],
+			[["sync", "one", "two", "three"], "agency sync"],
 			[
 				[
 					"claim",
@@ -430,6 +430,31 @@ describe("strict CLI parsing", () => {
 			args: ["create", "ship"],
 		})
 		expect(selected.passthrough).toBeUndefined()
+		expect(
+			parseCli([
+				"pr",
+				"create",
+				"ship",
+				"--title",
+				"Ship it",
+				"--head",
+				"task/ship",
+				"--base",
+				"main",
+				"--label",
+				"ai-assisted",
+				"--label",
+				"product-area:platform",
+			]),
+		).toMatchObject({
+			args: ["create", "ship"],
+			values: {
+				title: "Ship it",
+				head: "task/ship",
+				base: "main",
+				label: ["ai-assisted", "product-area:platform"],
+			},
+		})
 	})
 
 	test("parses explicit dry-run reconciliation", () => {
@@ -440,6 +465,11 @@ describe("strict CLI parsing", () => {
 		expect(parseCli(["sync", "--dry-run", "--json"])).toMatchObject({
 			commandName: "sync",
 			values: { "dry-run": true, json: true },
+		})
+		expect(parseCli(["sync", "ship", "release", "--json"])).toMatchObject({
+			commandName: "sync",
+			args: ["ship", "release"],
+			values: { json: true },
 		})
 		expect(() => parseCli(["sync", "--apply"])).toThrow("Unknown option")
 	})

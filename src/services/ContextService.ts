@@ -898,6 +898,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 						repositoryPath: string,
 						checkoutPath: string,
 						expectedBranch: string | null = null,
+						branchCommit: string | null = null,
 					) =>
 						Effect.gen(function* (): Generator<any, CheckoutInspection, any> {
 							const materialized = yield* fs.isDirectory(checkoutPath)
@@ -914,9 +915,10 @@ export class ContextService extends Effect.Service<ContextService>()(
 								const canonicalCheckoutPath = materialized
 									? yield* fs.realPath(checkoutPath)
 									: resolve(checkoutPath)
-								const registered = workspaces.some(
+								const workspace = workspaces.find(
 									(workspace) => workspace.path === canonicalCheckoutPath,
 								)
+								const registered = workspace !== undefined
 								if (!materialized) {
 									return {
 										materialized: false,
@@ -930,10 +932,14 @@ export class ContextService extends Effect.Service<ContextService>()(
 								return {
 									materialized: true,
 									registered,
-									checkoutCommit: yield* backend.workspaceHead(checkoutPath),
-									checkoutBranch: expectedBranch,
-									detached: expectedBranch === null,
-									dirty: yield* backend.workspaceDirty(checkoutPath),
+									checkoutCommit: workspace?.commit ?? null,
+									checkoutBranch:
+										expectedBranch && branchCommit === workspace?.commit
+											? expectedBranch
+											: null,
+									detached:
+										!expectedBranch || branchCommit !== workspace?.commit,
+									dirty: workspace ? false : null,
 								}
 							}
 							const listed = yield* runGit(fs, repositoryPath, [
@@ -1014,10 +1020,8 @@ export class ContextService extends Effect.Service<ContextService>()(
 									repositoryPath,
 									checkoutPath,
 									executionData.branch,
+									branchCommit,
 								)
-								if (backend.kind === "jj" && branchCommit === null) {
-									branchCommit = checkout.checkoutCommit
-								}
 								if (branchCommit === null) {
 									inspectionWarnings.push(
 										`Unable to resolve branch '${executionData.branch}' in ${repositoryPath}`,

@@ -158,6 +158,10 @@ status: open
 					phaseId: "implementation",
 					draft: true,
 					force: true,
+					title: "Ship it",
+					head: "task/example",
+					base: "main",
+					labels: ["ai-assisted"],
 					cwd: "/workbase",
 					json: true,
 				}).pipe(
@@ -177,7 +181,15 @@ status: open
 			"implementation",
 			true,
 			"/workbase",
-			expect.objectContaining({ force: true, draft: true, json: true }),
+			expect.objectContaining({
+				force: true,
+				draft: true,
+				title: "Ship it",
+				head: "task/example",
+				base: "main",
+				labels: ["ai-assisted"],
+				json: true,
+			}),
 		])
 	})
 

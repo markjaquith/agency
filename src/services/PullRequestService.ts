@@ -27,6 +27,10 @@ class PullRequestError extends Data.TaggedError("PullRequestError")<{
 
 interface PullRequestOptions extends BaseCommandOptions {
 	readonly force?: boolean
+	readonly title?: string
+	readonly head?: string
+	readonly base?: string
+	readonly labels?: readonly string[]
 }
 
 export class PullRequestService extends Effect.Service<PullRequestService>()(
@@ -158,6 +162,25 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						})
 					}
 					const remote = config.delivery?.remote ?? "origin"
+					if (options.head && options.head !== execution.branch) {
+						return yield* new PullRequestError({
+							message: `Requested head '${options.head}' does not match declared branch '${execution.branch}'`,
+						})
+					}
+					if (options.base && options.base !== execution.base) {
+						return yield* new PullRequestError({
+							message: `Requested base '${options.base}' does not match declared base '${execution.base}'`,
+						})
+					}
+					if (
+						config.delivery &&
+						(options.title || (options.labels?.length ?? 0) > 0)
+					) {
+						return yield* new PullRequestError({
+							message:
+								"Task-aware --title and --label options require the default GitHub delivery provider",
+						})
+					}
 
 					const dirty = yield* backend.workspaceDirty(workspace.writablePath)
 					if (dirty === null) {
@@ -211,6 +234,9 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								repository,
 								draft,
 								vcs: config.vcs ?? "git",
+								title: options.title,
+								head: options.head,
+								labels: options.labels,
 								...(defaults ? { defaults } : {}),
 							})
 					const gitEnvironment = config.delivery

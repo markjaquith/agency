@@ -322,6 +322,10 @@ const commands: Record<string, Command> = {
 					phaseId: args[2],
 					draft: options.draft,
 					force: options.force,
+					title: options.title,
+					head: options.head,
+					base: options.base,
+					labels: options.label,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -750,13 +754,15 @@ const commands: Record<string, Command> = {
 		},
 	},
 	sync: {
-		run: async (_args: string[], options: Record<string, any>) => {
+		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
 				console.log(syncHelp)
 				return
 			}
 			await runCommand(
 				sync({
+					taskId: args[0],
+					phaseId: args[1],
 					dryRun: options["dry-run"],
 					json: options.json,
 					silent: options.silent,

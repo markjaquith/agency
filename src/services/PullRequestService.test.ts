@@ -68,11 +68,12 @@ describe("PullRequestService", () => {
 		phaseId?: string,
 		draft = false,
 		force = false,
+		options: Record<string, unknown> = {},
 	) =>
 		runTestEffect(
 			PullRequestService.pipe(
 				Effect.flatMap((service) =>
-					service.create(taskId, phaseId, draft, root, { force }),
+					service.create(taskId, phaseId, draft, root, { force, ...options }),
 				),
 			),
 		)
@@ -301,6 +302,51 @@ process.exit(${exitCode})
 			"main",
 			"--draft",
 		])
+	})
+
+	test("passes task-aware GitHub title and labels with declared refs", async () => {
+		await createTask()
+		await writeFakeGh({
+			stdout: "https://github.com/example/agency/pull/45\n",
+		})
+
+		await createPullRequest("example", undefined, true, false, {
+			title: "Ship the workflow",
+			head: "task/example",
+			base: "main",
+			labels: ["ai-assisted", "platform"],
+		})
+
+		expect((await readGhCall()).args).toEqual([
+			"pr",
+			"create",
+			"--fill",
+			"--title",
+			"Ship the workflow",
+			"--base",
+			"main",
+			"--head",
+			"task/example",
+			"--draft",
+			"--label",
+			"ai-assisted",
+			"--label",
+			"platform",
+		])
+	})
+
+	test("rejects task-aware head and base values that contradict declarations", async () => {
+		await createTask()
+		await expect(
+			createPullRequest("example", undefined, false, false, {
+				head: "other",
+			}),
+		).rejects.toThrow("does not match declared branch")
+		await expect(
+			createPullRequest("example", undefined, false, false, {
+				base: "release",
+			}),
+		).rejects.toThrow("does not match declared base")
 	})
 
 	test("guards terminal targets before materializing unless forced", async () => {

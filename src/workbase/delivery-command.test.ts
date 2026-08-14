@@ -67,6 +67,55 @@ describe("delivery commands", () => {
 			argv: ["gh", "pr", "create", "--fill", "--base", "main"],
 			environment: {},
 		})
+		expect(
+			resolveGitHubCreateCommand({
+				...input,
+				vcs: "git",
+				head: "feat/example",
+			}),
+		).toEqual({
+			argv: [
+				"gh",
+				"pr",
+				"create",
+				"--fill",
+				"--base",
+				"main",
+				"--head",
+				"feat/example",
+			],
+			environment: {},
+		})
+		expect(
+			resolveGitHubCreateCommand({
+				...input,
+				vcs: "jj",
+				defaults: { title: "Generated", body: "Details" },
+				title: "Requested",
+				labels: ["ai-assisted", "platform"],
+			}),
+		).toEqual({
+			argv: [
+				"gh",
+				"pr",
+				"create",
+				"--title",
+				"Requested",
+				"--body",
+				"Details",
+				"--base",
+				"main",
+				"--head",
+				"feat/example",
+				"--repo",
+				"example/agency",
+				"--label",
+				"ai-assisted",
+				"--label",
+				"platform",
+			],
+			environment: {},
+		})
 	})
 
 	test("rejects unknown placeholders", () => {
