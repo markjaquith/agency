@@ -474,7 +474,9 @@ const inspectExecution = (
 						: yield* backend.workspaceHead(checkoutPath)
 					: null
 				const dirty =
-					exists && atPath ? yield* backend.workspaceDirty(checkoutPath) : null
+					exists && atPath
+						? yield* backend.workspaceDirty(checkoutPath)
+						: (atPath?.dirty ?? null)
 				const expectedCommit =
 					"branch" in checkout && context?.skipWritableRevisionResolution
 						? actualCommit
@@ -1659,10 +1661,26 @@ const removeJj = (
 			bookmark: string
 		}[] = []
 		for (const checkout of inspection.checkouts) {
+			const repositoryPath = join(root, "repos", checkout.repo)
+			const registered = checkout.registeredPath
+				? (yield* backend.listWorkspaces(repositoryPath)).find(
+						(workspace) => workspace.path === checkout.registeredPath,
+					)
+				: undefined
 			if (checkout.dirty === true && options.persistResume === false) {
-				return yield* new WorktreeError({
-					message: `Failed to remove workspace for '${checkout.repo}': checkout has uncommitted changes`,
-				})
+				const preservedByBookmark =
+					checkout.kind === "writable" &&
+					registered?.commit !== null &&
+					registered?.commit !== undefined &&
+					(yield* backend.resolveRevision(
+						repositoryPath,
+						checkout.requestedRef,
+					)) === registered.commit
+				if (!preservedByBookmark) {
+					return yield* new WorktreeError({
+						message: `Failed to remove workspace for '${checkout.repo}': checkout has uncommitted changes`,
+					})
+				}
 			}
 			if (
 				checkout.exists &&
@@ -1673,7 +1691,6 @@ const removeJj = (
 					message: `Failed to remove workspace for '${checkout.repo}': checkout cleanliness could not be verified`,
 				})
 			}
-			const repositoryPath = join(root, "repos", checkout.repo)
 			if (!checkout.registeredPath) {
 				const recoveryRevision = recoverable.get(checkout.path)
 				if (!recoveryRevision) continue
@@ -1696,9 +1713,6 @@ const removeJj = (
 				})
 				continue
 			}
-			const registered = (yield* backend.listWorkspaces(repositoryPath)).find(
-				(workspace) => workspace.path === checkout.registeredPath,
-			)
 			if (!registered?.name || !checkout.actualCommit || !registered.commit) {
 				return yield* new WorktreeError({
 					message: `Cannot identify jj workspace at ${checkout.registeredPath}`,
