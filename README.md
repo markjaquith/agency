@@ -246,6 +246,55 @@ Supplemental read-only repositories remain detached Git worktrees at their
 declared refs so they do not acquire writable branches. Jj workbases always use
 jj workspaces and ignore this Git-specific customization.
 
+### Custom Jj Workspace Command
+
+Jj workbases normally create managed workspaces with `jj workspace add`. Set
+`workspaceCreateCommand` to an argv template when another tool should create or
+adopt a prepared workspace directly at Agency's destination:
+
+```json
+{
+	"version": 2,
+	"vcs": "jj",
+	"workspaceCreateCommand": [
+		"my-prewarm-tool",
+		"adopt",
+		"--repo",
+		"{repo}",
+		"--destination",
+		"{workspace}",
+		"--name",
+		"{name}",
+		"--revision",
+		"{revision}"
+	]
+}
+```
+
+Available placeholders are:
+
+- `{repo}`: absolute repository alias path under `repos/`
+- `{workspace}`: absolute managed workspace path Agency requires
+- `{name}`: unique jj workspace name Agency requires
+- `{revision}`: exact commit the new working copy must be based on
+- `{kind}`: `writable` or `reference`
+- `{requestedRef}`: configured branch, reference, or review commit
+
+`{repo}`, `{workspace}`, `{name}`, and `{revision}` are required. Agency invokes
+the command directly without a shell and sets matching `AGENCY_REPO`,
+`AGENCY_WORKSPACE`, `AGENCY_WORKSPACE_NAME`, `AGENCY_REVISION`,
+`AGENCY_CHECKOUT_KIND`, and `AGENCY_REQUESTED_REF` environment variables. The
+command applies to each new jj checkout and must leave `{workspace}` registered
+under `{name}` with its working-copy parent at `{revision}`. This lets a prewarm
+tool move or adopt a prepared workspace without first paying for Agency's normal
+full checkout.
+
+Agency validates the registration, name, path, and revision before running any
+`postCheckoutCommand`. A failed command or validation removes a partially
+created workspace when possible and otherwise reports manual recovery. Resume
+restoration continues to use Agency's built-in exact-target recovery path.
+Git workbases ignore this jj-specific customization.
+
 ### Post-checkout Commands
 
 Each repository declaration may provide a VCS-neutral `postCheckoutCommand` argv
@@ -267,8 +316,8 @@ shell, with the new checkout as its working directory:
 The hook runs for each newly created managed checkout, including writable and
 reference checkouts, after Git worktree or jj workspace creation has completed
 and Agency has validated the checkout. It does not run for a reused checkout or
-for inspection-only commands. A custom `worktreeCreateCommand` completes and is
-validated before this hook runs.
+for inspection-only commands. A custom `worktreeCreateCommand` or
+`workspaceCreateCommand` completes and is validated before this hook runs.
 
 Available placeholders and matching environment variables are:
 

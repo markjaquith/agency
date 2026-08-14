@@ -371,6 +371,26 @@ status: done
 		).rejects.toThrow("{worktree}")
 	})
 
+	test("rejects an invalid workspace command template", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				vcs: "jj",
+				workspaceCreateCommand: ["tool", "{repo}", "{workspace}", "{name}"],
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.discover(root)),
+				),
+			),
+		).rejects.toThrow("{revision}")
+	})
+
 	test("rejects an unknown post-checkout command placeholder", async () => {
 		await write(
 			root,

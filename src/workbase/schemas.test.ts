@@ -257,6 +257,25 @@ describe("repository post-checkout configuration", () => {
 	})
 })
 
+describe("workspace creation configuration", () => {
+	test("accepts a jj workspace argv command", () => {
+		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
+			version: 2,
+			vcs: "jj",
+			workspaceCreateCommand: [
+				"prewarm",
+				"adopt",
+				"{repo}",
+				"{workspace}",
+				"{name}",
+				"{revision}",
+			],
+		})
+
+		expect(config.workspaceCreateCommand?.[0]).toBe("prewarm")
+	})
+})
+
 describe("runner configuration", () => {
 	test("accepts named argv commands with resume commands and environment", () => {
 		const config = Schema.decodeUnknownSync(WorkbaseConfig)({

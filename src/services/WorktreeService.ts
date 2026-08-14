@@ -9,6 +9,10 @@ import {
 	worktreeCommandEnvironment,
 } from "../workbase/worktree-command"
 import {
+	expandWorkspaceCreateCommand,
+	workspaceCommandEnvironment,
+} from "../workbase/workspace-command"
+import {
 	expandPostCheckoutCommand,
 	postCheckoutCommandEnvironment,
 	type CheckoutCommandVariables,
@@ -1157,7 +1161,7 @@ const materializeJj = (options: {
 		const created: {
 			repositoryPath: string
 			workspacePath: string
-			workspaceName: string
+			workspaceName: string | null
 		}[] = []
 		const resumePath = jjResumePath(options.taskPath, options.phasePath)
 		const resume = yield* readJjResumeState(resumePath)
@@ -1227,8 +1231,13 @@ const materializeJj = (options: {
 				const canonicalPath = exists
 					? yield* fs.realPath(workspacePath)
 					: resolve(workspacePath)
-				const registered = (yield* backend.listWorkspaces(repositoryPath)).find(
+				const registeredWorkspaces =
+					yield* backend.listWorkspaces(repositoryPath)
+				const registered = registeredWorkspaces.find(
 					(workspace) => workspace.path === canonicalPath,
+				)
+				const registeredByName = registeredWorkspaces.find(
+					(workspace) => workspace.name === workspaceName,
 				)
 				if (exists && !registered && resumeCheckout) {
 					const residual = yield* inspectJjResidual(
@@ -1254,6 +1263,11 @@ const materializeJj = (options: {
 				if (!exists && registered) {
 					return yield* new WorktreeError({
 						message: `Workspace registry contains a missing checkout at ${workspacePath}`,
+					})
+				}
+				if (!exists && registeredByName) {
+					return yield* new WorktreeError({
+						message: `Jj workspace name '${workspaceName}' is already registered at ${registeredByName.path}`,
 					})
 				}
 				if (exists && registered) {
@@ -1313,7 +1327,7 @@ const materializeJj = (options: {
 					})
 				}
 
-				const command = [
+				const defaultCommand = [
 					"jj",
 					"-R",
 					repositoryPath,
@@ -1325,6 +1339,36 @@ const materializeJj = (options: {
 					revision,
 					workspacePath,
 				]
+				const workspaceVariables = {
+					repo: repositoryPath,
+					workspace: workspacePath,
+					name: workspaceName,
+					revision,
+					kind:
+						"branch" in checkout
+							? ("writable" as const)
+							: ("reference" as const),
+					requestedRef: requestedRevision,
+				}
+				let command = defaultCommand
+				let commandEnvironment: Record<string, string> | undefined
+				if (options.config.workspaceCreateCommand && !resumeCheckout) {
+					try {
+						command = expandWorkspaceCreateCommand(
+							options.config.workspaceCreateCommand,
+							workspaceVariables,
+						)
+						commandEnvironment = workspaceCommandEnvironment(workspaceVariables)
+					} catch (cause) {
+						return yield* new WorktreeError({
+							message:
+								cause instanceof Error
+									? cause.message
+									: "Invalid workspaceCreateCommand",
+							cause,
+						})
+					}
+				}
 				operations.push({
 					action: "create-workspace",
 					repo: checkout.repo,
@@ -1353,6 +1397,38 @@ const materializeJj = (options: {
 							workspaceName,
 							commitId: resumeCheckout.commitId,
 						})
+					} else if (options.config.workspaceCreateCommand) {
+						verboseLog(`Running workspace command: ${formatCommand(command)}`)
+						const result = yield* fs.runCommand(command, {
+							cwd: repositoryPath,
+							captureOutput: true,
+							forwardOutput: forwardCommandOutput,
+							env: commandEnvironment,
+						})
+						const createdPath = yield* fs.isDirectory(workspacePath)
+						const canonicalCreatedPath = createdPath
+							? yield* fs.realPath(workspacePath)
+							: resolve(workspacePath)
+						const registeredAfterCommand = (yield* backend.listWorkspaces(
+							repositoryPath,
+						)).find((workspace) => workspace.path === canonicalCreatedPath)
+						if (createdPath || registeredAfterCommand) {
+							created.push({
+								repositoryPath,
+								workspacePath,
+								workspaceName: registeredAfterCommand?.name ?? null,
+							})
+						}
+						if (result.exitCode !== 0) {
+							return yield* new WorktreeError({
+								message: `Failed to create jj workspace for '${checkout.repo}': ${result.stderr.trim() || result.stdout.trim()}`,
+							})
+						}
+						if (!createdPath) {
+							return yield* new WorktreeError({
+								message: `Workspace command did not create ${workspacePath}`,
+							})
+						}
 					} else {
 						yield* backend.createWorkspace({
 							repositoryPath,
@@ -1362,7 +1438,9 @@ const materializeJj = (options: {
 							...("branch" in checkout ? { branch: checkout.branch } : {}),
 						})
 					}
-					created.push({ repositoryPath, workspacePath, workspaceName })
+					if (!options.config.workspaceCreateCommand || resumeCheckout) {
+						created.push({ repositoryPath, workspacePath, workspaceName })
+					}
 					const canonicalWorkspacePath = yield* fs.realPath(workspacePath)
 					const registeredAfterCreate = (yield* backend.listWorkspaces(
 						repositoryPath,
@@ -1370,7 +1448,10 @@ const materializeJj = (options: {
 					const head = resumeCheckout
 						? ((yield* jjIdentity(workspacePath, "@"))?.commitId ?? null)
 						: yield* backend.workspaceHead(workspacePath)
-					if (!registeredAfterCreate || head !== revision) {
+					if (
+						registeredAfterCreate?.name !== workspaceName ||
+						head !== revision
+					) {
 						return yield* new WorktreeError({
 							message: `Created jj workspace for '${checkout.repo}' failed validation`,
 						})
@@ -1445,16 +1526,18 @@ const materializeJj = (options: {
 					const rolledBack: string[] = []
 					const manualRecovery: string[] = []
 					for (const workspace of [...created].reverse()) {
-						const removed = yield* backend
-							.removeWorkspace({
-								repositoryPath: workspace.repositoryPath,
-								workspacePath: workspace.workspacePath,
-								workspaceName: workspace.workspaceName,
-							})
-							.pipe(
-								Effect.as(true),
-								Effect.catchAll(() => Effect.succeed(false)),
-							)
+						const removed = yield* (
+							workspace.workspaceName
+								? backend.removeWorkspace({
+										repositoryPath: workspace.repositoryPath,
+										workspacePath: workspace.workspacePath,
+										workspaceName: workspace.workspaceName,
+									})
+								: fs.deleteDirectory(workspace.workspacePath)
+						).pipe(
+							Effect.as(true),
+							Effect.catchAll(() => Effect.succeed(false)),
+						)
 						if (removed)
 							rolledBack.push(`create-workspace ${workspace.workspaceName}`)
 						else
