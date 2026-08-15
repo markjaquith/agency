@@ -20,6 +20,12 @@ const variables = {
 describe("runner commands", () => {
 	test("uses promptless interactive commands for built-in presets", () => {
 		expect(
+			resolveRunnerCommand("opencode2", undefined, variables, false).argv,
+		).toEqual(["opencode2"])
+		expect(
+			resolveRunnerCommand("opencode2", undefined, variables, true).argv,
+		).toEqual(["opencode2", "--continue"])
+		expect(
 			resolveRunnerCommand("opencode", undefined, variables, false).argv,
 		).toEqual(["opencode"])
 		expect(
@@ -31,6 +37,12 @@ describe("runner commands", () => {
 	})
 
 	test("uses autonomous commands when a prompt is requested", () => {
+		expect(
+			resolveRunnerCommand("opencode2", undefined, variables, false, true).argv,
+		).toEqual(["opencode2", "--prompt", "Read the task."])
+		expect(
+			resolveRunnerCommand("opencode2", undefined, variables, true, true).argv,
+		).toEqual(["opencode2", "--continue", "--prompt", "Read the task."])
 		expect(
 			resolveRunnerCommand("opencode", undefined, variables, false, true).argv,
 		).toEqual(["opencode", "--prompt", "Read the task."])

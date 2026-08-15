@@ -1050,18 +1050,45 @@ describe("work command", () => {
 		).toBeUndefined()
 	})
 
-	test("automatically falls back to Claude", async () => {
-		const harness = createHarness({ available: { opencode: false } })
+	test("automatically prefers opencode2", async () => {
+		const harness = createHarness()
 
 		await harness.run({ taskId: "example" })
 
-		expect(harness.probes).toEqual(["opencode", "claude"])
+		expect(harness.probes).toEqual(["opencode2"])
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode2",
+			args: ["opencode2"],
+			cwd: taskDirectory,
+		})
+	})
+
+	test("automatically falls back from opencode2 to opencode", async () => {
+		const harness = createHarness({ available: { opencode2: false } })
+
+		await harness.run({ taskId: "example" })
+
+		expect(harness.probes).toEqual(["opencode2", "opencode"])
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: ["opencode"],
+			cwd: taskDirectory,
+		})
+	})
+
+	test("automatically falls back from OpenCode to Claude", async () => {
+		const harness = createHarness({
+			available: { opencode2: false, opencode: false },
+		})
+
+		await harness.run({ taskId: "example" })
+
+		expect(harness.probes).toEqual(["opencode2", "opencode", "claude"])
 		expect(harness.launches[0]).toEqual({
 			cli: "claude",
 			args: ["claude"],
 			cwd: taskDirectory,
 		})
-		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
 	})
 
 	test("does not fall back when OpenCode is explicitly required", async () => {
@@ -1090,13 +1117,13 @@ describe("work command", () => {
 
 	test("fails when neither agent tool is available", async () => {
 		const harness = createHarness({
-			available: { opencode: false, claude: false },
+			available: { opencode2: false, opencode: false, claude: false },
 		})
 
 		await expect(harness.run({ taskId: "example" })).rejects.toThrow(
 			"claude CLI tool not found",
 		)
-		expect(harness.probes).toEqual(["opencode", "claude"])
+		expect(harness.probes).toEqual(["opencode2", "opencode", "claude"])
 		expect(harness.launches).toEqual([])
 	})
 
@@ -1150,7 +1177,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching command: opencode (cwd: /workbase/tasks/example)",
+			"Launching command: opencode2 (cwd: /workbase/tasks/example)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 
