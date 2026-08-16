@@ -347,8 +347,10 @@ external effects the failed invocation may have completed.
 
 ### Agent Runners
 
-OpenCode and Claude Code are built-in runner presets. Select either preset or a
-configured runner with `agency work --runner <name>`. A launch is fresh unless
+OpenCode (`opencode2` and `opencode`) and Claude Code are built-in runner presets.
+Without an explicit runner, Agency uses the first available executable in this
+order: `opencode2`, `opencode`, then `claude`. Select a preset or configured
+runner with `agency work --runner <name>`. A launch is fresh unless
 `AGENCY_SESSION_ID` is already set; resumed launches use the runner's
 `resumeCommand` when configured. The built-in presets use `--continue` only for
 resumed launches. By default Agency opens the runner without a prompt. `--auto`
@@ -399,8 +401,9 @@ to the receiving OpenCode session, injects an explicit active-worker system
 instruction, and restores Agency identity for that session's shell environment.
 This session bridge is necessary because an OpenCode client can attach to a
 long-lived server process that did not inherit the client's launch environment.
-The `opencode` runner remains rooted in its task or epic working directory so
-the workbase `AGENTS.md` and managed OpenCode config are discovered normally.
+The `opencode2` and `opencode` runners remain rooted in their task or epic
+working directory so the workbase `AGENTS.md` and managed OpenCode config are
+discovered normally.
 Agency's managed OpenCode plugin grants the active workbase external-directory
 access and adds existing checkout-local `.claude/skills`, `.agents/skills`, and
 `.opencode/{skill,skills}` directories to `skills.paths`.
@@ -1063,10 +1066,10 @@ configured external chooser. Pass a directory, including `.` for the current
 directory, to infer its epic, task, or phase. Outside a workbase, Agency first
 presents the registered workbases, then the selected workbase's hierarchy.
 
-OpenCode is the default runner, with automatic Claude fallback when neither is
-explicitly selected. `--opencode` and `--claude` remain aliases for requiring
-their built-in presets. Launches are interactive and promptless by default; use
-`--auto` to send Agency's generated context prompt.
+Agency automatically uses the first available runner in this order: `opencode2`,
+`opencode`, then `claude`. `--opencode` and `--claude` remain aliases for
+requiring their corresponding built-in presets. Launches are interactive and
+promptless by default; use `--auto` to send Agency's generated context prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without

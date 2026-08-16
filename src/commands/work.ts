@@ -280,10 +280,16 @@ export const work = (
 			options.claude ||
 			process.env.AGENCY_RUNNER,
 		)
-		let runner =
+		const defaultRunners = ["opencode2", "opencode", "claude"] as const
+		let defaultRunnerIndex = 0
+		let runner: string =
 			options.runner ??
 			process.env.AGENCY_RUNNER ??
-			(options.claude ? "claude" : "opencode")
+			(options.claude
+				? "claude"
+				: options.opencode
+					? "opencode"
+					: defaultRunners[defaultRunnerIndex]!)
 		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
@@ -311,12 +317,12 @@ export const work = (
 		let available = yield* fs.runCommand(["which", cli], {
 			captureOutput: true,
 		})
-		if (
+		while (
 			available.exitCode !== 0 &&
 			!explicitlyRequested &&
-			runner === "opencode"
+			defaultRunnerIndex < defaultRunners.length - 1
 		) {
-			runner = "claude"
+			runner = defaultRunners[++defaultRunnerIndex]!
 			resolved = resolveRunnerCommand(
 				runner,
 				config.runners,
@@ -580,7 +586,8 @@ Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
 ID. Use '.' for the current directory. Outside a workbase, select a registered
 workbase first. Managed OpenCode launches receive whole-workbase access through
-Agency's project plugin; Agency context remains authoritative for writes.
+Agency's project plugin; Agency context remains authoritative for writes. Automatic
+runner discovery checks opencode2, opencode, then claude.
 
 The prepare subcommand resolves and materializes an execution workspace without
 launching an agent or changing lifecycle status. --dry-run reports planned Git

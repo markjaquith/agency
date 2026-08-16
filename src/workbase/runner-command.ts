@@ -31,6 +31,12 @@ const PLACEHOLDERS = new Set<keyof RunnerCommandVariables>([
 ])
 
 const BUILTIN_RUNNERS: Readonly<Record<string, RunnerDefinition>> = {
+	opencode2: {
+		command: ["opencode2"],
+		autoCommand: ["opencode2", "--prompt", "{prompt}"],
+		resumeCommand: ["opencode2", "--continue"],
+		autoResumeCommand: ["opencode2", "--continue", "--prompt", "{prompt}"],
+	},
 	opencode: {
 		command: ["opencode"],
 		autoCommand: ["opencode", "--prompt", "{prompt}"],
