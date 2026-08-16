@@ -72,7 +72,7 @@ describe("IntegrationService", () => {
 		await write(root, ".opencode/opencode.jsonc", managedWorkbaseOpencode)
 		await write(
 			root,
-			".opencode/plugin/agency-repository-skills.ts",
+			".opencode/plugins/agency-repository-skills.ts",
 			managedWorkbaseOpencodePlugin,
 		)
 		await write(root, ".opencode/tui.jsonc", managedWorkbaseOpencodeTui)
@@ -126,6 +126,15 @@ describe("IntegrationService", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"process.env.AGENCY_WRITABLE_CHECKOUT",
 		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'import type { Plugin, PluginModule } from "@opencode-ai/plugin/v1"',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"export const AgencyPlugin = plugin",
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain('id: "agency"')
+		expect(managedWorkbaseOpencodePlugin).toContain("setup,")
+		expect(managedWorkbaseOpencodePlugin).toContain("server: plugin")
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			'["agency", "context", ".", "--compact", "--json"]',
 		)
@@ -276,7 +285,12 @@ describe("IntegrationService", () => {
 				task: "example",
 				phase,
 			})
-			const hooks = await generated.default({ directory: root } as never)
+			expect(generated.default).toMatchObject({
+				id: "agency",
+				setup: expect.any(Function),
+				server: generated.AgencyPlugin,
+			})
+			const hooks = await generated.AgencyPlugin({ directory: root } as never)
 			await hooks["chat.message"]!(
 				{ sessionID: "worker-session" } as never,
 				{
@@ -350,6 +364,52 @@ describe("IntegrationService", () => {
 			launchTarget: "execution-unit:phase/example/build",
 			phase: "build",
 		}))
+
+	test("registers the workbase reference through the OpenCode V2 API", async () => {
+		const path = join(root, ".opencode/plugins/agency-repository-skills.ts")
+		await write(
+			root,
+			".opencode/plugins/agency-repository-skills.ts",
+			managedWorkbaseOpencodePlugin,
+		)
+		const generated = await import(`${pathToFileURL(path).href}?v2-setup`)
+		let reference:
+			| {
+					name: string
+					source: { type: string; path: string; description: string }
+			  }
+			| undefined
+
+		await generated.default.setup({
+			reference: {
+				transform: async (callback: (references: unknown) => void) =>
+					callback({
+						list: () => [],
+						add: (
+							name: string,
+							source: {
+								type: string
+								path: string
+								description: string
+							},
+						) => {
+							reference = { name, source }
+						},
+					}),
+			},
+			skill: { transform: async () => {} },
+		})
+
+		expect(reference).toEqual({
+			name: "workbase",
+			source: {
+				type: "local",
+				path: root,
+				description:
+					"Complete Agency workbase context; write authority still comes only from agency context",
+			},
+		})
+	})
 
 	test("registers a TUI-only /agency-debug diagnostic", async () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencodeTui))
@@ -688,7 +748,7 @@ describe("IntegrationService", () => {
 		).toBe(false)
 		expect(
 			await Bun.file(
-				join(root, ".opencode/plugin/agency-repository-skills.ts"),
+				join(root, ".opencode/plugins/agency-repository-skills.ts"),
 			).text(),
 		).toBe(managedWorkbaseOpencodePlugin)
 		expect(await Bun.file(join(root, ".opencode/tui.jsonc")).text()).toBe(
@@ -759,6 +819,35 @@ describe("IntegrationService", () => {
 			state: "customized",
 			changed: false,
 		})
+	})
+
+	test("migrates a checksum-valid plugin from the legacy singular path", async () => {
+		const legacyPath = join(
+			root,
+			".opencode/plugin/agency-repository-skills.ts",
+		)
+		const pluginPath = join(
+			root,
+			".opencode/plugins/agency-repository-skills.ts",
+		)
+		await write(
+			root,
+			".opencode/plugin/agency-repository-skills.ts",
+			managedWorkbaseOpencodePlugin,
+		)
+
+		const result = await sync(root)
+
+		expect(result.files[2]).toMatchObject({
+			name: "opencode-plugin",
+			path: pluginPath,
+			state: "managed",
+			changed: true,
+		})
+		expect(await Bun.file(pluginPath).text()).toBe(
+			managedWorkbaseOpencodePlugin,
+		)
+		expect(await Bun.file(legacyPath).exists()).toBe(false)
 	})
 
 	test("preserves user-owned TUI config and diagnostic plugin", async () => {

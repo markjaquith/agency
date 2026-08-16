@@ -179,12 +179,12 @@ const inspect = (root: string) =>
 		const opencodeJsonPath = join(opencodeDirectory, "opencode.json")
 		const tuiPath = join(opencodeDirectory, "tui.jsonc")
 		const tuiJsonPath = join(opencodeDirectory, "tui.json")
-		const pluginPath = join(
+		const legacyPluginPath = join(
 			opencodeDirectory,
 			"plugin",
 			"agency-repository-skills.ts",
 		)
-		const pluralPluginPath = join(
+		const pluginPath = join(
 			opencodeDirectory,
 			"plugins",
 			"agency-repository-skills.ts",
@@ -229,11 +229,6 @@ const inspect = (root: string) =>
 
 		if ((yield* fs.readSymlinkTarget(pluginPath)) !== null) {
 			files.push(fileStatus("opencode-plugin", pluginPath, "customized"))
-		} else if (
-			(yield* fs.readSymlinkTarget(pluralPluginPath)) !== null ||
-			(yield* fs.exists(pluralPluginPath))
-		) {
-			files.push(fileStatus("opencode-plugin", pluralPluginPath, "customized"))
 		} else if (yield* fs.exists(pluginPath)) {
 			files.push(
 				classify(
@@ -243,6 +238,20 @@ const inspect = (root: string) =>
 					managedWorkbaseOpencodePlugin,
 					canUpdateManagedWorkbaseOpencodePlugin,
 				),
+			)
+		} else if (
+			(yield* fs.readSymlinkTarget(legacyPluginPath)) !== null ||
+			(yield* fs.exists(legacyPluginPath))
+		) {
+			const legacyContent =
+				(yield* fs.readSymlinkTarget(legacyPluginPath)) === null
+					? yield* fs.readFile(legacyPluginPath)
+					: null
+			files.push(
+				legacyContent !== null &&
+					canUpdateManagedWorkbaseOpencodePlugin(legacyContent)
+					? fileStatus("opencode-plugin", pluginPath, "missing")
+					: fileStatus("opencode-plugin", legacyPluginPath, "customized"),
 			)
 		} else {
 			files.push(fileStatus("opencode-plugin", pluginPath, "missing"))
@@ -319,6 +328,23 @@ const canRemoveLegacyOpencodeCommand = (root: string) =>
 		return createHash("sha256").update(canonical).digest("hex") === match[1]
 	})
 
+const canRemoveLegacyOpencodePlugin = (root: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const path = join(
+			root,
+			".opencode",
+			"plugin",
+			"agency-repository-skills.ts",
+		)
+		if (
+			(yield* fs.readSymlinkTarget(path)) !== null ||
+			!(yield* fs.exists(path))
+		)
+			return false
+		return canUpdateManagedWorkbaseOpencodePlugin(yield* fs.readFile(path))
+	})
+
 export class IntegrationService extends Effect.Service<IntegrationService>()(
 	"IntegrationService",
 	{
@@ -343,6 +369,8 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 						) && (yield* canRemoveLegacyAgents(root))
 					const removeLegacyOpencodeCommand =
 						yield* canRemoveLegacyOpencodeCommand(root)
+					const removeLegacyOpencodePlugin =
+						yield* canRemoveLegacyOpencodePlugin(root)
 					const files: IntegrationSyncFile[] = []
 
 					for (const status of statuses) {
@@ -356,7 +384,7 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 								yield* fs.createDirectory(join(root, ".opencode"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencode)
 							} else if (status.name === "opencode-plugin") {
-								yield* fs.createDirectory(join(root, ".opencode", "plugin"))
+								yield* fs.createDirectory(join(root, ".opencode", "plugins"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencodePlugin)
 							} else if (status.name === "opencode-tui") {
 								yield* fs.createDirectory(join(root, ".opencode"))
@@ -376,11 +404,19 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 								needsWrite ? "managed" : status.state,
 							),
 							changed:
-								needsWrite || (status.name === "agents" && removeLegacyAgents),
+								needsWrite ||
+								(status.name === "agents" && removeLegacyAgents) ||
+								(status.name === "opencode-plugin" &&
+									removeLegacyOpencodePlugin),
 						})
 					}
 
 					if (removeLegacyAgents) yield* fs.deleteFile(join(root, "AGENTS.md"))
+					if (removeLegacyOpencodePlugin) {
+						yield* fs.deleteFile(
+							join(root, ".opencode", "plugin", "agency-repository-skills.ts"),
+						)
+					}
 					if (removeLegacyOpencodeCommand) {
 						yield* fs.deleteFile(
 							join(root, ".opencode", "command", "agency.md"),

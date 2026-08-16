@@ -87,7 +87,7 @@ OpenCode config: missing
   Action: Run 'agency integration sync' to install Agency instructions and whole-workbase OpenCode access.
 
 OpenCode workbase plugin: missing
-  Path: .opencode/plugin/agency-repository-skills.ts
+  Path: .opencode/plugins/agency-repository-skills.ts
   The managed OpenCode workbase plugin needs synchronization.
   Action: Run 'agency integration sync' to provide workbase access and expose writable-checkout skills in OpenCode.
 
@@ -124,7 +124,7 @@ OpenCode /agency-debug: missing
 		).toBe(false)
 		expect(
 			await Bun.file(
-				join(root, ".opencode/plugin/agency-repository-skills.ts"),
+				join(root, ".opencode/plugins/agency-repository-skills.ts"),
 			).exists(),
 		).toBe(true)
 		expect(await Bun.file(join(root, ".opencode/tui.jsonc")).exists()).toBe(
@@ -151,7 +151,7 @@ OpenCode config: synced
   Agency's managed OpenCode launch config is ready to load Agency instructions and provide whole-workbase read access.
 
 OpenCode workbase plugin: synced
-  Path: .opencode/plugin/agency-repository-skills.ts
+  Path: .opencode/plugins/agency-repository-skills.ts
   Agency's managed OpenCode plugin provides whole-workbase access and exposes writable-checkout skills.
 
 OpenCode TUI config: synced

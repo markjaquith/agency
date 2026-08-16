@@ -54,7 +54,7 @@ workbase/
   .opencode/
     opencode.jsonc         # managed @agency subagent, instructions, and reference
     tui.jsonc              # managed TUI plugin registration
-    plugin/agency-repository-skills.ts # managed workbase access and checkout skills
+    plugins/agency-repository-skills.ts # managed workbase access and checkout skills
     tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
@@ -119,6 +119,9 @@ toast and does not submit a prompt to an LLM. When no writable checkout skill
 directory is available, server initialization is reported as indeterminate
 rather than inferred from plugin discovery.
 OpenCode discovers the config and plugin from task and epic launch directories.
+The plugin uses OpenCode's plural discovery directory and exports both the V1
+server function and the `opencode2` module wrapper. Integration sync migrates a
+checksum-valid legacy singular-path plugin and preserves customized files.
 The plugin grants whole-workbase access dynamically, while the portable
 reference advertises that context to agents. Bash and Agency operations must
 still follow the write authority reported by `agency context`.
