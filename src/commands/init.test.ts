@@ -74,7 +74,7 @@ describe("init command", () => {
 			await Bun.file(join(root, ".opencode/command/agency.md")).exists(),
 		).toBe(false)
 		const plugin = await Bun.file(
-			join(root, ".opencode/plugin/agency-repository-skills.ts"),
+			join(root, ".opencode/plugins/agency-repository-skills.ts"),
 		).text()
 		expect(plugin).toContain("AGENCY_WRITABLE_CHECKOUT")
 		expect(plugin).toContain("config.skills.paths")

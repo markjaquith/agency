@@ -8,7 +8,8 @@ const checksum = (content: string) =>
 
 const body = `import { existsSync, readFileSync } from "node:fs"
 import { dirname, join, resolve, sep } from "node:path"
-import type { Plugin } from "@opencode-ai/plugin"
+import { fileURLToPath } from "node:url"
+import type { Plugin, PluginModule } from "@opencode-ai/plugin/v1"
 
 const workerLaunchPattern = /^Agency worker launch target: ([^.\\s]+)\\./
 
@@ -18,6 +19,20 @@ type AgencyContext = {
   target?: string
   task?: string
   phase?: string
+}
+
+type V2PluginContext = {
+  reference: {
+    transform(callback: (references: {
+      list(): readonly (readonly [string, unknown])[]
+      add(name: string, source: { type: "local"; path: string; description: string }): void
+    }) => void): Promise<unknown>
+  }
+  skill: {
+    transform(callback: (skills: {
+      source(source: { type: "directory"; path: string }): void
+    }) => void): Promise<unknown>
+  }
 }
 
 const contextTarget = (result: Record<string, any>): string | undefined => {
@@ -68,6 +83,15 @@ const discoverCheckout = (directory: string, root: string | undefined) => {
     current = dirname(current)
   }
 }
+
+const checkoutSkillPaths = (checkout: string | undefined) => checkout
+  ? [
+      join(checkout, ".claude", "skills"),
+      join(checkout, ".agents", "skills"),
+      join(checkout, ".opencode", "skill"),
+      join(checkout, ".opencode", "skills"),
+    ].filter(existsSync)
+  : []
 
 const agencyContext = async (
   directory: string,
@@ -141,12 +165,7 @@ const plugin: Plugin = async ({ directory }) => {
 
       if (!checkout) return
 
-      const paths = [
-        join(checkout, ".claude", "skills"),
-        join(checkout, ".agents", "skills"),
-        join(checkout, ".opencode", "skill"),
-        join(checkout, ".opencode", "skills"),
-      ].filter(existsSync).map((path) => \`\${path}\${sep}.\`)
+      const paths = checkoutSkillPaths(checkout).map((path) => \`\${path}\${sep}.\`)
       if (paths.length === 0) return
 
       config.skills ??= {}
@@ -186,7 +205,31 @@ const plugin: Plugin = async ({ directory }) => {
   }
 }
 
-export default plugin
+export const AgencyPlugin = plugin
+
+const setup = async (context: V2PluginContext) => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
+  await context.reference.transform((references) => {
+    if (references.list().some(([name]) => name === "workbase")) return
+    references.add("workbase", {
+      type: "local",
+      path: root,
+      description: "Complete Agency workbase context; write authority still comes only from agency context",
+    })
+  })
+
+  const paths = checkoutSkillPaths(process.env.AGENCY_WRITABLE_CHECKOUT)
+  if (paths.length === 0) return
+  await context.skill.transform((skills) => {
+    for (const path of paths) skills.source({ type: "directory", path })
+  })
+}
+
+export default {
+  id: "agency",
+  setup,
+  server: plugin,
+} satisfies PluginModule & { setup: (context: V2PluginContext) => Promise<void> }
 `
 
 const renderManagedWorkbaseOpencodePlugin = (content: string) =>
