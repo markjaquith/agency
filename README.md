@@ -11,7 +11,7 @@ read or write.
 - Git
 - [Jujutsu](https://jj-vcs.github.io/jj/) is preferred when available
 - [GitHub CLI](https://cli.github.com/) for `agency pr`
-- OpenCode, Claude Code, or a configured runner for `agency work`
+- OpenCode, Claude Code, or a configured agent for `agency work`
 
 ## Installation
 
@@ -113,7 +113,7 @@ read-only Agency commands, and use explicit Agency CLI permissions to create or
 update planning structure. Its normal research tools and the complete Agency CLI
 remain available; managed Agency instructions and reported authority govern each
 operation.
-When the subagent launches work in another agent, it verifies that the runner
+When the subagent launches work in another agent, it verifies that the agent
 started and returns without waiting for the task to finish.
 The TUI-only `/agency-debug` command reports TUI companion initialization and
 whether the server plugin registered writable-checkout skills. It uses a native
@@ -360,23 +360,36 @@ retries checkout creation and the hook rather than reusing an uninitialized
 checkout. Hook commands should be idempotent so a retry is safe after any
 external effects the failed invocation may have completed.
 
-### Agent Runners
+### Agents
 
-OpenCode (`opencode2` and `opencode`) and Claude Code are built-in runner presets.
-Without an explicit runner, Agency uses the first available executable in this
-order: `opencode2`, `opencode`, then `claude`. Select a preset or configured
-runner with `agency work --runner <name>`. A launch is fresh unless
-`AGENCY_SESSION_ID` is already set; resumed launches use the runner's
+OpenCode (`opencode2` and `opencode`), Pi, and Claude Code are built-in agent presets.
+Without an explicit agent, Agency uses the first available executable in this
+order: `opencode2`, `opencode`, `pi`, then `claude`. Select a preset or configured
+agent with `agency work --agent <name>`. To select a built-in agent globally,
+set `agent` in `$XDG_CONFIG_HOME/agency/agency.json` (or
+`~/.config/agency/agency.json`):
+
+```json
+{
+	"agent": "pi"
+}
+```
+
+The selection precedence is `--agent` (including the legacy `--opencode` and
+`--claude` aliases), then `AGENCY_AGENT`, then `agent`, then automatic
+detection. Supported global values are `opencode2`, `opencode`, `pi`, and
+`claude`; an unavailable configured agent fails rather than falling back. A launch
+is fresh unless `AGENCY_SESSION_ID` is already set; resumed launches use the agent's
 `resumeCommand` when configured. The built-in presets use `--continue` only for
-resumed launches. By default Agency opens the runner without a prompt. `--auto`
+resumed launches. By default Agency opens the agent without a prompt. `--auto`
 uses its autonomous command and sends the generated task, phase, or epic prompt.
 
-Custom runners are direct argv commands, never shell snippets:
+Custom agents are direct argv commands, never shell snippets:
 
 ```json
 {
 	"version": 2,
-	"runners": {
+	"agents": {
 		"custom": {
 			"command": ["my-agent"],
 			"autoCommand": ["my-agent", "--prompt", "{prompt}"],
@@ -393,19 +406,19 @@ Available placeholders are `{prompt}`, `{workbase}`, `{target}`, `{task}`,
 placeholders are empty when they do not apply. `{prompt}` is empty unless
 `--auto` is set. If `resumeCommand` is omitted, the fresh command is also used
 for resumed sessions. If `autoResumeCommand` is omitted, `autoCommand` is used;
-configured runners without `autoCommand` reject `--auto`.
+configured agents without `autoCommand` reject `--auto`.
 
-Every runner receives the same `AGENCY_RUNNER`, `AGENCY_CLAIMANT`,
+Every agent receives the same `AGENCY_AGENT`, `AGENCY_CLAIMANT`,
 `AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
-Execution-unit runners also receive `AGENCY_WRITABLE_CHECKOUT` with the
+Execution-unit agents also receive `AGENCY_WRITABLE_CHECKOUT` with the
 authoritative writable checkout path.
 `AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
 Autonomous prompts begin `Agency worker launch target: <target>.`, carrying the
 same canonical target as `AGENCY_TARGET`. This is the process-local fallback for
-runner clients that attach to a long-lived process and lose launch environment
+agent clients that attach to a long-lived process and lose launch environment
 variables. A worker must verify either signal against `agency context . --json`
 before acting; a matching worker performs the task directly and must not invoke
 `agency work` for the same target. Managed guidance also fails safe for older
@@ -416,7 +429,7 @@ to the receiving OpenCode session, injects an explicit active-worker system
 instruction, and restores Agency identity for that session's shell environment.
 This session bridge is necessary because an OpenCode client can attach to a
 long-lived server process that did not inherit the client's launch environment.
-The `opencode2` and `opencode` runners remain rooted in their task or epic
+The `opencode2` and `opencode` agents remain rooted in their task or epic
 working directory so the workbase `AGENTS.md` and managed OpenCode config are
 discovered normally.
 Agency's managed OpenCode plugin grants the active workbase external-directory
@@ -430,7 +443,7 @@ checkout through `agency context`. A multi-phase
 task root has no single checkout, so launch from its phase directory when using
 plain OpenCode or Pi. Other checkout-local configuration is not composed.
 `--print-command` prints the exact cwd and argv plus non-secret environment keys
-without launching the runner.
+without launching the agent.
 
 ### Custom Chooser Command
 
@@ -791,7 +804,7 @@ agency task new [id] [--work [--auto]]
 ```
 
 `--work` starts work on the newly created entity. Add `--auto` to pass the
-generated context prompt to the selected runner. These launch options are also
+generated context prompt to the selected agent. These launch options are also
 available on `epic new` and `phase new`; they cannot be combined with `--json`.
 
 Create a single-phase task:
@@ -991,7 +1004,7 @@ outcome.
 
 `delegated` remains readable for existing workbases but cannot be newly assigned.
 Delegation is now explicit: the claimant identifies the orchestrator and the
-runner identifies the assigned agent.
+agent identifies the assigned agent.
 
 Human list output is a compact table with lifecycle, readiness, parent,
 repository, branch, recorded PR, and worktree state where applicable. List and
@@ -1007,7 +1020,7 @@ Claim mutations require the SHA-256 revision exposed by `agency context` or
 document lock and atomically replaces the execution document.
 
 ```text
-agency claim <task-id> [phase-id] --claimant <id> --runner <id>
+agency claim <task-id> [phase-id] --claimant <id> --agent <id>
   --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]
 agency release <task-id> [phase-id] --session-id <id>
   --revision <sha256> [--json]
@@ -1027,8 +1040,8 @@ rather than overwriting it. Expired claims may be replaced with a
 revision-guarded claim.
 
 `agency work` does not claim execution units. It refuses active explicit claims,
-marks open execution work `working`, and launches the runner. External
-orchestrators use `agency claim`, launch and monitor their runner separately, and
+marks open execution work `working`, and launches the agent. External
+orchestrators use `agency claim`, launch and monitor their agent separately, and
 later call `agency release` or `agency finish`.
 
 ### Archive
@@ -1071,7 +1084,7 @@ until restored.
 ### Work, Publication, and Pull Requests
 
 ```text
-agency work [<directory> | --epic <epic-id>] [--runner <name>] [--auto] [--print-command]
+agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-command]
 agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
@@ -1084,7 +1097,7 @@ configured external chooser. Pass a directory, including `.` for the current
 directory, to infer its epic, task, or phase. Outside a workbase, Agency first
 presents the registered workbases, then the selected workbase's hierarchy.
 
-Agency automatically uses the first available runner in this order: `opencode2`,
+Agency automatically uses the first available agent in this order: `opencode2`,
 `opencode`, then `claude`. `--opencode` and `--claude` remain aliases for
 requiring their corresponding built-in presets. Launches are interactive and
 promptless by default; use `--auto` to send Agency's generated context prompt.

@@ -56,7 +56,7 @@ describe("claim service", () => {
 						{
 							taskId: "single",
 							claimant: "orchestrator-1",
-							runner: "agent-1",
+							agent: "agent-1",
 							sessionId,
 							revision,
 							now,
@@ -79,7 +79,7 @@ describe("claim service", () => {
 
 		expect(acquired.claim).toEqual({
 			claimant: "orchestrator-1",
-			runner: "agent-1",
+			agent: "agent-1",
 			sessionId: "session-1",
 			startedAt: "2026-07-17T12:00:00.000Z",
 			targetRevision: initial.revision,
@@ -315,7 +315,7 @@ describe("claim service", () => {
 							taskId: "multi",
 							phaseId: "implementation",
 							claimant: "orchestrator",
-							runner: "agent",
+							agent: "agent",
 							sessionId: "phase-session",
 							revision: phase.revision,
 						},

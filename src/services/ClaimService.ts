@@ -70,7 +70,7 @@ interface ClaimInput {
 	readonly taskId: string
 	readonly phaseId?: string
 	readonly claimant: string
-	readonly runner: string
+	readonly agent: string
 	readonly sessionId: string
 	readonly revision: string
 	readonly expiresAt?: string
@@ -401,7 +401,7 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 				Effect.gen(function* () {
 					for (const [label, value] of [
 						["Claimant", input.claimant],
-						["Runner", input.runner],
+						["Agent", input.agent],
 						["Session ID", input.sessionId],
 					] as const) {
 						assertIdentity(label, value)
@@ -435,7 +435,7 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 										target: inspected.target.label,
 										currentRevision: input.revision,
 										claim: data.claim,
-										message: `${inspected.target.label} is claimed by '${data.claim.runner}'`,
+										message: `${inspected.target.label} is claimed by '${data.claim.agent}'`,
 									})
 								}
 								if (
@@ -457,7 +457,7 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 								}
 								const claim: ClaimRecord = {
 									claimant: input.claimant.trim(),
-									runner: input.runner.trim(),
+									agent: input.agent.trim(),
 									sessionId: input.sessionId.trim(),
 									startedAt: operationTime.toISOString(),
 									targetRevision: input.revision,

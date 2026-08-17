@@ -131,7 +131,7 @@ describe("IntegrationService", () => {
 			"call Herdr help, skill, or CLI discovery",
 		)
 		expect(managedWorkbaseAgents).toContain("exactly one final")
-		expect(managedWorkbaseAgents).toContain("leave the runner in the")
+		expect(managedWorkbaseAgents).toContain("leave the agent in the")
 	})
 
 	test("generates a dynamic workbase plugin", () => {
@@ -777,7 +777,7 @@ describe("IntegrationService", () => {
 		expect(config.agent.agency.hidden).toBeUndefined()
 		expect(config.agent.agency.steps).toBeUndefined()
 		expect(config.agent.agency.prompt).toContain(
-			"verify that the runner started successfully",
+			"verify that the agent started successfully",
 		)
 		expect(config.agent.agency.prompt).toContain(
 			"return without waiting for the task to finish",

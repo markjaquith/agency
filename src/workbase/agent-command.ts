@@ -1,6 +1,6 @@
 import type { WorkbaseConfig } from "./schemas"
 
-export interface RunnerCommandVariables {
+export interface AgentCommandVariables {
 	readonly prompt: string
 	readonly workbase: string
 	readonly target: string
@@ -11,7 +11,7 @@ export interface RunnerCommandVariables {
 	readonly claimRevision: string
 }
 
-interface RunnerDefinition {
+interface AgentDefinition {
 	readonly command: readonly string[]
 	readonly autoCommand?: readonly string[]
 	readonly resumeCommand?: readonly string[]
@@ -19,7 +19,7 @@ interface RunnerDefinition {
 	readonly environment?: Readonly<Record<string, string>>
 }
 
-const PLACEHOLDERS = new Set<keyof RunnerCommandVariables>([
+const PLACEHOLDERS = new Set<keyof AgentCommandVariables>([
 	"prompt",
 	"workbase",
 	"target",
@@ -30,7 +30,7 @@ const PLACEHOLDERS = new Set<keyof RunnerCommandVariables>([
 	"claimRevision",
 ])
 
-const BUILTIN_RUNNERS: Readonly<Record<string, RunnerDefinition>> = {
+const BUILTIN_AGENTS: Readonly<Record<string, AgentDefinition>> = {
 	opencode2: {
 		command: ["opencode2"],
 		autoCommand: ["opencode2", "--prompt", "{prompt}"],
@@ -43,6 +43,12 @@ const BUILTIN_RUNNERS: Readonly<Record<string, RunnerDefinition>> = {
 		resumeCommand: ["opencode", "--continue"],
 		autoResumeCommand: ["opencode", "--continue", "--prompt", "{prompt}"],
 	},
+	pi: {
+		command: ["pi"],
+		autoCommand: ["pi", "{prompt}"],
+		resumeCommand: ["pi", "--continue"],
+		autoResumeCommand: ["pi", "--continue", "{prompt}"],
+	},
 	claude: {
 		command: ["claude"],
 		autoCommand: ["claude", "{prompt}"],
@@ -51,48 +57,46 @@ const BUILTIN_RUNNERS: Readonly<Record<string, RunnerDefinition>> = {
 	},
 }
 
-const validateTemplate = (runner: string, value: string) => {
+const validateTemplate = (agent: string, value: string) => {
 	for (const match of value.matchAll(/\{([^{}]+)\}/g)) {
 		const placeholder = match[1]!
-		if (!PLACEHOLDERS.has(placeholder as keyof RunnerCommandVariables)) {
-			throw new Error(
-				`Unknown runner '${runner}' placeholder: {${placeholder}}`,
-			)
+		if (!PLACEHOLDERS.has(placeholder as keyof AgentCommandVariables)) {
+			throw new Error(`Unknown agent '${agent}' placeholder: {${placeholder}}`)
 		}
 	}
 }
 
-export const validateRunners = (runners: WorkbaseConfig["runners"]): void => {
-	for (const [name, runner] of Object.entries(runners ?? {})) {
+export const validateAgents = (agents: WorkbaseConfig["agents"]): void => {
+	for (const [name, agent] of Object.entries(agents ?? {})) {
 		for (const value of [
-			...runner.command,
-			...(runner.autoCommand ?? []),
-			...(runner.resumeCommand ?? []),
-			...(runner.autoResumeCommand ?? []),
-			...Object.values(runner.environment ?? {}),
+			...agent.command,
+			...(agent.autoCommand ?? []),
+			...(agent.resumeCommand ?? []),
+			...(agent.autoResumeCommand ?? []),
+			...Object.values(agent.environment ?? {}),
 		]) {
 			validateTemplate(name, value)
 		}
 	}
 }
 
-const expand = (value: string, variables: RunnerCommandVariables) =>
+const expand = (value: string, variables: AgentCommandVariables) =>
 	value.replaceAll(
 		/\{([^{}]+)\}/g,
 		(match, placeholder: string) =>
-			variables[placeholder as keyof RunnerCommandVariables] ?? match,
+			variables[placeholder as keyof AgentCommandVariables] ?? match,
 	)
 
-export const resolveRunnerCommand = (
+export const resolveAgentCommand = (
 	name: string,
-	configured: WorkbaseConfig["runners"],
-	variables: RunnerCommandVariables,
+	configured: WorkbaseConfig["agents"],
+	variables: AgentCommandVariables,
 	resume: boolean,
 	auto = false,
 ) => {
-	validateRunners(configured)
-	const definition = configured?.[name] ?? BUILTIN_RUNNERS[name]
-	if (!definition) throw new Error(`Unknown runner: ${name}`)
+	validateAgents(configured)
+	const definition = configured?.[name] ?? BUILTIN_AGENTS[name]
+	if (!definition) throw new Error(`Unknown agent: ${name}`)
 	const template = auto
 		? resume
 			? (definition.autoResumeCommand ?? definition.autoCommand)
@@ -101,7 +105,7 @@ export const resolveRunnerCommand = (
 			? definition.resumeCommand
 			: definition.command
 	if (!template) {
-		throw new Error(`Runner '${name}' does not support --auto`)
+		throw new Error(`Agent '${name}' does not support --auto`)
 	}
 	const argv = template.map((argument) => expand(argument, variables))
 	const environment = Object.fromEntries(
@@ -113,11 +117,11 @@ export const resolveRunnerCommand = (
 	return { argv, environment }
 }
 
-export const runnerEnvironment = (
-	runner: string,
-	variables: RunnerCommandVariables,
+export const agentEnvironment = (
+	agent: string,
+	variables: AgentCommandVariables,
 ): Record<string, string> => ({
-	AGENCY_RUNNER: runner,
+	AGENCY_AGENT: agent,
 	AGENCY_CLAIMANT: variables.claimant,
 	AGENCY_SESSION_ID: variables.sessionId,
 	AGENCY_CLAIM_REVISION: variables.claimRevision,

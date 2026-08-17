@@ -39,7 +39,7 @@ describe("doctor command", () => {
 			"agency.json",
 			JSON.stringify({
 				version: 2,
-				runners: {
+				agents: {
 					missing: {
 						command: ["definitely-not-installed"],
 						autoCommand: ["also-not-installed", "{prompt}"],
@@ -87,12 +87,12 @@ status: open
 					status: "pass",
 				}),
 				expect.objectContaining({
-					id: "integration.runner.missing",
+					id: "integration.agent.missing",
 					level: "error",
 					status: "fail",
 				}),
 				expect.objectContaining({
-					id: "integration.runner.missing.auto",
+					id: "integration.agent.missing.auto",
 					level: "error",
 					status: "fail",
 				}),

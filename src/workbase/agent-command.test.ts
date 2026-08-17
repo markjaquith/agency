@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
 	printableEnvironment,
-	resolveRunnerCommand,
-	runnerEnvironment,
-	validateRunners,
-} from "./runner-command"
+	resolveAgentCommand,
+	agentEnvironment,
+	validateAgents,
+} from "./agent-command"
 
 const variables = {
 	prompt: "Read the task.",
@@ -17,45 +17,55 @@ const variables = {
 	claimRevision: "revision-1",
 }
 
-describe("runner commands", () => {
+describe("agent commands", () => {
 	test("uses promptless interactive commands for built-in presets", () => {
 		expect(
-			resolveRunnerCommand("opencode2", undefined, variables, false).argv,
+			resolveAgentCommand("opencode2", undefined, variables, false).argv,
 		).toEqual(["opencode2"])
 		expect(
-			resolveRunnerCommand("opencode2", undefined, variables, true).argv,
+			resolveAgentCommand("opencode2", undefined, variables, true).argv,
 		).toEqual(["opencode2", "--continue"])
 		expect(
-			resolveRunnerCommand("opencode", undefined, variables, false).argv,
+			resolveAgentCommand("opencode", undefined, variables, false).argv,
 		).toEqual(["opencode"])
 		expect(
-			resolveRunnerCommand("opencode", undefined, variables, true).argv,
+			resolveAgentCommand("opencode", undefined, variables, true).argv,
 		).toEqual(["opencode", "--continue"])
+		expect(resolveAgentCommand("pi", undefined, variables, false).argv).toEqual(
+			["pi"],
+		)
+		expect(resolveAgentCommand("pi", undefined, variables, true).argv).toEqual([
+			"pi",
+			"--continue",
+		])
 		expect(
-			resolveRunnerCommand("claude", undefined, variables, true).argv,
+			resolveAgentCommand("claude", undefined, variables, true).argv,
 		).toEqual(["claude", "--continue"])
 	})
 
 	test("uses autonomous commands when a prompt is requested", () => {
 		expect(
-			resolveRunnerCommand("opencode2", undefined, variables, false, true).argv,
+			resolveAgentCommand("opencode2", undefined, variables, false, true).argv,
 		).toEqual(["opencode2", "--prompt", "Read the task."])
 		expect(
-			resolveRunnerCommand("opencode2", undefined, variables, true, true).argv,
+			resolveAgentCommand("opencode2", undefined, variables, true, true).argv,
 		).toEqual(["opencode2", "--continue", "--prompt", "Read the task."])
 		expect(
-			resolveRunnerCommand("opencode", undefined, variables, false, true).argv,
+			resolveAgentCommand("opencode", undefined, variables, false, true).argv,
 		).toEqual(["opencode", "--prompt", "Read the task."])
 		expect(
-			resolveRunnerCommand("opencode", undefined, variables, true, true).argv,
+			resolveAgentCommand("opencode", undefined, variables, true, true).argv,
 		).toEqual(["opencode", "--continue", "--prompt", "Read the task."])
 		expect(
-			resolveRunnerCommand("claude", undefined, variables, true, true).argv,
+			resolveAgentCommand("pi", undefined, variables, false, true).argv,
+		).toEqual(["pi", "Read the task."])
+		expect(
+			resolveAgentCommand("claude", undefined, variables, true, true).argv,
 		).toEqual(["claude", "--continue", "Read the task."])
 	})
 
 	test("expands configured argv and environment without a shell", () => {
-		const resolved = resolveRunnerCommand(
+		const resolved = resolveAgentCommand(
 			"custom",
 			{
 				custom: {
@@ -79,33 +89,33 @@ describe("runner commands", () => {
 		})
 	})
 
-	test("rejects --auto for configured runners without an auto command", () => {
+	test("rejects --auto for configured agents without an auto command", () => {
 		expect(() =>
-			resolveRunnerCommand(
+			resolveAgentCommand(
 				"custom",
 				{ custom: { command: ["agent"] } },
 				variables,
 				false,
 				true,
 			),
-		).toThrow("Runner 'custom' does not support --auto")
+		).toThrow("Agent 'custom' does not support --auto")
 	})
 
 	test("rejects unknown placeholders", () => {
 		expect(() =>
-			validateRunners({ custom: { command: ["agent", "{unknown}"] } }),
-		).toThrow("Unknown runner 'custom' placeholder: {unknown}")
+			validateAgents({ custom: { command: ["agent", "{unknown}"] } }),
+		).toThrow("Unknown agent 'custom' placeholder: {unknown}")
 	})
 
 	test("provides normalized Agency environment and filters secret values", () => {
 		const environment = {
-			...runnerEnvironment("custom", variables),
+			...agentEnvironment("custom", variables),
 			VISIBLE: "yes",
 			ACCESS_TOKEN: "secret",
 		}
 
 		expect(environment).toMatchObject({
-			AGENCY_RUNNER: "custom",
+			AGENCY_AGENT: "custom",
 			AGENCY_CLAIMANT: "orchestrator",
 			AGENCY_SESSION_ID: "session-1",
 			AGENCY_WORKBASE: "/workbase",

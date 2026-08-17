@@ -54,7 +54,8 @@ interface HarnessOptions {
 	readonly materializeError?: Error
 	readonly available?: Readonly<Record<string, boolean>>
 	readonly chooserCommand?: readonly string[]
-	readonly runners?: Record<
+	readonly agent?: "opencode2" | "opencode" | "pi" | "claude"
+	readonly agents?: Record<
 		string,
 		{
 			command: readonly [string, ...string[]]
@@ -121,6 +122,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		},
 	}
 	const workbase = {
+		loadGlobalConfig: () => Effect.succeed({ agent: options.agent }),
 		discover: (path: string) =>
 			options.outsideWorkbase && path === "/outside"
 				? Effect.fail({
@@ -136,7 +138,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				config: {
 					version: 2 as const,
 					chooserCommand: options.chooserCommand,
-					runners: options.runners,
+					agents: options.agents,
 				},
 			}),
 		repositoryAliases: () => Effect.succeed(["agency"]),
@@ -307,8 +309,11 @@ const createHarness = (options: HarnessOptions = {}) => {
 		commandOptions: Parameters<typeof work>[0],
 		pick: PickWorkTarget = defaultPick,
 		pickBase: PickWorkbase = defaultPickWorkbase,
-	) =>
-		Effect.runPromise(
+		preserveSession = false,
+	) => {
+		const agencySessionId = process.env.AGENCY_SESSION_ID
+		if (!preserveSession) delete process.env.AGENCY_SESSION_ID
+		return Effect.runPromise(
 			work(commandOptions, launch, pick, progress, pickBase).pipe(
 				Effect.provideService(WorktreeService, worktrees as never),
 				Effect.provideService(FileSystemService, fs as never),
@@ -319,7 +324,12 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(ReadinessService, readiness as never),
 				Effect.provideService(IntegrationService, integrations as never),
 			) as Effect.Effect<void, unknown, never>,
-		)
+		).finally(() => {
+			if (agencySessionId !== undefined) {
+				process.env.AGENCY_SESSION_ID = agencySessionId
+			}
+		})
+	}
 	const runPrepare = (commandOptions: Parameters<typeof workPrepare>[0]) =>
 		Effect.runPromise(
 			workPrepare(commandOptions).pipe(
@@ -805,7 +815,7 @@ describe("work command", () => {
 
 		await expect(
 			harness.run({ taskId: "example", opencode: true, claude: true }),
-		).rejects.toThrow("Cannot combine --runner, --opencode, and --claude")
+		).rejects.toThrow("Cannot combine --agent, --opencode, and --claude")
 		expect(harness.events).toEqual([])
 	})
 
@@ -897,12 +907,17 @@ describe("work command", () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 		process.env.AGENCY_SESSION_ID = "existing-session"
 		try {
-			await harness.run({
-				taskId: "example",
-				phaseId: "implementation",
-				opencode: true,
-				auto: true,
-			})
+			await harness.run(
+				{
+					taskId: "example",
+					phaseId: "implementation",
+					opencode: true,
+					auto: true,
+				},
+				undefined,
+				undefined,
+				true,
+			)
 		} finally {
 			delete process.env.AGENCY_SESSION_ID
 		}
@@ -919,10 +934,10 @@ describe("work command", () => {
 		})
 	})
 
-	test("expands a named runner with shared context", async () => {
+	test("expands a named agent with shared context", async () => {
 		const harness = createHarness({
 			available: { codex: true },
-			runners: {
+			agents: {
 				custom: {
 					command: ["codex"],
 					autoCommand: ["codex", "--task", "{task}", "{prompt}"],
@@ -934,7 +949,7 @@ describe("work command", () => {
 			},
 		})
 
-		await harness.run({ taskId: "example", runner: "custom", auto: true })
+		await harness.run({ taskId: "example", agent: "custom", auto: true })
 
 		expect(harness.probes).toEqual(["codex"])
 		expect(harness.launches[0]).toEqual({
@@ -948,7 +963,7 @@ describe("work command", () => {
 			cwd: taskDirectory,
 		})
 		expect(harness.launchEnvironments[0]).toMatchObject({
-			AGENCY_RUNNER: "custom",
+			AGENCY_AGENT: "custom",
 			AGENCY_CLAIMANT: process.env.USER ?? "agency",
 			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:task/example",
@@ -962,7 +977,7 @@ describe("work command", () => {
 	test("prints the exact command contract without launching and omits secrets", async () => {
 		const harness = createHarness({
 			available: { agent: true },
-			runners: {
+			agents: {
 				custom: {
 					command: ["agent"],
 					autoCommand: ["agent", "{prompt}"],
@@ -977,7 +992,7 @@ describe("work command", () => {
 		const output = await captureLogs(() =>
 			harness.run({
 				taskId: "example",
-				runner: "custom",
+				agent: "custom",
 				printCommand: true,
 			}),
 		)
@@ -1078,16 +1093,48 @@ describe("work command", () => {
 
 	test("automatically falls back from OpenCode to Claude", async () => {
 		const harness = createHarness({
+			available: { opencode2: false, opencode: false, pi: false },
+		})
+
+		await harness.run({ taskId: "example" })
+
+		expect(harness.probes).toEqual(["opencode2", "opencode", "pi", "claude"])
+		expect(harness.launches[0]).toEqual({
+			cli: "claude",
+			args: ["claude"],
+			cwd: taskDirectory,
+		})
+	})
+
+	test("automatically falls back from OpenCode to Pi", async () => {
+		const harness = createHarness({
 			available: { opencode2: false, opencode: false },
 		})
 
 		await harness.run({ taskId: "example" })
 
-		expect(harness.probes).toEqual(["opencode2", "opencode", "claude"])
-		expect(harness.launches[0]).toEqual({
+		expect(harness.probes).toEqual(["opencode2", "opencode", "pi"])
+		expect(harness.launches[0]).toMatchObject({ cli: "pi", args: ["pi"] })
+	})
+
+	test("uses the global agent before automatic detection", async () => {
+		const harness = createHarness({ agent: "pi" })
+
+		await harness.run({ taskId: "example" })
+
+		expect(harness.probes).toEqual(["pi"])
+		expect(harness.launches[0]).toMatchObject({ cli: "pi", args: ["pi"] })
+	})
+
+	test("lets an invocation agent override the global agent", async () => {
+		const harness = createHarness({ agent: "pi" })
+
+		await harness.run({ taskId: "example", agent: "claude" })
+
+		expect(harness.probes).toEqual(["claude"])
+		expect(harness.launches[0]).toMatchObject({
 			cli: "claude",
 			args: ["claude"],
-			cwd: taskDirectory,
 		})
 	})
 
@@ -1117,13 +1164,18 @@ describe("work command", () => {
 
 	test("fails when neither agent tool is available", async () => {
 		const harness = createHarness({
-			available: { opencode2: false, opencode: false, claude: false },
+			available: {
+				opencode2: false,
+				opencode: false,
+				pi: false,
+				claude: false,
+			},
 		})
 
 		await expect(harness.run({ taskId: "example" })).rejects.toThrow(
 			"claude CLI tool not found",
 		)
-		expect(harness.probes).toEqual(["opencode2", "opencode", "claude"])
+		expect(harness.probes).toEqual(["opencode2", "opencode", "pi", "claude"])
 		expect(harness.launches).toEqual([])
 	})
 

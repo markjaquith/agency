@@ -52,7 +52,7 @@ export const DocumentRevision = Schema.String.pipe(
 
 export const ClaimRecord = Schema.Struct({
 	claimant: NonEmptyString,
-	runner: NonEmptyString,
+	agent: NonEmptyString,
 	sessionId: NonEmptyString,
 	startedAt: IsoTimestamp,
 	targetRevision: DocumentRevision,
@@ -110,7 +110,7 @@ export const WorkbaseConfig = Schema.Struct({
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	workspaceCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
-	runners: Schema.optional(
+	agents: Schema.optional(
 		Schema.Record({
 			key: EntityId,
 			value: Schema.Struct({
@@ -144,6 +144,12 @@ export const WorkbaseRegistry = Schema.Struct({
 	version: Schema.Literal(2),
 	workbases: Schema.Array(WorkbaseRegistration),
 	defaultId: Schema.optional(EntityId),
+})
+
+export const GlobalConfig = Schema.Struct({
+	agent: Schema.optional(
+		Schema.Literal("opencode2", "opencode", "pi", "claude"),
+	),
 })
 
 export const Dependency = Schema.Struct({

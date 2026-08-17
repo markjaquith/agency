@@ -276,11 +276,11 @@ describe("workspace creation configuration", () => {
 	})
 })
 
-describe("runner configuration", () => {
+describe("agent configuration", () => {
 	test("accepts named argv commands with resume commands and environment", () => {
 		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
 			version: 2,
-			runners: {
+			agents: {
 				custom: {
 					command: ["agent"],
 					autoCommand: ["agent", "{prompt}"],
@@ -291,14 +291,14 @@ describe("runner configuration", () => {
 			},
 		})
 
-		expect(config.runners?.custom?.autoCommand).toEqual(["agent", "{prompt}"])
+		expect(config.agents?.custom?.autoCommand).toEqual(["agent", "{prompt}"])
 	})
 
 	test("rejects shell strings in place of argv arrays", () => {
 		expect(() =>
 			Schema.decodeUnknownSync(WorkbaseConfig)({
 				version: 2,
-				runners: { custom: { command: "agent {prompt}" } },
+				agents: { custom: { command: "agent {prompt}" } },
 			}),
 		).toThrow()
 	})
@@ -423,7 +423,7 @@ describe("work status", () => {
 describe("claim records", () => {
 	const record = {
 		claimant: "orchestrator",
-		runner: "agent",
+		agent: "agent",
 		sessionId: "job-1",
 		startedAt: "2026-07-17T12:00:00.000Z",
 		targetRevision: "0".repeat(64),

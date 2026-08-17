@@ -121,7 +121,7 @@ Do not rediscover commands that this recipe or a known-current
    prepare the task with
    `agency work prepare <slug> --evidence <creation-json> --dry-run --json`, then
    execute the returned plan through `task-document-split` to prepare the
-   checkout and open or reuse the background tab. Stop before `runner-start`.
+   checkout and open or reuse the background tab. Stop before `agent-start`.
 3. For work/launch/start/kickoff intent, run that same preflight and execute its
    ordered kickoff steps. The plan owns worktree dry-run/preparation, a
    retry-safe background Herdr tab, the side-by-side task document,
@@ -131,8 +131,8 @@ Do not rediscover commands that this recipe or a known-current
    `agency-kickoff-v1` capability, execute the supplied actions directly. Do not
    call Herdr help, skill, or CLI discovery. If capability/version evidence is
    absent or stale, discovery is the compatibility path; then resume the same
-   idempotency key rather than creating another tab, checkout, or runner.
-5. After the one final context verification succeeds, leave the runner in the
+   idempotency key rather than creating another tab, checkout, or agent.
+5. After the one final context verification succeeds, leave the agent in the
    background and stop. Do not inspect, poll, or babysit it unless the user asks.
 
 Validation evidence is a local, auditable optimization, not authority. Preflight
@@ -153,12 +153,12 @@ IDs and remediation commands before retrying.
 
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work
-`working` without creating a claim, and starts the runner. Epic and multi-phase
+`working` without creating a claim, and starts the agent. Epic and multi-phase
 task launches remain orchestration-only. External orchestrators instead claim
-an execution unit, launch and monitor their runner separately, and finish or
+an execution unit, launch and monitor their agent separately, and finish or
 release the claim with the current document revision.
 
-An Agency-launched runner receives process-local worker identity through both
+An Agency-launched agent receives process-local worker identity through both
 the `AGENCY_SESSION_ID` and `AGENCY_TARGET` environment variables and a generated
 prompt beginning `Agency worker launch target: <target>.` Treat either form as
 launch evidence only after `agency context . --json` confirms the same target,
@@ -166,7 +166,7 @@ document paths, valid context, and expected write authority. Once confirmed,
 perform the assigned work directly and never invoke `agency work` to start the
 same target again.
 
-Some runner clients attach to a long-lived process and may not preserve launch
+Some agent clients attach to a long-lived process and may not preserve launch
 environment variables. If the variables and prompt marker are absent, fail safe
 when the initial instruction is a generated `Start`, `Continue`, or `Work on`
 prompt whose absolute document paths match the current directory and the active,

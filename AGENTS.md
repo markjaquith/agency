@@ -63,7 +63,7 @@ to a command.
 
 Service code should use `FileSystemService` for filesystem and subprocess work.
 Low-level process execution belongs in `spawnProcess`; do not introduce another
-subprocess library or an independent command runner.
+subprocess library or an independent command agent.
 
 The existing filesystem service intentionally uses both Bun and Node filesystem
 APIs. Follow the local abstraction instead of enforcing one API everywhere.

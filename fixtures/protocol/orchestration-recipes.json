@@ -28,7 +28,7 @@
     "ui",
     "--claimant",
     "orchestrator-1",
-    "--runner",
+    "--agent",
     "opencode",
     "--session-id",
     "session-123",
@@ -47,7 +47,7 @@
     "--json"
   ],
   ["work", "prepare", "--task", "checkout", "--phase", "ui", "--json"],
-  ["work", "tasks/checkout/phases/ui", "--runner", "opencode"],
+  ["work", "tasks/checkout/phases/ui", "--agent", "opencode"],
   ["sync", "--dry-run", "--json"],
   ["sync", "--json"],
   ["pr", "create", "checkout", "ui", "--json"],
