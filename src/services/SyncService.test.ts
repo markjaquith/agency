@@ -238,7 +238,7 @@ pr: null
 						{
 							taskId: "example",
 							claimant: "orchestrator",
-							runner: "agent",
+							agent: "agent",
 							sessionId: "session-1",
 							revision: inspected.revision,
 							expiresAt: "2099-01-01T00:00:00.000Z",
@@ -523,7 +523,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 						{
 							taskId: "finished-claim",
 							claimant: "orchestrator",
-							runner: "agent",
+							agent: "agent",
 							sessionId: "session-1",
 							revision: initial.revision,
 						},

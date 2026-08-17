@@ -539,7 +539,7 @@
       "additionalProperties": false,
       "required": [
         "claimant",
-        "runner",
+        "agent",
         "sessionId",
         "startedAt",
         "targetRevision",
@@ -547,7 +547,7 @@
       ],
       "properties": {
         "claimant": { "type": "string", "minLength": 1 },
-        "runner": { "type": "string", "minLength": 1 },
+        "agent": { "type": "string", "minLength": 1 },
         "sessionId": { "type": "string", "minLength": 1 },
         "startedAt": { "type": "string", "format": "date-time" },
         "targetRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },

@@ -235,7 +235,7 @@ pr: null
 status: working
 claim:
   claimant: orchestrator
-  runner: opencode
+  agent: opencode
   sessionId: session-1
   startedAt: 2026-07-20T00:00:00.000Z
   targetRevision: ${"a".repeat(64)}

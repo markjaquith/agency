@@ -41,6 +41,37 @@ describe("WorkbaseService", () => {
 		).toBe(false)
 	})
 
+	test("loads and validates the global agent", async () => {
+		const configDirectory = join(root, "config")
+		await write(
+			configDirectory,
+			"agency/agency.json",
+			JSON.stringify({ agent: "pi" }),
+		)
+
+		const config = await runTestEffect(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) => service.loadGlobalConfig(configDirectory)),
+			),
+		)
+		expect(config).toEqual({ agent: "pi" })
+
+		await write(
+			configDirectory,
+			"agency/agency.json",
+			JSON.stringify({ agent: "codex" }),
+		)
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) =>
+						service.loadGlobalConfig(configDirectory),
+					),
+				),
+			),
+		).rejects.toThrow("Invalid global Agency configuration")
+	})
+
 	test("treats declared but missing repositories as valid aliases", async () => {
 		await write(
 			root,
@@ -415,13 +446,13 @@ status: done
 		).rejects.toThrow("Repository 'agency'")
 	})
 
-	test("rejects an unknown runner command placeholder", async () => {
+	test("rejects an unknown agent command placeholder", async () => {
 		await write(
 			root,
 			"agency.json",
 			JSON.stringify({
 				version: 2,
-				runners: { custom: { command: ["agent", "{unknown}"] } },
+				agents: { custom: { command: ["agent", "{unknown}"] } },
 			}),
 		)
 

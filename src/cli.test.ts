@@ -192,7 +192,7 @@ describe("CLI", () => {
 					"claimed",
 					"--claimant",
 					"orchestrator",
-					"--runner",
+					"--agent",
 					"agent",
 					"--session-id",
 					"job-1",
@@ -205,7 +205,7 @@ describe("CLI", () => {
 		)
 		expect(claimed.claim).toMatchObject({
 			claimant: "orchestrator",
-			runner: "agent",
+			agent: "agent",
 			sessionId: "job-1",
 			state: "active",
 		})
@@ -216,7 +216,7 @@ describe("CLI", () => {
 				"claimed",
 				"--claimant",
 				"other",
-				"--runner",
+				"--agent",
 				"other-agent",
 				"--session-id",
 				"job-2",
@@ -232,7 +232,7 @@ describe("CLI", () => {
 			error: {
 				code: "CLAIM_CONFLICT",
 				retryable: true,
-				fields: { claim: { runner: "agent", sessionId: "job-1" } },
+				fields: { claim: { agent: "agent", sessionId: "job-1" } },
 			},
 		})
 
@@ -274,7 +274,7 @@ describe("CLI", () => {
 					"non-pr",
 					"--claimant",
 					"orchestrator",
-					"--runner",
+					"--agent",
 					"agent",
 					"--session-id",
 					"job-2",
@@ -1014,7 +1014,7 @@ status: open
 				`${JSON.stringify(
 					{
 						...agencyConfig,
-						runners: { noop: { command: ["true"] } },
+						agents: { noop: { command: ["true"] } },
 					},
 					null,
 					2,
@@ -1421,7 +1421,7 @@ status: open
 				await runCli(["task", "status", "example", "dropped", "--json"], root),
 			)
 			const blocked = await runCli(
-				["work", "--task", "example", "--runner", "noop"],
+				["work", "--task", "example", "--agent", "noop"],
 				root,
 			)
 			expect(blocked.exitCode).toBe(1)
@@ -1432,7 +1432,7 @@ status: open
 			).toBe("dropped")
 
 			const resumedTask = await runCli(
-				["work", "--task", "example", "--runner", "noop", "--force"],
+				["work", "--task", "example", "--agent", "noop", "--force"],
 				root,
 			)
 			expect(resumedTask).toMatchObject({ exitCode: 0, stderr: "" })
@@ -1457,7 +1457,7 @@ status: open
 					"pipeline",
 					"--phase",
 					"build",
-					"--runner",
+					"--agent",
 					"noop",
 					"--force",
 				],

@@ -275,7 +275,7 @@ describe("ReviewService", () => {
 						{
 							taskId: "review",
 							claimant: "reviewer",
-							runner: "opencode",
+							agent: "opencode",
 							sessionId: "session",
 							revision: task.revision,
 						},
@@ -311,7 +311,7 @@ describe("ReviewService", () => {
 						{
 							taskId: "review",
 							claimant: "reviewer",
-							runner: "opencode",
+							agent: "opencode",
 							sessionId: "active",
 							revision: task.revision,
 						},

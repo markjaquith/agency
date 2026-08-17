@@ -325,11 +325,11 @@ export const buildKickoffPlan = (input: {
 				recovery: "Reuse the existing split when present.",
 			},
 			{
-				id: "runner-start",
+				id: "agent-start",
 				cwd: taskDirectory,
 				argv: ["agency", "work", ".", "--auto"],
 				recovery:
-					"Inspect the recorded tab before retrying; a working runner must not be duplicated.",
+					"Inspect the recorded tab before retrying; a working agent must not be duplicated.",
 			},
 			{
 				id: "final-context-verification",
@@ -341,7 +341,7 @@ export const buildKickoffPlan = (input: {
 				],
 				exactlyOnce: true,
 				recovery:
-					"If verification fails, inspect the existing tab; do not launch another runner.",
+					"If verification fails, inspect the existing tab; do not launch another agent.",
 			},
 		],
 		successFields: [
@@ -351,7 +351,7 @@ export const buildKickoffPlan = (input: {
 			"preparedCheckout",
 			"herdrWorkspace",
 			"herdrTab",
-			"runnerStart",
+			"agentStart",
 			"contextVerification",
 		],
 	}

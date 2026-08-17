@@ -288,7 +288,7 @@ describe("VcsMigrationService", () => {
 						{
 							taskId: "example",
 							claimant: "orchestrator",
-							runner: "agent",
+							agent: "agent",
 							sessionId: "session-1",
 							revision: inspected.revision,
 						},

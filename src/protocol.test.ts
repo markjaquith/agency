@@ -124,7 +124,7 @@ describe("machine protocol", () => {
 				currentRevision: "a".repeat(64),
 				claim: {
 					claimant: "orchestrator",
-					runner: "agent",
+					agent: "agent",
 					sessionId: "job-1",
 					startedAt: "2026-07-17T12:00:00.000Z",
 					targetRevision: "0".repeat(64),
@@ -137,7 +137,7 @@ describe("machine protocol", () => {
 				retryable: true,
 				fields: {
 					target: "task 'example'",
-					claim: { runner: "agent", sessionId: "job-1" },
+					claim: { agent: "agent", sessionId: "job-1" },
 				},
 			},
 		})

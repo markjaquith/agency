@@ -117,7 +117,7 @@ const mutationOptions = {
 const claimOptions = {
 	...outputOptions,
 	claimant: { type: "string" },
-	runner: { type: "string" },
+	agent: { type: "string" },
 	"session-id": { type: "string" },
 	revision: { type: "string" },
 	"expires-at": { type: "string" },
@@ -671,12 +671,12 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency claim <task-id> [phase-id] --claimant <id> --runner <id> --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]",
+				"agency claim <task-id> [phase-id] --claimant <id> --agent <id> --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]",
 			minArgs: 1,
 			maxArgs: 2,
 			options: [
 				"claimant",
-				"runner",
+				"agent",
 				"session-id",
 				"revision",
 				"expires-at",
@@ -684,7 +684,7 @@ const commands = {
 				"task",
 				"phase",
 			],
-			required: ["claimant", "runner", "session-id", "revision"],
+			required: ["claimant", "agent", "session-id", "revision"],
 		},
 	},
 	release: {
@@ -916,13 +916,13 @@ const commands = {
 	},
 	work: {
 		usage:
-			"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
+			"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
 			...entitySelectorOptions,
 			json: { type: "boolean" },
 			"dry-run": { type: "boolean" },
-			runner: { type: "string" },
+			agent: { type: "string" },
 			auto: { type: "boolean" },
 			"print-command": { type: "boolean" },
 			opencode: { type: "boolean" },
@@ -932,7 +932,7 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
+				"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: [
@@ -941,7 +941,7 @@ const commands = {
 				"epic",
 				"task",
 				"phase",
-				"runner",
+				"agent",
 				"auto",
 				"print-command",
 				"opencode",
@@ -951,8 +951,8 @@ const commands = {
 			],
 			conflicts: [
 				["opencode", "claude"],
-				["runner", "opencode"],
-				["runner", "claude"],
+				["agent", "opencode"],
+				["agent", "claude"],
 				["epic", "$positional"],
 			],
 		},
@@ -1689,7 +1689,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 				(parsed.values.epic ||
 					parsed.values.opencode ||
 					parsed.values.claude ||
-					parsed.values.runner ||
+					parsed.values.agent ||
 					parsed.values.auto ||
 					parsed.values["print-command"] ||
 					parsed.values.force))

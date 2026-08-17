@@ -343,7 +343,7 @@ describe("strict CLI parsing", () => {
 					"three",
 					"--claimant",
 					"a",
-					"--runner",
+					"--agent",
 					"r",
 					"--session-id",
 					"s",
@@ -499,7 +499,7 @@ describe("strict CLI parsing", () => {
 				"phase",
 				"--claimant",
 				"orchestrator",
-				"--runner",
+				"--agent",
 				"agent",
 				"--session-id",
 				"job-1",
@@ -699,12 +699,12 @@ describe("strict CLI parsing", () => {
 		expectUsageError(["push", "example"], "agency push")
 	})
 
-	test("accepts runner selection and command inspection for work", () => {
+	test("accepts agent selection and command inspection for work", () => {
 		expect(
 			parseCli([
 				"work",
 				"example",
-				"--runner",
+				"--agent",
 				"custom",
 				"--auto",
 				"--print-command",
@@ -712,10 +712,10 @@ describe("strict CLI parsing", () => {
 		).toMatchObject({
 			commandName: "work",
 			args: ["example"],
-			values: { runner: "custom", auto: true, "print-command": true },
+			values: { agent: "custom", auto: true, "print-command": true },
 		})
 		expect(() =>
-			parseCli(["work", "example", "--runner", "custom", "--claude"]),
+			parseCli(["work", "example", "--agent", "custom", "--claude"]),
 		).toThrow("cannot be combined")
 		expect(() => parseCli(["work", "prepare", "--print-command"])).toThrow(
 			"cannot be combined",
@@ -989,7 +989,7 @@ describe("strict CLI parsing", () => {
 				"release",
 				"--claimant",
 				"agent",
-				"--runner",
+				"--agent",
 				"opencode",
 				"--session-id",
 				"session",

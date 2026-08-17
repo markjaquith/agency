@@ -8,6 +8,7 @@ import { parseFrontmatter } from "../workbase/frontmatter"
 import {
 	EntityId,
 	EpicFrontmatter,
+	GlobalConfig,
 	LegacyWorkbaseRegistry,
 	PhaseFrontmatter,
 	TaskFrontmatter,
@@ -22,7 +23,7 @@ import {
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
 import { validateWorkspaceCreateCommand } from "../workbase/workspace-command"
 import { validatePostCheckoutCommand } from "../workbase/checkout-command"
-import { validateRunners } from "../workbase/runner-command"
+import { validateAgents } from "../workbase/agent-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
 import { preferredVersionControl } from "../workbase/version-control"
@@ -88,6 +89,15 @@ const registryPath = (configDirectory?: string) =>
 			join(homedir(), ".config"),
 		"agency",
 		"workbases.json",
+	)
+
+const globalConfigPath = (configDirectory?: string) =>
+	join(
+		configDirectory ||
+			process.env.XDG_CONFIG_HOME ||
+			join(homedir(), ".config"),
+		"agency",
+		"agency.json",
 	)
 
 const registrationId = (path: string) =>
@@ -178,6 +188,32 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 	"WorkbaseService",
 	{
 		sync: () => ({
+			loadGlobalConfig: (configDirectory?: string) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const path = globalConfigPath(configDirectory)
+					if (!(yield* fs.exists(path))) return {}
+					const content = yield* fs.readFile(path)
+					let input: unknown
+					try {
+						input = JSON.parse(content)
+					} catch (cause) {
+						return yield* new WorkbaseConfigError({
+							path,
+							message: `Invalid JSON in global Agency configuration ${path}`,
+							cause,
+						})
+					}
+					const decoded = decode(GlobalConfig, input)
+					if (!decoded.success) {
+						return yield* new WorkbaseConfigError({
+							path,
+							message: `Invalid global Agency configuration in ${path}:\n${decoded.error}`,
+						})
+					}
+					return decoded.value
+				}),
+
 			initialize: (path: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -309,7 +345,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 									}
 								}
 								try {
-									validateRunners(decoded.value.runners)
+									validateAgents(decoded.value.agents)
 									validateDelivery(decoded.value.delivery)
 								} catch (cause) {
 									return yield* new WorkbaseConfigError({
@@ -317,7 +353,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 										message:
 											cause instanceof Error
 												? cause.message
-												: "Invalid runner configuration",
+												: "Invalid agent configuration",
 									})
 								}
 								return current

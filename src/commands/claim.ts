@@ -8,7 +8,7 @@ interface ClaimCommandOptions extends BaseCommandOptions {
 	readonly taskId?: string
 	readonly phaseId?: string
 	readonly claimant?: string
-	readonly runner?: string
+	readonly agent?: string
 	readonly sessionId?: string
 	readonly revision?: string
 	readonly expiresAt?: string
@@ -29,10 +29,10 @@ export const claimCommand = (options: ClaimCommandOptions) =>
 		}
 		if (
 			options.operation === "claim" &&
-			(!options.claimant || !options.runner)
+			(!options.claimant || !options.agent)
 		) {
 			return yield* Effect.fail(
-				new Error("Claimant and runner identities are required"),
+				new Error("Claimant and agent identities are required"),
 			)
 		}
 		if (options.noPullRequest && !options.summary?.trim()) {
@@ -67,7 +67,7 @@ export const claimCommand = (options: ClaimCommandOptions) =>
 						{
 							...common,
 							claimant: options.claimant!,
-							runner: options.runner!,
+							agent: options.agent!,
 							...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
 						},
 						cwd,
@@ -101,9 +101,9 @@ export const claimCommand = (options: ClaimCommandOptions) =>
 	})
 
 export const claimHelp = `
-Usage: agency claim <task-id> [phase-id] --claimant <id> --runner <id> --session-id <id> --revision <sha256>
+Usage: agency claim <task-id> [phase-id] --claimant <id> --agent <id> --session-id <id> --revision <sha256>
 
-Claim an execution unit. Use distinct claimant and runner identities for delegated
+Claim an execution unit. Use distinct claimant and agent identities for delegated
 work. --expires-at accepts an optional future ISO-8601 timestamp.
 `
 

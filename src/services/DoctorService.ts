@@ -138,16 +138,16 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 					const versionControlAvailable =
 						gitAvailable && (config.vcs !== "jj" || jjAvailable)
 					yield* tool(
-						"capability.runner.opencode",
+						"capability.agent.opencode",
 						"opencode",
 						"optional",
-						"OpenCode runner",
+						"OpenCode agent",
 					)
 					yield* tool(
-						"capability.runner.claude",
+						"capability.agent.claude",
 						"claude",
 						"optional",
-						"Claude runner",
+						"Claude agent",
 					)
 
 					const configuredCommands: readonly (readonly [
@@ -194,43 +194,43 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 										]
 									: [],
 						),
-						...Object.entries(config.runners ?? {}).map(
-							([name, runner]) =>
+						...Object.entries(config.agents ?? {}).map(
+							([name, agent]) =>
 								[
-									`integration.runner.${name}`,
-									runner.command,
-									`Configured runner '${name}'`,
+									`integration.agent.${name}`,
+									agent.command,
+									`Configured agent '${name}'`,
 								] as const,
 						),
-						...Object.entries(config.runners ?? {}).flatMap(([name, runner]) =>
-							runner.autoCommand
+						...Object.entries(config.agents ?? {}).flatMap(([name, agent]) =>
+							agent.autoCommand
 								? [
 										[
-											`integration.runner.${name}.auto`,
-											runner.autoCommand,
-											`Configured runner '${name}' auto`,
+											`integration.agent.${name}.auto`,
+											agent.autoCommand,
+											`Configured agent '${name}' auto`,
 										] as const,
 									]
 								: [],
 						),
-						...Object.entries(config.runners ?? {}).flatMap(([name, runner]) =>
-							runner.resumeCommand
+						...Object.entries(config.agents ?? {}).flatMap(([name, agent]) =>
+							agent.resumeCommand
 								? [
 										[
-											`integration.runner.${name}.resume`,
-											runner.resumeCommand,
-											`Configured runner '${name}' resume`,
+											`integration.agent.${name}.resume`,
+											agent.resumeCommand,
+											`Configured agent '${name}' resume`,
 										] as const,
 									]
 								: [],
 						),
-						...Object.entries(config.runners ?? {}).flatMap(([name, runner]) =>
-							runner.autoResumeCommand
+						...Object.entries(config.agents ?? {}).flatMap(([name, agent]) =>
+							agent.autoResumeCommand
 								? [
 										[
-											`integration.runner.${name}.auto-resume`,
-											runner.autoResumeCommand,
-											`Configured runner '${name}' auto resume`,
+											`integration.agent.${name}.auto-resume`,
+											agent.autoResumeCommand,
+											`Configured agent '${name}' auto resume`,
 										] as const,
 									]
 								: [],

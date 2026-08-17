@@ -26,9 +26,9 @@ import {
 } from "../workbase/workbase-choice"
 import {
 	printableEnvironment,
-	resolveRunnerCommand,
-	runnerEnvironment,
-} from "../workbase/runner-command"
+	resolveAgentCommand,
+	agentEnvironment,
+} from "../workbase/agent-command"
 import {
 	assessValidationEvidence,
 	buildKickoffPlan,
@@ -44,7 +44,7 @@ export interface WorkOptions extends BaseCommandOptions {
 	readonly epicId?: string
 	readonly opencode?: boolean
 	readonly claude?: boolean
-	readonly runner?: string
+	readonly agent?: string
 	readonly printCommand?: boolean
 	readonly auto?: boolean
 	readonly force?: boolean
@@ -94,10 +94,10 @@ export const work = (
 	Effect.gen(function* () {
 		if (
 			(options.opencode && options.claude) ||
-			(options.runner && (options.opencode || options.claude))
+			(options.agent && (options.opencode || options.claude))
 		) {
 			return yield* Effect.fail(
-				new Error("Cannot combine --runner, --opencode, and --claude"),
+				new Error("Cannot combine --agent, --opencode, and --claude"),
 			)
 		}
 		const previousEnvironment = { ...process.env }
@@ -132,6 +132,7 @@ export const work = (
 		if (!root) return
 		yield* integrations.sync(root)
 		const { config } = yield* workbase.loadConfig(root)
+		const globalConfig = yield* workbase.loadGlobalConfig()
 
 		let target: WorkTarget | null = null
 		if (options.epicId) {
@@ -274,22 +275,15 @@ export const work = (
 		}
 		prompt = `Agency worker launch target: ${targetNodeId(target)}. ${prompt}`
 
-		const explicitlyRequested = Boolean(
-			options.runner ||
-			options.opencode ||
-			options.claude ||
-			process.env.AGENCY_RUNNER,
-		)
-		const defaultRunners = ["opencode2", "opencode", "claude"] as const
-		let defaultRunnerIndex = 0
-		let runner: string =
-			options.runner ??
-			process.env.AGENCY_RUNNER ??
-			(options.claude
-				? "claude"
-				: options.opencode
-					? "opencode"
-					: defaultRunners[defaultRunnerIndex]!)
+		const invocationAgent =
+			options.agent ??
+			process.env.AGENCY_AGENT ??
+			(options.claude ? "claude" : options.opencode ? "opencode" : undefined)
+		const selectedAgent = invocationAgent ?? globalConfig.agent
+		const explicitlyRequested = selectedAgent !== undefined
+		const defaultAgents = ["opencode2", "opencode", "pi", "claude"] as const
+		let defaultAgentIndex = 0
+		let agent: string = selectedAgent ?? defaultAgents[defaultAgentIndex]!
 		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
@@ -306,9 +300,9 @@ export const work = (
 			sessionId,
 			claimRevision: "",
 		}
-		let resolved = resolveRunnerCommand(
-			runner,
-			config.runners,
+		let resolved = resolveAgentCommand(
+			agent,
+			config.agents,
 			variables,
 			resume,
 			options.auto,
@@ -320,12 +314,12 @@ export const work = (
 		while (
 			available.exitCode !== 0 &&
 			!explicitlyRequested &&
-			defaultRunnerIndex < defaultRunners.length - 1
+			defaultAgentIndex < defaultAgents.length - 1
 		) {
-			runner = defaultRunners[++defaultRunnerIndex]!
-			resolved = resolveRunnerCommand(
-				runner,
-				config.runners,
+			agent = defaultAgents[++defaultAgentIndex]!
+			resolved = resolveAgentCommand(
+				agent,
+				config.agents,
 				variables,
 				resume,
 				options.auto,
@@ -336,9 +330,9 @@ export const work = (
 		if (available.exitCode !== 0) {
 			return yield* Effect.fail(new Error(`${cli} CLI tool not found`))
 		}
-		resolved = resolveRunnerCommand(
-			runner,
-			config.runners,
+		resolved = resolveAgentCommand(
+			agent,
+			config.agents,
 			variables,
 			resume,
 			options.auto,
@@ -346,7 +340,7 @@ export const work = (
 		cli = resolved.argv[0]!
 		const environment = {
 			...resolved.environment,
-			...runnerEnvironment(runner, variables),
+			...agentEnvironment(agent, variables),
 		}
 		if (writablePath) environment.AGENCY_WRITABLE_CHECKOUT = writablePath
 		if (options.printCommand) {
@@ -579,7 +573,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 	})
 
 export const help = `
-Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--runner <name>] [--auto]
+Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto]
        agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
@@ -587,7 +581,7 @@ interactively. A positional argument resolves as a directory first, then as a ta
 ID. Use '.' for the current directory. Outside a workbase, select a registered
 workbase first. Managed OpenCode launches receive whole-workbase access through
 Agency's project plugin; Agency context remains authoritative for writes. Automatic
-runner discovery checks opencode2, opencode, then claude.
+agent discovery checks opencode2, opencode, pi, then claude.
 
 The prepare subcommand resolves and materializes an execution workspace without
 launching an agent or changing lifecycle status. --dry-run reports planned Git
@@ -603,8 +597,8 @@ Options:
   --phase <id>         Work on a phase selected with --task
   --workbase <target>  Select a workbase by ID, name, or path
   --cwd <path>         Resolve context from a specific directory
-  --runner <name>      Select a configured runner or built-in preset
-  --auto               Send the generated context prompt to the runner
+  --agent <name>      Select a configured agent or built-in preset
+  --auto               Send the generated context prompt to the agent
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset

@@ -324,7 +324,7 @@ describe("ArchiveService bulk task archive", () => {
 				`status: dropped
 claim:
   claimant: orchestrator
-  runner: opencode
+  agent: opencode
   sessionId: task-session
   startedAt: 2026-08-07T00:00:00.000Z
   targetRevision: ${"a".repeat(64)}
@@ -373,7 +373,7 @@ claim:
 				`status: dropped
 claim:
   claimant: orchestrator
-  runner: opencode
+  agent: opencode
   sessionId: phase-session
   startedAt: 2026-08-07T00:00:00.000Z
   targetRevision: ${"b".repeat(64)}
