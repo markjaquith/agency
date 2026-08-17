@@ -23,6 +23,10 @@ import {
 	canUpdateManagedWorkbaseOpencodeTuiPlugin,
 	managedWorkbaseOpencodeTuiPlugin,
 } from "../workbase/opencode-tui-plugin-file"
+import {
+	canUpdateManagedWorkbasePiExtension,
+	managedWorkbasePiExtension,
+} from "../workbase/pi-extension-file"
 
 type IntegrationFileState = "managed" | "customized" | "missing" | "drifted"
 
@@ -33,6 +37,7 @@ interface IntegrationFileStatus {
 		| "opencode-plugin"
 		| "opencode-tui"
 		| "opencode-tui-plugin"
+		| "pi-extension"
 	readonly path: string
 	readonly state: IntegrationFileState
 	readonly diagnostic: string
@@ -131,6 +136,26 @@ const describe = (
 							"Run 'agency integration sync' to install /agency-debug.",
 					}
 	}
+	if (name === "pi-extension") {
+		return state === "managed"
+			? {
+					diagnostic:
+						"Agency's managed Pi extension provides whole-workbase context and exposes writable-checkout skills.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned Pi workbase extension is present and was preserved.",
+						remediation: null,
+					}
+				: {
+						diagnostic:
+							"The managed Pi workbase extension needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to provide workbase context and expose writable-checkout skills in Pi.",
+					}
+	}
 
 	return state === "missing" || state === "drifted"
 		? {
@@ -190,6 +215,12 @@ const inspect = (root: string) =>
 			"agency-repository-skills.ts",
 		)
 		const tuiPluginPath = join(opencodeDirectory, "tui", "agency-debug.ts")
+		const piExtensionPath = join(
+			root,
+			".pi",
+			"extensions",
+			"agency-workbase.ts",
+		)
 		const files: IntegrationFileStatus[] = []
 
 		files.push(
@@ -294,6 +325,22 @@ const inspect = (root: string) =>
 			files.push(fileStatus("opencode-tui-plugin", tuiPluginPath, "missing"))
 		}
 
+		if ((yield* fs.readSymlinkTarget(piExtensionPath)) !== null) {
+			files.push(fileStatus("pi-extension", piExtensionPath, "customized"))
+		} else if (yield* fs.exists(piExtensionPath)) {
+			files.push(
+				classify(
+					"pi-extension",
+					piExtensionPath,
+					yield* fs.readFile(piExtensionPath),
+					managedWorkbasePiExtension,
+					canUpdateManagedWorkbasePiExtension,
+				),
+			)
+		} else {
+			files.push(fileStatus("pi-extension", piExtensionPath, "missing"))
+		}
+
 		return files
 	})
 
@@ -389,12 +436,15 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 							} else if (status.name === "opencode-tui") {
 								yield* fs.createDirectory(join(root, ".opencode"))
 								yield* fs.writeFile(status.path, managedWorkbaseOpencodeTui)
-							} else {
+							} else if (status.name === "opencode-tui-plugin") {
 								yield* fs.createDirectory(join(root, ".opencode", "tui"))
 								yield* fs.writeFile(
 									status.path,
 									managedWorkbaseOpencodeTuiPlugin,
 								)
+							} else {
+								yield* fs.createDirectory(join(root, ".pi", "extensions"))
+								yield* fs.writeFile(status.path, managedWorkbasePiExtension)
 							}
 						}
 						files.push({

@@ -642,6 +642,7 @@ exit 23
 			{ name: "opencode-plugin", state: "managed" },
 			{ name: "opencode-tui", state: "managed" },
 			{ name: "opencode-tui-plugin", state: "managed" },
+			{ name: "pi-extension", state: "managed" },
 		])
 
 		const synced = parseJson(
@@ -653,6 +654,7 @@ exit 23
 			{ name: "opencode-plugin", state: "managed", changed: false },
 			{ name: "opencode-tui", state: "managed", changed: false },
 			{ name: "opencode-tui-plugin", state: "managed", changed: false },
+			{ name: "pi-extension", state: "managed", changed: false },
 		])
 	})
 
