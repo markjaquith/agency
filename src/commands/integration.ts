@@ -18,6 +18,7 @@ interface IntegrationResult {
 			| "opencode-plugin"
 			| "opencode-tui"
 			| "opencode-tui-plugin"
+			| "pi-extension"
 		readonly path: string
 		readonly state: string
 		readonly diagnostic: string
@@ -32,6 +33,7 @@ const integrationNames = {
 	"opencode-plugin": "OpenCode workbase plugin",
 	"opencode-tui": "OpenCode TUI config",
 	"opencode-tui-plugin": "OpenCode /agency-debug",
+	"pi-extension": "Pi workbase extension",
 } as const
 
 const logHumanResult = (
@@ -89,10 +91,10 @@ export const help = `
 Usage: agency integration <subcommand>
 
 Inspect or explicitly synchronize managed agent integration files. OpenCode
-launches load the managed instructions and project config at runtime. The
-managed plugin provides whole-workbase access and writable-checkout skills, and
-the /agency-debug TUI diagnostic reports integration state without changing
-Agency write authority.
+launches load the managed instructions and project config at runtime. Managed
+OpenCode and Pi extensions provide whole-workbase context and writable-checkout
+skills, and the /agency-debug TUI diagnostic reports OpenCode integration state
+without changing Agency write authority.
 
 Subcommands:
   status  Report file state, access diagnostics, and safe remediation
