@@ -118,6 +118,52 @@ const requireSuccess = (
 		),
 	)
 
+interface GitConfigEntry {
+	readonly scope: string
+	readonly key: string
+	readonly value: string
+}
+
+const parseGitConfig = (output: string): readonly GitConfigEntry[] =>
+	output
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.flatMap((line) => {
+			const scopeSeparator = line.indexOf("\t")
+			const valueSeparator = line.indexOf(" ", scopeSeparator + 1)
+			return scopeSeparator >= 0 && valueSeparator >= 0
+				? [
+						{
+							scope: line.slice(0, scopeSeparator),
+							key: line.slice(scopeSeparator + 1, valueSeparator),
+							value: line.slice(valueSeparator + 1),
+						},
+					]
+				: []
+		})
+
+const expandGitUrl = (
+	url: string,
+	entries: readonly GitConfigEntry[],
+): string => {
+	let replacement: { readonly prefix: string; readonly base: string } | null =
+		null
+	for (const entry of entries) {
+		const match = /^url\.(.*)\.insteadof$/i.exec(entry.key)
+		if (
+			match?.[1] !== undefined &&
+			url.startsWith(entry.value) &&
+			(replacement === null || entry.value.length > replacement.prefix.length)
+		) {
+			replacement = { prefix: entry.value, base: match[1] }
+		}
+	}
+	return replacement === null
+		? url
+		: replacement.base + url.slice(replacement.prefix.length)
+}
+
 const parseGitWorktrees = (output: string): readonly RegisteredWorkspace[] => {
 	const workspaces: RegisteredWorkspace[] = []
 	let current: RegisteredWorkspace | null = null
@@ -168,22 +214,33 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 				inspectRepository: (path) =>
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
-						const valid = yield* fs.runCommand(
-							["git", "-C", path, "rev-parse", "--git-dir"],
+						const inspection = yield* fs.runCommand(
+							[
+								"git",
+								"-C",
+								path,
+								"config",
+								"--show-scope",
+								"--get-regexp",
+								"^(core\\.bare|remote\\.origin\\.url|url\\..*\\.insteadof)$",
+							],
 							{ captureOutput: true },
 						)
-						if (valid.exitCode !== 0) return null
-						const bare = yield* fs.runCommand(
-							["git", "-C", path, "rev-parse", "--is-bare-repository"],
-							{ captureOutput: true },
+						if (inspection.exitCode !== 0) return null
+						const entries = parseGitConfig(inspection.stdout)
+						const bare = entries.find(
+							(entry) =>
+								(entry.scope === "local" || entry.scope === "worktree") &&
+								entry.key === "core.bare",
 						)
-						const remote = yield* fs.runCommand(
-							["git", "-C", path, "remote", "get-url", "origin"],
-							{ captureOutput: true },
-						)
+						if (!bare) return null
+						const remote = entries.find(
+							(entry) => entry.key === "remote.origin.url",
+						)?.value
 						return {
-							kind: bare.stdout.trim() === "true" ? "bare" : "repository",
-							remote: remote.exitCode === 0 ? remote.stdout.trim() : null,
+							kind: bare.value === "true" ? "bare" : "repository",
+							remote:
+								remote === undefined ? null : expandGitUrl(remote, entries),
 						} as const
 					}),
 				gitEnvironment: () => Effect.succeed({}),

@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { mkdir, realpath, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
-import { VersionControlService } from "./VersionControlService"
+import {
+	GitVersionControlService,
+	VersionControlService,
+} from "./VersionControlService"
+import { FileSystemService } from "./FileSystemService"
 import { preferredVersionControl } from "../workbase/version-control"
 
 const run = async (args: string[], cwd?: string) => {
@@ -22,6 +26,39 @@ describe("VersionControlService", () => {
 	test("prefers jj when available and falls back to Git", () => {
 		expect(preferredVersionControl(() => "/usr/bin/jj")).toBe("jj")
 		expect(preferredVersionControl(() => null)).toBe("git")
+	})
+
+	test("inspects a Git repository with one subprocess", async () => {
+		const commands: readonly string[][] = []
+		const fileSystem = {
+			...FileSystemService.Default,
+			runCommand: (command: readonly string[]) => {
+				;(commands as string[][]).push([...command])
+				return Effect.succeed({
+					exitCode: 0,
+					stdout:
+						"local\tcore.bare true\nlocal\tremote.origin.url agency:agency.git\nglobal\turl.https://example.com/.insteadof agency:\n",
+					stderr: "",
+				})
+			},
+		} as unknown as Effect.Effect.Success<typeof FileSystemService>
+		const backend = await Effect.runPromise(
+			GitVersionControlService.pipe(
+				Effect.provide(GitVersionControlService.Default),
+			),
+		)
+		const inspection = await Effect.runPromise(
+			backend
+				.inspectRepository("/repository")
+				.pipe(Effect.provide(Layer.succeed(FileSystemService, fileSystem))),
+		)
+
+		expect(commands).toHaveLength(1)
+		expect(commands[0]).toContain("--get-regexp")
+		expect(inspection).toEqual({
+			kind: "bare",
+			remote: "https://example.com/agency.git",
+		})
 	})
 
 	test("selects the backend persisted by the workbase", async () => {
