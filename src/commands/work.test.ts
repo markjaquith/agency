@@ -394,6 +394,15 @@ describe("work command", () => {
 			target: "execution-unit:task/example",
 			override: true,
 		})
+		expect(forced.materializeOptions[0]?.validationAlreadyPerformed).toBe(false)
+	})
+
+	test("reuses successful readiness validation during materialization", async () => {
+		const harness = createHarness()
+
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.materializeOptions[0]?.validationAlreadyPerformed).toBe(true)
 	})
 
 	test("reopens forced terminal tasks through open before launching as working", async () => {
