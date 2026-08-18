@@ -520,8 +520,9 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						...Object.keys(config.repositories ?? {}),
 						...local.keys(),
 					])
-					const repositories = yield* Effect.all(
-						[...aliases].sort().map((alias) =>
+					return yield* Effect.forEach(
+						[...aliases].sort(),
+						(alias) =>
 							Effect.gen(function* () {
 								const path = join(reposPath, alias)
 								const entry = local.get(alias)
@@ -575,10 +576,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 									states,
 								} satisfies RepositoryInfo
 							}),
-						),
-						{ concurrency: 4 },
+						{ concurrency: 8 },
 					)
-					return repositories
 				}),
 
 			show: (alias: string, startPath: string = process.cwd()) =>
