@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { ClaimService } from "./ClaimService"
@@ -357,5 +357,60 @@ describe("claim service", () => {
 			),
 		)
 		expect(acquired.target).toBe("phase 'multi/implementation'")
+	})
+
+	test("inspects only the requested task on large workbases", async () => {
+		for (let index = 0; index < 100; index += 1) {
+			const taskRoot = join(root, "tasks", `unrelated-${index}`)
+			await mkdir(taskRoot, { recursive: true })
+			await writeFile(join(taskRoot, "TASK.md"), "not valid frontmatter\n")
+		}
+
+		const inspected = await inspect()
+		expect(inspected.target.path).toBe(join(root, "tasks/single/TASK.md"))
+		expect(inspected.data.status).toBe("open")
+	})
+
+	test("inspects only the requested phase", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{ id: "multi", ticketUrl: null, multiPhase: true },
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "multi",
+							id: "requested",
+							repo: "agency",
+							branch: "task/multi",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const taskPath = join(root, "tasks/multi/TASK.md")
+		await writeFile(
+			taskPath,
+			(await readFile(taskPath, "utf8")).replace("multi", "["),
+		)
+		const unrelatedPhase = join(root, "tasks/multi/phases/unrelated")
+		await mkdir(unrelatedPhase, { recursive: true })
+		await writeFile(join(unrelatedPhase, "PHASE.md"), "not valid frontmatter\n")
+
+		const inspected = await inspect("multi", "requested")
+		expect(inspected.target.path).toBe(
+			join(root, "tasks/multi/phases/requested/PHASE.md"),
+		)
+		expect(inspected.data.status).toBe("open")
 	})
 })

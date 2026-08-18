@@ -69,6 +69,7 @@
     "benchmark:workbase": "bun scripts/benchmark-workbase.ts",
     "benchmark:doctor": "bun scripts/benchmark-doctor.ts",
     "benchmark:context": "bun scripts/benchmark-context.ts",
+    "benchmark:claim": "bun scripts/benchmark-claim.ts",
     "benchmark:finish": "bun scripts/benchmark-finish.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
     "benchmark:task": "bun scripts/benchmark-task.ts",
