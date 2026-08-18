@@ -8,6 +8,7 @@
     "scripts/benchmark-context.ts",
     "scripts/benchmark-pr.ts",
     "scripts/benchmark-push.ts",
+    "scripts/benchmark-release.ts",
     "scripts/benchmark-status.ts",
     "scripts/benchmark-finish.ts",
     "scripts/benchmark-init.ts",

@@ -265,7 +265,6 @@ describe("claim service", () => {
 		)
 		expect(inspected.data).toMatchObject({ branch: "phase/target" })
 	})
-
 	test("serializes concurrent claims and allows expired ownership replacement", async () => {
 		const initial = await inspect()
 		const attempts = await Promise.allSettled([
