@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { mkdir, rename, rm } from "node:fs/promises"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { mkdir, readFile as nodeReadFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import {
 	captureLogs,
@@ -341,6 +341,31 @@ status: dropped
 			path: "tasks/agent-contract/phases/schema/PHASE.md",
 			message: "Unknown repository alias 'missing'",
 		})
+	})
+
+	test("reads each workbase document at most once per invocation", async () => {
+		const reads = new Map<string, number>()
+		const originalFile = Bun.file
+		Bun.file = mock((path: string) => {
+			const file = originalFile(path)
+			return Object.assign(file, {
+				text: async () => {
+					reads.set(path, (reads.get(path) ?? 0) + 1)
+					return nodeReadFile(path, "utf8")
+				},
+			})
+		}) as unknown as typeof Bun.file
+		try {
+			await readContext(root, "tasks/agent-contract/phases/context-command")
+		} finally {
+			Bun.file = originalFile
+		}
+
+		const documents = [...reads].filter(([path]) =>
+			/(?:EPIC|TASK|PHASE)\.md$/.test(path),
+		)
+		expect(documents.length).toBeGreaterThan(0)
+		expect(documents.every(([, count]) => count === 1)).toBe(true)
 	})
 
 	test("resolves a bare task ID and returns root discovery context", async () => {
