@@ -594,12 +594,13 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				}
 				const content = yield* fs.readFile(path)
 				const parsed = yield* parseFrontmatter(content, path)
+				const data: TaskData = yield* decodeTask(parsed.data)
 				return {
 					id: validId,
 					path,
 					content,
 					revision: documentRevision(content),
-					data: yield* decodeTask(parsed.data),
+					data,
 				} satisfies TaskRecord
 			}),
 
