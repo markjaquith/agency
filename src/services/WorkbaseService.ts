@@ -65,6 +65,8 @@ interface DocumentRecord<T> {
 	readonly data: T
 }
 
+const validationConcurrency = 32
+
 interface ValidationDocuments {
 	readonly epics: readonly DocumentRecord<EpicData>[]
 	readonly tasks: readonly DocumentRecord<TaskData>[]
@@ -671,10 +673,23 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					const service = yield* WorkbaseService
 					const fs = yield* FileSystemService
 					const root = yield* service.discover(startPath)
+					const configPath = join(root, "agency.json")
+					const configInput = JSON.parse(
+						yield* fs.readFile(configPath),
+					) as unknown
+					const configResult = decode(WorkbaseConfig, configInput)
+					if (!configResult.success) {
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `Invalid workbase configuration in ${configPath}:\n${configResult.error}`,
+						})
+					}
+					const config = configResult.value
 					const issues: ValidationIssue[] = []
 					const epics = new Map<string, DocumentRecord<EpicData>>()
 					const tasks = new Map<string, DocumentRecord<TaskData>>()
 					const phases = new Map<string, DocumentRecord<PhaseData>>()
+					const phaseIdsByTask = new Map<string, Set<string>>()
 
 					const issue = (path: string, message: string) => {
 						issues.push({ path: relative(root, path) || ".", message })
@@ -691,7 +706,13 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							Effect.catchAll(() => Effect.succeed([])),
 						)
 
-					const aliases = new Set(yield* service.repositoryAliases(root))
+					const aliases = new Set(Object.keys(config.repositories ?? {}))
+					const reposPath = join(root, "repos")
+					if (yield* fs.isDirectory(reposPath)) {
+						for (const entry of yield* fs.readDirectory(reposPath)) {
+							if (!entry.name.startsWith(".agency-")) aliases.add(entry.name)
+						}
+					}
 
 					const readDocument = <S extends Schema.Schema.AnyNoContext>(
 						path: string,
@@ -728,7 +749,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								return data ? { id, path, data } : null
 							}),
 						),
-						{ concurrency: "unbounded" },
+						{ concurrency: validationConcurrency },
 					)
 					for (const document of epicDocuments) {
 						if (document) epics.set(document.id, document)
@@ -744,6 +765,9 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								const phaseIds = yield* readDirectories(
 									join(taskPath, "phases"),
 								)
+								if (phaseIds.length > 0) {
+									phaseIdsByTask.set(id, new Set(phaseIds))
+								}
 								const taskPhases = yield* Effect.all(
 									phaseIds.map((phaseId) =>
 										Effect.gen(function* () {
@@ -762,7 +786,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												: null
 										}),
 									),
-									{ concurrency: "unbounded" },
+									{ concurrency: validationConcurrency },
 								)
 								return {
 									id,
@@ -771,7 +795,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								}
 							}),
 						),
-						{ concurrency: "unbounded" },
+						{ concurrency: validationConcurrency },
 					)
 					for (const documents of taskDocuments) {
 						if (documents.task) tasks.set(documents.id, documents.task)
@@ -922,10 +946,8 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							}
 						}
 
-						const phasePrefix = `${task.id}/`
-						const actualPhaseIds = [...phases.keys()]
-							.filter((key) => key.startsWith(phasePrefix))
-							.map((key) => key.slice(phasePrefix.length))
+						const actualPhaseIds =
+							phaseIdsByTask.get(task.id) ?? new Set<string>()
 
 						if ("phases" in task.data) {
 							const declaredIds = new Set(
@@ -952,7 +974,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							for (const cycle of findDependencyCycles(task.data.phases)) {
 								issue(task.path, `Phase dependency cycle includes '${cycle}'`)
 							}
-						} else if (actualPhaseIds.length > 0) {
+						} else if (actualPhaseIds.size > 0) {
 							issue(
 								task.path,
 								"Single-phase task cannot contain phase directories",

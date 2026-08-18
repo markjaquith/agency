@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { mkdir, realpath, rm, symlink } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 
 const write = async (root: string, path: string, content: string) => {
@@ -102,6 +103,65 @@ pr: null
 
 		expect(report.valid).toBe(true)
 		expect(report.issues).toEqual([])
+	})
+
+	test("reads configuration and documents once during validation", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: { remote: "https://example.com/agency.git" },
+				},
+			}),
+		)
+		await write(
+			root,
+			"tasks/example/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: task/example
+base: main
+pr: null
+---
+`,
+		)
+
+		const fs = await Effect.runPromise(
+			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+		)
+		const reads: string[] = []
+		const exists: string[] = []
+		const trackedFs = {
+			...fs,
+			readFile: (path: string) => {
+				reads.push(path)
+				return fs.readFile(path)
+			},
+			exists: (path: string) => {
+				exists.push(path)
+				return fs.exists(path)
+			},
+		}
+
+		const report = await Effect.runPromise(
+			WorkbaseService.pipe(
+				Effect.flatMap((service) => service.validate(root)),
+				Effect.provide(WorkbaseService.Default),
+				Effect.provideService(FileSystemService, trackedFs),
+			) as Effect.Effect<unknown, unknown, never>,
+		)
+
+		expect(report).toMatchObject({ valid: true, taskCount: 1 })
+		expect(
+			reads.filter((path) => path === join(root, "agency.json")),
+		).toHaveLength(2)
+		expect(
+			reads.filter((path) => path === join(root, "tasks/example/TASK.md")),
+		).toHaveLength(1)
+		expect(exists).not.toContain(join(root, "tasks/example/TASK.md"))
 	})
 
 	test("validates non-PR completion invariants without rejecting legacy done work", async () => {
