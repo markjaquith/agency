@@ -10,6 +10,7 @@
     "scripts/benchmark-push.ts",
     "scripts/benchmark-status.ts",
     "scripts/benchmark-finish.ts",
+    "scripts/benchmark-init.ts",
     "scripts/benchmark-sync.ts",
     "scripts/benchmark-task.ts",
     "scripts/benchmark-validate.ts",
