@@ -89,12 +89,9 @@ describe("init command", () => {
 		expect(tuiPlugin).toContain('slashName: "agency-debug"')
 		expect(tuiPlugin).toContain("api.ui.toast")
 		expect(tuiPlugin).not.toContain("chat.message")
-		const piExtension = await Bun.file(
-			join(root, ".pi/extensions/agency-workbase.ts"),
-		).text()
-		expect(piExtension).toContain('pi.on("resources_discover"')
-		expect(piExtension).toContain('pi.on("before_agent_start"')
-		expect(piExtension).toContain("AGENCY_WRITABLE_CHECKOUT")
+		expect(
+			await Bun.file(join(root, ".pi/extensions/agency-workbase.ts")).exists(),
+		).toBe(false)
 	})
 
 	test("preserves existing gitignore entries", async () => {

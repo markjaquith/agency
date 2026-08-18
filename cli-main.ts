@@ -67,6 +67,7 @@ import {
 	successEnvelope,
 	writeEnvelope,
 } from "./src/protocol"
+import { exportUsageEvents, recordUsageEvent } from "./src/usage-log"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -176,6 +177,12 @@ const VERSION = packageJson.version
 
 // Define commands
 const commands: Record<string, Command> = {
+	usage: {
+		run: async () => {
+			for (const event of await exportUsageEvents())
+				console.log(JSON.stringify(event))
+		},
+	},
 	act: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(actHelp)
@@ -785,6 +792,7 @@ Commands:
   init [path]            Initialize an Agency workbase
   workbase <subcommand>  Manage registered workbases
   integration <command> Inspect or sync managed integration files
+  usage export          Export local usage events as JSON Lines
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
   claim <task> [phase]   Claim an execution unit
@@ -830,9 +838,30 @@ const machineMode = process.argv
 	.slice(2)
 	.some((argument) => argument === "--json" || argument === "--jsonl")
 
+const invocationStartedAt = performance.now()
+const rawArguments = process.argv.slice(2)
+let usageCommandPath = "invalid"
+let usageFlagNames = rawArguments
+	.filter((argument) => argument.startsWith("--"))
+	.map((argument) => argument.slice(2).split("=", 1)[0]!)
+
 try {
-	const args = process.argv.slice(2)
-	const { commandName, args: commandArgs, passthrough, values } = parseCli(args)
+	const {
+		commandName,
+		args: commandArgs,
+		passthrough,
+		values,
+	} = parseCli(rawArguments)
+	usageCommandPath =
+		[commandName, commandArgs[0]]
+			.filter(
+				(part): part is string =>
+					typeof part === "string" && part.length > 0 && !part.startsWith("-"),
+			)
+			.join("/") || "root"
+	usageFlagNames = Object.entries(values)
+		.filter(([, value]) => value !== undefined && value !== false)
+		.map(([name]) => name)
 
 	// Handle global flags
 	if (values.version) {
@@ -841,6 +870,16 @@ try {
 		} else {
 			console.log(`v${VERSION}`)
 		}
+		await recordUsageEvent(
+			{
+				commandPath: "version",
+				flagNames: usageFlagNames,
+				durationMs: performance.now() - invocationStartedAt,
+				outcome: "success",
+				exitStatus: 0,
+			},
+			VERSION,
+		)
 		process.exit(0)
 	}
 
@@ -848,7 +887,18 @@ try {
 	// Show help if no command
 	if (!commandName) {
 		showMainHelp()
-		process.exit(values.help ? 0 : 1)
+		const exitStatus = values.help ? 0 : 1
+		await recordUsageEvent(
+			{
+				commandPath: "help",
+				flagNames: usageFlagNames,
+				durationMs: performance.now() - invocationStartedAt,
+				outcome: exitStatus === 0 ? "success" : "failure",
+				exitStatus,
+			},
+			VERSION,
+		)
+		process.exit(exitStatus)
 	}
 
 	const command = commands[commandName]!
@@ -880,7 +930,28 @@ try {
 			passthrough,
 		})
 	}
+	const exitStatus = Number(process.exitCode ?? 0)
+	await recordUsageEvent(
+		{
+			commandPath: usageCommandPath,
+			flagNames: usageFlagNames,
+			durationMs: performance.now() - invocationStartedAt,
+			outcome: exitStatus === 0 ? "success" : "failure",
+			exitStatus,
+		},
+		VERSION,
+	)
 } catch (error) {
+	await recordUsageEvent(
+		{
+			commandPath: usageCommandPath,
+			flagNames: usageFlagNames,
+			durationMs: performance.now() - invocationStartedAt,
+			outcome: "failure",
+			exitStatus: 1,
+		},
+		VERSION,
+	)
 	if (machineMode) {
 		writeEnvelope(errorEnvelope(error))
 		process.exit(1)

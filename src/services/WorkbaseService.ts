@@ -281,11 +281,11 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 
 					while (true) {
 						const configPath = join(current, "agency.json")
-						if (yield* fs.exists(configPath)) {
-							const content = yield* fs.readFile(configPath)
+						const content = yield* Effect.option(fs.readFile(configPath))
+						if (content._tag === "Some") {
 							let input: unknown
 							try {
-								input = JSON.parse(content)
+								input = JSON.parse(content.value)
 							} catch (cause) {
 								return yield* new WorkbaseConfigError({
 									path: configPath,
@@ -681,16 +681,15 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					}
 
 					const readDirectories = (path: string) =>
-						Effect.gen(function* () {
-							if (!(yield* fs.isDirectory(path))) {
-								return []
-							}
-							const entries = yield* fs.readDirectory(path)
-							return entries
-								.filter((entry) => entry.isDirectory)
-								.map((entry) => entry.name)
-								.sort()
-						})
+						fs.readDirectory(path).pipe(
+							Effect.map((entries) =>
+								entries
+									.filter((entry) => entry.isDirectory)
+									.map((entry) => entry.name)
+									.sort(),
+							),
+							Effect.catchAll(() => Effect.succeed([])),
+						)
 
 					const aliases = new Set(yield* service.repositoryAliases(root))
 
@@ -699,14 +698,13 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						schema: S,
 					) =>
 						Effect.gen(function* () {
-							if (!(yield* fs.exists(path))) {
+							const content = yield* Effect.option(fs.readFile(path))
+							if (content._tag === "None") {
 								issue(path, "Required document is missing")
 								return null
 							}
-
-							const content = yield* fs.readFile(path)
 							const parsed = yield* Effect.either(
-								parseFrontmatter(content, path),
+								parseFrontmatter(content.value, path),
 							)
 							if (Either.isLeft(parsed)) {
 								issue(path, parsed.left.message)

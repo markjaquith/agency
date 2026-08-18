@@ -22,6 +22,8 @@
     "cli.ts",
     "cli-main.ts",
     "src",
+    "pi-extensions",
+    "scripts/install-pi-extension.ts",
     "schemas",
     "fixtures/protocol",
     "README.md",
@@ -61,6 +63,9 @@
     "tag": "latest"
   },
   "scripts": {
+    "postinstall": "bun scripts/install-pi-extension.ts install",
+    "preuninstall": "bun scripts/install-pi-extension.ts uninstall",
+    "benchmark:workbase": "bun scripts/benchmark-workbase.ts",
     "benchmark:doctor": "bun scripts/benchmark-doctor.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
     "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | xargs -0 -n 1 -P 4 bun test",

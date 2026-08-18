@@ -136,6 +136,17 @@ const nonPrCompletionOptions = {
 } satisfies OptionConfig
 
 const commands = {
+	usage: {
+		usage: "agency usage export",
+		options: commonOptions,
+		subcommands: {
+			export: {
+				usage: "agency usage export",
+				minArgs: 0,
+				maxArgs: 0,
+			},
+		},
+	},
 	init: {
 		usage: "agency init [path] [--json]",
 		options: outputOptions,

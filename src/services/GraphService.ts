@@ -144,13 +144,15 @@ export class GraphService extends Effect.Service<GraphService>()(
 					const phases = new Map<string, Document<PhaseData>>()
 
 					const directories = (path: string) =>
-						Effect.gen(function* () {
-							if (!(yield* fs.isDirectory(path))) return []
-							return (yield* fs.readDirectory(path))
-								.filter((entry) => entry.isDirectory)
-								.map((entry) => entry.name)
-								.sort()
-						})
+						fs.readDirectory(path).pipe(
+							Effect.map((entries) =>
+								entries
+									.filter((entry) => entry.isDirectory)
+									.map((entry) => entry.name)
+									.sort(),
+							),
+							Effect.catchAll(() => Effect.succeed([])),
+						)
 
 					const readDocument = <S extends Schema.Schema.AnyNoContext>(
 						id: string,
@@ -185,9 +187,11 @@ export class GraphService extends Effect.Service<GraphService>()(
 						epicIds.map((id) =>
 							Effect.gen(function* () {
 								const path = join(root, "epics", id, "EPIC.md")
-								return (yield* fs.exists(path))
-									? yield* readDocument(id, path, EpicFrontmatter)
-									: null
+								return yield* readDocument(id, path, EpicFrontmatter).pipe(
+									Effect.catchTag("FileNotFoundError", () =>
+										Effect.succeed(null),
+									),
+								)
 							}),
 						),
 						{ concurrency: "unbounded" },
@@ -201,9 +205,15 @@ export class GraphService extends Effect.Service<GraphService>()(
 						taskIds.map((id) =>
 							Effect.gen(function* () {
 								const path = join(root, "tasks", id, "TASK.md")
-								const task = (yield* fs.exists(path))
-									? yield* readDocument(id, path, TaskFrontmatter)
-									: null
+								const task = yield* readDocument(
+									id,
+									path,
+									TaskFrontmatter,
+								).pipe(
+									Effect.catchTag("FileNotFoundError", () =>
+										Effect.succeed(null),
+									),
+								)
 								const phaseIds = yield* directories(
 									join(root, "tasks", id, "phases"),
 								)
@@ -218,13 +228,15 @@ export class GraphService extends Effect.Service<GraphService>()(
 												phaseId,
 												"PHASE.md",
 											)
-											return (yield* fs.exists(phasePath))
-												? yield* readDocument(
-														phaseId,
-														phasePath,
-														PhaseFrontmatter,
-													)
-												: null
+											return yield* readDocument(
+												phaseId,
+												phasePath,
+												PhaseFrontmatter,
+											).pipe(
+												Effect.catchTag("FileNotFoundError", () =>
+													Effect.succeed(null),
+												),
+											)
 										}),
 									),
 									{ concurrency: "unbounded" },

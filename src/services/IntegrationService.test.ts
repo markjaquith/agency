@@ -16,10 +16,6 @@ import {
 	canUpdateManagedWorkbaseOpencodeTuiPlugin,
 	managedWorkbaseOpencodeTuiPlugin,
 } from "../workbase/opencode-tui-plugin-file"
-import {
-	canUpdateManagedWorkbasePiExtension,
-	managedWorkbasePiExtension,
-} from "../workbase/pi-extension-file"
 import { IntegrationService } from "./IntegrationService"
 
 const write = async (root: string, path: string, content: string) => {
@@ -69,7 +65,6 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
-			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
@@ -86,13 +81,7 @@ describe("IntegrationService", () => {
 			".opencode/tui/agency-debug.ts",
 			managedWorkbaseOpencodeTuiPlugin,
 		)
-		await write(
-			root,
-			".pi/extensions/agency-workbase.ts",
-			managedWorkbasePiExtension,
-		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
-			"managed",
 			"managed",
 			"managed",
 			"managed",
@@ -112,7 +101,6 @@ describe("IntegrationService", () => {
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"customized",
 			"drifted",
-			"missing",
 			"missing",
 			"missing",
 			"missing",
@@ -218,131 +206,6 @@ describe("IntegrationService", () => {
 				managedWorkbaseOpencodePlugin.replace("config.skills ??= {}", ""),
 			),
 		).toBe(false)
-	})
-
-	test("generates a Pi extension with workbase context and checkout skills", async () => {
-		expect(managedWorkbasePiExtension).toContain(
-			'import { CONFIG_DIR_NAME, type ExtensionAPI } from "@earendil-works/pi-coding-agent"',
-		)
-		expect(managedWorkbasePiExtension).toContain('pi.on("resources_discover"')
-		expect(managedWorkbasePiExtension).toContain('pi.on("before_agent_start"')
-		expect(managedWorkbasePiExtension).toContain(
-			'join(checkout, ".agents", "skills")',
-		)
-		expect(managedWorkbasePiExtension).toContain(
-			'join(checkout, CONFIG_DIR_NAME, "skills")',
-		)
-		expect(managedWorkbasePiExtension).toContain(
-			"The complete Agency workbase is available",
-		)
-		expect(managedWorkbasePiExtension).toContain(
-			"Agency context remains the authority for writes",
-		)
-		expect(
-			canUpdateManagedWorkbasePiExtension(managedWorkbasePiExtension),
-		).toBe(true)
-		expect(
-			canUpdateManagedWorkbasePiExtension(
-				managedWorkbasePiExtension.replace("resources_discover", "discover"),
-			),
-		).toBe(false)
-
-		const taskDirectory = join(root, "tasks/example")
-		const checkoutPath = join(taskDirectory, "code/agency")
-		await write(root, ".agency/AGENTS.md", "# Managed Agency instructions\n")
-		await write(
-			root,
-			"tasks/example/TASK.md",
-			"---\nrepo: agency\nstatus: working\n---\n",
-		)
-		await write(
-			root,
-			"tasks/example/code/agency/.agents/skills/example/SKILL.md",
-			"---\nname: example\ndescription: Example.\n---\n",
-		)
-		await write(
-			root,
-			"tasks/example/code/agency/.pi/skills/pi-example/SKILL.md",
-			"---\nname: pi-example\ndescription: Pi example.\n---\n",
-		)
-		const path = join(root, ".pi/extensions/agency-workbase.ts")
-		await write(
-			root,
-			".pi/extensions/agency-workbase.ts",
-			managedWorkbasePiExtension.replace(
-				'import { CONFIG_DIR_NAME, type ExtensionAPI } from "@earendil-works/pi-coding-agent"',
-				'const CONFIG_DIR_NAME = ".pi"\ntype ExtensionAPI = any',
-			),
-		)
-
-		const contextResponse = JSON.stringify({
-			version: 1,
-			ok: true,
-			result: {
-				workbase: { root },
-				target: {
-					kind: "task",
-					taskId: "example",
-					path: join(taskDirectory, "TASK.md"),
-				},
-				authority: {
-					mode: "execution",
-					writable: { checkoutPath },
-				},
-				documents: { task: { data: { status: "working" } } },
-				validation: { valid: true, warnings: [] },
-			},
-		})
-		const handlers = new Map<string, (...args: any[]) => any>()
-		const pi = {
-			exec: async () => ({ code: 0, stdout: contextResponse, stderr: "" }),
-			on: (name: string, handler: (...args: any[]) => any) => {
-				handlers.set(name, handler)
-			},
-		}
-		const previousTarget = process.env.AGENCY_TARGET
-		const previousWorkbase = process.env.AGENCY_WORKBASE
-		const previousCheckout = process.env.AGENCY_WRITABLE_CHECKOUT
-		delete process.env.AGENCY_WORKBASE
-		delete process.env.AGENCY_WRITABLE_CHECKOUT
-		process.env.AGENCY_TARGET = "execution-unit:task/example"
-		try {
-			const generated = await import(
-				`${pathToFileURL(path).href}?pi-extension=${Date.now()}`
-			)
-			generated.default(pi)
-			const resources = await handlers.get("resources_discover")?.({
-				cwd: taskDirectory,
-				reason: "startup",
-			})
-			expect(resources.skillPaths).toEqual([
-				join(checkoutPath, ".agents/skills"),
-				join(checkoutPath, ".pi/skills"),
-			])
-
-			const prompt = await handlers.get("before_agent_start")?.(
-				{ systemPrompt: "Base prompt" },
-				{ cwd: taskDirectory },
-			)
-			expect(prompt.systemPrompt).toContain("# Managed Agency instructions")
-			expect(prompt.systemPrompt).toContain(
-				`The complete Agency workbase is available at ${root}`,
-			)
-			expect(prompt.systemPrompt).toContain(
-				"active worker for execution-unit:task/example",
-			)
-			expect(prompt.systemPrompt).toContain(
-				`${checkoutPath} as the default implementation directory`,
-			)
-		} finally {
-			if (previousTarget === undefined) delete process.env.AGENCY_TARGET
-			else process.env.AGENCY_TARGET = previousTarget
-			if (previousWorkbase === undefined) delete process.env.AGENCY_WORKBASE
-			else process.env.AGENCY_WORKBASE = previousWorkbase
-			if (previousCheckout === undefined)
-				delete process.env.AGENCY_WRITABLE_CHECKOUT
-			else process.env.AGENCY_WRITABLE_CHECKOUT = previousCheckout
-		}
 	})
 
 	const testWorkerIdentity = async ({
@@ -870,7 +733,6 @@ describe("IntegrationService", () => {
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
-			{ name: "pi-extension", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
@@ -895,9 +757,6 @@ describe("IntegrationService", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
 		).toBe(managedWorkbaseOpencodeTuiPlugin)
-		expect(
-			await Bun.file(join(root, ".pi/extensions/agency-workbase.ts")).text(),
-		).toBe(managedWorkbasePiExtension)
 
 		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
@@ -962,6 +821,30 @@ describe("IntegrationService", () => {
 		})
 	})
 
+	test("removes a checksum-valid workbase-local Pi extension", async () => {
+		const body = "export default function legacyAgencyExtension() {}\n"
+		const checksum = createHash("sha256").update(body).digest("hex")
+		const path = join(root, ".pi/extensions/agency-workbase.ts")
+		await write(
+			root,
+			".pi/extensions/agency-workbase.ts",
+			`// agency-managed: sha256=${checksum}\n\n${body}`,
+		)
+
+		await sync(root)
+		expect(await Bun.file(path).exists()).toBe(false)
+		expect(await Bun.file(join(root, ".pi")).exists()).toBe(false)
+	})
+
+	test("preserves a customized workbase-local Pi extension", async () => {
+		const custom = "export default function customPiExtension() {}\n"
+		const path = join(root, ".pi/extensions/agency-workbase.ts")
+		await write(root, ".pi/extensions/agency-workbase.ts", custom)
+
+		await sync(root)
+		expect(await Bun.file(path).text()).toBe(custom)
+	})
+
 	test("migrates a checksum-valid plugin from the legacy singular path", async () => {
 		const legacyPath = join(
 			root,
@@ -989,21 +872,6 @@ describe("IntegrationService", () => {
 			managedWorkbaseOpencodePlugin,
 		)
 		expect(await Bun.file(legacyPath).exists()).toBe(false)
-	})
-
-	test("preserves a user-owned Pi extension", async () => {
-		const custom = "export default function customPiExtension() {}\n"
-		await write(root, ".pi/extensions/agency-workbase.ts", custom)
-
-		const result = await sync(root)
-		expect(result.files[5]).toMatchObject({
-			name: "pi-extension",
-			state: "customized",
-			changed: false,
-		})
-		expect(
-			await Bun.file(join(root, ".pi/extensions/agency-workbase.ts")).text(),
-		).toBe(custom)
 	})
 
 	test("preserves user-owned TUI config and diagnostic plugin", async () => {

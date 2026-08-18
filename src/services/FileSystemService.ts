@@ -87,14 +87,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 
 			readFile: (path: string) =>
 				Effect.tryPromise({
-					try: async () => {
-						const file = Bun.file(path)
-						const exists = await file.exists()
-						if (!exists) {
-							throw new Error(`File not found: ${path}`)
-						}
-						return await file.text()
-					},
+					try: () => Bun.file(path).text(),
 					catch: () => new FileNotFoundError({ path }),
 				}),
 

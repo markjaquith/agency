@@ -36,6 +36,8 @@ async function runCli(
 		env: {
 			...process.env,
 			XDG_CONFIG_HOME: isolatedConfigHome,
+			XDG_STATE_HOME: isolatedConfigHome,
+			AGENCY_NO_USAGE_LOG: "1",
 			...env,
 		},
 		stdout: "pipe",
@@ -168,6 +170,44 @@ describe("CLI", () => {
 		expect(taggedError.stdout).toBe("")
 		expect(taggedError.stderr).toContain("ⓘ No Agency workbase found from")
 		expect(taggedError.stderr).not.toContain("An error has occurred")
+	})
+
+	test("records successful and failed invocations without argument values", async () => {
+		const state = await createTempDir()
+		tempDirs.push(state)
+		const env = {
+			XDG_STATE_HOME: state,
+			AGENCY_SESSION_ID: "cli-session",
+			AGENCY_NO_USAGE_LOG: "0",
+		}
+		expect((await runCli(["--version"], projectRoot, env)).exitCode).toBe(0)
+		expect(
+			(await runCli(["unknown", "--cwd", "/private/value"], projectRoot, env))
+				.exitCode,
+		).toBe(1)
+
+		const exported = await runCli(["usage", "export"], projectRoot, env)
+		expect(exported).toMatchObject({ exitCode: 0, stderr: "" })
+		const events = exported.stdout
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line))
+		expect(events).toEqual([
+			expect.objectContaining({
+				sessionId: "cli-session",
+				sessionSequence: 1,
+				commandPath: "version",
+				flagNames: ["version"],
+				outcome: "success",
+			}),
+			expect.objectContaining({
+				sessionSequence: 2,
+				commandPath: "invalid",
+				flagNames: ["cwd"],
+				outcome: "failure",
+			}),
+		])
+		expect(exported.stdout).not.toContain("/private/value")
 	})
 
 	test("coordinates claims through revision-guarded machine commands", async () => {
@@ -642,7 +682,6 @@ exit 23
 			{ name: "opencode-plugin", state: "managed" },
 			{ name: "opencode-tui", state: "managed" },
 			{ name: "opencode-tui-plugin", state: "managed" },
-			{ name: "pi-extension", state: "managed" },
 		])
 
 		const synced = parseJson(
@@ -654,7 +693,6 @@ exit 23
 			{ name: "opencode-plugin", state: "managed", changed: false },
 			{ name: "opencode-tui", state: "managed", changed: false },
 			{ name: "opencode-tui-plugin", state: "managed", changed: false },
-			{ name: "pi-extension", state: "managed", changed: false },
 		])
 	})
 
