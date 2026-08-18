@@ -34,6 +34,7 @@ export interface WorkViewRow {
 	readonly pr: string
 	readonly worktree: string
 	readonly hasPr: boolean
+	readonly data: Readonly<Record<string, unknown>>
 }
 
 const allowedStatuses = new Set<WorkStatus>([
@@ -121,6 +122,9 @@ const rowFor = (
 		),
 		hasPr: executions.some(
 			(execution) => "pr" in execution.data && Boolean(execution.data.pr),
+		),
+		data: Object.fromEntries(
+			Object.entries(node.data).filter(([key]) => key !== "sha256"),
 		),
 	}
 }

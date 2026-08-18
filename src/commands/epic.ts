@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { join } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { EpicService } from "../services/EpicService"
 import { createLoggers } from "../utils/effect"
@@ -71,7 +72,6 @@ export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 			}
 
 			case "list": {
-				const records = yield* epics.list(cwd)
 				const { epicRows } = yield* getWorkViews({
 					cwd,
 					statuses: options.statuses,
@@ -80,14 +80,15 @@ export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 					blocked: options.blocked,
 					pr: options.pr,
 				})
-				const ordered = epicRows.flatMap((row) => {
-					const record = records.find((item) => item.id === row.key)
-					return record ? [record] : []
-				})
 				if (options.json) {
 					log(
 						JSON.stringify(
-							ordered.map(({ content: _, ...record }) => record),
+							epicRows.map((row) => ({
+								id: row.id,
+								path: join(cwd, "epics", row.id, "EPIC.md"),
+								revision: row.revision,
+								data: row.data,
+							})),
 							null,
 							2,
 						),

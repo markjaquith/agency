@@ -75,6 +75,7 @@
     "benchmark:context": "bun scripts/benchmark-context.ts",
     "benchmark:claim": "bun scripts/benchmark-claim.ts",
     "benchmark:finish": "bun scripts/benchmark-finish.ts",
+    "benchmark:epic": "bun scripts/benchmark-epic.ts",
     "benchmark:phase": "bun scripts/benchmark-phase.ts",
     "benchmark:push": "bun scripts/benchmark-push.ts",
     "benchmark:archive": "bun scripts/benchmark-archive.ts",

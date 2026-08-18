@@ -111,6 +111,35 @@ describe("epic command", () => {
 		})
 	})
 
+	test("reads each epic document once when listing JSON", async () => {
+		await runTestEffect(
+			epic({
+				subcommand: "create",
+				args: ["example"],
+				ticketUrl: "https://example.com/epic",
+				repos: ["agency:main"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const original = Bun.file
+		let reads = 0
+		Bun.file = ((path: Parameters<typeof Bun.file>[0], ...args: never[]) => {
+			if (String(path).endsWith("/epics/example/EPIC.md")) reads += 1
+			return original(path as unknown as string, ...args)
+		}) as typeof Bun.file
+		try {
+			await captureLogs(() =>
+				runTestEffect(
+					epic({ subcommand: "list", args: [], cwd: root, json: true }),
+				),
+			)
+		} finally {
+			Bun.file = original
+		}
+		expect(reads).toBe(2)
+	})
+
 	test("renders a readable operational table", async () => {
 		await runTestEffect(
 			epic({
