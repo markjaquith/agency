@@ -1,5 +1,5 @@
 import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Data, Deferred, Effect, Either, Exit } from "effect"
 import { join, relative, resolve, sep } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -131,10 +131,76 @@ export class ContextService extends Effect.Service<ContextService>()(
 				readonly full?: boolean
 			}) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
+					const sourceFs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const repositoryService = yield* RepositoryService
 					const versionControl = yield* VersionControlService
+					const memoize = <A, E, R>(
+						cache: Map<string, Deferred.Deferred<A, E>>,
+						key: string,
+						effect: Effect.Effect<A, E, R>,
+					) => {
+						const cached = cache.get(key)
+						if (cached) return Deferred.await(cached)
+						return Effect.gen(function* () {
+							const deferred = yield* Deferred.make<A, E>()
+							cache.set(key, deferred)
+							const exit = yield* Effect.exit(effect)
+							yield* Deferred.done(deferred, exit)
+							return yield* Exit.match(exit, {
+								onFailure: Effect.failCause,
+								onSuccess: Effect.succeed,
+							})
+						})
+					}
+					const existsCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<ReturnType<typeof sourceFs.exists>>,
+							Effect.Effect.Error<ReturnType<typeof sourceFs.exists>>
+						>
+					>()
+					const directoryCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<ReturnType<typeof sourceFs.isDirectory>>,
+							Effect.Effect.Error<ReturnType<typeof sourceFs.isDirectory>>
+						>
+					>()
+					const readCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<ReturnType<typeof sourceFs.readFile>>,
+							Effect.Effect.Error<ReturnType<typeof sourceFs.readFile>>
+						>
+					>()
+					const listingCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<ReturnType<typeof sourceFs.readDirectory>>,
+							Effect.Effect.Error<ReturnType<typeof sourceFs.readDirectory>>
+						>
+					>()
+					const realPathCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<ReturnType<typeof sourceFs.realPath>>,
+							Effect.Effect.Error<ReturnType<typeof sourceFs.realPath>>
+						>
+					>()
+					const fs = {
+						...sourceFs,
+						exists: (path: string) =>
+							memoize(existsCache, path, sourceFs.exists(path)),
+						isDirectory: (path: string) =>
+							memoize(directoryCache, path, sourceFs.isDirectory(path)),
+						readFile: (path: string) =>
+							memoize(readCache, path, sourceFs.readFile(path)),
+						readDirectory: (path: string) =>
+							memoize(listingCache, path, sourceFs.readDirectory(path)),
+						realPath: (path: string) =>
+							memoize(realPathCache, path, sourceFs.realPath(path)),
+					} satisfies FileSystemService
 					const cwd = resolve(options.cwd ?? process.cwd())
 					const suppliedTarget = options.target ?? "."
 					const candidate = resolve(cwd, suppliedTarget)
@@ -142,7 +208,66 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const { root, config } = yield* workbase.loadConfig(
 						candidateExists ? candidate : cwd,
 					)
-					const backend = yield* versionControl.forWorkbase(root)
+					const sourceBackend = yield* versionControl.forWorkbase(root)
+					const revisionCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<
+								ReturnType<typeof sourceBackend.resolveRevision>
+							>,
+							Effect.Effect.Error<
+								ReturnType<typeof sourceBackend.resolveRevision>
+							>
+						>
+					>()
+					const workspaceCache = new Map<
+						string,
+						Deferred.Deferred<
+							Effect.Effect.Success<
+								ReturnType<typeof sourceBackend.listWorkspaces>
+							>,
+							Effect.Effect.Error<
+								ReturnType<typeof sourceBackend.listWorkspaces>
+							>
+						>
+					>()
+					const backend = {
+						...sourceBackend,
+						resolveRevision: (repositoryPath: string, revision: string) =>
+							memoize(
+								revisionCache,
+								`${repositoryPath}\0${revision}`,
+								sourceBackend.resolveRevision(repositoryPath, revision),
+							),
+						listWorkspaces: (repositoryPath: string) =>
+							memoize(
+								workspaceCache,
+								repositoryPath,
+								sourceBackend.listWorkspaces(repositoryPath),
+							),
+					}
+					const contextWorkbase = {
+						...workbase,
+						discover: (startPath?: string) =>
+							workbase
+								.discover(startPath)
+								.pipe(Effect.provideService(FileSystemService, fs)),
+						loadConfig: (startPath?: string) =>
+							workbase
+								.loadConfig(startPath)
+								.pipe(Effect.provideService(FileSystemService, fs)),
+						repositoryAliases: (startPath?: string) =>
+							workbase
+								.repositoryAliases(startPath)
+								.pipe(Effect.provideService(FileSystemService, fs)),
+					}
+					const provideContextServices = <A, E, R>(
+						effect: Effect.Effect<A, E, R>,
+					) =>
+						effect.pipe(
+							Effect.provideService(FileSystemService, fs),
+							Effect.provideService(WorkbaseService, contextWorkbase),
+						)
 
 					if (relative(root, candidate) === "") {
 						const compact = !options.full
@@ -216,7 +341,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 							}
 						}
 
-						const validation = yield* workbase.validate(root)
+						const validation = yield* provideContextServices(
+							workbase.validate(root),
+						)
 						return {
 							projection: compact ? "compact" : "complete",
 							workbase: {
@@ -593,7 +720,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 						})
 					}
 
-					const validation = yield* workbase.validate(root)
+					const validation = yield* provideContextServices(
+						workbase.validate(root),
+					)
 					const relevantPaths = new Set<string>(
 						[epic?.path, task?.path, phase?.path]
 							.filter((path): path is string => Boolean(path))
@@ -888,10 +1017,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const codePath = join(entityDirectory, "code")
 					const inspectionWarnings: string[] = []
 					const repositories = new Map(
-						(yield* repositoryService.list(root)).map((repository) => [
-							repository.alias,
-							repository,
-						]),
+						(yield* provideContextServices(repositoryService.list(root))).map(
+							(repository) => [repository.alias, repository],
+						),
 					)
 
 					const inspectCheckout = (
