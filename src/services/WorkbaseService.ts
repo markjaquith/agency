@@ -238,13 +238,18 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					}
 
 					yield* fs.createDirectory(root)
-					yield* fs.writeJSON(configPath, {
-						version: 2,
-						vcs: preferredVersionControl(),
-					})
-					for (const directory of ["repos", "epics", "tasks"]) {
-						yield* fs.createDirectory(join(root, directory))
-					}
+					yield* Effect.all(
+						[
+							fs.writeJSON(configPath, {
+								version: 2,
+								vcs: preferredVersionControl(),
+							}),
+							...["repos", "epics", "tasks"].map((directory) =>
+								fs.createDirectory(join(root, directory)),
+							),
+						],
+						{ concurrency: "unbounded" },
+					)
 
 					const ignorePath = join(root, ".gitignore")
 					const requiredPatterns = [
