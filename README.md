@@ -21,6 +21,21 @@ bun install -g @markjaquith/agency
 
 For development, run `bun link` from this repository.
 
+## Local Usage Logging
+
+Agency records privacy-safe CLI usage events locally so command journeys,
+failures, and flag adoption can be analyzed. Events are stored in SQLite at
+`$XDG_STATE_HOME/agency/usage.sqlite3` (or
+`~/.local/state/agency/usage.sqlite3`) and retained for 90 days by default.
+Each event contains the normalized command path, flag names, timing, outcome,
+Agency version, and ordered `AGENCY_SESSION_ID` correlation. Raw arguments,
+flag values, free-form input, and the current directory are never recorded.
+
+Export events as JSON Lines with `agency usage export`. Set
+`AGENCY_NO_USAGE_LOG=1` to opt out, `AGENCY_USAGE_RETENTION_DAYS` to change
+retention, or `AGENCY_USAGE_DB` to select a different database path. Logging is
+best effort and never changes command output or exit behavior.
+
 ## Core Model
 
 - A **workbase** is the root containing durable documents and local repository
