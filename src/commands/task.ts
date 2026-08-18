@@ -360,8 +360,7 @@ export const task = (
 				return
 			}
 			case "list": {
-				const records = yield* tasks.list(cwd)
-				const { taskRows } = yield* getWorkViews({
+				const { taskRows, tasks: taskNodes } = yield* getWorkViews({
 					cwd,
 					statuses: options.statuses,
 					repositories: options.repositories,
@@ -369,14 +368,22 @@ export const task = (
 					blocked: options.blocked,
 					pr: options.pr,
 				})
-				const ordered = taskRows.flatMap((row) => {
-					const record = records.find((item) => item.id === row.key)
-					return record ? [record] : []
-				})
 				if (options.json) {
 					log(
 						JSON.stringify(
-							ordered.map(({ content: _, ...record }) => record),
+							taskRows.flatMap((row) => {
+								const node = taskNodes.get(row.key)
+								if (!node?.workspace) return []
+								const { sha256, ...data } = node.data
+								return [
+									{
+										id: row.key,
+										path: node.workspace.documentPath,
+										revision: sha256,
+										data,
+									},
+								]
+							}),
 							null,
 							2,
 						),

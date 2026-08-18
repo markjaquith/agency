@@ -262,5 +262,5 @@ export const getWorkViews = (options: WorkViewOptions = {}) =>
 		}
 		const executionRows = filterRows(makeRows(executionEntities))
 
-		return { epicRows, taskRows, phaseRows, executionRows }
+		return { epicRows, taskRows, phaseRows, executionRows, tasks }
 	})
