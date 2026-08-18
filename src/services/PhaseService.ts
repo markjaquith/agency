@@ -105,7 +105,8 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							message: `Review task '${taskId}' cannot be converted to phases`,
 						})
 					}
-					const isMultiPhase = "phases" in task.data
+					const taskData = task.data
+					const isMultiPhase = "phases" in taskData
 					let firstPhaseId: string | undefined
 					if (!isMultiPhase) {
 						if (!input.firstPhase) {
@@ -129,7 +130,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 
 					if (
 						isMultiPhase &&
-						task.data.phases.some((phase) => phase.id === id)
+						taskData.phases.some((phase) => phase.id === id)
 					) {
 						return yield* new PhaseError({
 							message: `Phase '${id}' already exists on task '${taskId}'`,
@@ -142,7 +143,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					}
 					const knownPhases = new Set(
 						isMultiPhase
-							? task.data.phases.map((phase) => phase.id)
+							? taskData.phases.map((phase) => phase.id)
 							: [firstPhaseId!],
 					)
 					for (const dependency of input.dependsOn ?? []) {
@@ -163,7 +164,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						base: input.base,
 						pr: null,
 					})
-					const existingExecution = isMultiPhase ? undefined : task.data
+					const existingExecution = isMultiPhase ? undefined : taskData
 					const aliases = new Set([
 						data.repo,
 						...(data.repos ?? []).map((reference) => reference.repo),
@@ -226,15 +227,15 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							})
 						}
 						const firstData = yield* decodePhase({
-							repo: task.data.repo,
-							...(task.data.repos?.length ? { repos: task.data.repos } : {}),
-							branch: task.data.branch,
-							base: task.data.base,
-							pr: task.data.pr,
-							status: task.data.status,
-							...(task.data.claim ? { claim: task.data.claim } : {}),
-							...(task.data.completion
-								? { completion: task.data.completion }
+							repo: taskData.repo,
+							...(taskData.repos?.length ? { repos: taskData.repos } : {}),
+							branch: taskData.branch,
+							base: taskData.base,
+							pr: taskData.pr,
+							status: taskData.status,
+							...(taskData.claim ? { claim: taskData.claim } : {}),
+							...(taskData.completion
+								? { completion: taskData.completion }
 								: {}),
 						})
 						const firstTitle = firstPhaseId!
@@ -514,9 +515,9 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					}
 
 					const updatedTaskData = {
-						...task.data,
+						...taskData,
 						phases: [
-							...task.data.phases,
+							...taskData.phases,
 							{
 								id,
 								...(input.dependsOn?.length
@@ -552,14 +553,18 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					} satisfies PhaseRecord
 				}),
 
-			list: (taskId: string, startPath: string = process.cwd()) =>
+			list: (
+				taskId: string,
+				startPath: string = process.cwd(),
+				parentAlreadyLoaded = false,
+			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const root = yield* workbase.discover(startPath)
 					const validTaskId = yield* decodeId(taskId, "task")
-					yield* tasks.show(validTaskId, root)
+					if (!parentAlreadyLoaded) yield* tasks.show(validTaskId, root)
 					const directory = join(root, "tasks", validTaskId, "phases")
 					if (!(yield* fs.isDirectory(directory))) return [] as PhaseRecord[]
 					const entries = (yield* fs.readDirectory(directory))
@@ -586,17 +591,36 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 
 			show: (taskId: string, id: string, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
-					const service = yield* PhaseService
+					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const tasks = yield* TaskService
+					const validTaskId = yield* decodeId(taskId, "task")
 					const validId = yield* decodeId(id, "phase")
-					const record = (yield* service.list(taskId, startPath)).find(
-						(phase) => phase.id === validId,
+					const root = yield* workbase.discover(startPath)
+					yield* tasks.show(validTaskId, root)
+					const path = join(
+						root,
+						"tasks",
+						validTaskId,
+						"phases",
+						validId,
+						"PHASE.md",
 					)
-					if (!record) {
+					if (!(yield* fs.exists(path))) {
 						return yield* new PhaseError({
-							message: `Phase '${validId}' does not exist on task '${taskId}'`,
+							message: `Phase '${validId}' does not exist on task '${validTaskId}'`,
 						})
 					}
-					return record
+					const content = yield* fs.readFile(path)
+					const parsed = yield* parseFrontmatter(content, path)
+					return {
+						taskId: validTaskId,
+						id: validId,
+						path,
+						content,
+						revision: documentRevision(content),
+						data: yield* decodePhase(parsed.data),
+					} satisfies PhaseRecord
 				}),
 
 			setStatus: (
