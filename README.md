@@ -56,8 +56,6 @@ workbase/
     tui.jsonc              # managed TUI plugin registration
     plugins/agency-repository-skills.ts # managed workbase access and checkout skills
     tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
-  .pi/
-    extensions/agency-workbase.ts # managed workbase context and checkout skills
   agency.json              # tracked config and portable repository declarations
   repos/                   # ignored local materializations
     frontend/              # bare Git repository or symlink
@@ -86,8 +84,8 @@ workbase/
 
 Agency keeps discovery and other observational commands read-only. Run
 `agency integration status` to inspect `.agency/AGENTS.md`, the managed
-OpenCode configuration and plugins, and `.pi/extensions/agency-workbase.ts`,
-then `agency integration sync` to create missing files or refresh checksum-safe
+OpenCode configuration and plugins, then `agency integration sync` to create
+missing files or refresh checksum-safe
 managed files. Customized files are reported but never overwritten. Sync also
 removes checksum-valid retired managed artifacts while
 preserving customized files at their former paths. The root
@@ -128,15 +126,15 @@ The plugin grants whole-workbase access dynamically, while the portable
 reference advertises that context to agents. Bash and Agency operations must
 still follow the write authority reported by `agency context`.
 
-Pi discovers the managed project extension automatically when launched from
-the workbase root after the project is trusted. When launching Pi from a task,
-phase, or epic directory, pass the managed file with `--extension`, for example
-`pi -e /path/to/workbase/.pi/extensions/agency-workbase.ts`. The extension loads
-the managed Agency instructions into Pi's system prompt, advertises the complete
-workbase, and exposes skills from the writable checkout's `.claude/skills`,
-`.agents/skills`, `.opencode/{skill,skills}`, and `.pi/skills` directories.
-Agency context still determines write authority; reference checkouts remain
-read-only.
+Agency's package lifecycle installs one Pi extension at
+`~/.pi/agent/extensions/agency.ts`. Pi loads it globally, so it works from
+workbase roots and nested epic, task, phase, or checkout directories without
+project trust or an explicit `--extension` flag. Outside an Agency workbase it
+registers no resources and changes no prompt. Inside one, it loads the managed
+Agency instructions, advertises the complete workbase, and exposes skills from
+the writable checkout's `.claude/skills`, `.agents/skills`,
+`.opencode/{skill,skills}`, and `.pi/skills` directories. `agency context`
+remains the authority for writes; reference checkouts remain read-only.
 
 Repository aliases, the version-control backend, and canonical fetch remotes are
 declared in tracked `agency.json`; local clones and symlinks remain ignored under
@@ -434,11 +432,11 @@ working directory so the workbase `AGENTS.md` and managed OpenCode config are
 discovered normally.
 Agency's managed OpenCode plugin grants the active workbase external-directory
 access and adds existing checkout-local `.claude/skills`, `.agents/skills`, and
-`.opencode/{skill,skills}` directories to `skills.paths`. The managed Pi
+`.opencode/{skill,skills}` directories to `skills.paths`. The global Pi
 extension provides equivalent whole-workbase context and additionally discovers
 checkout-local `.pi/skills` through Pi's `resources_discover` lifecycle.
-`agency work` supplies the checkout directly; plain OpenCode launches and Pi
-launches with the managed extension loaded resolve a materialized execution-unit
+`agency work` supplies the checkout directly; plain OpenCode and Pi launches
+resolve a materialized execution-unit
 checkout through `agency context`. A multi-phase
 task root has no single checkout, so launch from its phase directory when using
 plain OpenCode or Pi. Other checkout-local configuration is not composed.

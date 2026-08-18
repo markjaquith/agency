@@ -51,11 +51,6 @@ describe("integration command", () => {
 					state: "missing",
 					remediation: expect.stringContaining("integration sync"),
 				},
-				{
-					name: "pi-extension",
-					state: "missing",
-					remediation: expect.stringContaining("integration sync"),
-				},
 			],
 		})
 	})
@@ -104,12 +99,7 @@ OpenCode TUI config: missing
 OpenCode /agency-debug: missing
   Path: .opencode/tui/agency-debug.ts
   The managed OpenCode TUI diagnostic companion needs synchronization.
-  Action: Run 'agency integration sync' to install /agency-debug.
-
-Pi workbase extension: missing
-  Path: .pi/extensions/agency-workbase.ts
-  The managed Pi workbase extension needs synchronization.
-  Action: Run 'agency integration sync' to provide workbase context and expose writable-checkout skills in Pi.`)
+  Action: Run 'agency integration sync' to install /agency-debug.`)
 	})
 
 	test("explicitly synchronizes integration files", async () => {
@@ -123,7 +113,6 @@ Pi workbase extension: missing
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
-			{ name: "pi-extension", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
@@ -143,9 +132,6 @@ Pi workbase extension: missing
 		)
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).exists(),
-		).toBe(true)
-		expect(
-			await Bun.file(join(root, ".pi/extensions/agency-workbase.ts")).exists(),
 		).toBe(true)
 	})
 
@@ -174,10 +160,6 @@ OpenCode TUI config: synced
 
 OpenCode /agency-debug: synced
   Path: .opencode/tui/agency-debug.ts
-  Agency's managed OpenCode TUI diagnostic companion is current.
-
-Pi workbase extension: synced
-  Path: .pi/extensions/agency-workbase.ts
-  Agency's managed Pi extension provides whole-workbase context and exposes writable-checkout skills.`)
+  Agency's managed OpenCode TUI diagnostic companion is current.`)
 	})
 })
