@@ -332,7 +332,8 @@ export class GraphService extends Effect.Service<GraphService>()(
 						})
 
 					const validation =
-						options.validation ?? (yield* workbase.validate(root))
+						options.validation ??
+						(yield* workbase.validate(root, { includeDocuments: true }))
 					const validationIssuesByPath = Map.groupBy(
 						validation.issues,
 						(issue) => issue.path,
