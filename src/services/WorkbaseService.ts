@@ -27,6 +27,7 @@ import { validateAgents } from "../workbase/agent-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
 import { preferredVersionControl } from "../workbase/version-control"
+import { documentRevision } from "../workbase/document-revision"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -62,6 +63,8 @@ export interface ValidationReport {
 interface DocumentRecord<T> {
 	readonly id: string
 	readonly path: string
+	readonly content: string
+	readonly revision: string
 	readonly data: T
 }
 
@@ -729,8 +732,9 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								issue(path, "Required document is missing")
 								return null
 							}
+							const documentContent = content.value
 							const parsed = yield* Effect.either(
-								parseFrontmatter(content.value, path),
+								parseFrontmatter(documentContent, path),
 							)
 							if (Either.isLeft(parsed)) {
 								issue(path, parsed.left.message)
@@ -742,7 +746,11 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								issue(path, decoded.error)
 								return null
 							}
-							return decoded.value
+							return {
+								content: documentContent,
+								revision: documentRevision(documentContent),
+								data: decoded.value,
+							}
 						})
 
 					const epicIds = yield* readDirectories(join(root, "epics"))
@@ -750,8 +758,8 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						epicIds.map((id) =>
 							Effect.gen(function* () {
 								const path = join(root, "epics", id, "EPIC.md")
-								const data = yield* readDocument(path, EpicFrontmatter)
-								return data ? { id, path, data } : null
+								const document = yield* readDocument(path, EpicFrontmatter)
+								return document ? { id, path, ...document } : null
 							}),
 						),
 						{ concurrency: validationConcurrency },
@@ -766,7 +774,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							Effect.gen(function* () {
 								const taskPath = join(root, "tasks", id)
 								const path = join(taskPath, "TASK.md")
-								const data = yield* readDocument(path, TaskFrontmatter)
+								const document = yield* readDocument(path, TaskFrontmatter)
 								const phaseIds = yield* readDirectories(
 									join(taskPath, "phases"),
 								)
@@ -787,7 +795,12 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												PhaseFrontmatter,
 											)
 											return phase
-												? { id: phaseId, path: phasePath, data: phase }
+												? {
+														id: phaseId,
+														taskId: id,
+														path: phasePath,
+														...phase,
+													}
 												: null
 										}),
 									),
@@ -795,7 +808,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								)
 								return {
 									id,
-									task: data ? { id, path, data } : null,
+									task: document ? { id, path, ...document } : null,
 									phases: taskPhases,
 								}
 							}),
