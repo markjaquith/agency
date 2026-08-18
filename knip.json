@@ -5,6 +5,7 @@
     "index.ts",
     "pi-extensions/agency.ts",
     "scripts/benchmark-act.ts",
+    "scripts/benchmark-archive.ts",
     "scripts/benchmark-doctor.ts",
     "scripts/benchmark-context.ts",
     "scripts/benchmark-claim.ts",

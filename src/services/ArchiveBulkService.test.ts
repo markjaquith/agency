@@ -121,6 +121,35 @@ describe("ArchiveService bulk task archive", () => {
 		)
 	})
 
+	test("reuses loaded records while preflighting task worktrees", async () => {
+		for (const id of ["first", "second"]) {
+			await createTask(id)
+			await dropTask(id)
+		}
+		let taskReads = 0
+		const file = Bun.file(join(root, "tasks/first/TASK.md"))
+		const prototype = Object.getPrototypeOf(file) as {
+			text: () => Promise<string>
+			name: string
+		}
+		const originalText = prototype.text
+		prototype.text = function () {
+			if (this.name.endsWith("/TASK.md")) taskReads += 1
+			return originalText.call(this)
+		}
+
+		try {
+			const result = await archiveTasks(true)
+			expect(result.tasks.map((task) => task.disposition)).toEqual([
+				"planned",
+				"planned",
+			])
+			expect(taskReads).toBe(10)
+		} finally {
+			prototype.text = originalText
+		}
+	})
+
 	test("uses aggregate phase status and archives only when every phase is terminal", async () => {
 		await runTestEffect(
 			TaskService.pipe(
