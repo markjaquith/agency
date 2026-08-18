@@ -6,7 +6,10 @@ import { dirname, join } from "node:path"
 import { AgencyGraph } from "../graph-schema"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { GraphService } from "./GraphService"
-import { VersionControlService } from "./VersionControlService"
+import {
+	VersionControlService,
+	type VersionControlBackend,
+} from "./VersionControlService"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -364,6 +367,15 @@ status: open
 
 		const detailed = await getGraph(root, {
 			include: ["bodies", "workspace", "git", "pr"],
+			backend: {
+				kind: "git",
+				inspectRepository: () => Effect.succeed(null),
+				listWorkspaces: () => Effect.succeed([]),
+				resolveRevision: () => Effect.succeed(null),
+				workspaceHead: () => Effect.succeed(null),
+				workspaceDirty: () => Effect.succeed(null),
+				remoteUrl: () => Effect.succeed(null),
+			} as unknown as VersionControlBackend,
 		})
 		expect(detailed.includes).toEqual(["bodies", "git", "pr", "workspace"])
 		expect(detailed.workbase.root).toBe(root)
@@ -385,5 +397,52 @@ status: open
 		expect(repository?.git).toMatchObject({ kind: null })
 		expect(execution?.pr).toEqual({ url: null, state: "none" })
 		expect(Schema.decodeUnknownSync(AgencyGraph)(detailed)).toEqual(detailed)
+	})
+
+	test("reuses repository metadata and revision lookups for git details", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		const calls = {
+			listWorkspaces: 0,
+			remoteUrl: 0,
+			resolveRevision: new Map<string, number>(),
+		}
+		const backend = {
+			kind: "git",
+			inspectRepository: () => Effect.succeed(null),
+			listWorkspaces: () =>
+				Effect.sync(() => {
+					calls.listWorkspaces += 1
+					return []
+				}),
+			remoteUrl: () =>
+				Effect.sync(() => {
+					calls.remoteUrl += 1
+					return null
+				}),
+			resolveRevision: (_path: string, revision: string) =>
+				Effect.sync(() => {
+					calls.resolveRevision.set(
+						revision,
+						(calls.resolveRevision.get(revision) ?? 0) + 1,
+					)
+					return revision
+				}),
+			workspaceHead: () => Effect.succeed(null),
+			workspaceDirty: () => Effect.succeed(null),
+		} as unknown as VersionControlBackend
+
+		await getGraph(root, { include: ["git"], backend })
+
+		expect(calls.listWorkspaces).toBe(0)
+		expect(calls.remoteUrl).toBe(1)
+		expect(calls.resolveRevision).toEqual(
+			new Map([
+				["feat/prepare", 1],
+				["feat/implement", 1],
+				["feat/verify", 1],
+				["main", 1],
+			]),
+		)
 	})
 })

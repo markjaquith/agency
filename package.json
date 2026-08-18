@@ -77,6 +77,7 @@
     "benchmark:finish": "bun scripts/benchmark-finish.ts",
     "benchmark:epic": "bun scripts/benchmark-epic.ts",
     "benchmark:phase": "bun scripts/benchmark-phase.ts",
+    "benchmark:graph": "bun scripts/benchmark-graph.ts",
     "benchmark:push": "bun scripts/benchmark-push.ts",
     "benchmark:archive": "bun scripts/benchmark-archive.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
