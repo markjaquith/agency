@@ -6,6 +6,7 @@
     "pi-extensions/agency.ts",
     "scripts/benchmark-context.ts",
     "scripts/benchmark-sync.ts",
+    "scripts/benchmark-task.ts",
     "scripts/benchmark-workbase.ts",
     "scripts/install-pi-extension.ts"
   ],
