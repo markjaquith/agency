@@ -575,6 +575,8 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 	})
 
 	test("materializes missing workspaces but leaves branch conflicts unresolved", async () => {
+		await Bun.write(join(root, "bin", "gh"), "#!/bin/sh\nprintf '[]\\n'\n")
+		await chmod(join(root, "bin", "gh"), 0o755)
 		for (const [id, branch] of [
 			["missing", "feat/missing"],
 			["conflict", "feat/conflict"],
@@ -647,6 +649,158 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 				join(root, "tasks/conflict/code/agency/README.md"),
 			).exists(),
 		).toBe(false)
+	})
+
+	test("reconciles a recorded merged PR without materializing an absent checkout", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "recorded-merged",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"recorded-merged",
+						undefined,
+						"https://github.com/example/agency/pull/42",
+						root,
+					),
+				),
+			),
+		)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({
+						cwd: root,
+						apply: true,
+						taskId: "recorded-merged",
+					}),
+				),
+			),
+		)
+		expect(applied.changes.map((change) => change.kind)).toEqual([
+			"record-pr",
+			"mark-done",
+		])
+		expect(applied.executions[0]?.checkouts).toEqual([])
+		expect(
+			await Bun.file(join(root, "tasks/recorded-merged/code/agency")).exists(),
+		).toBe(false)
+	})
+
+	test("reconciles a uniquely discovered merged PR without materializing", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "discovered-merged",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({
+						cwd: root,
+						apply: true,
+						taskId: "discovered-merged",
+					}),
+				),
+			),
+		)
+		expect(applied.changes.map((change) => change.kind)).toEqual([
+			"record-pr",
+			"mark-done",
+		])
+		expect(applied.executions[0]?.checkouts).toEqual([])
+		expect(
+			await Bun.file(
+				join(root, "tasks/discovered-merged/code/agency"),
+			).exists(),
+		).toBe(false)
+	})
+
+	test("materializes when discovered PR evidence is ambiguous", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "ambiguous",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const gh = await Bun.file(join(root, "bin", "gh")).text()
+		await Bun.write(
+			join(root, "bin", "gh"),
+			gh
+				.replace('[{"number":42', '[{"number":42')
+				.replace(
+					"]\nJSON\n",
+					`,{\"number\":43,\"state\":\"MERGED\",\"title\":\"Ship again\",\"isDraft\":false,\"headRefName\":\"feat/example\",\"baseRefName\":\"main\",\"headRepository\":{\"nameWithOwner\":\"example/agency\"},\"url\":\"https://github.com/example/agency/pull/43\",\"mergedAt\":\"2100-01-01T00:00:00Z\",\"mergeCommit\":{\"oid\":\"def\"},\"mergeable\":\"MERGEABLE\"}]\nJSON\n`,
+				),
+		)
+
+		const applied = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({
+						cwd: root,
+						apply: true,
+						taskId: "ambiguous",
+					}),
+				),
+			),
+		)
+		expect(applied.unresolved).toContainEqual(
+			expect.objectContaining({ kind: "multiple-prs" }),
+		)
+		expect(applied.changes).toContainEqual(
+			expect.objectContaining({ kind: "materialize-workspace" }),
+		)
+		expect(
+			await Bun.file(
+				join(root, "tasks/ambiguous/code/agency/README.md"),
+			).text(),
+		).toBe("example\n")
 	})
 
 	test("leaves a missing checkout registration unresolved", async () => {

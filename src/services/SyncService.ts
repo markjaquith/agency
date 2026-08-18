@@ -162,6 +162,46 @@ const commandErrorSummary = (stderr: string, fallback: string) =>
 		.map((line) => line.trim())
 		.find(Boolean) ?? fallback
 
+interface PullRequestQuery {
+	readonly remoteUrl: string | null
+	readonly remoteRepository: string
+	readonly result:
+		| {
+				readonly exitCode: number
+				readonly stdout: string
+				readonly stderr: string
+		  }
+		| undefined
+}
+
+const mergedPullRequestFromGitHub = (
+	data: ExecutionData,
+	query: PullRequestQuery | undefined,
+) => {
+	if (!query?.result || query.result.exitCode !== 0) return null
+	const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
+	const details = existing
+		? [parseJson<Record<string, unknown>>(query.result.stdout, {})]
+		: parseJson<Record<string, unknown>[]>(query.result.stdout, []).filter(
+				(item) =>
+					item.headRefName === data.branch && item.baseRefName === data.base,
+			)
+	if (details.length !== 1) return null
+	const current = recordFromGitHubJson(details[0]!)
+	if (
+		current.merged !== true ||
+		current.headRepository?.toLowerCase() !==
+			query.remoteRepository.toLowerCase() ||
+		current.headBranch !== data.branch ||
+		current.baseRepository?.toLowerCase() !==
+			current.repository.toLowerCase() ||
+		current.baseBranch !== data.base
+	) {
+		return null
+	}
+	return current
+}
+
 export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 	sync: () => ({
 		reconcile: (
@@ -463,6 +503,14 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					let revision = record.revision
 					const codePath = join(dirname(record.path), "code")
 					const checkoutStates: CheckoutState[] = []
+					const query = prQueries.get(record.key)
+					const remoteMergedPr = config.delivery
+						? null
+						: mergedPullRequestFromGitHub(data, query)
+					const skipCheckoutReconciliation =
+						remoteMergedPr !== null &&
+						data.claim?.state !== "active" &&
+						!data.completion
 					let materialize = false
 					let workspaceConflict = false
 					const declared: readonly (
@@ -473,7 +521,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						...(data.repos ?? []),
 					]
 
-					for (const checkout of declared) {
+					for (const checkout of skipCheckoutReconciliation ? [] : declared) {
 						const repositoryPath = join(root, "repos", checkout.repo)
 						const checkoutPath = join(codePath, checkout.repo)
 						const kind = "branch" in checkout ? "writable" : "reference"
@@ -811,7 +859,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						state: "none",
 					}
 					let prConflict = false
-					const query = prQueries.get(record.key)!
+					if (!query) {
+						return yield* new SyncError({
+							message: `Missing pull request query for '${record.key}'`,
+						})
+					}
 					const { remoteUrl, remoteRepository } = query
 
 					if (config.delivery && !remoteUrl) {
