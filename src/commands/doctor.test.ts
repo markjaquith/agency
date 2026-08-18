@@ -100,10 +100,6 @@ status: open
 					id: "ref.agency.main",
 					status: "pass",
 				}),
-				expect.objectContaining({
-					id: "worktree.task.example",
-					status: "pass",
-				}),
 			]),
 		)
 		for (const check of report.checks) {

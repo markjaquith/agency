@@ -2,12 +2,11 @@ import { Effect, Either } from "effect"
 import { constants } from "node:fs"
 import { access } from "node:fs/promises"
 import { isAbsolute, join, resolve } from "node:path"
-import { EpicService } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
 import { IntegrationService } from "./IntegrationService"
-import { PhaseService } from "./PhaseService"
+import type { PhaseRecord } from "./PhaseService"
 import { RepositoryService } from "./RepositoryService"
-import { TaskService } from "./TaskService"
+import type { TaskRecord } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
 import { VersionControlService } from "./VersionControlService"
@@ -80,12 +79,9 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 		sync: () => ({
 			inspect: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
-					const epics = yield* EpicService
 					const fs = yield* FileSystemService
 					const integrations = yield* IntegrationService
-					const phases = yield* PhaseService
 					const repositories = yield* RepositoryService
-					const tasks = yield* TaskService
 					const workbases = yield* WorkbaseService
 					const worktrees = yield* WorktreeService
 					const versionControl = yield* VersionControlService
@@ -105,49 +101,60 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 									: null,
 						})
 
-					const tool = function* (
+					const tool = (
 						id: string,
 						executable: string,
 						level: DoctorCheckLevel,
 						label: string,
-					) {
-						const available = yield* executableAvailable(executable, root)
-						add({
-							id,
-							category: id.startsWith("tool.") ? "tool" : "integration",
-							level,
-							status: available ? "pass" : "fail",
-							message: available
-								? `${label} executable '${executable}' is available`
-								: `${label} executable '${executable}' is unavailable`,
-							remediation:
-								level === "optional"
-									? `Install '${executable}' to enable ${label.toLowerCase()}, or leave it unavailable if unused.`
-									: `Install '${executable}' and ensure it is executable on PATH.`,
+					) =>
+						Effect.gen(function* () {
+							const available = yield* executableAvailable(executable, root)
+							add({
+								id,
+								category: id.startsWith("tool.") ? "tool" : "integration",
+								level,
+								status: available ? "pass" : "fail",
+								message: available
+									? `${label} executable '${executable}' is available`
+									: `${label} executable '${executable}' is unavailable`,
+								remediation:
+									level === "optional"
+										? `Install '${executable}' to enable ${label.toLowerCase()}, or leave it unavailable if unused.`
+										: `Install '${executable}' and ensure it is executable on PATH.`,
+							})
+							return available
 						})
-						return available
-					}
 
-					const gitAvailable = yield* tool("tool.git", "git", "error", "Git")
-					const jjAvailable = yield* tool(
-						"tool.jj",
-						"jj",
-						config.vcs === "jj" ? "error" : "optional",
-						"Jujutsu",
+					const [gitAvailable, jjAvailable] = yield* Effect.all(
+						[
+							tool("tool.git", "git", "error", "Git"),
+							tool(
+								"tool.jj",
+								"jj",
+								config.vcs === "jj" ? "error" : "optional",
+								"Jujutsu",
+							),
+						],
+						{ concurrency: "unbounded", batching: true },
 					)
 					const versionControlAvailable =
 						gitAvailable && (config.vcs !== "jj" || jjAvailable)
-					yield* tool(
-						"capability.agent.opencode",
-						"opencode",
-						"optional",
-						"OpenCode agent",
-					)
-					yield* tool(
-						"capability.agent.claude",
-						"claude",
-						"optional",
-						"Claude agent",
+					yield* Effect.all(
+						[
+							tool(
+								"capability.agent.opencode",
+								"opencode",
+								"optional",
+								"OpenCode agent",
+							),
+							tool(
+								"capability.agent.claude",
+								"claude",
+								"optional",
+								"Claude agent",
+							),
+						],
+						{ concurrency: "unbounded", batching: true },
 					)
 
 					const configuredCommands: readonly (readonly [
@@ -250,11 +257,16 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 								]
 							: []),
 					]
-					for (const [id, command, label] of configuredCommands) {
-						yield* tool(id, command[0]!, "error", label)
-					}
+					yield* Effect.all(
+						configuredCommands.map(([id, command, label]) =>
+							tool(id, command[0]!, "error", label),
+						),
+						{ concurrency: 16, batching: true },
+					)
 
-					const validation = yield* workbases.validate(root)
+					const validation = yield* workbases.validate(root, {
+						includeDocuments: true,
+					})
 					add({
 						id: "workbase.validation",
 						category: "workbase",
@@ -267,7 +279,7 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 							"Run 'agency validate' and correct every reported issue.",
 					})
 
-					for (const [id, mode, level, label, remediation] of [
+					const permissionChecks = [
 						[
 							"permission.workbase.read",
 							constants.R_OK,
@@ -282,8 +294,16 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 							"writable",
 							`Grant the current user write access to ${root} before running mutation commands.`,
 						],
-					] as const) {
-						const available = yield* permissionAvailable(root, mode)
+					] as const
+					const permissionResults = yield* Effect.all(
+						permissionChecks.map(([, mode]) => permissionAvailable(root, mode)),
+						{ concurrency: "unbounded", batching: true },
+					)
+					for (const [
+						index,
+						[id, , level, label, remediation],
+					] of permissionChecks.entries()) {
+						const available = permissionResults[index]!
 						add({
 							id,
 							category: "permission",
@@ -321,12 +341,12 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						values.add(ref)
 						refs.set(repo, values)
 					}
-					if (validation.valid) {
-						for (const epic of yield* epics.list(root)) {
+					if (validation.valid && validation.documents) {
+						for (const epic of validation.documents.epics) {
 							for (const reference of epic.data.repos)
 								declareRef(reference.repo, reference.ref)
 						}
-						for (const task of yield* tasks.list(root)) {
+						for (const task of validation.documents.tasks) {
 							if ("review" in task.data) {
 								declareRef(task.data.review.repo, task.data.review.commit)
 								reviewSources.push({
@@ -344,7 +364,9 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 								for (const reference of task.data.repos ?? [])
 									declareRef(reference.repo, reference.ref)
 							} else {
-								for (const phase of yield* phases.list(task.id, root)) {
+								for (const phase of validation.documents.phasesByTask.get(
+									task.id,
+								) ?? []) {
 									declareRef(phase.data.repo, phase.data.base)
 									for (const reference of phase.data.repos ?? [])
 										declareRef(reference.repo, reference.ref)
@@ -442,7 +464,36 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 					}
 
 					if (validation.valid && versionControlAvailable) {
-						const inspected = yield* Effect.either(worktrees.list(root))
+						const tasks = validation.documents?.tasks.map(
+							(record) =>
+								({ ...record, content: "", revision: "" }) satisfies TaskRecord,
+						)
+						const phasesByTask = validation.documents
+							? new Map(
+									[...validation.documents.phasesByTask].map(
+										([taskId, records]) =>
+											[
+												taskId,
+												records.map(
+													(record) =>
+														({
+															...record,
+															taskId,
+															content: "",
+															revision: "",
+														}) satisfies PhaseRecord,
+												),
+											] as const,
+									),
+								)
+							: undefined
+						const inspected = yield* Effect.either(
+							worktrees.list(root, {
+								materializedOnly: true,
+								tasks,
+								phasesByTask,
+							}),
+						)
 						if (Either.isLeft(inspected)) {
 							add({
 								id: "worktree.inspection",
