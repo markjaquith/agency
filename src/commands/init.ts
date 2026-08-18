@@ -18,7 +18,7 @@ export const init = (options: InitOptions = {}) =>
 		const root = yield* workbase.initialize(
 			options.path ? resolve(cwd, options.path) : cwd,
 		)
-		yield* integrations.sync(root)
+		yield* integrations.syncRoot(root)
 		log(
 			options.json
 				? JSON.stringify({ root }, null, 2)

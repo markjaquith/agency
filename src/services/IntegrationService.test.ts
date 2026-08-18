@@ -17,6 +17,7 @@ import {
 	managedWorkbaseOpencodeTuiPlugin,
 } from "../workbase/opencode-tui-plugin-file"
 import { IntegrationService } from "./IntegrationService"
+import { FileSystemService } from "./FileSystemService"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -88,6 +89,54 @@ describe("IntegrationService", () => {
 			"managed",
 			"managed",
 		])
+	})
+
+	test("inspects each integration path once per status call", async () => {
+		const service = await Effect.runPromise(
+			Effect.provide(FileSystemService, FileSystemService.Default),
+		)
+		const inspected = new Map<string, number>()
+		const instrumented = {
+			...service,
+			inspectFile: (path: string) => {
+				inspected.set(path, (inspected.get(path) ?? 0) + 1)
+				return service.inspectFile(path)
+			},
+		}
+
+		await runTestEffect(
+			IntegrationService.pipe(
+				Effect.flatMap((integration) => integration.statusRoot(root)),
+				Effect.provideService(FileSystemService, instrumented),
+			),
+		)
+
+		expect(inspected.size).toBe(8)
+		expect([...inspected.values()]).toEqual(Array(8).fill(1))
+	})
+
+	test("inspects integration and legacy paths once per synchronized call", async () => {
+		const service = await Effect.runPromise(
+			Effect.provide(FileSystemService, FileSystemService.Default),
+		)
+		const inspected = new Map<string, number>()
+		const instrumented = {
+			...service,
+			inspectFile: (path: string) => {
+				inspected.set(path, (inspected.get(path) ?? 0) + 1)
+				return service.inspectFile(path)
+			},
+		}
+
+		await runTestEffect(
+			IntegrationService.pipe(
+				Effect.flatMap((integration) => integration.syncRoot(root)),
+				Effect.provideService(FileSystemService, instrumented),
+			),
+		)
+
+		expect(inspected.size).toBe(11)
+		expect([...inspected.values()]).toEqual(Array(11).fill(1))
 	})
 
 	test("reports customized and checksum-safe drifted files", async () => {

@@ -91,6 +91,38 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					catch: () => new FileNotFoundError({ path }),
 				}),
 
+			inspectFile: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						try {
+							const stats = await lstat(path)
+							if (stats.isSymbolicLink()) {
+								return { kind: "symlink" as const }
+							}
+							if (!stats.isFile()) return { kind: "other" as const }
+							return {
+								kind: "file" as const,
+								content: await Bun.file(path).text(),
+							}
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								error.code === "ENOENT"
+							) {
+								return { kind: "missing" as const }
+							}
+							throw error
+						}
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to inspect file: ${path}`,
+							cause: error,
+						}),
+				}),
+
 			writeFile: (path: string, content: string) =>
 				Effect.tryPromise({
 					try: () => Bun.write(path, content),

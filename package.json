@@ -70,6 +70,7 @@
     "benchmark:status": "bun scripts/benchmark-status.ts",
     "benchmark:next": "bun scripts/benchmark-next.ts",
     "benchmark:init": "bun scripts/benchmark-init.ts",
+    "benchmark:integration": "bun scripts/benchmark-integration.ts",
     "benchmark:workbase": "bun scripts/benchmark-workbase.ts",
     "benchmark:doctor": "bun scripts/benchmark-doctor.ts",
     "benchmark:context": "bun scripts/benchmark-context.ts",
