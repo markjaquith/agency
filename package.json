@@ -68,6 +68,7 @@
     "benchmark:pr": "bun scripts/benchmark-pr.ts",
     "benchmark:release": "bun scripts/benchmark-release.ts",
     "benchmark:status": "bun scripts/benchmark-status.ts",
+    "benchmark:next": "bun scripts/benchmark-next.ts",
     "benchmark:init": "bun scripts/benchmark-init.ts",
     "benchmark:workbase": "bun scripts/benchmark-workbase.ts",
     "benchmark:doctor": "bun scripts/benchmark-doctor.ts",

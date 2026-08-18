@@ -65,24 +65,19 @@ const isWorkTarget = (node: GraphNode) =>
 
 const itemFor = (
 	node: ExecutionNode,
-	graph: AgencyGraph,
+	tasks: ReadonlyMap<string, Extract<GraphNode, { readonly kind: "task" }>>,
+	executionsByTask: ReadonlyMap<string, readonly ExecutionNode[]>,
 	rank: number,
 ): NextItem => {
-	const task = graph.nodes.find(
-		(candidate) =>
-			candidate.kind === "task" && candidate.key === node.data.taskId,
-	)
+	const task = tasks.get(node.data.taskId)
 	const epicId =
 		task?.kind === "task" && typeof task.data.epic === "string"
 			? task.data.epic
 			: undefined
 	const dependentIds = new Set(node.dependents)
 	if ("phaseId" in node.data && node.data.phaseId) {
-		const siblings = graph.nodes.filter(
-			(candidate): candidate is ExecutionNode =>
-				candidate.kind === "execution-unit" &&
-				candidate.data.taskId === node.data.taskId &&
-				candidate.id !== node.id,
+		const siblings = (executionsByTask.get(node.data.taskId) ?? []).filter(
+			(candidate) => candidate.id !== node.id,
 		)
 		if (siblings.every((sibling) => sibling.status === "done")) {
 			for (const dependent of task?.dependents ?? [])
@@ -113,16 +108,27 @@ const itemFor = (
 	}
 }
 
-const rankedItems = (graph: AgencyGraph) =>
-	graph.nodes
-		.filter((node): node is ExecutionNode => node.kind === "execution-unit")
-		.map((node) => itemFor(node, graph, 0))
+const rankedItems = (graph: AgencyGraph) => {
+	const tasks = new Map<string, Extract<GraphNode, { readonly kind: "task" }>>()
+	const executionsByTask = new Map<string, ExecutionNode[]>()
+	const executions: ExecutionNode[] = []
+	for (const node of graph.nodes) {
+		if (node.kind === "task") tasks.set(node.key, node)
+		if (node.kind !== "execution-unit") continue
+		executions.push(node)
+		const siblings = executionsByTask.get(node.data.taskId)
+		if (siblings) siblings.push(node)
+		else executionsByTask.set(node.data.taskId, [node])
+	}
+	return executions
+		.map((node) => itemFor(node, tasks, executionsByTask, 0))
 		.sort(
 			(left, right) =>
 				right.priority.dependentCount - left.priority.dependentCount ||
 				left.key.localeCompare(right.key),
 		)
 		.map((item, index) => ({ ...item, rank: index + 1 }))
+}
 
 const guardMessage = (
 	action: "work" | "pr",
