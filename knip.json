@@ -25,6 +25,7 @@
     "scripts/benchmark-sync.ts",
     "scripts/benchmark-task.ts",
     "scripts/benchmark-validate.ts",
+    "scripts/benchmark-vcs.ts",
     "scripts/benchmark-worktree.ts",
     "scripts/benchmark-workbase.ts",
     "scripts/install-pi-extension.ts"
