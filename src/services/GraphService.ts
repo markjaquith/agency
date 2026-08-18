@@ -674,6 +674,40 @@ export class GraphService extends Effect.Service<GraphService>()(
 					}
 					const dependents = (id: string) =>
 						[...(reverseDependencies.get(id) ?? [])].sort()
+					const repositoryWorkspaces = new Map<
+						string,
+						ReturnType<VersionControlBackend["listWorkspaces"]>
+					>()
+					const listWorkspaces = (path: string) => {
+						if (!backend) return Effect.succeed([])
+						const cached = repositoryWorkspaces.get(path)
+						if (cached) return cached
+						const workspaces = backend
+							.listWorkspaces(path)
+							.pipe(Effect.catchAll(() => Effect.succeed([])))
+						repositoryWorkspaces.set(path, workspaces)
+						return workspaces
+					}
+					const repositoryRemotes = new Map<string, string | null>()
+					const remoteUrl = (path: string, remote: string) =>
+						Effect.gen(function* () {
+							if (!backend) return null
+							const key = `${path}\u0000${remote}`
+							if (repositoryRemotes.has(key)) return repositoryRemotes.get(key)!
+							const url = yield* backend.remoteUrl(path, remote)
+							repositoryRemotes.set(key, url)
+							return url
+						})
+					const resolvedRevisions = new Map<string, string | null>()
+					const resolveRevision = (path: string, revision: string) =>
+						Effect.gen(function* () {
+							if (!backend) return null
+							const key = `${path}\u0000${revision}`
+							if (resolvedRevisions.has(key)) return resolvedRevisions.get(key)!
+							const resolved = yield* backend.resolveRevision(path, revision)
+							resolvedRevisions.set(key, resolved)
+							return resolved
+						})
 
 					const documentDetails = <T extends Record<string, unknown>>(
 						document: Document<T>,
@@ -697,11 +731,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 						Effect.gen(function* () {
 							if (!backend) return undefined
 							const inspection = yield* backend.inspectRepository(path)
-							const workspaces = inspection
-								? yield* backend
-										.listWorkspaces(path)
-										.pipe(Effect.catchAll(() => Effect.succeed([])))
-								: []
+							const workspaces = inspection ? yield* listWorkspaces(path) : []
 							const primary = workspaces.find(
 								(workspace) => workspace.path === path,
 							)
@@ -734,15 +764,12 @@ export class GraphService extends Effect.Service<GraphService>()(
 							}
 							if (include.has("git")) {
 								if (!backend) return result
-								const remote = yield* backend.remoteUrl(
-									repositoryPath,
-									"origin",
-								)
+								const remote = yield* remoteUrl(repositoryPath, "origin")
 								const canonicalCheckoutPath = materialized
 									? yield* fs.realPath(checkoutPath)
 									: checkoutPath
 								const actualBranch = materialized
-									? yield* backend.listWorkspaces(repositoryPath).pipe(
+									? yield* listWorkspaces(repositoryPath).pipe(
 											Effect.map(
 												(workspaces) =>
 													workspaces
@@ -783,11 +810,11 @@ export class GraphService extends Effect.Service<GraphService>()(
 										: {
 												branch: data.branch,
 												base: data.base,
-												branchCommit: yield* backend.resolveRevision(
+												branchCommit: yield* resolveRevision(
 													repositoryPath,
 													data.branch,
 												),
-												baseCommit: yield* backend.resolveRevision(
+												baseCommit: yield* resolveRevision(
 													repositoryPath,
 													data.base,
 												),

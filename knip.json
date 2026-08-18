@@ -16,6 +16,7 @@
     "scripts/benchmark-release.ts",
     "scripts/benchmark-status.ts",
     "scripts/benchmark-finish.ts",
+    "scripts/benchmark-graph.ts",
     "scripts/benchmark-init.ts",
     "scripts/benchmark-next.ts",
     "scripts/benchmark-sync.ts",
