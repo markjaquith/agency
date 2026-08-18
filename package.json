@@ -21,9 +21,8 @@
     "index.ts",
     "cli.ts",
     "cli-main.ts",
-    "src",
     "pi-extensions",
-    "scripts/install-pi-extension.ts",
+    "src",
     "schemas",
     "fixtures/protocol",
     "README.md",
@@ -65,6 +64,7 @@
   "scripts": {
     "postinstall": "bun scripts/install-pi-extension.ts install",
     "preuninstall": "bun scripts/install-pi-extension.ts uninstall",
+    "benchmark:status": "bun scripts/benchmark-status.ts",
     "benchmark:workbase": "bun scripts/benchmark-workbase.ts",
     "benchmark:context": "bun scripts/benchmark-context.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",

@@ -277,6 +277,13 @@ export class GraphService extends Effect.Service<GraphService>()(
 					}
 
 					const taskDeclarations = new Map<string, Dependency>()
+					const phasesByTask = new Map<string, Document<PhaseData>[]>()
+					for (const [key, phase] of phases) {
+						const taskId = key.slice(0, key.indexOf("/"))
+						const values = phasesByTask.get(taskId) ?? []
+						values.push(phase)
+						phasesByTask.set(taskId, values)
+					}
 					for (const epic of epics.values()) {
 						for (const declaration of epic.data.tasks) {
 							taskDeclarations.set(declaration.id, declaration)
@@ -294,8 +301,14 @@ export class GraphService extends Effect.Service<GraphService>()(
 								)
 							: [task.data.status]
 					}
-					const taskStatus = (taskId: string) =>
-						aggregateProgress(taskLeafStatuses(taskId)).status
+					const taskStatuses = new Map<string, WorkStatus>()
+					const taskStatus = (taskId: string) => {
+						const cached = taskStatuses.get(taskId)
+						if (cached) return cached
+						const status = aggregateProgress(taskLeafStatuses(taskId)).status
+						taskStatuses.set(taskId, status)
+						return status
+					}
 					const dependencyBlockers = (
 						dependencies: readonly string[],
 						toId: (id: string) => string,
@@ -320,16 +333,20 @@ export class GraphService extends Effect.Service<GraphService>()(
 
 					const validation =
 						options.validation ?? (yield* workbase.validate(root))
+					const validationIssuesByPath = Map.groupBy(
+						validation.issues,
+						(issue) => issue.path,
+					)
 					const validationBlockers = (
 						paths: readonly string[],
 					): GraphBlocker[] =>
-						validation.issues
-							.filter((issue) => paths.includes(issue.path))
-							.map((issue) => ({
+						paths.flatMap((path) =>
+							(validationIssuesByPath.get(path) ?? []).map((issue) => ({
 								kind: "validation" as const,
 								id: issue.path,
 								reason: issue.message,
-							}))
+							})),
+						)
 					const uniqueBlockers = (blockers: readonly GraphBlocker[]) => [
 						...new Map(
 							blockers.map((item) => [
@@ -339,7 +356,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 						).values(),
 					]
 
-					const phaseState = (taskId: string, phaseId: string) => {
+					type PhaseState = ReturnType<typeof createPhaseState>
+					const phaseStates = new Map<string, PhaseState>()
+					function createPhaseState(taskId: string, phaseId: string) {
 						const task = tasks.get(taskId)
 						const phase = phases.get(`${taskId}/${phaseId}`)
 						const parentEpic = task?.data.epic
@@ -386,8 +405,18 @@ export class GraphService extends Effect.Service<GraphService>()(
 							},
 						}
 					}
+					const phaseState = (taskId: string, phaseId: string) => {
+						const key = `${taskId}/${phaseId}`
+						const cached = phaseStates.get(key)
+						if (cached) return cached
+						const state = createPhaseState(taskId, phaseId)
+						phaseStates.set(key, state)
+						return state
+					}
 
-					const taskState = (taskId: string) => {
+					type TaskState = ReturnType<typeof createTaskState>
+					const taskStates = new Map<string, TaskState>()
+					function createTaskState(taskId: string) {
 						const task = tasks.get(taskId)
 						const parentEpic = task?.data.epic
 							? epics.get(task.data.epic)
@@ -398,9 +427,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 							? [
 									relative(root, task.path),
 									...(parentEpic ? [relative(root, parentEpic.path)] : []),
-									...[...phases.entries()]
-										.filter(([key]) => key.startsWith(`${taskId}/`))
-										.map(([, phase]) => relative(root, phase.path)),
+									...(phasesByTask.get(taskId) ?? []).map((phase) =>
+										relative(root, phase.path),
+									),
 								]
 							: []
 						const blockers = [
@@ -461,6 +490,13 @@ export class GraphService extends Effect.Service<GraphService>()(
 							},
 						}
 					}
+					const taskState = (taskId: string) => {
+						const cached = taskStates.get(taskId)
+						if (cached) return cached
+						const state = createTaskState(taskId)
+						taskStates.set(taskId, state)
+						return state
+					}
 
 					const epicState = (epicId: string) => {
 						const epic = epics.get(epicId)
@@ -475,9 +511,9 @@ export class GraphService extends Effect.Service<GraphService>()(
 										const task = tasks.get(item.id)
 										return [
 											...(task ? [relative(root, task.path)] : []),
-											...[...phases.entries()]
-												.filter(([key]) => key.startsWith(`${item.id}/`))
-												.map(([, phase]) => relative(root, phase.path)),
+											...(phasesByTask.get(item.id) ?? []).map((phase) =>
+												relative(root, phase.path),
+											),
 										]
 									}),
 								]
@@ -761,6 +797,36 @@ export class GraphService extends Effect.Service<GraphService>()(
 							return result
 						})
 
+					const executionDetailsByKey = new Map<
+						string,
+						Effect.Effect.Success<ReturnType<typeof executionDetails>>
+					>()
+					const executionDocuments: readonly (readonly [
+						string,
+						string,
+						ExecutionData,
+					])[] = [
+						...[...tasks.values()].flatMap((task) =>
+							"phases" in task.data
+								? []
+								: ([[task.id, task.path, task.data]] as const),
+						),
+						...[...phases].map(
+							([key, phase]) => [key, phase.path, phase.data] as const,
+						),
+					]
+					const inspectedExecutions = yield* Effect.all(
+						executionDocuments.map(([key, path, data]) =>
+							executionDetails(path, data).pipe(
+								Effect.map((details) => [key, details] as const),
+							),
+						),
+						{ concurrency: 16 },
+					)
+					for (const [key, details] of inspectedExecutions) {
+						executionDetailsByKey.set(key, details)
+					}
+
 					const nodes: GraphNode[] = []
 					for (const epic of epics.values()) {
 						const state = epicState(epic.id)
@@ -805,7 +871,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 								dependents: dependents(taskNodeId(task.id)),
 								repositories,
 								data: { taskId: task.id, ...task.data },
-								...(yield* executionDetails(task.path, task.data)),
+								...executionDetailsByKey.get(task.id),
 							})
 						}
 					}
@@ -830,7 +896,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 							dependents: dependents(phaseNodeId(taskId, phase.id)),
 							repositories,
 							data: { taskId, phaseId: phase.id, ...phase.data },
-							...(yield* executionDetails(phase.path, phase.data)),
+							...executionDetailsByKey.get(key),
 						})
 					}
 					for (const repository of [...repositoryRecords.values()].sort(
