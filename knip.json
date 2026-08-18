@@ -6,6 +6,7 @@
     "pi-extensions/agency.ts",
     "scripts/benchmark-doctor.ts",
     "scripts/benchmark-context.ts",
+    "scripts/benchmark-claim.ts",
     "scripts/benchmark-pr.ts",
     "scripts/benchmark-push.ts",
     "scripts/benchmark-status.ts",
