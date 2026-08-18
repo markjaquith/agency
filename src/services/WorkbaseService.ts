@@ -56,12 +56,22 @@ export interface ValidationReport {
 	readonly taskCount: number
 	readonly phaseCount: number
 	readonly valid: boolean
+	readonly documents?: ValidationDocuments
 }
 
 interface DocumentRecord<T> {
 	readonly id: string
 	readonly path: string
 	readonly data: T
+}
+
+interface ValidationDocuments {
+	readonly epics: readonly DocumentRecord<EpicData>[]
+	readonly tasks: readonly DocumentRecord<TaskData>[]
+	readonly phasesByTask: ReadonlyMap<
+		string,
+		readonly DocumentRecord<PhaseData>[]
+	>
 }
 
 type DecodeResult<T> =
@@ -653,7 +663,10 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					),
 				),
 
-			validate: (startPath: string = process.cwd()) =>
+			validate: (
+				startPath: string = process.cwd(),
+				options: { readonly includeDocuments?: boolean } = {},
+			) =>
 				Effect.gen(function* () {
 					const service = yield* WorkbaseService
 					const fs = yield* FileSystemService
@@ -961,6 +974,14 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							: a.path.localeCompare(b.path),
 					)
 
+					const phasesByTask = new Map<string, DocumentRecord<PhaseData>[]>()
+					for (const [key, phase] of phases) {
+						const taskId = key.slice(0, key.indexOf("/"))
+						const records = phasesByTask.get(taskId) ?? []
+						records.push(phase)
+						phasesByTask.set(taskId, records)
+					}
+
 					return {
 						root,
 						issues,
@@ -968,6 +989,15 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						taskCount: tasks.size,
 						phaseCount: phases.size,
 						valid: issues.length === 0,
+						...(options.includeDocuments
+							? {
+									documents: {
+										epics: [...epics.values()],
+										tasks: [...tasks.values()],
+										phasesByTask,
+									},
+								}
+							: {}),
 					} satisfies ValidationReport
 				}),
 		}),
