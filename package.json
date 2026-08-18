@@ -73,6 +73,7 @@
     "benchmark:push": "bun scripts/benchmark-push.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
     "benchmark:task": "bun scripts/benchmark-task.ts",
+    "benchmark:validate": "bun scripts/benchmark-validate.ts",
     "benchmark:worktree": "bun scripts/benchmark-worktree.ts",
     "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | xargs -0 -n 1 -P 4 bun test",
     "test:opencode": "AGENCY_TEST_OPENCODE=1 bun test src/cli.test.ts --test-name-pattern 'provides effective whole-workbase OpenCode access'",
