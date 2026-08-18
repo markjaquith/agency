@@ -211,27 +211,34 @@ export const getWorkViews = (options: WorkViewOptions = {}) =>
 			(node): node is ExecutionNode => node.kind === "execution-unit",
 		)
 		const taskOrder = orderedTasks(epics, tasks)
-		const phaseOrder = taskOrder.flatMap((task) => orderedPhases(task, phases))
+		const phasesByTask = new Map(
+			taskOrder.map((task) => [task.key, orderedPhases(task, phases)]),
+		)
+		const phaseOrder = taskOrder.flatMap(
+			(task) => phasesByTask.get(task.key) ?? [],
+		)
+		const executionsByTask = new Map<string, ExecutionNode[]>()
+		const executionsByPhase = new Map<string, ExecutionNode[]>()
+		for (const execution of executions) {
+			const taskExecutions = executionsByTask.get(execution.data.taskId) ?? []
+			taskExecutions.push(execution)
+			executionsByTask.set(execution.data.taskId, taskExecutions)
+			if ("phaseId" in execution.data) {
+				const key = `${execution.data.taskId}/${execution.data.phaseId}`
+				const phaseExecutions = executionsByPhase.get(key) ?? []
+				phaseExecutions.push(execution)
+				executionsByPhase.set(key, phaseExecutions)
+			}
+		}
 		const executionsFor = (node: EntityNode) => {
 			if (node.kind === "phase") {
-				const separator = node.key.indexOf("/")
-				const taskId = node.key.slice(0, separator)
-				const phaseId = node.key.slice(separator + 1)
-				return executions.filter(
-					(execution) =>
-						execution.data.taskId === taskId &&
-						"phaseId" in execution.data &&
-						execution.data.phaseId === phaseId,
-				)
+				return executionsByPhase.get(node.key) ?? []
 			}
 			if (node.kind === "task") {
-				return executions.filter(
-					(execution) => execution.data.taskId === node.key,
-				)
+				return executionsByTask.get(node.key) ?? []
 			}
-			const taskIds = new Set(node.data.tasks.map((item) => item.id))
-			return executions.filter((execution) =>
-				taskIds.has(execution.data.taskId),
+			return node.data.tasks.flatMap(
+				(item) => executionsByTask.get(item.id) ?? [],
 			)
 		}
 		const makeRows = (nodes: readonly EntityNode[]) =>
@@ -257,7 +264,7 @@ export const getWorkViews = (options: WorkViewOptions = {}) =>
 		const phaseRows = filterRows(makeRows(phaseOrder))
 		const executionEntities: EntityNode[] = []
 		for (const task of taskOrder) {
-			const taskPhases = orderedPhases(task, phases)
+			const taskPhases = phasesByTask.get(task.key) ?? []
 			executionEntities.push(...(taskPhases.length > 0 ? taskPhases : [task]))
 		}
 		const executionRows = filterRows(makeRows(executionEntities))

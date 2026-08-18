@@ -520,62 +520,64 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						...Object.keys(config.repositories ?? {}),
 						...local.keys(),
 					])
-					const repositories: RepositoryInfo[] = []
-
-					for (const alias of [...aliases].sort()) {
-						const path = join(reposPath, alias)
-						const entry = local.get(alias)
-						const declaredRemote = config.repositories?.[alias]?.remote ?? null
-						if (!entry) {
-							repositories.push({
-								alias,
-								path,
-								kind: null,
-								remote: null,
-								declaredRemote,
-								target: null,
-								states: ["declared", "missing"],
-							})
-							continue
-						}
-						if (!entry.isDirectory && !entry.isSymlink) {
-							repositories.push({
-								alias,
-								path,
-								kind: null,
-								remote: null,
-								declaredRemote,
-								target: null,
-								states: [
-									...(declaredRemote ? (["declared"] as const) : []),
-									"invalid",
-								],
-							})
-							continue
-						}
-						const target = entry.isSymlink
-							? yield* fs.readSymlinkTarget(path)
-							: null
-						const inspection = yield* backend.inspectRepository(path)
-						const remote = inspection?.remote ?? null
-						const states: RepositoryState[] = []
-						if (declaredRemote) states.push("declared")
-						states.push(entry.isSymlink ? "linked" : "materialized")
-						if (!inspection) states.push("invalid")
-						if (declaredRemote && remote !== declaredRemote)
-							states.push("remote-drifted")
-						repositories.push({
-							alias,
-							path,
-							kind: entry.isSymlink
-								? "symlink"
-								: (inspection?.kind ?? "repository"),
-							remote,
-							declaredRemote,
-							target,
-							states,
-						})
-					}
+					const repositories = yield* Effect.all(
+						[...aliases].sort().map((alias) =>
+							Effect.gen(function* () {
+								const path = join(reposPath, alias)
+								const entry = local.get(alias)
+								const declaredRemote =
+									config.repositories?.[alias]?.remote ?? null
+								if (!entry) {
+									return {
+										alias,
+										path,
+										kind: null,
+										remote: null,
+										declaredRemote,
+										target: null,
+										states: ["declared", "missing"] as RepositoryState[],
+									} satisfies RepositoryInfo
+								}
+								if (!entry.isDirectory && !entry.isSymlink) {
+									return {
+										alias,
+										path,
+										kind: null,
+										remote: null,
+										declaredRemote,
+										target: null,
+										states: [
+											...(declaredRemote ? (["declared"] as const) : []),
+											"invalid",
+										] as RepositoryState[],
+									} satisfies RepositoryInfo
+								}
+								const target = entry.isSymlink
+									? yield* fs.readSymlinkTarget(path)
+									: null
+								const inspection = yield* backend.inspectRepository(path)
+								const remote = inspection?.remote ?? null
+								const states: RepositoryState[] = []
+								if (declaredRemote) states.push("declared")
+								states.push(entry.isSymlink ? "linked" : "materialized")
+								if (!inspection) states.push("invalid")
+								if (declaredRemote && remote !== declaredRemote)
+									states.push("remote-drifted")
+								return {
+									alias,
+									path,
+									kind: entry.isSymlink
+										? "symlink"
+										: (inspection?.kind ?? "repository"),
+									remote,
+									declaredRemote,
+									target,
+									states,
+								} satisfies RepositoryInfo
+							}),
+						),
+						{ concurrency: 4 },
+					)
 					return repositories
 				}),
 
