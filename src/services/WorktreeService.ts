@@ -1089,7 +1089,7 @@ const buildInspectionContext = (
 			if ("phases" in task.data) {
 				const phaseRecords =
 					preloadedPhasesByTask?.get(task.id) ??
-					(yield* phaseService.list(task.id, root))
+					(yield* phaseService.list(task.id, root, true))
 				phasesByTask.set(task.id, phaseRecords)
 				for (const phase of phaseRecords) {
 					addExecution(phase.data, {
@@ -3593,12 +3593,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						})
 					}
 
-					const current = yield* inspectExecution(
-						taskId,
-						phaseId,
-						inspection.root,
-					)
-					if (current.checkouts.some((checkout) => !checkout.exists)) {
+					if (repaired.checkouts.some((checkout) => !checkout.exists)) {
 						const workspace = yield* service
 							.materialize(taskId, phaseId, inspection.root, {
 								...options,

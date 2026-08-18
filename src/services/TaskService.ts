@@ -582,17 +582,25 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 
 		show: (id: string, startPath: string = process.cwd()) =>
 			Effect.gen(function* () {
-				const service = yield* TaskService
+				const fs = yield* FileSystemService
+				const workbase = yield* WorkbaseService
 				const validId = yield* decodeId(id)
-				const record = (yield* service.list(startPath)).find(
-					(task) => task.id === validId,
-				)
-				if (!record) {
+				const root = yield* workbase.discover(startPath)
+				const path = join(root, "tasks", validId, "TASK.md")
+				if (!(yield* fs.exists(path))) {
 					return yield* new TaskError({
 						message: `Task '${validId}' does not exist`,
 					})
 				}
-				return record
+				const content = yield* fs.readFile(path)
+				const parsed = yield* parseFrontmatter(content, path)
+				return {
+					id: validId,
+					path,
+					content,
+					revision: documentRevision(content),
+					data: yield* decodeTask(parsed.data),
+				} satisfies TaskRecord
 			}),
 
 		setStatus: (
