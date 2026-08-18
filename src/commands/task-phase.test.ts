@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import {
 	captureLogs,
 	cleanupTempDir,
@@ -10,6 +10,10 @@ import {
 } from "../test-utils"
 import { phase } from "./phase"
 import { task } from "./task"
+import { FileSystemService } from "../services/FileSystemService"
+import { PhaseService } from "../services/PhaseService"
+import { TaskService } from "../services/TaskService"
+import { WorkbaseService } from "../services/WorkbaseService"
 
 describe("task and phase command JSON output", () => {
 	let root: string
@@ -184,6 +188,45 @@ describe("task and phase command JSON output", () => {
 				status: "open",
 			},
 		})
+	})
+
+	test("shows one phase without reading sibling phase documents", async () => {
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "second"],
+				repo: "agency",
+				branch: "task/second",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const fs = await Effect.runPromise(
+			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+		)
+		const readPaths: string[] = []
+		const countingFs = {
+			...fs,
+			readFile: (path: string) => {
+				readPaths.push(path)
+				return fs.readFile(path)
+			},
+		}
+		const program = PhaseService.pipe(
+			Effect.flatMap((service) => service.show("multi", "second", root)),
+			Effect.provide(PhaseService.Default),
+			Effect.provide(TaskService.Default),
+			Effect.provide(WorkbaseService.Default),
+			Effect.provide(Layer.succeed(FileSystemService, countingFs)),
+		)
+
+		const record = await Effect.runPromise(program)
+
+		expect(record.id).toBe("second")
+		expect(readPaths.filter((path) => path.endsWith("PHASE.md"))).toEqual([
+			join(root, "tasks/multi/phases/second/PHASE.md"),
+		])
 	})
 
 	test("renders task and phase operational tables", async () => {
