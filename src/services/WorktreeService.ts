@@ -284,6 +284,8 @@ interface RemoveOptions extends BaseCommandOptions {
 	readonly lockHeld?: boolean
 	readonly allowReferenceDrift?: boolean
 	readonly persistResume?: boolean
+	readonly task?: TaskRecord
+	readonly phase?: PhaseRecord
 }
 
 interface LifecycleOptions extends BaseCommandOptions {
@@ -1575,14 +1577,14 @@ const removeJj = (
 		const phases = yield* PhaseService
 		const backend = yield* versionControl.forWorkbase(root)
 		const inspection = yield* inspectExecution(taskId, phaseId, root)
-		const task = yield* tasks.show(taskId, root)
+		const task = options.task ?? (yield* tasks.show(taskId, root))
 		const execution =
 			"phases" in task.data && phaseId
-				? (yield* phases.show(taskId, phaseId, root)).data
+				? (options.phase ?? (yield* phases.show(taskId, phaseId, root))).data
 				: task.data
 		const phasePath =
 			"phases" in task.data && phaseId
-				? (yield* phases.show(taskId, phaseId, root)).path
+				? (options.phase ?? (yield* phases.show(taskId, phaseId, root))).path
 				: null
 		const resumePath = jjResumePath(task.path, phasePath)
 		if (yield* fs.exists(resumePath)) {
@@ -2909,7 +2911,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											conflicts: blockingConflicts,
 										})
 									}
-									const task = yield* tasks.show(taskId, root)
+									const task = options.task ?? (yield* tasks.show(taskId, root))
 
 									let execution:
 										| {
@@ -2925,7 +2927,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												message: `Task '${taskId}' has multiple phases; phase ID is required`,
 											})
 										}
-										const phase = yield* phases.show(taskId, phaseId, root)
+										const phase =
+											options.phase ??
+											(yield* phases.show(taskId, phaseId, root))
 										execution = phase.data
 										codePath = join(dirname(phase.path), "code")
 									} else {

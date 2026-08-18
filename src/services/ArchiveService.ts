@@ -887,7 +887,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							})
 							continue
 						}
+					}
 
+					for (const context of contexts.values()) {
+						if (skipped.has(context.task.id)) continue
 						const removed: string[] = []
 						let preflightFailure: unknown
 						for (const unit of context.executionUnits) {
@@ -895,6 +898,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 								.remove(unit.taskId, executionPhaseId(unit), root, {
 									dryRun: true,
 									persistResume: false,
+									task: context.task,
+									phase: unit.phaseId
+										? context.phases.find((phase) => phase.id === unit.phaseId)
+										: undefined,
 								})
 								.pipe(Effect.either)
 							if (Either.isLeft(result)) {
@@ -943,13 +950,13 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 										"dirty" in conflict &&
 										conflict.dirty === true,
 								)
-							skipped.set(task.id, {
+							skipped.set(context.task.id, {
 								code: dirty ? "dirty-worktree" : "checkout-preflight-failed",
 								details: [message],
 							})
 							continue
 						}
-						removedByTask.set(task.id, [...new Set(removed)].sort())
+						removedByTask.set(context.task.id, [...new Set(removed)].sort())
 					}
 
 					const cohort = new Set(
@@ -1069,6 +1076,14 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 													snapshots,
 													lockHeld: true,
 													persistResume: false,
+													task: contexts.get(unit.taskId)!.task,
+													phase: unit.phaseId
+														? contexts
+																.get(unit.taskId)!
+																.phases.find(
+																	(phase) => phase.id === unit.phaseId,
+																)
+														: undefined,
 												}),
 											)
 										}
