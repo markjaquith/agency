@@ -10,10 +10,7 @@ import {
 	writeFile,
 } from "node:fs/promises"
 import { basename, dirname, join, relative } from "node:path"
-import { PhaseService } from "./PhaseService"
-import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
-import { FileSystemService } from "./FileSystemService"
 import {
 	documentRevision,
 	isDocumentRevision,
@@ -64,6 +61,47 @@ interface ClaimTarget {
 	readonly phaseId?: string
 	readonly path: string
 	readonly label: string
+}
+
+const resolveTarget = async (
+	root: string,
+	taskId: string,
+	phaseId?: string,
+): Promise<ClaimTarget> => {
+	const taskPath = join(root, "tasks", taskId, "TASK.md")
+	const path = phaseId
+		? join(root, "tasks", taskId, "phases", phaseId, "PHASE.md")
+		: taskPath
+	try {
+		await stat(taskPath)
+	} catch {
+		throw new ClaimError({ message: `Task '${taskId}' does not exist` })
+	}
+	if (phaseId) {
+		try {
+			await stat(path)
+		} catch {
+			throw new ClaimError({
+				message: `Phase '${phaseId}' does not exist on task '${taskId}'`,
+			})
+		}
+	}
+	return phaseId
+		? {
+				kind: "phase",
+				root,
+				taskId,
+				phaseId,
+				path,
+				label: `phase '${taskId}/${phaseId}'`,
+			}
+		: {
+				kind: "task",
+				root,
+				taskId,
+				path,
+				label: `task '${taskId}'`,
+			}
 }
 
 interface ClaimInput {
@@ -276,43 +314,24 @@ export class ClaimService extends Effect.Service<ClaimService>()(
 				startPath: string = process.cwd(),
 			) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
-					const tasks = yield* TaskService
-					const phases = yield* PhaseService
 					const root = yield* workbase.discover(startPath)
-					const task = yield* tasks.show(taskId, root)
-					const phase = phaseId
-						? yield* phases.show(task.id, phaseId, root)
-						: undefined
-					const target: ClaimTarget = phaseId
-						? {
-								kind: "phase",
-								root,
-								taskId: task.id,
-								phaseId,
-								path: phase!.path,
-								label: `phase '${task.id}/${phaseId}'`,
-							}
-						: {
-								kind: "task",
-								root,
-								taskId: task.id,
-								path: task.path,
-								label: `task '${task.id}'`,
-							}
-					if (!phaseId && "phases" in task.data) {
+					const target = yield* operation(() =>
+						resolveTarget(root, taskId, phaseId),
+					)
+					const content = yield* operation(() => readFile(target.path, "utf8"))
+					const parsed = parseFrontmatterSync(content, target.path)
+					const data = decodeExecution(target, parsed.data)
+					if (!phaseId && "phases" in data) {
 						return yield* new ClaimError({
 							target: target.label,
-							message: `Task '${task.id}' has multiple phases; claim a phase instead`,
+							message: `Task '${taskId}' has multiple phases; claim a phase instead`,
 						})
 					}
-					const content = yield* fs.readFile(target.path)
-					const parsed = parseFrontmatterSync(content, target.path)
 					return {
 						target,
 						revision: documentRevision(content),
-						data: decodeExecution(target, parsed.data),
+						data,
 					}
 				}),
 

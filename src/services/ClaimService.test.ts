@@ -234,6 +234,38 @@ describe("claim service", () => {
 		)
 	})
 
+	test("inspects a task without parsing unrelated task documents", async () => {
+		await mkdir(join(root, "tasks/broken"), { recursive: true })
+		await Bun.write(join(root, "tasks/broken/TASK.md"), "not frontmatter\n")
+
+		const inspected = await inspect()
+		expect(inspected.target.path).toBe(join(root, "tasks/single/TASK.md"))
+		expect(inspected.data).toMatchObject({ branch: "task/single" })
+	})
+
+	test("inspects a phase without parsing unrelated phase documents", async () => {
+		await mkdir(join(root, "tasks/phased/phases/target"), { recursive: true })
+		await mkdir(join(root, "tasks/phased/phases/broken"), { recursive: true })
+		await Bun.write(
+			join(root, "tasks/phased/TASK.md"),
+			"---\nticketUrl: null\nphases:\n  - id: target\n  - id: broken\nstatus: working\n---\n",
+		)
+		await Bun.write(
+			join(root, "tasks/phased/phases/target/PHASE.md"),
+			"---\nrepo: agency\nbranch: phase/target\nbase: main\npr: null\nstatus: open\n---\n",
+		)
+		await Bun.write(
+			join(root, "tasks/phased/phases/broken/PHASE.md"),
+			"not frontmatter\n",
+		)
+
+		const inspected = await inspect("phased", "target")
+		expect(inspected.target.path).toBe(
+			join(root, "tasks/phased/phases/target/PHASE.md"),
+		)
+		expect(inspected.data).toMatchObject({ branch: "phase/target" })
+	})
+
 	test("serializes concurrent claims and allows expired ownership replacement", async () => {
 		const initial = await inspect()
 		const attempts = await Promise.allSettled([
