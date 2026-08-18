@@ -298,22 +298,28 @@ export class GraphService extends Effect.Service<GraphService>()(
 					}
 					const taskDependencies = (taskId: string) =>
 						taskDeclarations.get(taskId)?.dependsOn ?? []
+					const taskLeafStatusCache = new Map<string, WorkStatus[]>()
 					const taskLeafStatuses = (taskId: string): WorkStatus[] => {
+						const cached = taskLeafStatusCache.get(taskId)
+						if (cached) return cached
 						const task = tasks.get(taskId)
 						if (!task) return []
-						return "phases" in task.data
-							? task.data.phases.map(
-									(item) =>
-										phases.get(`${taskId}/${item.id}`)?.data.status ?? "open",
-								)
-							: [task.data.status]
+						const statuses =
+							"phases" in task.data
+								? task.data.phases.map(
+										(item) =>
+											phases.get(`${taskId}/${item.id}`)?.data.status ?? "open",
+									)
+								: [task.data.status]
+						taskLeafStatusCache.set(taskId, statuses)
+						return statuses
 					}
-					const taskStatuses = new Map<string, WorkStatus>()
+					const taskStatusCache = new Map<string, WorkStatus>()
 					const taskStatus = (taskId: string) => {
-						const cached = taskStatuses.get(taskId)
+						const cached = taskStatusCache.get(taskId)
 						if (cached) return cached
 						const status = aggregateProgress(taskLeafStatuses(taskId)).status
-						taskStatuses.set(taskId, status)
+						taskStatusCache.set(taskId, status)
 						return status
 					}
 					const dependencyBlockers = (

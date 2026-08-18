@@ -24,23 +24,27 @@ export const canTransitionStatus = (from: WorkStatus, to: WorkStatus) =>
 export const aggregateProgress = (statuses: readonly WorkStatus[]) => {
 	const counts = {
 		total: statuses.length,
-		open: statuses.filter((status) => status === "open").length,
-		working: statuses.filter((status) => status === "working").length,
-		delegated: statuses.filter((status) => status === "delegated").length,
-		done: statuses.filter((status) => status === "done").length,
-		dropped: statuses.filter((status) => status === "dropped").length,
-		terminal: statuses.filter(isTerminalStatus).length,
+		open: 0,
+		working: 0,
+		delegated: 0,
+		done: 0,
+		dropped: 0,
+		terminal: 0,
+	}
+	for (const status of statuses) {
+		counts[status] += 1
+		if (isTerminalStatus(status)) counts.terminal += 1
 	}
 	const status: WorkStatus =
-		statuses.length === 0
+		counts.total === 0
 			? "open"
-			: statuses.every((value) => value === "done")
+			: counts.done === counts.total
 				? "done"
-				: statuses.every(isTerminalStatus)
+				: counts.terminal === counts.total
 					? "dropped"
-					: statuses.includes("working")
+					: counts.working > 0
 						? "working"
-						: statuses.includes("delegated")
+						: counts.delegated > 0
 							? "delegated"
 							: "open"
 	return { status, ...counts }
