@@ -68,6 +68,7 @@
     "benchmark:workbase": "bun scripts/benchmark-workbase.ts",
     "benchmark:doctor": "bun scripts/benchmark-doctor.ts",
     "benchmark:context": "bun scripts/benchmark-context.ts",
+    "benchmark:finish": "bun scripts/benchmark-finish.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
     "benchmark:task": "bun scripts/benchmark-task.ts",
     "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | xargs -0 -n 1 -P 4 bun test",
