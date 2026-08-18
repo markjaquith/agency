@@ -64,6 +64,7 @@
   "scripts": {
     "postinstall": "bun scripts/install-pi-extension.ts install",
     "preuninstall": "bun scripts/install-pi-extension.ts uninstall",
+    "benchmark:act": "bun scripts/benchmark-act.ts",
     "benchmark:pr": "bun scripts/benchmark-pr.ts",
     "benchmark:status": "bun scripts/benchmark-status.ts",
     "benchmark:init": "bun scripts/benchmark-init.ts",

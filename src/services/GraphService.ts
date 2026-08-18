@@ -30,6 +30,7 @@ import {
 	type EpicFrontmatter as EpicData,
 	type PhaseFrontmatter as PhaseData,
 	type TaskFrontmatter as TaskData,
+	type WorkbaseConfig as WorkbaseConfigData,
 	type WorkStatus,
 } from "../workbase/schemas"
 import { FileSystemService } from "./FileSystemService"
@@ -65,6 +66,10 @@ type ExecutionData =
 
 export interface GraphOptions {
 	readonly cwd?: string
+	readonly loadedConfig?: {
+		readonly root: string
+		readonly config: WorkbaseConfigData
+	}
 	readonly validation?: ValidationReport
 	readonly ready?: boolean
 	readonly blocked?: boolean
@@ -131,14 +136,16 @@ export class GraphService extends Effect.Service<GraphService>()(
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
-					const { root, config } = yield* workbase.loadConfig(options.cwd)
-					const backend =
-						options.backend ??
-						(yield* VersionControlService.pipe(
-							Effect.flatMap((service) => service.forWorkbase(root)),
-						))
+					const { root, config } =
+						options.loadedConfig ?? (yield* workbase.loadConfig(options.cwd))
 					const includes = [...new Set(options.include ?? [])].sort()
 					const include = new Set(includes)
+					const backend = include.has("git")
+						? (options.backend ??
+							(yield* VersionControlService.pipe(
+								Effect.flatMap((service) => service.forWorkbase(root)),
+							)))
+						: options.backend
 					const epics = new Map<string, Document<EpicData>>()
 					const tasks = new Map<string, Document<TaskData>>()
 					const phases = new Map<string, Document<PhaseData>>()
@@ -681,6 +688,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 
 					const inspectGit = (path: string) =>
 						Effect.gen(function* () {
+							if (!backend) return undefined
 							const inspection = yield* backend.inspectRepository(path)
 							const workspaces = inspection
 								? yield* backend
@@ -718,6 +726,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 								}
 							}
 							if (include.has("git")) {
+								if (!backend) return result
 								const remote = yield* backend.remoteUrl(
 									repositoryPath,
 									"origin",

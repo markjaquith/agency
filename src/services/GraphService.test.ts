@@ -6,6 +6,7 @@ import { dirname, join } from "node:path"
 import { AgencyGraph } from "../graph-schema"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { GraphService } from "./GraphService"
+import { VersionControlService } from "./VersionControlService"
 
 const write = async (root: string, path: string, content: string) => {
 	const fullPath = join(root, path)
@@ -202,6 +203,27 @@ describe("GraphService", () => {
 			terminal: 1,
 		})
 		expect(await getGraph(root)).toEqual(graph)
+	})
+
+	test("does not resolve a VCS backend when git details are not requested", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		let calls = 0
+		const graph = await runTestEffect(
+			GraphService.pipe(
+				Effect.flatMap((service) => service.get({ cwd: root })),
+				Effect.provideService(VersionControlService, {
+					_tag: "VersionControlService",
+					forWorkbase: () => {
+						calls += 1
+						throw new Error("unexpected VCS lookup")
+					},
+				}),
+			),
+		)
+
+		expect(graph.nodes.length).toBeGreaterThan(0)
+		expect(calls).toBe(0)
 	})
 
 	test("never reports claimed or terminal execution units as ready", async () => {
