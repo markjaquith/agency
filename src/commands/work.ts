@@ -237,6 +237,7 @@ export const work = (
 			if (!target) return
 		}
 		yield* readiness.guardWorkTarget(targetNodeId(target), root, options.force)
+		const validationAlreadyPerformed = !options.force
 
 		const continuing =
 			target.kind !== "epic" &&
@@ -257,7 +258,10 @@ export const work = (
 			const phaseId = target.kind === "phase" ? target.phaseId : undefined
 			progress.start("Preparing workspace...")
 			const workspace = yield* worktrees
-				.materialize(taskId, phaseId, root, options)
+				.materialize(taskId, phaseId, root, {
+					...options,
+					validationAlreadyPerformed,
+				})
 				.pipe(
 					Effect.tap(() =>
 						Effect.sync(() => progress.succeed("Workspace ready")),
