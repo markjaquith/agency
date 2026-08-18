@@ -111,31 +111,24 @@ const activeClaim = (node: EntityNode) =>
 
 const executionNode = (
 	node: EntityNode,
-	nodes: readonly GraphNode[],
+	executions: ReadonlyMap<
+		string,
+		Extract<GraphNode, { readonly kind: "execution-unit" }>
+	>,
 ): Extract<GraphNode, { readonly kind: "execution-unit" }> | undefined => {
 	if (node.kind === "epic") return undefined
 	if (node.kind === "task" && "phases" in node.data) return undefined
-	const phaseId =
-		node.kind === "phase"
-			? node.key.slice(node.key.indexOf("/") + 1)
-			: undefined
-	return nodes.find(
-		(
-			candidate,
-		): candidate is Extract<GraphNode, { readonly kind: "execution-unit" }> =>
-			candidate.kind === "execution-unit" &&
-			candidate.data.taskId ===
-				(node.kind === "task" ? node.key : node.key.split("/", 1)[0]) &&
-			(node.kind === "task" ||
-				("phaseId" in candidate.data && candidate.data.phaseId === phaseId)),
-	)
+	return executions.get(node.id)
 }
 
-const canWork = (node: EntityNode, nodes: readonly GraphNode[]) => {
+const canWork = (
+	node: EntityNode,
+	executions: Parameters<typeof executionNode>[1],
+) => {
 	if (node.kind === "epic" || (node.kind === "task" && "phases" in node.data)) {
 		return node.readiness.ready
 	}
-	const execution = executionNode(node, nodes)
+	const execution = executionNode(node, executions)
 	return Boolean(
 		execution &&
 		!activeClaim(node) &&
@@ -147,8 +140,11 @@ const canWork = (node: EntityNode, nodes: readonly GraphNode[]) => {
 	)
 }
 
-const canCreatePr = (node: EntityNode, nodes: readonly GraphNode[]) => {
-	const execution = executionNode(node, nodes)
+const canCreatePr = (
+	node: EntityNode,
+	executions: Parameters<typeof executionNode>[1],
+) => {
+	const execution = executionNode(node, executions)
 	return Boolean(
 		execution &&
 		!execution.readiness.terminal &&
@@ -162,14 +158,14 @@ const canCreatePr = (node: EntityNode, nodes: readonly GraphNode[]) => {
 
 const actionChoices = (
 	node: EntityNode,
-	nodes: readonly GraphNode[],
+	executions: Parameters<typeof executionNode>[1],
 ): readonly Choice<ActAction>[] => {
 	const choices: Choice<ActAction>[] = []
-	const execution = executionNode(node, nodes)
-	if (canWork(node, nodes)) {
+	const execution = executionNode(node, executions)
+	if (canWork(node, executions)) {
 		choices.push({ key: "work", label: "Work on this item", value: "work" })
 	}
-	if (canCreatePr(node, nodes)) {
+	if (canCreatePr(node, executions)) {
 		choices.push({ key: "pr", label: "Create pull request", value: "pr" })
 	}
 	if (execution && isTerminalStatus(node.status) && !activeClaim(node)) {
@@ -243,7 +239,7 @@ const shellCommand = (command: readonly string[]) =>
 
 const targetOutput = (
 	node: EntityNode,
-	nodes: readonly GraphNode[],
+	executions: Parameters<typeof executionNode>[1],
 	options: Pick<ActOptions, "auto" | "draft">,
 ) => ({
 	kind: node.kind,
@@ -252,12 +248,28 @@ const targetOutput = (
 	status: node.status,
 	readiness: node.readiness,
 	revision: node.data.sha256,
-	actions: actionChoices(node, nodes).map((choice) => ({
+	actions: actionChoices(node, executions).map((choice) => ({
 		id: choice.value,
 		label: choice.label,
 		command: actionCommand(node, choice.value, options),
 	})),
 })
+
+const executionNodes = (nodes: readonly GraphNode[]) => {
+	const executions = new Map<
+		string,
+		Extract<GraphNode, { readonly kind: "execution-unit" }>
+	>()
+	for (const node of nodes) {
+		if (node.kind !== "execution-unit") continue
+		const key =
+			"phaseId" in node.data
+				? `phase:${node.data.taskId}/${node.data.phaseId}`
+				: `task:${node.data.taskId}`
+		executions.set(key, node)
+	}
+	return executions
+}
 
 const selectedEntityKey = (options: ActOptions) =>
 	options.epicId
@@ -321,7 +333,11 @@ export const act = (
 			: false
 		const startPath = isDirectory && directoryPath ? directoryPath : cwd
 		const { root, config } = yield* workbase.loadConfig(startPath)
-		const graph = yield* graphs.get({ cwd: root })
+		const graph = yield* graphs.get({
+			cwd: root,
+			loadedConfig: { root, config },
+		})
+		const executions = executionNodes(graph.nodes)
 		const nodes = graph.nodes.filter(
 			(node): node is EntityNode =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
@@ -352,7 +368,7 @@ export const act = (
 				JSON.stringify(
 					{
 						targets: matchingNodes.map((node) =>
-							targetOutput(node, graph.nodes, options),
+							targetOutput(node, executions, options),
 						),
 					},
 					null,
@@ -363,7 +379,7 @@ export const act = (
 		}
 
 		const selectableNodes = nodes.filter(
-			(node) => actionChoices(node, graph.nodes).length > 0,
+			(node) => actionChoices(node, executions).length > 0,
 		)
 		if (!requestedKey && selectableNodes.length === 0) {
 			return yield* Effect.fail(
@@ -386,7 +402,7 @@ export const act = (
 				new Error("Selected work item is no longer available"),
 			)
 		}
-		const offeredActions = actionChoices(selected, graph.nodes)
+		const offeredActions = actionChoices(selected, executions)
 		if (offeredActions.length === 0) {
 			return yield* Effect.fail(
 				new Error(
@@ -402,6 +418,7 @@ export const act = (
 		if (action === null) return
 
 		const refreshed = yield* graphs.get({ cwd })
+		const refreshedExecutions = executionNodes(refreshed.nodes)
 		const current = refreshed.nodes.find(
 			(node): node is EntityNode =>
 				(node.kind === "epic" ||
@@ -418,7 +435,7 @@ export const act = (
 		}
 		if (
 			current.data.sha256 !== selected.data.sha256 ||
-			!sameActions(offeredActions, actionChoices(current, refreshed.nodes))
+			!sameActions(offeredActions, actionChoices(current, refreshedExecutions))
 		) {
 			return yield* Effect.fail(
 				new Error("Selected work item changed; run agency act again"),
