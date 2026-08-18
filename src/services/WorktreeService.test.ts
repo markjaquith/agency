@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { chmod, mkdir, realpath, rename, rm, stat } from "node:fs/promises"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import {
 	captureErrors,
 	cleanupTempDir,
@@ -21,6 +21,21 @@ const git = async (args: string[], cwd?: string) => {
 	await process.exited
 	if (process.exitCode !== 0)
 		throw new Error(await new Response(process.stderr).text())
+}
+
+const gitOutput = async (args: string[], cwd?: string) => {
+	const process = Bun.spawn(["git", ...args], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	const [exitCode, stdout, stderr] = await Promise.all([
+		process.exited,
+		new Response(process.stdout).text(),
+		new Response(process.stderr).text(),
+	])
+	if (exitCode !== 0) throw new Error(stderr)
+	return stdout.trim()
 }
 
 const jj = async (args: string[], cwd?: string) => {
@@ -117,6 +132,63 @@ describe("WorktreeService", () => {
 			{ stdout: "pipe" },
 		)
 		expect(new TextDecoder().decode(branch.stdout).trim()).toBe("task/example")
+		for (const checkout of [
+			workspace.writablePath!,
+			join(workspace.codePath, "effect"),
+		]) {
+			await Bun.write(join(checkout, ".worktree.lock"), "")
+			expect(await gitOutput(["status", "--porcelain"], checkout)).toBe("")
+		}
+	})
+
+	test("reconciles local worktree excludes without overwriting user entries", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "existing-ignore",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/existing-ignore",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const first = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("existing-ignore", undefined, root),
+				),
+			),
+		)
+		const checkout = first.writablePath!
+		const excludePath = resolve(
+			checkout,
+			await gitOutput(["rev-parse", "--git-path", "info/exclude"], checkout),
+		)
+		await Bun.write(excludePath, "user-entry")
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("existing-ignore", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("existing-ignore", undefined, root),
+				),
+			),
+		)
+		const excludes = await Bun.file(excludePath).text()
+		expect(excludes).toBe("user-entry\n/.worktree.lock\n")
+		expect(excludes.match(/^\/\.worktree\.lock$/gm)).toHaveLength(1)
 	})
 
 	test("runs repository hooks for new writable and reference checkouts", async () => {
@@ -2720,5 +2792,14 @@ pr: null
 		expect(
 			await Bun.file(join(workspace.writablePath!, "README.md")).text(),
 		).toBe("example\n")
+		expect(
+			await gitOutput(["status", "--porcelain"], workspace.writablePath!),
+		).toBe("")
+		expect(
+			await gitOutput(
+				["check-ignore", "--no-index", ".worktree.lock"],
+				workspace.writablePath!,
+			),
+		).toBe(".worktree.lock")
 	})
 })

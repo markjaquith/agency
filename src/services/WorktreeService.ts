@@ -80,6 +80,8 @@ interface GitWorktree {
 	readonly branch?: string
 }
 
+const managedWorktreeIgnorePatterns = ["/.worktree.lock"] as const
+
 interface WorktreeOwner {
 	readonly kind: "task" | "phase"
 	readonly taskId: string
@@ -2325,6 +2327,42 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								const registeredAtPath = worktrees.find(
 									(worktree) => worktree.path === canonicalCheckoutPath,
 								)
+								const reconcileManagedWorktreeIgnores = (path: string) =>
+									Effect.gen(function* () {
+										const resolved = yield* fs.runCommand(
+											[
+												"git",
+												"-C",
+												path,
+												"rev-parse",
+												"--git-path",
+												"info/exclude",
+											],
+											{ captureOutput: true },
+										)
+										if (resolved.exitCode !== 0) {
+											return yield* new WorktreeError({
+												message: `Failed to locate local excludes for ${path}: ${resolved.stderr}`,
+											})
+										}
+										const excludePath = resolve(path, resolved.stdout.trim())
+										const existing = (yield* fs.exists(excludePath))
+											? yield* fs.readFile(excludePath)
+											: ""
+										const existingLines = new Set(existing.split(/\r?\n/))
+										const missing = managedWorktreeIgnorePatterns.filter(
+											(pattern) => !existingLines.has(pattern),
+										)
+										if (missing.length === 0) return
+										const prefix =
+											existing.length > 0 && !existing.endsWith("\n")
+												? "\n"
+												: ""
+										yield* fs.writeFile(
+											excludePath,
+											`${existing}${prefix}${missing.join("\n")}\n`,
+										)
+									})
 
 								if ("branch" in checkout) {
 									const branchRef = `refs/heads/${checkout.branch}`
@@ -2341,6 +2379,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									}
 									if (yield* fs.isDirectory(checkoutPath)) {
 										if (registeredAtPath?.branch === branchRef) {
+											if (!options.dryRun) {
+												yield* reconcileManagedWorktreeIgnores(checkoutPath)
+											}
 											checkoutReports.push({
 												repo: alias,
 												kind: "writable",
@@ -2545,6 +2586,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											message: `Created worktree for '${alias}' failed validation for branch '${checkout.branch}'`,
 										})
 									}
+									yield* reconcileManagedWorktreeIgnores(checkoutPath)
 									yield* runPostCheckoutHook({
 										command: config.repositories?.[alias]?.postCheckoutCommand,
 										variables: {
@@ -2620,6 +2662,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											currentHead.exitCode === 0 &&
 											currentHead.stdout.trim() === commit
 										) {
+											if (!options.dryRun) {
+												yield* reconcileManagedWorktreeIgnores(checkoutPath)
+											}
 											checkoutReports.push({
 												repo: alias,
 												kind: "reference",
@@ -2709,6 +2754,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											message: `Created reference checkout for '${alias}' failed validation for '${checkout.ref}'`,
 										})
 									}
+									yield* reconcileManagedWorktreeIgnores(checkoutPath)
 									yield* runPostCheckoutHook({
 										command: config.repositories?.[alias]?.postCheckoutCommand,
 										variables: {

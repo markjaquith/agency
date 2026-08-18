@@ -269,6 +269,11 @@ Custom commands own writable branch creation. Agency checks for conflicting
 worktrees first, invokes the command only when the branch is not checked out,
 and verifies that `{worktree}` exists afterward.
 
+Agency also reconciles known tool-owned artifacts such as Worktrunk's
+`.worktree.lock` into each managed worktree's local Git exclude file. This keeps
+new and existing managed worktrees clean without changing the repository's
+tracked ignore configuration or overwriting user-maintained local excludes.
+
 The configured command applies only to the writable checkout of a Git workbase.
 Supplemental read-only repositories remain detached Git worktrees at their
 declared refs so they do not acquire writable branches. Jj workbases always use
