@@ -258,6 +258,18 @@ const createHarness = (options: HarnessOptions = {}) => {
 				],
 			})
 		},
+		syncRoot: () => {
+			integrationSyncs += 1
+			return Effect.succeed({
+				root: "/workbase",
+				files: [
+					{
+						name: "opencode",
+						state: "managed",
+					},
+				],
+			})
+		},
 	}
 	const fs = {
 		isDirectory: (path: string) =>

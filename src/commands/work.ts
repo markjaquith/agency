@@ -130,7 +130,7 @@ export const work = (
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
 		if (!root) return
-		yield* integrations.sync(root)
+		yield* integrations.syncRoot(root)
 		const { config } = yield* workbase.loadConfig(root)
 		const globalConfig = yield* workbase.loadGlobalConfig()
 

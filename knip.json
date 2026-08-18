@@ -19,6 +19,7 @@
     "scripts/benchmark-graph.ts",
     "scripts/benchmark-init.ts",
     "scripts/benchmark-next.ts",
+    "scripts/benchmark-integration.ts",
     "scripts/benchmark-sync.ts",
     "scripts/benchmark-task.ts",
     "scripts/benchmark-validate.ts",

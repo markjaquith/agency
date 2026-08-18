@@ -202,35 +202,54 @@ const inspect = (root: string) =>
 			"agency-repository-skills.ts",
 		)
 		const tuiPluginPath = join(opencodeDirectory, "tui", "agency-debug.ts")
+		const [
+			agents,
+			opencode,
+			opencodeJson,
+			plugin,
+			legacyPlugin,
+			tui,
+			tuiJson,
+			tuiPlugin,
+		] = yield* Effect.all(
+			[
+				fs.inspectFile(agentsPath),
+				fs.inspectFile(opencodePath),
+				fs.inspectFile(opencodeJsonPath),
+				fs.inspectFile(pluginPath),
+				fs.inspectFile(legacyPluginPath),
+				fs.inspectFile(tuiPath),
+				fs.inspectFile(tuiJsonPath),
+				fs.inspectFile(tuiPluginPath),
+			] as const,
+			{ concurrency: 8 },
+		)
 		const files: IntegrationFileStatus[] = []
 
 		files.push(
-			(yield* fs.readSymlinkTarget(agentsPath)) !== null
+			agents.kind === "symlink"
 				? fileStatus("agents", agentsPath, "customized")
-				: (yield* fs.exists(agentsPath))
+				: agents.kind === "file"
 					? classify(
 							"agents",
 							agentsPath,
-							yield* fs.readFile(agentsPath),
+							agents.content,
 							managedWorkbaseAgents,
 							canUpdateManagedWorkbaseAgents,
 						)
 					: fileStatus("agents", agentsPath, "missing"),
 		)
 
-		if ((yield* fs.readSymlinkTarget(opencodePath)) !== null) {
+		if (opencode.kind === "symlink") {
 			files.push(fileStatus("opencode", opencodePath, "customized"))
-		} else if (
-			(yield* fs.readSymlinkTarget(opencodeJsonPath)) !== null ||
-			(yield* fs.exists(opencodeJsonPath))
-		) {
+		} else if (opencodeJson.kind !== "missing") {
 			files.push(fileStatus("opencode", opencodeJsonPath, "customized"))
-		} else if (yield* fs.exists(opencodePath)) {
+		} else if (opencode.kind === "file") {
 			files.push(
 				classify(
 					"opencode",
 					opencodePath,
-					yield* fs.readFile(opencodePath),
+					opencode.content,
 					managedWorkbaseOpencode,
 					canUpdateManagedWorkbaseOpencode,
 				),
@@ -239,26 +258,21 @@ const inspect = (root: string) =>
 			files.push(fileStatus("opencode", opencodePath, "missing"))
 		}
 
-		if ((yield* fs.readSymlinkTarget(pluginPath)) !== null) {
+		if (plugin.kind === "symlink") {
 			files.push(fileStatus("opencode-plugin", pluginPath, "customized"))
-		} else if (yield* fs.exists(pluginPath)) {
+		} else if (plugin.kind === "file") {
 			files.push(
 				classify(
 					"opencode-plugin",
 					pluginPath,
-					yield* fs.readFile(pluginPath),
+					plugin.content,
 					managedWorkbaseOpencodePlugin,
 					canUpdateManagedWorkbaseOpencodePlugin,
 				),
 			)
-		} else if (
-			(yield* fs.readSymlinkTarget(legacyPluginPath)) !== null ||
-			(yield* fs.exists(legacyPluginPath))
-		) {
+		} else if (legacyPlugin.kind !== "missing") {
 			const legacyContent =
-				(yield* fs.readSymlinkTarget(legacyPluginPath)) === null
-					? yield* fs.readFile(legacyPluginPath)
-					: null
+				legacyPlugin.kind === "file" ? legacyPlugin.content : null
 			files.push(
 				legacyContent !== null &&
 					canUpdateManagedWorkbaseOpencodePlugin(legacyContent)
@@ -269,19 +283,16 @@ const inspect = (root: string) =>
 			files.push(fileStatus("opencode-plugin", pluginPath, "missing"))
 		}
 
-		if ((yield* fs.readSymlinkTarget(tuiPath)) !== null) {
+		if (tui.kind === "symlink") {
 			files.push(fileStatus("opencode-tui", tuiPath, "customized"))
-		} else if (
-			(yield* fs.readSymlinkTarget(tuiJsonPath)) !== null ||
-			(yield* fs.exists(tuiJsonPath))
-		) {
+		} else if (tuiJson.kind !== "missing") {
 			files.push(fileStatus("opencode-tui", tuiJsonPath, "customized"))
-		} else if (yield* fs.exists(tuiPath)) {
+		} else if (tui.kind === "file") {
 			files.push(
 				classify(
 					"opencode-tui",
 					tuiPath,
-					yield* fs.readFile(tuiPath),
+					tui.content,
 					managedWorkbaseOpencodeTui,
 					canUpdateManagedWorkbaseOpencodeTui,
 				),
@@ -290,14 +301,14 @@ const inspect = (root: string) =>
 			files.push(fileStatus("opencode-tui", tuiPath, "missing"))
 		}
 
-		if ((yield* fs.readSymlinkTarget(tuiPluginPath)) !== null) {
+		if (tuiPlugin.kind === "symlink") {
 			files.push(fileStatus("opencode-tui-plugin", tuiPluginPath, "customized"))
-		} else if (yield* fs.exists(tuiPluginPath)) {
+		} else if (tuiPlugin.kind === "file") {
 			files.push(
 				classify(
 					"opencode-tui-plugin",
 					tuiPluginPath,
-					yield* fs.readFile(tuiPluginPath),
+					tuiPlugin.content,
 					managedWorkbaseOpencodeTuiPlugin,
 					canUpdateManagedWorkbaseOpencodeTuiPlugin,
 				),
@@ -306,55 +317,31 @@ const inspect = (root: string) =>
 			files.push(fileStatus("opencode-tui-plugin", tuiPluginPath, "missing"))
 		}
 
-		return files
+		return { files, legacyPlugin }
 	})
 
 const canRemoveLegacyAgents = (root: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const path = join(root, "AGENTS.md")
-		if (
-			(yield* fs.readSymlinkTarget(path)) !== null ||
-			!(yield* fs.exists(path))
-		)
-			return false
-		return canUpdateManagedWorkbaseAgents(yield* fs.readFile(path))
+		const file = yield* fs.inspectFile(path)
+		return file.kind === "file" && canUpdateManagedWorkbaseAgents(file.content)
 	})
 
 const canRemoveLegacyOpencodeCommand = (root: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
 		const path = join(root, ".opencode", "command", "agency.md")
-		if (
-			(yield* fs.readSymlinkTarget(path)) !== null ||
-			!(yield* fs.exists(path))
-		)
-			return false
+		const file = yield* fs.inspectFile(path)
+		if (file.kind !== "file") return false
 
-		const content = yield* fs.readFile(path)
+		const content = file.content
 		const header = /^---\r?\n# agency-managed: sha256=([a-f0-9]{64})\r?\n/
 		const match = content.match(header)
 		if (!match?.[1]) return false
 
 		const canonical = content.replace(header, "---\n")
 		return createHash("sha256").update(canonical).digest("hex") === match[1]
-	})
-
-const canRemoveLegacyOpencodePlugin = (root: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const path = join(
-			root,
-			".opencode",
-			"plugin",
-			"agency-repository-skills.ts",
-		)
-		if (
-			(yield* fs.readSymlinkTarget(path)) !== null ||
-			!(yield* fs.exists(path))
-		)
-			return false
-		return canUpdateManagedWorkbaseOpencodePlugin(yield* fs.readFile(path))
 	})
 
 export class IntegrationService extends Effect.Service<IntegrationService>()(
@@ -365,34 +352,59 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
 					const root = yield* workbase.discover(startPath)
-					return { root, files: yield* inspect(root) }
+					return { root, files: (yield* inspect(root)).files }
 				}),
+
+			statusRoot: (root: string) =>
+				inspect(root).pipe(Effect.map(({ files }) => ({ root, files }))),
 
 			sync: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
 					const root = yield* workbase.discover(startPath)
-					const statuses = yield* inspect(root)
-					const removeLegacyAgents =
-						statuses.some(
-							(status) =>
-								status.name === "opencode" && status.state !== "customized",
-						) && (yield* canRemoveLegacyAgents(root))
-					const removeLegacyOpencodeCommand =
-						yield* canRemoveLegacyOpencodeCommand(root)
-					const removeLegacyOpencodePlugin =
-						yield* canRemoveLegacyOpencodePlugin(root)
+					const service = yield* IntegrationService
+					return yield* service.syncRoot(root)
+				}),
+
+			syncRoot: (root: string) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const { files: statuses, legacyPlugin } = yield* inspect(root)
 					const legacyPiExtension = join(
 						root,
 						".pi",
 						"extensions",
 						"agency-workbase.ts",
 					)
-					const removeLegacyPiExtension =
-						(yield* fs.readSymlinkTarget(legacyPiExtension)) === null &&
-						(yield* fs.exists(legacyPiExtension)) &&
-						canRemoveLegacyPiExtension(yield* fs.readFile(legacyPiExtension))
+					const canRemoveAgents = statuses.some(
+						(status) =>
+							status.name === "opencode" && status.state !== "customized",
+					)
+					const [
+						removeLegacyAgents,
+						removeLegacyOpencodeCommand,
+						removeLegacyPiExtension,
+					] = yield* Effect.all(
+						[
+							canRemoveAgents
+								? canRemoveLegacyAgents(root)
+								: Effect.succeed(false),
+							canRemoveLegacyOpencodeCommand(root),
+							fs
+								.inspectFile(legacyPiExtension)
+								.pipe(
+									Effect.map(
+										(file) =>
+											file.kind === "file" &&
+											canRemoveLegacyPiExtension(file.content),
+									),
+								),
+						] as const,
+						{ concurrency: 3 },
+					)
+					const removeLegacyOpencodePlugin =
+						legacyPlugin.kind === "file" &&
+						canUpdateManagedWorkbaseOpencodePlugin(legacyPlugin.content)
 					const files: IntegrationSyncFile[] = []
 
 					for (const status of statuses) {
