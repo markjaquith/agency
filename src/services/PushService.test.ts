@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { TaskService } from "./TaskService"
 import { PushService } from "./PushService"
+import { parseGitCommits } from "./push-validation"
 import { WorktreeService } from "./WorktreeService"
 
 interface CommandResult {
@@ -39,6 +40,24 @@ const requireCommand = async (args: readonly string[], cwd?: string) => {
 }
 
 describe("PushService", () => {
+	test("parses and validates batched Git commit metadata", () => {
+		const output = [
+			"abc123\0Agency Test\0agency@example.com\0First change\0\x1e",
+			"def456\0Agency Test\0agency@example.com\0Second change\0\x1e",
+		].join("\n")
+		const commits = parseGitCommits(output)
+
+		expect(
+			commits.map(({ commitId, description }) => ({ commitId, description })),
+		).toEqual([
+			{ commitId: "abc123", description: "First change" },
+			{ commitId: "def456", description: "Second change" },
+		])
+		expect(commits.every((commit) => commit.authorEmail.includes("@"))).toBe(
+			true,
+		)
+	})
+
 	const roots: string[] = []
 
 	afterEach(async () => {

@@ -70,6 +70,7 @@
     "benchmark:doctor": "bun scripts/benchmark-doctor.ts",
     "benchmark:context": "bun scripts/benchmark-context.ts",
     "benchmark:finish": "bun scripts/benchmark-finish.ts",
+    "benchmark:push": "bun scripts/benchmark-push.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
     "benchmark:task": "bun scripts/benchmark-task.ts",
     "benchmark:worktree": "bun scripts/benchmark-worktree.ts",

@@ -4,6 +4,7 @@ import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
+import { parseGitCommits, type PushCommitMetadata } from "./push-validation"
 
 class PushError extends Data.TaggedError("PushError")<{
 	readonly message: string
@@ -15,16 +16,7 @@ interface CommandResult {
 	readonly stderr: string
 }
 
-interface CommitMetadata {
-	readonly commitId: string
-	readonly changeId?: string
-	readonly description: string
-	readonly empty: boolean
-	readonly authorName: string
-	readonly authorEmail: string
-	readonly conflict: boolean
-	readonly parents: readonly string[]
-}
+type CommitMetadata = PushCommitMetadata
 
 interface PushResult {
 	readonly vcs: "git" | "jj"
@@ -105,29 +97,6 @@ const gitAncestor = (
 			}),
 		)
 
-const parseGitCommits = (output: string): readonly CommitMetadata[] =>
-	output
-		.split("\x1e")
-		.map((record) => record.replace(/^\n+|\n+$/g, ""))
-		.filter(Boolean)
-		.map((record) => {
-			const [
-				commitId = "",
-				authorName = "",
-				authorEmail = "",
-				description = "",
-			] = record.split("\0")
-			return {
-				commitId,
-				description,
-				empty: false,
-				authorName,
-				authorEmail,
-				conflict: false,
-				parents: [],
-			}
-		})
-
 const validateGitCommits = (
 	commits: readonly CommitMetadata[],
 	base: string,
@@ -194,11 +163,12 @@ const publishGit = (
 			["fetch", remote, `+refs/heads/*:refs/remotes/${remote}/*`],
 			`Failed to fetch remote '${remote}'`,
 		)
-		const tip = yield* gitRevision(fs, checkout, "HEAD")
-		const baseRevision = yield* gitRevision(
-			fs,
-			checkout,
-			`refs/remotes/${remote}/${base}`,
+		const [tip, baseRevision] = yield* Effect.all(
+			[
+				gitRevision(fs, checkout, "HEAD"),
+				gitRevision(fs, checkout, `refs/remotes/${remote}/${base}`),
+			],
+			{ concurrency: "unbounded" },
 		)
 		if (!tip || !baseRevision) {
 			return yield* new PushError({
@@ -242,12 +212,6 @@ const publishGit = (
 		yield* git(
 			fs,
 			checkout,
-			["push", remote, `HEAD:refs/heads/${branch}`],
-			`Failed to push declared branch '${branch}'`,
-		)
-		yield* git(
-			fs,
-			checkout,
 			[
 				"config",
 				`remote.${remote}.fetch`,
@@ -259,17 +223,13 @@ const publishGit = (
 			fs,
 			checkout,
 			[
-				"fetch",
+				"push",
+				"-u",
 				remote,
-				`+refs/heads/${branch}:refs/remotes/${remote}/${branch}`,
+				`HEAD:refs/heads/${branch}`,
+				`--force-if-includes`,
 			],
-			`Failed to refresh published branch '${branch}'`,
-		)
-		yield* git(
-			fs,
-			checkout,
-			["branch", "--set-upstream-to", `${remote}/${branch}`, branch],
-			`Failed to establish upstream tracking for branch '${branch}'`,
+			`Failed to push declared branch '${branch}'`,
 		)
 		return { tip }
 	})
@@ -403,10 +363,25 @@ const publishJj = (
 		}
 
 		const baseBookmark = `${base}@${remote}`
-		const baseRevision = yield* optionalJjRevision(
-			fs,
-			checkout,
-			`remote_bookmarks(exact:"${jjExact(base)}", exact:"${jjExact(remote)}")`,
+		const [baseRevision, localBookmark, remoteBookmark] = yield* Effect.all(
+			[
+				optionalJjRevision(
+					fs,
+					checkout,
+					`remote_bookmarks(exact:"${jjExact(base)}", exact:"${jjExact(remote)}")`,
+				),
+				optionalJjRevision(
+					fs,
+					checkout,
+					`bookmarks(exact:"${jjExact(branch)}")`,
+				),
+				optionalJjRevision(
+					fs,
+					checkout,
+					`remote_bookmarks(exact:"${jjExact(branch)}", exact:"${jjExact(remote)}")`,
+				),
+			],
+			{ concurrency: "unbounded" },
 		)
 		if (!baseRevision) {
 			return yield* new PushError({
@@ -432,28 +407,24 @@ const publishJj = (
 			catch: (cause) => cause as PushError,
 		})
 
-		const localBookmark = yield* optionalJjRevision(
-			fs,
-			checkout,
-			`bookmarks(exact:"${jjExact(branch)}")`,
-		)
-		if (
-			localBookmark &&
-			!(yield* jjAncestor(fs, checkout, localBookmark.commitId, tip.commitId))
-		) {
+		const [localBookmarkIsAncestor, remoteBookmarkIsAncestor] =
+			yield* Effect.all(
+				[
+					localBookmark
+						? jjAncestor(fs, checkout, localBookmark.commitId, tip.commitId)
+						: Effect.succeed(true),
+					remoteBookmark
+						? jjAncestor(fs, checkout, remoteBookmark.commitId, tip.commitId)
+						: Effect.succeed(true),
+				],
+				{ concurrency: "unbounded" },
+			)
+		if (!localBookmarkIsAncestor) {
 			return yield* new PushError({
 				message: `Local bookmark '${branch}' is not an ancestor of jj tip ${tip.changeId}; refusing to move it`,
 			})
 		}
-		const remoteBookmark = yield* optionalJjRevision(
-			fs,
-			checkout,
-			`remote_bookmarks(exact:"${jjExact(branch)}", exact:"${jjExact(remote)}")`,
-		)
-		if (
-			remoteBookmark &&
-			!(yield* jjAncestor(fs, checkout, remoteBookmark.commitId, tip.commitId))
-		) {
+		if (!remoteBookmarkIsAncestor) {
 			return yield* new PushError({
 				message: `Remote bookmark '${branch}@${remote}' is not an ancestor of jj tip ${tip.changeId}; refusing a non-fast-forward update`,
 			})
