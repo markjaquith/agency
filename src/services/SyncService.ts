@@ -508,9 +508,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						? null
 						: mergedPullRequestFromGitHub(data, query)
 					const skipCheckoutReconciliation =
-						remoteMergedPr !== null &&
-						data.claim?.state !== "active" &&
-						!data.completion
+						Boolean(data.completion) ||
+						(remoteMergedPr !== null && data.claim?.state !== "active")
 					let materialize = false
 					let workspaceConflict = false
 					const declared: readonly (
