@@ -1030,10 +1030,16 @@ JSON
 			expect(
 				applied.changes.some(
 					(change) =>
-						change.kind === "record-pr" || change.kind === "mark-done",
+						change.kind === "record-pr" ||
+						change.kind === "mark-done" ||
+						change.kind === "materialize-workspace",
 				),
 			).toBe(false)
+			expect(applied.executions[0]?.checkouts).toEqual([])
 		}
+		expect(
+			await Bun.file(join(root, "tasks/non-pr/code/agency")).exists(),
+		).toBe(false)
 
 		const task = await runTestEffect(
 			TaskService.pipe(
@@ -1078,15 +1084,6 @@ JSON
 			await runTestEffect(
 				WorktreeService.pipe(
 					Effect.flatMap((service) => service.materialize(id, undefined, root)),
-				),
-			)
-			await runTestEffect(
-				TaskService.pipe(
-					Effect.flatMap((service) =>
-						service.setStatus(id, "done", root, {
-							summary: `Completed ${id}`,
-						}),
-					),
 				),
 			)
 		}
