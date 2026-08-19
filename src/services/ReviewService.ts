@@ -23,7 +23,10 @@ import {
 	runLifecycleTransaction,
 	type TransactionStep,
 } from "./LifecycleTransaction"
-import { RevisionConflictError } from "../workbase/document-revision"
+import {
+	documentRevision,
+	RevisionConflictError,
+} from "../workbase/document-revision"
 import {
 	formatMarkdownDocument,
 	parseFrontmatter,
@@ -359,24 +362,33 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 									message: `Cannot refresh review task '${taskId}'; its checkout is dirty or structurally unexpected`,
 								})
 							}
-							const latest = yield* service.resolve(
+							const repository = yield* repositories.show(
 								task.data.review.repo,
-								task.data.review.source.kind === "pull-request"
-									? { pullRequest: task.data.review.source.url }
-									: { ref: task.data.review.source.ref },
 								root,
 							)
+							if (!repository.remote || repository.states.includes("missing")) {
+								return yield* new ReviewError({
+									message: `Repository alias '${task.data.review.repo}' must be materialized with an origin remote`,
+								})
+							}
+							const versionControl = yield* VersionControlService
+							const backend = yield* versionControl.forWorkbase(root)
+							const latest = {
+								...task.data.review,
+								commit: yield* fetchCommit(
+									repository.path,
+									task.data.review.source.kind === "pull-request"
+										? task.data.review.source.fetchRef
+										: task.data.review.source.ref,
+									backend,
+								),
+								refreshedAt: new Date().toISOString(),
+							} satisfies ReviewRecord
 							const parsed = yield* parseFrontmatter(task.content, task.path)
 							const content = formatMarkdownDocument(
 								{ ...task.data, review: latest },
 								parsed.body,
 							)
-							const repository = yield* repositories.show(
-								task.data.review.repo,
-								root,
-							)
-							const versionControl = yield* VersionControlService
-							const backend = yield* versionControl.forWorkbase(root)
 							const gitEnvironment = yield* backend.gitEnvironment(
 								repository.path,
 							)
@@ -456,7 +468,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 								commit: latest.commit,
 								changed: latest.commit !== task.data.review.commit,
 								refreshedAt: latest.refreshedAt,
-								revision: (yield* tasks.show(taskId, root)).revision,
+								revision: documentRevision(content),
 							}
 						}),
 					)
