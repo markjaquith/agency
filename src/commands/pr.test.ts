@@ -148,6 +148,33 @@ status: open
 		return root
 	}
 
+	const createReviewWorkbase = async () => {
+		const root = join(tempRoot, "review-workbase")
+		await write(root, "agency.json", '{"version":2}\n')
+		await mkdir(join(root, "repos/agency"), { recursive: true })
+		await mkdir(join(root, "tasks/review/code/agency"), { recursive: true })
+		await write(
+			root,
+			"tasks/review/TASK.md",
+			`---
+ticketUrl: null
+description: Review a branch
+review:
+  repo: agency
+  source:
+    kind: branch
+    ref: refs/heads/review
+  commit: 0123456789abcdef0123456789abcdef01234567
+  refreshedAt: 2026-08-19T00:00:00.000Z
+status: working
+---
+
+# Review
+`,
+		)
+		return root
+	}
+
 	test("creates and records an Agency pull request", async () => {
 		const url = "https://github.com/markjaquith/agency/pull/123"
 		let received: unknown[] = []
@@ -218,6 +245,19 @@ status: open
 			await realpath(join(phase, "code/agency")),
 			"pr",
 			"status",
+		])
+	})
+
+	test("focuses a review task invocation on its review checkout", async () => {
+		const root = await createReviewWorkbase()
+		const task = join(root, "tasks/review")
+
+		expect(await runTestEffect(pr(["view", "--web"], task))).toBe(0)
+		expect(await captured()).toEqual([
+			await realpath(join(task, "code/agency")),
+			"pr",
+			"view",
+			"--web",
 		])
 	})
 
