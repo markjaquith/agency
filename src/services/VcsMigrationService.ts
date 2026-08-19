@@ -263,15 +263,24 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 		const repositoryRecords = yield* repositories.list(root)
 		const repositoryPlans: RepositoryPlan[] = []
 		const repositoryStatus: MigrationState["repositories"][number][] = []
-		for (const repository of repositoryRecords) {
-			const initialized = yield* fs.exists(
-				join(
-					repository.kind === "symlink"
-						? yield* fs.realPath(repository.path)
-						: repository.path,
-					".jj",
-				),
-			)
+		const repositoryInspections = yield* Effect.forEach(
+			repositoryRecords,
+			(repository) =>
+				Effect.gen(function* () {
+					const targetPath =
+						repository.kind === "symlink"
+							? yield* fs.realPath(repository.path)
+							: repository.path
+					const initialized = yield* fs.exists(join(targetPath, ".jj"))
+					return { repository, initialized, targetPath }
+				}),
+			{ concurrency: 8 },
+		)
+		for (const {
+			repository,
+			initialized,
+			targetPath,
+		} of repositoryInspections) {
 			repositoryStatus.push({
 				alias: repository.alias,
 				path: repository.path,
@@ -297,10 +306,6 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 					message: `Repository '${repository.alias}' is not initialized for the configured jj backend`,
 				})
 			}
-			const targetPath =
-				repository.kind === "symlink"
-					? yield* fs.realPath(repository.path)
-					: repository.path
 			repositoryPlans.push({
 				alias: repository.alias,
 				path: repository.path,
@@ -353,6 +358,23 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 		}
 
 		const workspacePlans: WorkspacePlan[] = []
+		const sourceWorkspaces = new Map<
+			string,
+			Effect.Effect<
+				readonly import("./VersionControlService").RegisteredWorkspace[],
+				unknown,
+				any
+			>
+		>()
+		const listSourceWorkspaces = (repositoryPath: string) => {
+			const existing = sourceWorkspaces.get(repositoryPath)
+			if (existing) return existing
+			const workspaces = sourceBackend
+				.listWorkspaces(repositoryPath)
+				.pipe(Effect.cached, Effect.flatten)
+			sourceWorkspaces.set(repositoryPath, workspaces)
+			return workspaces
+		}
 		const inspected = yield* Effect.either(
 			worktrees.list(root, {
 				materializedOnly: !blockers.some(
@@ -400,7 +422,7 @@ const inspectMigration = (startPath: string, requestedTarget?: VcsKind) =>
 					}
 					const sourceName =
 						source !== target && source === "jj"
-							? ((yield* sourceBackend.listWorkspaces(
+							? ((yield* listSourceWorkspaces(
 									join(root, "repos", checkout.repo),
 								)).find((item) => item.path === checkout.registeredPath)
 									?.name ?? null)
