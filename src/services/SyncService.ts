@@ -1,6 +1,5 @@
 import { Data, Effect, Either } from "effect"
 import { dirname, join, resolve } from "node:path"
-import { documentRevision } from "../workbase/document-revision"
 import type {
 	ClaimRecord,
 	PhaseFrontmatter,
@@ -17,8 +16,6 @@ import {
 } from "../workbase/delivery-command"
 import { ClaimService } from "./ClaimService"
 import { FileSystemService } from "./FileSystemService"
-import { PhaseService } from "./PhaseService"
-import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
 import {
@@ -217,15 +214,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 			Effect.gen(function* () {
 				const fs = yield* FileSystemService
 				const workbase = yield* WorkbaseService
-				const tasks = yield* TaskService
-				const phases = yield* PhaseService
 				const worktrees = yield* WorktreeService
 				const claims = yield* ClaimService
 				const repositories = yield* RepositoryService
 				const versionControl = yield* VersionControlService
 				const { root, config } = yield* workbase.loadConfig(options.cwd)
 				const backend = yield* versionControl.forWorkbase(root)
-				const validation = yield* workbase.validate(root)
+				const validation = yield* workbase.validate(root, {
+					includeDocuments: true,
+				})
 				if (!validation.valid) {
 					return yield* new SyncError({
 						message: validation.issues
@@ -238,7 +235,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						message: "A phase sync scope requires a task ID",
 					})
 				}
-				const allTaskRecords = yield* tasks.list(root)
+				const documents = validation.documents!
+				const allTaskRecords = documents.tasks
 				const taskRecords = options.taskId
 					? allTaskRecords.filter((task) => task.id === options.taskId)
 					: allTaskRecords
@@ -250,14 +248,14 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const records: ExecutionRecord[] = []
 				for (const task of taskRecords) {
 					if ("phases" in task.data) {
-						for (const phase of yield* phases.list(task.id, root)) {
+						for (const phase of documents.phasesByTask.get(task.id) ?? []) {
 							if (options.phaseId && phase.id !== options.phaseId) continue
 							records.push({
 								key: `phase:${task.id}/${phase.id}`,
 								taskId: task.id,
 								phaseId: phase.id,
 								path: phase.path,
-								revision: documentRevision(phase.content),
+								revision: phase.revision,
 								data: phase.data,
 							})
 						}
@@ -266,7 +264,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							key: `task:${task.id}`,
 							taskId: task.id,
 							path: task.path,
-							revision: documentRevision(task.content),
+							revision: task.revision,
 							data: task.data,
 						})
 					}

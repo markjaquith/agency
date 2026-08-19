@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import { Effect } from "effect"
 import { chmod, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
@@ -1113,6 +1113,54 @@ exec ${JSON.stringify(realGit)} "$@"
 		expect((await Bun.file(callsPath).text()).trim().split("\n")).toHaveLength(
 			1,
 		)
+	})
+
+	test("reuses documents parsed during validation", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "single-read",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/single-read",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-read", "done", root, {
+						summary: "Completed without a pull request",
+					}),
+				),
+			),
+		)
+		const taskPath = join(root, "tasks/single-read/TASK.md")
+		const taskContent = await Bun.file(taskPath).text()
+		const originalFile = Bun.file
+		let reads = 0
+		const fileSpy = spyOn(Bun, "file").mockImplementation(((path: string) => {
+			if (path === taskPath) reads += 1
+			return path === taskPath ? new Blob([taskContent]) : originalFile(path)
+		}) as typeof Bun.file)
+
+		try {
+			await runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) => service.reconcile({ cwd: root })),
+				),
+			)
+		} finally {
+			fileSpy.mockRestore()
+		}
+
+		expect(reads).toBe(1)
 	})
 
 	test("queries pull request providers concurrently", async () => {
