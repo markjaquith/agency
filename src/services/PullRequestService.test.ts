@@ -605,14 +605,14 @@ process.stdout.write(${JSON.stringify(JSON.stringify(providerRecord))})
 		expect("pr" in task.data && task.data.pr).toBeNull()
 	})
 
-	test("reports git status failure before push or gh", async () => {
+	test("reports invalid reused Git checkout before push or gh", async () => {
 		await createTask()
 		const workspace = await materialize()
 		await rm(join(workspace.writablePath!, ".git"))
 		await writeFakeGh({ stdout: "https://github.com/example/agency/pull/48" })
 
 		await expect(createPullRequest()).rejects.toThrow(
-			"Failed to inspect worktree status",
+			"Failed to locate local excludes",
 		)
 
 		await expectRemoteBranch("task/example", false)
