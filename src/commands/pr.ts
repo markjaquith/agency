@@ -98,28 +98,31 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 			context?.validation.valid && context.workspace?.writable?.materialized
 				? context.authority.writable?.checkoutPath
 				: null
-		const focusedCwd = writableCheckout ?? invocationCwd
+		const reviewCheckout =
+			context?.validation.valid && context.review?.checkout?.materialized
+				? context.review.checkout.checkoutPath
+				: null
+		const focusedCheckout = writableCheckout ?? reviewCheckout
+		const focusedCwd = focusedCheckout ?? invocationCwd
 		let forwardedArgs = args
 		let environment: Record<string, string> = {}
-		if (
-			writableCheckout &&
-			context?.workbase.vcs === "jj" &&
-			context.authority.writable
-		) {
-			const execution =
-				context.documents?.phase?.data ?? context.documents?.task?.data
-			const { config } = yield* workbase.loadConfig(context.workbase.root)
-			const remote =
-				config.repositories?.[context.authority.writable.repo]?.remote
-			if (execution && "branch" in execution && remote) {
-				forwardedArgs = withJjContext(
-					args,
-					execution.branch,
-					repositoryFromRemote(remote),
-				)
+		if (focusedCheckout && context?.workbase.vcs === "jj") {
+			if (writableCheckout && context.authority.writable) {
+				const execution =
+					context.documents?.phase?.data ?? context.documents?.task?.data
+				const { config } = yield* workbase.loadConfig(context.workbase.root)
+				const remote =
+					config.repositories?.[context.authority.writable.repo]?.remote
+				if (execution && "branch" in execution && remote) {
+					forwardedArgs = withJjContext(
+						args,
+						execution.branch,
+						repositoryFromRemote(remote),
+					)
+				}
 			}
 			const backend = yield* versionControl.forWorkbase(context.workbase.root)
-			environment = yield* backend.gitEnvironment(writableCheckout)
+			environment = yield* backend.gitEnvironment(focusedCheckout)
 		}
 		const result = yield* fs.runCommand(["gh", "pr", ...forwardedArgs], {
 			cwd: focusedCwd,
