@@ -507,6 +507,49 @@ describe("CLI", () => {
 		})
 	})
 
+	test("preserves the JSON error contract when archiving an already archived task", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		expect(
+			Bun.spawnSync(["git", "init", "--bare", join(root, "repos/agency")])
+				.exitCode,
+		).toBe(0)
+		await mkdir(join(root, "tasks/example"), { recursive: true })
+		await Bun.write(
+			join(root, "tasks/example/TASK.md"),
+			`---
+ticketUrl: null
+repo: agency
+branch: task/example
+base: main
+pr: null
+status: dropped
+---
+
+# Example
+`,
+		)
+
+		expect((await runCli(["archive", "task", "example"], root)).exitCode).toBe(
+			0,
+		)
+		const result = await runCli(["archive", "task", "example", "--json"], root)
+
+		expect(result.exitCode).toBe(1)
+		expect(result.stderr).toBe("")
+		expect(JSON.parse(result.stdout)).toEqual({
+			version: 1,
+			ok: false,
+			error: {
+				code: "TASK_ERROR",
+				message: "Task 'example' is already archived",
+				fields: {},
+				retryable: false,
+			},
+		})
+	})
+
 	test("rejects malformed input before running a command", async () => {
 		const parent = await createTempDir()
 		tempDirs.push(parent)

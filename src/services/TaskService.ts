@@ -589,7 +589,9 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				const path = join(root, "tasks", validId, "TASK.md")
 				if (!(yield* fs.exists(path))) {
 					return yield* new TaskError({
-						message: `Task '${validId}' does not exist`,
+						message: (yield* fs.exists(archivedTaskDirectory(root, validId)))
+							? `Task '${validId}' is already archived`
+							: `Task '${validId}' does not exist`,
 					})
 				}
 				const content = yield* fs.readFile(path)

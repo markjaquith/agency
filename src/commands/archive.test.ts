@@ -93,6 +93,23 @@ describe("archive command", () => {
 		)
 	})
 
+	test("reports an already archived task", async () => {
+		await runTestEffect(
+			archive({ type: "task", args: ["example"], cwd: root, silent: true }),
+		)
+
+		await expect(
+			runTestEffect(
+				archive({
+					type: "task",
+					args: ["example"],
+					cwd: root,
+					silent: true,
+				}),
+			),
+		).rejects.toThrow("Task 'example' is already archived")
+	})
+
 	test("outputs one deterministic bulk archive object and a concise human summary", async () => {
 		const jsonLogs = await captureLogs(() =>
 			runTestEffect(
