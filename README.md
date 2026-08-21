@@ -441,7 +441,7 @@ variables. A worker must verify either signal against `agency context . --json`
 before acting; a matching worker performs the task directly and must not invoke
 `agency work` for the same target. Managed guidance also fails safe for older
 generated prompts when their document paths, current directory, and active valid
-context all agree. Herdr is not part of this identity contract.
+context all agree. External session state is not part of this identity contract.
 The managed OpenCode plugin validates the marker against Agency context, binds it
 to the receiving OpenCode session, injects an explicit active-worker system
 instruction, and restores Agency identity for that session's shell environment.
@@ -860,13 +860,13 @@ includes `selector`, absolute `documentPath`, the document `revision`, full
 `validation`, normalized `recalledContext`, and `evidence`. Evidence version 1 is
 an auditable local payload containing the canonical workbase root, target and
 document identities, aggregate workbase revision, configuration revision,
-repository-mapping revision, kickoff-contract version, validity result, recalled
+repository-mapping revision, execution-contract version, validity result, recalled
 context, and a digest over those fields. It is not a signature or an authority
 grant. A different workbase, target, document revision, document set,
 configuration, repository mapping, contract version, or payload digest
 invalidates reuse. Older creation output without evidence remains compatible;
 preflight simply validates again. The published machine schema is
-`schemas/agency-kickoff-v1.schema.json`.
+`schemas/agency-execution-v1.schema.json`.
 
 Create investigation-only work with the existing task architecture:
 
@@ -1128,12 +1128,18 @@ promptless by default; use `--auto` to send Agency's generated context prompt.
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without
 launching an agent or changing status.
+Managed workbase guidance provides exact fast paths for 15 common intents:
+single-phase creation; create-and-start; materialization; remote PR sync; phase
+conversion; archive; review creation and start; status inspection; drop;
+continuation; publication and PR creation; non-PR completion; initial multi-phase
+setup; investigation handoff; and review refresh.
 Its JSON result includes the workspace, validation result, whether supplied
 evidence was `reused` or `refreshed` with stable reason strings, refreshed
-evidence, and a versioned `agency-kickoff-v1` orchestration plan. The plan has a
-deterministic idempotency key and ordered, retry-safe actions for worktree
-preflight/preparation, a background tab, side-by-side task document,
-`agency work . --auto`, and exactly one final `agency context <document> --json`.
+evidence, and a versioned `agency-execution-v1` contract. The contract reports
+whether preparation was previewed or applied, a stable target identity, prepared
+workspace and document paths, and canonical Agency-native commands for starting
+work and reading context. It does not prescribe how callers present or execute
+prepared work.
 The evidence argument may be an evidence object, task-creation JSON, or a path to
 either. Use `--dry-run` to report planned fetch, branch, and worktree changes
 without applying them. Validation reuse never skips readiness, active-claim,
@@ -1142,7 +1148,7 @@ checks.
 
 The authoritative implementation locations for this contract are
 `src/commands/task.ts` (creation output),
-`src/workbase/kickoff-contract.ts` (evidence and orchestration schemas),
+`src/workbase/execution-contract.ts` (evidence and execution schemas),
 `src/commands/work.ts` (launch preflight),
 `src/services/WorktreeService.ts` (workspace safety), and
 `src/workbase/AGENTS.md` (generated OpenCode guidance). These paths are the

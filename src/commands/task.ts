@@ -15,7 +15,7 @@ import { ReviewService } from "../services/ReviewService"
 import {
 	buildValidationEvidence,
 	normalizeRecalledContext,
-} from "../workbase/kickoff-contract"
+} from "../workbase/execution-contract"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string

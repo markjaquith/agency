@@ -532,12 +532,15 @@ describe("work command", () => {
 		const result = JSON.parse(output!)
 		expect(result.validationEvidence.status).toBe("refreshed")
 		expect(result.validationEvidence.reasons).toEqual(["not-supplied"])
-		expect(result.kickoff.target).toBe("execution-unit:task/example")
-		expect(
-			result.kickoff.steps.filter(
-				({ id }: { id: string }) => id === "final-context-verification",
-			),
-		).toHaveLength(1)
+		expect(result.execution).toMatchObject({
+			capability: "agency-execution-v1",
+			mode: "preview",
+			executionIdentity: { target: "execution-unit:task/example" },
+			workspace: { state: "planned" },
+			commands: {
+				work: { argv: ["agency", "work", ".", "--auto"] },
+			},
+		})
 
 		const [reusedOutput] = await captureLogs(() =>
 			harness.runPrepare({

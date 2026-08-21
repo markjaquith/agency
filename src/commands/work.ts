@@ -31,11 +31,11 @@ import {
 } from "../workbase/agent-command"
 import {
 	assessValidationEvidence,
-	buildKickoffPlan,
+	buildExecutionContract,
 	buildValidationEvidence,
 	normalizeRecalledContext,
 	readValidationEvidence,
-} from "../workbase/kickoff-contract"
+} from "../workbase/execution-contract"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -556,22 +556,21 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			workspace,
 			validation,
 			validationEvidence: { ...assessment.disposition, evidence },
-			kickoff: buildKickoffPlan({
+			execution: buildExecutionContract({
 				workbaseRoot: root,
 				target,
-				taskId,
-				phaseId: phase?.id,
 				taskPath: task.path,
 				phasePath: phase?.path,
 				checkoutPath: workspace.writablePath ?? workspace.reviewPath,
 				documentRevision: document.revision,
+				dryRun: options.dryRun === true,
 			}),
 		}
 		if (options.json) {
 			log(JSON.stringify(result, null, 2))
 		} else {
 			log(
-				`${workspace.dryRun ? "Kickoff plan" : "Workspace ready"}: ${workspace.writablePath ?? workspace.reviewPath}`,
+				`${workspace.dryRun ? "Workspace plan" : "Workspace ready"}: ${workspace.writablePath ?? workspace.reviewPath}`,
 			)
 		}
 	})
