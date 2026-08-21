@@ -74,6 +74,21 @@ export const repo = (options: RepoOptions) =>
 				return
 			}
 
+			case "materialize": {
+				const alias = yield* requireArg(
+					options.args,
+					0,
+					"Usage: agency repo materialize <alias>",
+				)
+				const item = yield* repositories.materialize(alias, cwd)
+				log(
+					options.json
+						? JSON.stringify(item, null, 2)
+						: `Materialized repository '${alias}'`,
+				)
+				return
+			}
+
 			case "list": {
 				const items = yield* repositories.list(cwd)
 				if (options.json) {
@@ -187,7 +202,7 @@ export const repo = (options: RepoOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Subcommand is required. Available subcommands: setup, add, link, list, show, fetch, remove, unlink, rename, remote, verify",
+						"Subcommand is required. Available subcommands: setup, add, link, materialize, list, show, fetch, remove, unlink, rename, remote, verify",
 					),
 				)
 		}
@@ -200,6 +215,7 @@ Subcommands:
   setup                 Plan or apply portable repository setup
   add <alias> <remote>  Create a bare clone
   link <alias> <path>   Link an existing Git repository
+  materialize <alias>   Replace a linked alias with a managed bare clone
   list                  List repository aliases
   show <alias>          Show a repository alias
   fetch <alias>         Fetch and prune a repository

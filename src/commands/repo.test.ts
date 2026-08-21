@@ -23,7 +23,9 @@ describe("repo command", () => {
 	test("requires a subcommand", async () => {
 		await expect(
 			runTestEffect(repo({ args: [], silent: true })),
-		).rejects.toThrow("Available subcommands: setup, add, link, list")
+		).rejects.toThrow(
+			"Available subcommands: setup, add, link, materialize, list",
+		)
 	})
 
 	test("requires add arguments", async () => {
@@ -32,6 +34,14 @@ describe("repo command", () => {
 				repo({ subcommand: "add", args: ["agency"], silent: true }),
 			),
 		).rejects.toThrow("Usage: agency repo add")
+	})
+
+	test("requires a materialize alias", async () => {
+		await expect(
+			runTestEffect(
+				repo({ subcommand: "materialize", args: [], silent: true }),
+			),
+		).rejects.toThrow("Usage: agency repo materialize <alias>")
 	})
 
 	test("lists repository metadata as JSON", async () => {
