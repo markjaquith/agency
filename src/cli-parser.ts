@@ -259,7 +259,7 @@ const commands = {
 	},
 	repo: {
 		usage:
-			"agency repo <setup|add|link|list|show|fetch|remove|unlink|rename|remote|verify>",
+			"agency repo <setup|add|link|materialize|list|show|fetch|remove|unlink|rename|remote|verify>",
 		options: {
 			...outputOptions,
 			"dry-run": { type: "boolean" },
@@ -283,6 +283,12 @@ const commands = {
 				usage: "agency repo link <alias> <path> [--json]",
 				minArgs: 2,
 				maxArgs: 2,
+				options: ["json"],
+			},
+			materialize: {
+				usage: "agency repo materialize <alias> [--json]",
+				minArgs: 1,
+				maxArgs: 1,
 				options: ["json"],
 			},
 			list: {

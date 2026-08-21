@@ -934,6 +934,48 @@ status: open
 		})
 	})
 
+	test("materializes a linked repository through the CLI", async () => {
+		const parent = await createTempDir()
+		tempDirs.push(parent)
+		const root = join(parent, "workbase")
+		const source = join(parent, "source")
+		await runGit(["init", "--initial-branch=main", source])
+		await Bun.write(join(source, "README.md"), "materialize\n")
+		for (const args of [
+			["config", "user.email", "test@example.com"],
+			["config", "user.name", "Test"],
+			["add", "README.md"],
+			["-c", "commit.gpgsign=false", "commit", "-m", "initial"],
+			[
+				"remote",
+				"add",
+				"origin",
+				"https://example.com/agency-tests/source.git",
+			],
+		]) {
+			await runGit(["-C", source, ...args])
+		}
+
+		parseJson(await runCli(["init", root, "--json"], parent))
+		const configPath = join(root, "agency.json")
+		await Bun.write(
+			configPath,
+			JSON.stringify({ ...(await Bun.file(configPath).json()), vcs: "git" }),
+		)
+		parseJson(await runCli(["repo", "link", "agency", source, "--json"], root))
+		const materialized = parseJson(
+			await runCli(["repo", "materialize", "agency", "--json"], root),
+		)
+
+		expect(materialized).toMatchObject({
+			alias: "agency",
+			kind: "bare",
+			target: null,
+			states: ["declared", "materialized"],
+		})
+		expect(await Bun.file(join(root, "repos/agency/HEAD")).exists()).toBe(true)
+	})
+
 	test("prepares a workspace and reports a non-mutating dry-run", async () => {
 		const parent = await createTempDir()
 		tempDirs.push(parent)
