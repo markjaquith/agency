@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, stat } from "node:fs/promises"
+import { mkdir, realpath, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { RepositoryService } from "./RepositoryService"
@@ -14,6 +14,18 @@ const runGit = async (args: string[]) => {
 	if (process.exitCode !== 0) {
 		throw new Error(await new Response(process.stderr).text())
 	}
+}
+
+const gitOutput = async (args: string[]) => {
+	const process = Bun.spawn(["git", ...args], {
+		stdout: "pipe",
+		stderr: "pipe",
+	})
+	await process.exited
+	if (process.exitCode !== 0) {
+		throw new Error(await new Response(process.stderr).text())
+	}
+	return (await new Response(process.stdout).text()).trim()
 }
 
 const portableRemote = (name: string) =>
@@ -157,6 +169,143 @@ describe("RepositoryService", () => {
 			target,
 			states: ["declared", "linked"],
 		})
+	})
+
+	test("materializes a linked alias without invalidating active worktrees", async () => {
+		const target = join(root, "linked-repository")
+		const checkout = join(root, "tasks/active/code/linked")
+		await mkdir(target, { recursive: true })
+		await runGit(["init", "--initial-branch=main", target])
+		await runGit(["-C", target, "config", "user.email", "test@example.com"])
+		await runGit(["-C", target, "config", "user.name", "Test"])
+		await Bun.write(join(target, "README.md"), "linked\n")
+		await runGit(["-C", target, "add", "README.md"])
+		await runGit(["-C", target, "commit", "-m", "initial"])
+		await setPortableOrigin(target, "materialized")
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.link("linked", target, root)),
+			),
+		)
+		await write(
+			root,
+			"tasks/active/TASK.md",
+			`---
+ticketUrl: null
+repo: linked
+branch: task/active
+base: main
+pr: null
+status: working
+---
+`,
+		)
+		await mkdir(dirname(checkout), { recursive: true })
+		await runGit([
+			"-C",
+			target,
+			"worktree",
+			"add",
+			"-b",
+			"task/active",
+			checkout,
+			"main",
+		])
+		await Bun.write(join(checkout, "dirty.txt"), "preserved\n")
+
+		const result = await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.materialize("linked", root)),
+			),
+		)
+
+		expect(result.kind).toBe("bare")
+		expect(result.target).toBeNull()
+		expect(result.states).toEqual(["declared", "materialized"])
+		expect(await Bun.file(join(checkout, "dirty.txt")).text()).toBe(
+			"preserved\n",
+		)
+		expect(await gitOutput(["-C", checkout, "branch", "--show-current"])).toBe(
+			"task/active",
+		)
+		expect(
+			await gitOutput(["-C", checkout, "rev-parse", "--git-common-dir"]),
+		).toBe(await realpath(join(root, "repos/linked")))
+		expect(
+			await gitOutput(["-C", target, "worktree", "list", "--porcelain"]),
+		).not.toContain(checkout)
+		expect(await Bun.file(join(target, ".git/HEAD")).exists()).toBe(true)
+		expect(await Bun.file(join(root, "tasks/active/TASK.md")).text()).toContain(
+			"repo: linked",
+		)
+	})
+
+	test("materializes an alias linked through an existing worktree", async () => {
+		const primary = join(root, "primary-repository")
+		const linkedWorktree = join(root, "linked-worktree")
+		await mkdir(primary, { recursive: true })
+		await runGit(["init", "--initial-branch=main", primary])
+		await runGit(["-C", primary, "config", "user.email", "test@example.com"])
+		await runGit(["-C", primary, "config", "user.name", "Test"])
+		await Bun.write(join(primary, "README.md"), "linked worktree\n")
+		await runGit(["-C", primary, "add", "README.md"])
+		await runGit(["-C", primary, "commit", "-m", "initial"])
+		await setPortableOrigin(primary, "linked-worktree")
+		await runGit([
+			"-C",
+			primary,
+			"worktree",
+			"add",
+			"-b",
+			"linked-branch",
+			linkedWorktree,
+			"main",
+		])
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) =>
+					service.link("linked", linkedWorktree, root),
+				),
+			),
+		)
+
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.materialize("linked", root)),
+			),
+		)
+
+		expect(
+			await gitOutput(["-C", linkedWorktree, "rev-parse", "--git-common-dir"]),
+		).toBe(await realpath(join(root, "repos/linked")))
+		expect(
+			await gitOutput(["-C", primary, "worktree", "list", "--porcelain"]),
+		).not.toContain(linkedWorktree)
+	})
+
+	test("refuses to materialize linked aliases in jj workbases", async () => {
+		if (!Bun.which("jj")) return
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({ version: 2, vcs: "jj" }),
+		)
+		const target = join(root, "linked-jj-repository")
+		await mkdir(target, { recursive: true })
+		await runGit(["init", "--initial-branch=main", target])
+		await setPortableOrigin(target, "linked-jj")
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.link("linked", target, root)),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				RepositoryService.pipe(
+					Effect.flatMap((service) => service.materialize("linked", root)),
+				),
+			),
+		).rejects.toThrow("only supported for Git workbases")
 	})
 
 	test("rejects invalid and duplicate aliases", async () => {

@@ -752,6 +752,7 @@ agency integration sync [--json]
 agency repo setup [--dry-run | --apply] [--json]
 agency repo add <alias> <remote> [--json]
 agency repo link <alias> <path> [--json]
+agency repo materialize <alias> [--json]
 agency repo list [--json]
 agency repo show <alias> [--json]
 agency repo fetch <alias> [--json]
@@ -784,7 +785,11 @@ Each registration has a stable ID and may have a unique name. A default workbase
 is used when the current directory is outside every workbase. `prune` removes
 registrations whose workbase configuration no longer exists.
 `repo add` creates a bare clone. `repo link` creates a symlink to an existing Git
-repository. Alias names are then used by all documents and commands. Remove,
+repository. For Git workbases, `repo materialize` replaces a linked alias with a
+managed bare clone while migrating its registered worktrees in place; active
+Agency references continue to use the same alias. The command refuses remote
+drift and stale worktree registrations. Alias names are then used by all
+documents and commands. Remove,
 unlink, and rename refuse aliases referenced by active work or backed by linked
 worktrees, and report each blocker.
 

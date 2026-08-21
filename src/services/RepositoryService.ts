@@ -1,7 +1,7 @@
 import { Schema, TreeFormatter } from "@effect/schema"
 import { Data, Effect, Either } from "effect"
 import { join, resolve } from "node:path"
-import { lstat, rename, rm } from "node:fs/promises"
+import { cp, lstat, realpath, rename, rm } from "node:fs/promises"
 import { FileSystemService } from "./FileSystemService"
 import { GraphService } from "./GraphService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -327,6 +327,27 @@ const replaceWithMoveStep = (
 	manualRecovery: `Restore ${backup} to ${current}`,
 })
 
+const runGit = (
+	fs: Effect.Effect.Success<typeof FileSystemService>,
+	args: readonly string[],
+	label: string,
+) =>
+	Effect.runPromise(
+		fs
+			.runCommand(["git", ...args], { captureOutput: true })
+			.pipe(
+				Effect.flatMap((result) =>
+					result.exitCode === 0
+						? Effect.void
+						: Effect.fail(
+								new Error(
+									`${label}: ${result.stderr.trim() || result.stdout.trim()}`,
+								),
+							),
+				),
+			) as Effect.Effect<void, unknown, never>,
+	)
+
 const runTransaction = (
 	state: Effect.Effect.Success<ReturnType<typeof configState>>,
 	config: WorkbaseConfig,
@@ -499,6 +520,274 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						Effect.ensuring(fs.deleteDirectory(staging).pipe(Effect.ignore)),
 					)
 					return destination
+				}),
+
+			materialize: (alias: string, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const versionControl = yield* VersionControlService
+					const repository = yield* find(alias, startPath)
+					if (repository.kind !== "symlink" || !repository.target) {
+						return yield* new RepositoryError({
+							message: `Repository alias '${alias}' is not linked`,
+						})
+					}
+					if (repository.states.includes("invalid")) {
+						return yield* new RepositoryError({
+							message: `Repository alias '${alias}' has an invalid linked repository`,
+						})
+					}
+					if (repository.states.includes("remote-drifted")) {
+						return yield* new RepositoryError({
+							message: `Repository alias '${alias}' cannot be materialized while its origin differs from the portable declaration`,
+						})
+					}
+					if (!repository.declaredRemote) {
+						return yield* new RepositoryError({
+							message: `Repository alias '${alias}' has no portable remote declaration`,
+						})
+					}
+
+					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
+					if (backend.kind !== "git") {
+						return yield* new RepositoryError({
+							message: `Repository alias materialization is only supported for Git workbases`,
+						})
+					}
+
+					const source = yield* fs.realPath(repository.path)
+					const registered = yield* backend.listWorkspaces(repository.path)
+					const registeredPaths = registered
+						.map((workspace) => workspace.path)
+						.sort()
+					const worktrees: (typeof registered)[number][] = []
+					for (const workspace of registered) {
+						if (!(yield* fs.isDirectory(workspace.path))) {
+							return yield* new RepositoryError({
+								message: `Repository alias '${alias}' has a stale worktree registration: ${workspace.path}`,
+							})
+						}
+						if (
+							(yield* fs.inspectFile(join(workspace.path, ".git"))).kind ===
+							"file"
+						)
+							worktrees.push(workspace)
+					}
+
+					const commonDirectory = yield* fs
+						.runCommand(
+							[
+								"git",
+								"-C",
+								source,
+								"rev-parse",
+								"--path-format=absolute",
+								"--git-common-dir",
+							],
+							{ captureOutput: true },
+						)
+						.pipe(
+							Effect.flatMap((result) =>
+								result.exitCode === 0
+									? Effect.succeed(result.stdout.trim())
+									: Effect.fail(
+											new RepositoryError({
+												message: `Failed to locate Git metadata for repository alias '${alias}'`,
+											}),
+										),
+							),
+						)
+					const sourceWorktrees = join(commonDirectory, "worktrees")
+					const hasWorktreeMetadata = yield* fs.isDirectory(sourceWorktrees)
+					if (worktrees.length > 0 && !hasWorktreeMetadata) {
+						return yield* new RepositoryError({
+							message: `Repository alias '${alias}' is missing Git metadata for its registered worktrees`,
+						})
+					}
+
+					const suffix = `${process.pid}-${Date.now()}`
+					const staging = join(
+						state.root,
+						"repos",
+						`.agency-materialize-${repository.alias}-${suffix}`,
+					)
+					const aliasBackup = join(
+						state.root,
+						"repos",
+						`.agency-linked-${repository.alias}-${suffix}`,
+					)
+					const metadataBackup = `${sourceWorktrees}.agency-materialize-${suffix}`
+					yield* fs.createDirectory(join(state.root, "repos"))
+					yield* backend.cloneRepository(source, staging).pipe(
+						Effect.catchAll((cause) =>
+							fs.deleteDirectory(staging).pipe(
+								Effect.ignore,
+								Effect.zipRight(
+									Effect.fail(
+										new RepositoryError({
+											message: `Failed to materialize repository '${alias}': ${cause instanceof Error ? cause.message : String(cause)}`,
+											cause,
+										}),
+									),
+								),
+							),
+						),
+					)
+					yield* backend
+						.setRemoteUrl(staging, "origin", repository.declaredRemote)
+						.pipe(
+							Effect.catchAll((cause) =>
+								fs
+									.deleteDirectory(staging)
+									.pipe(Effect.ignore, Effect.zipRight(Effect.fail(cause))),
+							),
+						)
+					for (const workspace of worktrees) {
+						if (!workspace.commit) continue
+						const object = yield* fs.runCommand(
+							[
+								"git",
+								"--git-dir",
+								staging,
+								"cat-file",
+								"-e",
+								`${workspace.commit}^{commit}`,
+							],
+							{ captureOutput: true },
+						)
+						if (object.exitCode !== 0) {
+							yield* fs.deleteDirectory(staging).pipe(Effect.ignore)
+							return yield* new RepositoryError({
+								message: `Registered worktree commit '${workspace.commit}' is missing from the materialized repository`,
+							})
+						}
+					}
+
+					let metadataMoved = false
+					let aliasMoved = false
+					let cloneInstalled = false
+					const workspacePaths = worktrees.map((workspace) => workspace.path)
+					const repair = (gitDirectory: string) =>
+						workspacePaths.length === 0
+							? Promise.resolve()
+							: runGit(
+									fs,
+									[
+										"--git-dir",
+										gitDirectory,
+										"worktree",
+										"repair",
+										...workspacePaths,
+									],
+									"Failed to repair Git worktrees",
+								)
+					const rollbackMigration = async () => {
+						const errors: unknown[] = []
+						if (metadataMoved) {
+							try {
+								await rename(metadataBackup, sourceWorktrees)
+								metadataMoved = false
+								await repair(commonDirectory)
+							} catch (error) {
+								errors.push(error)
+							}
+						}
+						if (cloneInstalled) {
+							try {
+								await rename(repository.path, staging)
+								cloneInstalled = false
+							} catch (error) {
+								errors.push(error)
+							}
+						}
+						if (aliasMoved) {
+							try {
+								await rename(aliasBackup, repository.path)
+								aliasMoved = false
+							} catch (error) {
+								errors.push(error)
+							}
+						}
+						if (errors.length > 0) throw new AggregateError(errors)
+					}
+					const migration: TransactionStep = {
+						label: `materialize linked repository ${repository.alias}`,
+						preflight: async () => {
+							const stats = await lstat(repository.path)
+							if (
+								!stats.isSymbolicLink() ||
+								(await realpath(repository.path)) !== source
+							)
+								throw new Error(
+									`Repository alias '${repository.alias}' changed during materialization`,
+								)
+							const current = await Effect.runPromise(
+								backend
+									.listWorkspaces(repository.path)
+									.pipe(
+										Effect.provideService(FileSystemService, fs),
+									) as unknown as Effect.Effect<
+									readonly { readonly path: string }[],
+									unknown,
+									never
+								>,
+							)
+							const currentPaths = current
+								.map((workspace) => workspace.path)
+								.sort()
+							if (
+								JSON.stringify(currentPaths) !== JSON.stringify(registeredPaths)
+							)
+								throw new Error(
+									`Git worktree registrations changed during materialization`,
+								)
+						},
+						apply: async () => {
+							try {
+								if (hasWorktreeMetadata) {
+									await rename(sourceWorktrees, metadataBackup)
+									metadataMoved = true
+									await cp(metadataBackup, join(staging, "worktrees"), {
+										recursive: true,
+									})
+								}
+								await rename(repository.path, aliasBackup)
+								aliasMoved = true
+								await rename(staging, repository.path)
+								cloneInstalled = true
+								await repair(repository.path)
+							} catch (cause) {
+								try {
+									await rollbackMigration()
+								} catch (rollbackCause) {
+									throw new Error(
+										`Repository materialization failed and rollback requires manual recovery: restore ${aliasBackup} to ${repository.path} and ${metadataBackup} to ${sourceWorktrees}`,
+										{ cause: new AggregateError([cause, rollbackCause]) },
+									)
+								}
+								throw cause
+							}
+						},
+						rollback: rollbackMigration,
+						finalize: async () => {
+							await rm(aliasBackup, { recursive: true, force: true })
+							await rm(metadataBackup, { recursive: true, force: true })
+						},
+						manualRecovery: `Restore ${aliasBackup} to ${repository.path} and ${metadataBackup} to ${sourceWorktrees}`,
+					}
+
+					yield* runLifecycleTransaction({
+						root: state.root,
+						preconditions: [{ path: state.path, revision: state.revision }],
+						steps: [migration],
+					}).pipe(
+						Effect.mapError(
+							(cause) => new RepositoryError({ message: cause.message, cause }),
+						),
+						Effect.ensuring(fs.deleteDirectory(staging).pipe(Effect.ignore)),
+					)
+					return yield* find(alias, startPath)
 				}),
 
 			list: (startPath: string = process.cwd()) =>
