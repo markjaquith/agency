@@ -5,11 +5,11 @@ import { FileSystemService } from "../services/FileSystemService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import { documentRevision } from "./document-revision"
 
-export const KICKOFF_CONTRACT_VERSION = 1 as const
+export const EXECUTION_CONTRACT_VERSION = 1 as const
 
-export const KICKOFF_SOURCE_LOCATIONS = [
+export const EXECUTION_SOURCE_LOCATIONS = [
 	"src/commands/task.ts",
-	"src/workbase/kickoff-contract.ts",
+	"src/workbase/execution-contract.ts",
 	"src/commands/work.ts",
 	"src/services/WorktreeService.ts",
 	"src/workbase/AGENTS.md",
@@ -25,7 +25,7 @@ export const RecalledTaskContext = Schema.Struct({
 export type RecalledTaskContext = Schema.Schema.Type<typeof RecalledTaskContext>
 
 const ValidationEvidencePayload = Schema.Struct({
-	version: Schema.Literal(KICKOFF_CONTRACT_VERSION),
+	version: Schema.Literal(EXECUTION_CONTRACT_VERSION),
 	workbaseRoot: Schema.String,
 	target: Schema.String,
 	documentPath: Schema.String,
@@ -166,7 +166,7 @@ export const buildValidationEvidence = (input: {
 	Effect.gen(function* () {
 		const identity = yield* workbaseIdentity(input.startPath)
 		const payload = {
-			version: KICKOFF_CONTRACT_VERSION,
+			version: EXECUTION_CONTRACT_VERSION,
 			workbaseRoot: identity.root,
 			target: input.target,
 			documentPath: resolve(input.documentPath),
@@ -208,7 +208,7 @@ export const readValidationEvidence = (input: string, cwd: string) =>
 				parsed?.validationEvidence?.evidence ??
 				parsed?.evidence ??
 				(parsed?.target && parsed?.documentRevision ? parsed : undefined)
-			if (!candidate || candidate.version !== KICKOFF_CONTRACT_VERSION) {
+			if (!candidate || candidate.version !== EXECUTION_CONTRACT_VERSION) {
 				return undefined
 			}
 			return parseValidationEvidence(candidate)
@@ -259,100 +259,61 @@ export const assessValidationEvidence = (input: {
 		}
 	})
 
-export const buildKickoffPlan = (input: {
+export const buildExecutionContract = (input: {
 	readonly workbaseRoot: string
 	readonly target: string
-	readonly taskId: string
-	readonly phaseId?: string
 	readonly taskPath: string
 	readonly phasePath?: string | null
 	readonly checkoutPath?: string | null
 	readonly documentRevision: string
+	readonly dryRun: boolean
 }) => {
-	const selector = [input.taskId, ...(input.phaseId ? [input.phaseId] : [])]
-	const taskDirectory = dirname(input.phasePath ?? input.taskPath)
-	const idempotencyKey = digest({
-		version: KICKOFF_CONTRACT_VERSION,
+	const executionDirectory = dirname(input.phasePath ?? input.taskPath)
+	const key = digest({
+		version: EXECUTION_CONTRACT_VERSION,
 		workbaseRoot: input.workbaseRoot,
 		target: input.target,
 	})
+	const documentPath = input.phasePath ?? input.taskPath
+	const mode = input.dryRun ? "preview" : "applied"
 	return {
-		version: KICKOFF_CONTRACT_VERSION,
-		idempotencyKey,
-		workbaseRoot: input.workbaseRoot,
-		target: input.target,
-		documentRevision: input.documentRevision,
-		sourceLocations: KICKOFF_SOURCE_LOCATIONS,
-		taskDirectory,
-		taskDocument: input.taskPath,
-		phaseDocument: input.phasePath ?? null,
-		preparedCheckout: input.checkoutPath ?? null,
-		orchestrator: {
-			capability: "agency-kickoff-v1",
-			knownCurrentCommandsBypassDiscovery: true,
-			fallback:
-				"Discover Herdr capabilities only when capability/version evidence is absent or stale.",
+		version: EXECUTION_CONTRACT_VERSION,
+		capability: "agency-execution-v1" as const,
+		mode,
+		executionIdentity: {
+			key,
+			target: input.target,
+			documentRevision: input.documentRevision,
 		},
-		steps: [
-			{
-				id: "worktree-dry-run",
-				argv: [
-					"agency",
-					"worktree",
-					"prepare",
-					...selector,
-					"--dry-run",
-					"--json",
-				],
-				retry: "safe",
-			},
-			{
-				id: "worktree-prepare",
-				argv: ["agency", "worktree", "prepare", ...selector, "--json"],
-				retry: "reuses matching clean workspaces",
-			},
-			{
-				id: "herdr-tab",
-				action: "create-or-reuse-background-tab",
-				idempotencyKey,
-				recovery:
-					"Reuse the tab recorded for this idempotency key; never create a duplicate.",
-			},
-			{
-				id: "task-document-split",
-				action: "open-side-by-side-document",
-				path: input.phasePath ?? input.taskPath,
-				recovery: "Reuse the existing split when present.",
-			},
-			{
-				id: "agent-start",
-				cwd: taskDirectory,
+		workbaseRoot: input.workbaseRoot,
+		sourceLocations: EXECUTION_SOURCE_LOCATIONS,
+		workspace: {
+			state: input.dryRun ? ("planned" as const) : ("materialized" as const),
+			executionDirectory,
+			taskDocument: input.taskPath,
+			phaseDocument: input.phasePath ?? null,
+			checkoutPath: input.checkoutPath ?? null,
+		},
+		...(input.dryRun
+			? {
+					plannedActions: [
+						{
+							kind: "workspace-materialization" as const,
+							target: input.target,
+							checkoutPath: input.checkoutPath ?? null,
+						},
+					],
+				}
+			: {}),
+		commands: {
+			work: {
+				cwd: executionDirectory,
 				argv: ["agency", "work", ".", "--auto"],
-				recovery:
-					"Inspect the recorded tab before retrying; a working agent must not be duplicated.",
 			},
-			{
-				id: "final-context-verification",
-				argv: [
-					"agency",
-					"context",
-					input.phasePath ?? input.taskPath,
-					"--json",
-				],
-				exactlyOnce: true,
-				recovery:
-					"If verification fails, inspect the existing tab; do not launch another agent.",
+			context: {
+				cwd: executionDirectory,
+				argv: ["agency", "context", documentPath, "--json"],
 			},
-		],
-		successFields: [
-			"target",
-			"taskDirectory",
-			"taskDocument",
-			"preparedCheckout",
-			"herdrWorkspace",
-			"herdrTab",
-			"agentStart",
-			"contextVerification",
-		],
+		},
 	}
 }

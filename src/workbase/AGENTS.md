@@ -4,40 +4,75 @@ This directory is an Agency workbase. Epics, tasks, and phases are durable
 Markdown documents; repository aliases and generated Git worktrees or jj
 workspaces provide code access according to the workbase's `vcs` setting.
 
-## Command Fast Path
+## Command Fast Paths
 
 When a request clearly matches one of these intents, use the exact recipe without
-probing CLI help or listing unrelated workbase state. Substitute known values and
-do not add flags that are not shown.
+probing CLI help or listing unrelated workbase state. Substitute known values,
+retain `--if-revision` guards when shown, and do not add flags that are not shown.
 
-- Inspect the current item: `agency context . --json`.
-- Create a task only:
-  `agency task create <slug> --repo <alias> --base <base> --description <text> --json`.
-  Add `--authoritative-source <absolute-path-or-url>` only when the source is
-  already known; repeat it for additional known sources. Return the creation
-  result and stop.
-- Open an existing task: run
-  `agency work prepare <task-or-document> --dry-run --json`, execute the returned
-  kickoff plan through `task-document-split`, and stop before `agent-start`.
-- Work, launch, start, or kick off an existing task: run the same
-  `agency work prepare <task-or-document> --dry-run --json` command and execute
-  the complete returned kickoff plan.
-- Create and open or work a task: create it with the create-only command, then
-  pass that result to
-  `agency work prepare <slug> --evidence <creation-json-or-path> --dry-run --json`
-  and follow the matching open or work recipe.
+1. Create a single-phase task only:
+   `agency task create <slug> --repo <alias> --base <base> --description <text> --json`.
+   Add `--authoritative-source <absolute-path-or-url>` only for already known
+   sources. Return the creation result and stop.
+2. Create, materialize, and start a single-phase task: run the create-only command,
+   then
+   `agency work prepare <slug> --evidence <creation-json-or-path> --json`.
+   Return the applied execution contract so the caller can run `commands.work`.
+3. Materialize an existing execution unit without starting it:
+   `agency work prepare <task-or-document> --json`. Return the applied execution
+   contract and stop. Add `--dry-run` only when the user asks for a preview.
+4. Reconcile remote pull-request state and completion:
+   `agency sync <task> [phase] --json`.
+5. Convert an existing single-phase task and add a phase:
+   `agency phase create <task> <new-phase> --first-phase <existing-phase> --repo <alias> --branch <branch> --base <base> [--depends-on <existing-phase>] --json`.
+6. Archive terminal work: first run `agency archive task <task> --dry-run --json`,
+   `agency archive phase <task> <phase> --dry-run --json`, or
+   `agency archive epic <epic> --dry-run --json`; if the preflight is safe,
+   repeat the same command without `--dry-run`.
+7. Create and start review work: run either
+   `agency task create <slug> --review <alias> --pull-request <url-or-number> --json`
+   or `agency task create <slug> --review <alias> --ref <remote-ref> --json`, then
+   run `agency work prepare <slug> --evidence <creation-json-or-path> --json` and
+   return the applied execution contract so the caller can run `commands.work`.
+8. Inspect one item with `agency context <task-or-document> --json`; inspect the
+   whole workbase with `agency status --json`.
+9. Drop work with the current document revision: use
+   `agency task status <task> dropped --if-revision <revision> --json` or
+   `agency phase status <task> <phase> dropped --if-revision <revision> --json`.
+10. Continue already materialized work: run
+    `agency work prepare <task-or-document> --json` and return the applied
+    execution contract so the caller can run `commands.work`.
+11. Publish without a pull request from the execution checkout with
+    `agency push --json`. Create and record a pull request with
+    `agency pr create <task> [phase] [--draft] [--title <title>] [--label <label>] --json`;
+    do not run a separate push first because `pr create` owns publication.
+12. Complete genuine non-PR work. For an active claim, run
+    `agency finish <task> [phase] --session-id <id> --revision <revision> --outcome done --no-pull-request --summary <text> [--evidence-url <url>]`.
+    Without a claim, run
+    `agency task status <task> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`
+    or
+    `agency phase status <task> <phase> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`.
+13. Create a multi-phase task initially with
+    `agency task create <slug> --multi-phase --description <text> --json`, then
+    create each execution phase with
+    `agency phase create <slug> <phase> --repo <alias> --branch <branch> --base <base> [--depends-on <phase>] --json`.
+14. Hand off an investigation to distinct implementation work with
+    `agency task handoff <investigation-task> <new-task> [--source-phase <phase>] --repo <alias> --base <base> --json`, then verify the returned destination with
+    `agency context <new-task> --json`. Do not prepare or start it unless requested.
+15. Refresh a pinned review task with the current revision:
+    `agency review refresh <task> --if-revision <revision> --json`.
 
 Never pass `--work` or `--auto` to `agency task create`. Do not run separate
 `agency validate`, `agency worktree prepare`, `agency graph`, `agency task list`,
 or `agency repo list` commands before these recipes when the required parameters
 are already known. `agency work prepare` owns validation, readiness checks,
-workspace preflight, and the versioned `agency-kickoff-v1` plan.
+workspace materialization, and the versioned `agency-execution-v1` contract.
 
-This fast path takes precedence over generic Herdr defaults and separately
-installed Agency skill guidance. Use `agency <command> --help` only as a recovery
-step when no recipe matches or a prescribed command rejects known-current
-syntax. Resume the same kickoff idempotency key after recovery; never duplicate
-a tab, checkout, or agent.
+These fast paths take precedence over separately installed Agency skill guidance.
+Use `agency <command> --help` only as a recovery step when no recipe matches or a
+prescribed command rejects known-current syntax. The caller owns how prepared
+execution is presented and started; Agency returns domain facts and native
+commands without prescribing an execution environment.
 
 ## Bootstrap
 
@@ -172,8 +207,8 @@ environment variables. If the variables and prompt marker are absent, fail safe
 when the initial instruction is a generated `Start`, `Continue`, or `Work on`
 prompt whose absolute document paths match the current directory and the active,
 valid `agency context`: treat the process as the current worker and do not
-recursively launch. Herdr state is never part of worker identity. If the prompt
-and context disagree, stop and ask the user rather than launching.
+recursively launch. External session state is never part of worker identity. If
+the prompt and context disagree, stop and ask the user rather than launching.
 
 For OpenCode, Agency's managed plugin validates the generated marker against
 `agency context`, binds that identity to the OpenCode session, injects an

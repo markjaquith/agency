@@ -156,19 +156,36 @@ describe("IntegrationService", () => {
 		])
 	})
 
-	test("generates the Agency command fast path with precedence", () => {
+	test("generates the complete Agency command fast paths with precedence", () => {
 		const body = managedBody(managedWorkbaseAgents)
 
-		expect(body.indexOf("## Command Fast Path")).toBeLessThan(
+		expect(body.indexOf("## Command Fast Paths")).toBeLessThan(
 			body.indexOf("## Bootstrap"),
 		)
 		expect(managedWorkbaseAgents).toContain(
-			"takes precedence over generic Herdr defaults and separately",
+			"take precedence over separately installed Agency skill guidance",
 		)
-		expect(managedWorkbaseAgents).toContain(
+		for (const recipe of [
+			"Create a single-phase task only",
 			"agency work prepare <slug> --evidence",
-		)
-		expect(managedWorkbaseAgents).toContain("agency-kickoff-v1")
+			"Materialize an existing execution unit without starting it",
+			"agency sync <task> [phase] --json",
+			"agency phase create <task> <new-phase> --first-phase <existing-phase>",
+			"agency archive task <task> --dry-run --json",
+			"agency task create <slug> --review <alias>",
+			"agency status --json",
+			"agency task status <task> dropped --if-revision <revision> --json",
+			"Continue already materialized work",
+			"agency pr create <task> [phase]",
+			"agency finish <task> [phase] --session-id <id>",
+			"agency task create <slug> --multi-phase",
+			"agency task handoff <investigation-task> <new-task>",
+			"agency review refresh <task> --if-revision <revision> --json",
+		]) {
+			expect(managedWorkbaseAgents).toContain(recipe)
+		}
+		expect(managedWorkbaseAgents).toContain("agency push --json")
+		expect(managedWorkbaseAgents).toContain("agency-execution-v1")
 		expect(managedWorkbaseAgents).toContain(
 			"Never pass `--work` or `--auto` to `agency task create`",
 		)
@@ -607,8 +624,10 @@ describe("IntegrationService", () => {
 		expect(body).toContain("Agency worker launch target: <target>.")
 		expect(body).toContain("environment variables and a generated")
 		expect(body).toContain("the initial instruction is a generated")
-		expect(body).toContain("Herdr state is never part of worker identity")
-		expect(body).toMatch(/If the prompt\s+and context disagree/)
+		expect(body).toContain(
+			"External session state is never part of worker identity",
+		)
+		expect(body).toMatch(/If\s+the prompt\s+and context disagree/)
 		expect(body).toContain("marks execution work")
 		expect(body).toContain("without creating a claim")
 		expect(body).toContain("formatting, type checks, build, dead-code checks")
@@ -668,7 +687,7 @@ describe("IntegrationService", () => {
 					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
 				mode: "subagent",
 				prompt: expect.stringMatching(
-					/agency context \. --json[\s\S]+Never pass `--work` or `--auto`[\s\S]+agency work prepare/,
+					/agency context \. --json[\s\S]+agency work prepare[\s\S]+never pass `--work` or `--auto`/,
 				),
 			},
 			plan: {
@@ -701,10 +720,7 @@ describe("IntegrationService", () => {
 		expect(config.agent.agency.hidden).toBeUndefined()
 		expect(config.agent.agency.steps).toBeUndefined()
 		expect(config.agent.agency.prompt).toContain(
-			"verify that the agent started successfully",
-		)
-		expect(config.agent.agency.prompt).toContain(
-			"return without waiting for the task to finish",
+			"Return the prepared execution contract to the caller",
 		)
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Start with `agency context . --json`",

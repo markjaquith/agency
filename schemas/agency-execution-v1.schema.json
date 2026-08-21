@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/markjaquith/agency/schemas/agency-kickoff-v1.schema.json",
-  "title": "Agency kickoff contract v1",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-execution-v1.schema.json",
+  "title": "Agency execution contract v1",
   "oneOf": [
     { "$ref": "#/$defs/validationEvidence" },
-    { "$ref": "#/$defs/kickoffPlan" }
+    { "$ref": "#/$defs/executionContract" }
   ],
   "$defs": {
     "recalledContext": {
@@ -54,69 +54,93 @@
       },
       "additionalProperties": false
     },
-    "kickoffPlan": {
+    "command": {
+      "type": "object",
+      "required": ["cwd", "argv"],
+      "properties": {
+        "cwd": { "type": "string" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "executionContract": {
       "type": "object",
       "required": [
         "version",
-        "idempotencyKey",
+        "capability",
+        "mode",
+        "executionIdentity",
         "workbaseRoot",
-        "target",
-        "documentRevision",
         "sourceLocations",
-        "taskDirectory",
-        "taskDocument",
-        "phaseDocument",
-        "preparedCheckout",
-        "orchestrator",
-        "steps",
-        "successFields"
+        "workspace",
+        "commands"
       ],
       "properties": {
         "version": { "const": 1 },
-        "idempotencyKey": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "workbaseRoot": { "type": "string" },
-        "target": { "type": "string" },
-        "documentRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "sourceLocations": { "type": "array", "items": { "type": "string" } },
-        "taskDirectory": { "type": "string" },
-        "taskDocument": { "type": "string" },
-        "phaseDocument": { "type": ["string", "null"] },
-        "preparedCheckout": { "type": ["string", "null"] },
-        "orchestrator": {
+        "capability": { "const": "agency-execution-v1" },
+        "mode": { "enum": ["preview", "applied"] },
+        "executionIdentity": {
           "type": "object",
-          "required": [
-            "capability",
-            "knownCurrentCommandsBypassDiscovery",
-            "fallback"
-          ],
+          "required": ["key", "target", "documentRevision"],
           "properties": {
-            "capability": { "const": "agency-kickoff-v1" },
-            "knownCurrentCommandsBypassDiscovery": { "const": true },
-            "fallback": { "type": "string" }
+            "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "target": { "type": "string" },
+            "documentRevision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
           },
           "additionalProperties": false
         },
-        "steps": {
+        "workbaseRoot": { "type": "string" },
+        "sourceLocations": {
           "type": "array",
-          "minItems": 6,
+          "items": { "type": "string" }
+        },
+        "workspace": {
+          "type": "object",
+          "required": [
+            "state",
+            "executionDirectory",
+            "taskDocument",
+            "phaseDocument",
+            "checkoutPath"
+          ],
+          "properties": {
+            "state": { "enum": ["planned", "materialized"] },
+            "executionDirectory": { "type": "string" },
+            "taskDocument": { "type": "string" },
+            "phaseDocument": { "type": ["string", "null"] },
+            "checkoutPath": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "plannedActions": {
+          "type": "array",
           "items": {
             "type": "object",
-            "required": ["id"],
+            "required": ["kind", "target", "checkoutPath"],
             "properties": {
-              "id": { "type": "string" },
-              "argv": { "type": "array", "items": { "type": "string" } },
-              "cwd": { "type": "string" },
-              "action": { "type": "string" },
-              "path": { "type": "string" },
-              "retry": { "type": "string" },
-              "recovery": { "type": "string" },
-              "idempotencyKey": { "type": "string" },
-              "exactlyOnce": { "type": "boolean" }
+              "kind": { "const": "workspace-materialization" },
+              "target": { "type": "string" },
+              "checkoutPath": { "type": ["string", "null"] }
             },
             "additionalProperties": false
           }
         },
-        "successFields": { "type": "array", "items": { "type": "string" } }
+        "commands": {
+          "type": "object",
+          "required": ["work", "context"],
+          "properties": {
+            "work": { "$ref": "#/$defs/command" },
+            "context": { "$ref": "#/$defs/command" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     }

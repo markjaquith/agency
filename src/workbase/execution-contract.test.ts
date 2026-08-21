@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { documentRevision } from "./document-revision"
 import {
 	assessValidationEvidence,
-	buildKickoffPlan,
+	buildExecutionContract,
 	buildValidationEvidence,
-	KICKOFF_SOURCE_LOCATIONS,
+	EXECUTION_SOURCE_LOCATIONS,
 	normalizeRecalledContext,
 	parseValidationEvidence,
 	readValidationEvidence,
-} from "./kickoff-contract"
+} from "./execution-contract"
 
-describe("kickoff contract", () => {
+describe("execution contract", () => {
 	let root: string
 	let taskPath: string
 	let taskContent: string
@@ -102,44 +102,60 @@ describe("kickoff contract", () => {
 		)
 	})
 
-	test("plans retry-safe single-phase and phased launches with one verification", () => {
-		const single = buildKickoffPlan({
+	test("describes prepared execution without prescribing orchestration", () => {
+		const checkoutPath = join(root, "tasks/example/code/agency")
+		const applied = buildExecutionContract({
 			workbaseRoot: root,
 			target: "execution-unit:task/example",
-			taskId: "example",
 			taskPath,
-			checkoutPath: join(root, "tasks/example/code/agency"),
+			checkoutPath,
 			documentRevision: "a".repeat(64),
+			dryRun: false,
 		})
-		const phased = buildKickoffPlan({
+		const phasePath = join(root, "tasks/example/phases/implementation/PHASE.md")
+		const preview = buildExecutionContract({
 			workbaseRoot: root,
 			target: "execution-unit:phase/example/implementation",
-			taskId: "example",
-			phaseId: "implementation",
 			taskPath,
-			phasePath: join(root, "tasks/example/phases/implementation/PHASE.md"),
+			phasePath,
+			checkoutPath: join(
+				root,
+				"tasks/example/phases/implementation/code/agency",
+			),
 			documentRevision: "b".repeat(64),
+			dryRun: true,
 		})
-		expect(single.steps[0]?.argv).toContain("example")
-		expect(phased.steps[0]?.argv).toEqual(
-			expect.arrayContaining(["example", "implementation"]),
-		)
-		expect(
-			single.steps.filter(({ id }) => id === "final-context-verification"),
-		).toHaveLength(1)
-		expect(single.orchestrator.knownCurrentCommandsBypassDiscovery).toBe(true)
-		expect(single.sourceLocations).toEqual(KICKOFF_SOURCE_LOCATIONS)
-		expect(
-			single.steps.find(({ id }) => id === "herdr-tab")?.recovery,
-		).toContain("never create a duplicate")
-		expect(single.idempotencyKey).toBe(
-			buildKickoffPlan({
+		expect(applied).toMatchObject({
+			capability: "agency-execution-v1",
+			mode: "applied",
+			workspace: {
+				state: "materialized",
+				checkoutPath,
+			},
+			commands: {
+				work: {
+					cwd: dirname(taskPath),
+					argv: ["agency", "work", ".", "--auto"],
+				},
+			},
+		})
+		expect(applied.sourceLocations).toEqual(EXECUTION_SOURCE_LOCATIONS)
+		expect(preview).toMatchObject({
+			mode: "preview",
+			workspace: { state: "planned" },
+			plannedActions: [{ kind: "workspace-materialization" }],
+			commands: {
+				context: { cwd: dirname(phasePath) },
+			},
+		})
+		expect(applied.executionIdentity.key).toBe(
+			buildExecutionContract({
 				workbaseRoot: root,
 				target: "execution-unit:task/example",
-				taskId: "example",
 				taskPath,
 				documentRevision: "a".repeat(64),
-			}).idempotencyKey,
+				dryRun: true,
+			}).executionIdentity.key,
 		)
 	})
 })

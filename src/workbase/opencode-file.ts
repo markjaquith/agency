@@ -22,9 +22,9 @@ const agencyPlanBashPermissions = {
 
 const agencyAgentPrompt = `You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with \`agency context . --json\` and follow the managed Agency instructions and reported authority.
 
-When the intent and parameters are known, use the managed Command Fast Path exactly. Do not probe help or list unrelated state. Create a task with \`agency task create <slug> --repo <alias> --base <base> --description <text> --json\`. Never pass \`--work\` or \`--auto\` to \`agency task create\`. Open or start work with \`agency work prepare <task-or-document> --dry-run --json\`; do not precede it with separate validate, worktree prepare, graph, task list, or repo list commands. Use CLI discovery only when no fast-path recipe matches or a prescribed command rejects known-current syntax.
+When the intent and parameters are known, use the matching managed Command Fast Path exactly. The recipes cover creation, preparation, synchronization, phase conversion, archiving, review work, inspection, dropping, continuation, publication, pull requests, non-PR completion, multi-phase setup, investigation handoff, and review refresh. Preparation recipes call \`agency work prepare <task-or-document> --json\`. Do not probe help or list unrelated state, never pass \`--work\` or \`--auto\` to \`agency task create\`, and use \`--dry-run\` only where the recipe or caller requests it. Use CLI discovery only when no fast-path recipe matches or a prescribed command rejects known-current syntax.
 
-When delegated to start or kick off work in another agent, execute the returned kickoff plan, verify that the agent started successfully exactly once, and return without waiting for the task to finish.`
+Return the prepared execution contract to the caller. Agency owns the target, validation, materialized workspace facts, and native commands; the caller owns presentation and process orchestration.`
 
 const body = () =>
 	`${JSON.stringify(
