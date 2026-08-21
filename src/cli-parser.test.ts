@@ -229,7 +229,9 @@ describe("strict CLI parsing", () => {
 	test("parses addressable resource maintenance commands", () => {
 		for (const args of [
 			["doctor", "--json"],
+			["repo", "materialize", "--help"],
 			["repo", "show", "agency", "--json"],
+			["repo", "materialize", "agency", "--json"],
 			["repo", "fetch", "agency"],
 			["repo", "remove", "agency"],
 			["repo", "unlink", "agency"],
@@ -270,6 +272,7 @@ describe("strict CLI parsing", () => {
 			[["integration", "sync", "extra"], "agency integration sync"],
 			[["repo", "add", "a", "b", "extra"], "agency repo add"],
 			[["repo", "link", "a", "b", "extra"], "agency repo link"],
+			[["repo", "materialize", "a", "extra"], "agency repo materialize"],
 			[["repo", "list", "extra"], "agency repo list"],
 			[
 				[
