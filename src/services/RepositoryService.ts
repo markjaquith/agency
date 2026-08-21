@@ -19,6 +19,7 @@ import {
 import { documentRevision } from "../workbase/document-revision"
 import {
 	VersionControlService,
+	type RegisteredWorkspace,
 	type VersionControlBackend,
 } from "./VersionControlService"
 
@@ -558,9 +559,9 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
 					const source = yield* fs.realPath(repository.path)
 					const registered = yield* backend.listWorkspaces(repository.path)
-					const registeredPaths = registered
-						.map((workspace) => workspace.path)
-						.sort()
+					const registeredState = registered
+						.map(({ path, commit, branch }) => ({ path, commit, branch }))
+						.sort((left, right) => left.path.localeCompare(right.path))
 					const worktrees: (typeof registered)[number][] = []
 					for (const workspace of registered) {
 						if (!(yield* fs.isDirectory(workspace.path))) {
@@ -634,6 +635,77 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							),
 						),
 					)
+					const reviewRefs = yield* fs.runCommand(
+						[
+							"git",
+							"-C",
+							source,
+							"for-each-ref",
+							"--format=%(refname)",
+							"refs/agency/reviews/",
+						],
+						{ captureOutput: true },
+					)
+					if (reviewRefs.exitCode !== 0) {
+						yield* fs.deleteDirectory(staging).pipe(Effect.ignore)
+						return yield* new RepositoryError({
+							message: `Failed to enumerate Agency review refs while materializing repository '${alias}'`,
+						})
+					}
+					const preservedReviewRefs = reviewRefs.stdout
+						.split("\n")
+						.map((ref) => ref.trim())
+						.filter(Boolean)
+					const worktreeCommits = [
+						...new Set(
+							worktrees
+								.map((workspace) => workspace.commit)
+								.filter((commit): commit is string => commit !== null),
+						),
+					]
+					const temporaryRefs = worktreeCommits.map(
+						(_, index) =>
+							`refs/agency/materialize/${suffix}/${String(index).padStart(4, "0")}`,
+					)
+					const preservationRefspecs = [
+						...preservedReviewRefs.map((ref) => `+${ref}:${ref}`),
+						...worktreeCommits.map(
+							(commit, index) => `+${commit}:${temporaryRefs[index]}`,
+						),
+					]
+					if (preservationRefspecs.length > 0) {
+						const preserved = yield* fs.runCommand(
+							[
+								"git",
+								"--git-dir",
+								staging,
+								"fetch",
+								"--no-tags",
+								"--no-write-fetch-head",
+								source,
+								...preservationRefspecs,
+							],
+							{ captureOutput: true },
+						)
+						if (preserved.exitCode !== 0) {
+							yield* fs.deleteDirectory(staging).pipe(Effect.ignore)
+							return yield* new RepositoryError({
+								message: `Failed to preserve Agency refs and registered worktree commits while materializing repository '${alias}': ${preserved.stderr.trim()}`,
+							})
+						}
+						for (const ref of temporaryRefs) {
+							const removed = yield* fs.runCommand(
+								["git", "--git-dir", staging, "update-ref", "-d", ref],
+								{ captureOutput: true },
+							)
+							if (removed.exitCode !== 0) {
+								yield* fs.deleteDirectory(staging).pipe(Effect.ignore)
+								return yield* new RepositoryError({
+									message: `Failed to remove temporary materialization ref '${ref}' for repository '${alias}': ${removed.stderr.trim()}`,
+								})
+							}
+						}
+					}
 					yield* backend
 						.setRemoteUrl(staging, "origin", repository.declaredRemote)
 						.pipe(
@@ -728,16 +800,16 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 									.pipe(
 										Effect.provideService(FileSystemService, fs),
 									) as unknown as Effect.Effect<
-									readonly { readonly path: string }[],
+									readonly RegisteredWorkspace[],
 									unknown,
 									never
 								>,
 							)
-							const currentPaths = current
-								.map((workspace) => workspace.path)
-								.sort()
+							const currentState = current
+								.map(({ path, commit, branch }) => ({ path, commit, branch }))
+								.sort((left, right) => left.path.localeCompare(right.path))
 							if (
-								JSON.stringify(currentPaths) !== JSON.stringify(registeredPaths)
+								JSON.stringify(currentState) !== JSON.stringify(registeredState)
 							)
 								throw new Error(
 									`Git worktree registrations changed during materialization`,

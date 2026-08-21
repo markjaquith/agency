@@ -212,6 +212,13 @@ status: working
 			"main",
 		])
 		await Bun.write(join(checkout, "dirty.txt"), "preserved\n")
+		await runGit([
+			"-C",
+			target,
+			"update-ref",
+			"refs/agency/reviews/active",
+			"main",
+		])
 
 		const result = await runTestEffect(
 			RepositoryService.pipe(
@@ -238,6 +245,96 @@ status: working
 		expect(await Bun.file(join(root, "tasks/active/TASK.md")).text()).toContain(
 			"repo: linked",
 		)
+		expect(
+			await gitOutput([
+				"--git-dir",
+				join(root, "repos/linked"),
+				"rev-parse",
+				"refs/agency/reviews/active",
+			]),
+		).toBe(await gitOutput(["-C", target, "rev-parse", "main"]))
+	})
+
+	test("preserves detached registered worktree commits from a shallow linked repository", async () => {
+		const upstream = join(root, "upstream")
+		const target = join(root, "shallow-linked-repository")
+		const checkout = join(root, "tasks/detached/code/linked")
+		await runGit(["init", "--bare", "--initial-branch=main", upstream])
+		const seed = join(root, "seed")
+		await runGit(["clone", upstream, seed])
+		await runGit(["-C", seed, "config", "user.email", "test@example.com"])
+		await runGit(["-C", seed, "config", "user.name", "Test"])
+		await Bun.write(join(seed, "README.md"), "shallow\n")
+		await runGit(["-C", seed, "add", "README.md"])
+		await runGit(["-C", seed, "commit", "-m", "initial"])
+		await runGit(["-C", seed, "push", "origin", "main"])
+		await runGit(["clone", "--depth=1", `file://${upstream}`, target])
+		await runGit(["-C", target, "config", "user.email", "test@example.com"])
+		await runGit(["-C", target, "config", "user.name", "Test"])
+		await runGit([
+			"-C",
+			target,
+			"remote",
+			"set-url",
+			"origin",
+			portableRemote("shallow-materialized"),
+		])
+		await mkdir(dirname(checkout), { recursive: true })
+		await runGit([
+			"-C",
+			target,
+			"worktree",
+			"add",
+			"--detach",
+			checkout,
+			"main",
+		])
+		await Bun.write(join(checkout, "detached.txt"), "preserved\n")
+		await runGit(["-C", checkout, "add", "detached.txt"])
+		await runGit(["-C", checkout, "commit", "-m", "detached work"])
+		const detachedCommit = await gitOutput([
+			"-C",
+			checkout,
+			"rev-parse",
+			"HEAD",
+		])
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.link("linked", target, root)),
+			),
+		)
+
+		await runTestEffect(
+			RepositoryService.pipe(
+				Effect.flatMap((service) => service.materialize("linked", root)),
+			),
+		)
+
+		expect(await gitOutput(["-C", checkout, "rev-parse", "HEAD"])).toBe(
+			detachedCommit,
+		)
+		expect(await Bun.file(join(checkout, "detached.txt")).text()).toBe(
+			"preserved\n",
+		)
+		expect(
+			await gitOutput(["-C", checkout, "rev-parse", "--git-common-dir"]),
+		).toBe(await realpath(join(root, "repos/linked")))
+		await runGit([
+			"--git-dir",
+			join(root, "repos/linked"),
+			"cat-file",
+			"-e",
+			`${detachedCommit}^{commit}`,
+		])
+		expect(
+			await gitOutput([
+				"--git-dir",
+				join(root, "repos/linked"),
+				"for-each-ref",
+				"--format=%(refname)",
+				"refs/agency/materialize/",
+			]),
+		).toBe("")
 	})
 
 	test("materializes an alias linked through an existing worktree", async () => {
