@@ -4,6 +4,41 @@ This directory is an Agency workbase. Epics, tasks, and phases are durable
 Markdown documents; repository aliases and generated Git worktrees or jj
 workspaces provide code access according to the workbase's `vcs` setting.
 
+## Command Fast Path
+
+When a request clearly matches one of these intents, use the exact recipe without
+probing CLI help or listing unrelated workbase state. Substitute known values and
+do not add flags that are not shown.
+
+- Inspect the current item: `agency context . --json`.
+- Create a task only:
+  `agency task create <slug> --repo <alias> --base <base> --description <text> --json`.
+  Add `--authoritative-source <absolute-path-or-url>` only when the source is
+  already known; repeat it for additional known sources. Return the creation
+  result and stop.
+- Open an existing task: run
+  `agency work prepare <task-or-document> --dry-run --json`, execute the returned
+  kickoff plan through `task-document-split`, and stop before `agent-start`.
+- Work, launch, start, or kick off an existing task: run the same
+  `agency work prepare <task-or-document> --dry-run --json` command and execute
+  the complete returned kickoff plan.
+- Create and open or work a task: create it with the create-only command, then
+  pass that result to
+  `agency work prepare <slug> --evidence <creation-json-or-path> --dry-run --json`
+  and follow the matching open or work recipe.
+
+Never pass `--work` or `--auto` to `agency task create`. Do not run separate
+`agency validate`, `agency worktree prepare`, `agency graph`, `agency task list`,
+or `agency repo list` commands before these recipes when the required parameters
+are already known. `agency work prepare` owns validation, readiness checks,
+workspace preflight, and the versioned `agency-kickoff-v1` plan.
+
+This fast path takes precedence over generic Herdr defaults and separately
+installed Agency skill guidance. Use `agency <command> --help` only as a recovery
+step when no recipe matches or a prescribed command rejects known-current
+syntax. Resume the same kickoff idempotency key after recovery; never duplicate
+a tab, checkout, or agent.
+
 ## Bootstrap
 
 Start every session with one read-only command:
@@ -18,7 +53,8 @@ from directory names or stale prose.
 
 At the workbase root, use `agency next --json` or `agency graph --json` to choose
 work, then inspect the returned document path or explicit entity selectors. Use
-`agency --help` and `agency <command> --help` for exact command syntax.
+the command fast path above whenever the user's intent already identifies the
+operation and required parameters.
 
 ## Adding a Repository
 
@@ -105,41 +141,6 @@ revision stale, and Agency must not silently rewrite that evidence.
   `agency pr create <task> [phase]` so the URL is recorded durably.
 
 ## Execution
-
-### Canonical create and kickoff
-
-This Agency recipe takes precedence over generic Herdr defaults whenever the
-request creates, opens, works, launches, starts, or kicks off an Agency item.
-Do not rediscover commands that this recipe or a known-current
-`agency-kickoff-v1` plan supplies.
-
-1. Create noninteractively with explicit recalled context when available:
-   `agency task create <slug> --context-repo <alias> --context-base <base> --context-slug <slug> --authoritative-source <absolute-path-or-url> --json`.
-   Repeat `--authoritative-source` as needed. Supplied context must agree with
-   explicit task flags; Agency rejects stale or conflicting values.
-2. For create-only intent, return the creation result and stop. For open intent,
-   prepare the task with
-   `agency work prepare <slug> --evidence <creation-json> --dry-run --json`, then
-   execute the returned plan through `task-document-split` to prepare the
-   checkout and open or reuse the background tab. Stop before `agent-start`.
-3. For work/launch/start/kickoff intent, run that same preflight and execute its
-   ordered kickoff steps. The plan owns worktree dry-run/preparation, a
-   retry-safe background Herdr tab, the side-by-side task document,
-   `agency work . --auto`, and exactly one final
-   `agency context <document-path> --json` verification.
-4. When the orchestrator has known-current support for the plan's
-   `agency-kickoff-v1` capability, execute the supplied actions directly. Do not
-   call Herdr help, skill, or CLI discovery. If capability/version evidence is
-   absent or stale, discovery is the compatibility path; then resume the same
-   idempotency key rather than creating another tab, checkout, or agent.
-5. After the one final context verification succeeds, leave the agent in the
-   background and stop. Do not inspect, poll, or babysit it unless the user asks.
-
-Validation evidence is a local, auditable optimization, not authority. Preflight
-refreshes it after workbase, target document, configuration, repository mapping,
-payload digest, or kickoff-contract changes. Readiness, claims, repository
-materialization, branch ownership, reference drift, and dirty-workspace checks
-still run on every preparation.
 
 For implementation work, read the task and phase prose returned by context,
 change only the writable checkout, keep durable decisions current, and run the

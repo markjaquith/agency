@@ -156,19 +156,29 @@ describe("IntegrationService", () => {
 		])
 	})
 
-	test("generates the canonical Agency kickoff recipe with precedence", () => {
+	test("generates the Agency command fast path with precedence", () => {
+		const body = managedBody(managedWorkbaseAgents)
+
+		expect(body.indexOf("## Command Fast Path")).toBeLessThan(
+			body.indexOf("## Bootstrap"),
+		)
 		expect(managedWorkbaseAgents).toContain(
-			"takes precedence over generic Herdr defaults",
+			"takes precedence over generic Herdr defaults and separately",
 		)
 		expect(managedWorkbaseAgents).toContain(
 			"agency work prepare <slug> --evidence",
 		)
 		expect(managedWorkbaseAgents).toContain("agency-kickoff-v1")
 		expect(managedWorkbaseAgents).toContain(
-			"call Herdr help, skill, or CLI discovery",
+			"Never pass `--work` or `--auto` to `agency task create`",
 		)
-		expect(managedWorkbaseAgents).toContain("exactly one final")
-		expect(managedWorkbaseAgents).toContain("leave the agent in the")
+		expect(managedWorkbaseAgents).toContain(
+			"Use `agency <command> --help` only as a recovery",
+		)
+		expect(managedWorkbaseAgents).not.toContain("`agency --help`")
+		expect(managedWorkbaseAgents).not.toContain(
+			"`agency worktree prepare <task>",
+		)
 	})
 
 	test("generates a dynamic workbase plugin", () => {
@@ -657,7 +667,9 @@ describe("IntegrationService", () => {
 				description:
 					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
 				mode: "subagent",
-				prompt: expect.stringContaining("agency context . --json"),
+				prompt: expect.stringMatching(
+					/agency context \. --json[\s\S]+Never pass `--work` or `--auto`[\s\S]+agency work prepare/,
+				),
 			},
 			plan: {
 				disable: true,

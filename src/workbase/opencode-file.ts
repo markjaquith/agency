@@ -20,6 +20,12 @@ const agencyPlanBashPermissions = {
 	"agency *": "allow",
 }
 
+const agencyAgentPrompt = `You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with \`agency context . --json\` and follow the managed Agency instructions and reported authority.
+
+When the intent and parameters are known, use the managed Command Fast Path exactly. Do not probe help or list unrelated state. Create a task with \`agency task create <slug> --repo <alias> --base <base> --description <text> --json\`. Never pass \`--work\` or \`--auto\` to \`agency task create\`. Open or start work with \`agency work prepare <task-or-document> --dry-run --json\`; do not precede it with separate validate, worktree prepare, graph, task list, or repo list commands. Use CLI discovery only when no fast-path recipe matches or a prescribed command rejects known-current syntax.
+
+When delegated to start or kick off work in another agent, execute the returned kickoff plan, verify that the agent started successfully exactly once, and return without waiting for the task to finish.`
+
 const body = () =>
 	`${JSON.stringify(
 		{
@@ -30,8 +36,7 @@ const body = () =>
 					description:
 						"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
 					mode: "subagent",
-					prompt:
-						"You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with `agency context . --json`, follow the managed Agency instructions and reported authority, use Agency commands for durable mutations, and report the resulting state concisely. When delegated to start or kick off work in another agent, launch it, verify that the agent started successfully, and return without waiting for the task to finish.",
+					prompt: agencyAgentPrompt,
 				},
 				plan: {
 					disable: true,
