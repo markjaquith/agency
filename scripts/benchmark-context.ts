@@ -45,17 +45,7 @@ status: open
 }
 
 const context = (root: string) =>
-	run(
-		[
-			process.execPath,
-			cliPath,
-			"context",
-			"benchmark-1",
-			"--compact",
-			"--silent",
-		],
-		root,
-	)
+	run([process.execPath, cliPath, "context", "benchmark-1", "--silent"], root)
 
 const median = (samples: readonly number[]) =>
 	[...samples].sort((left, right) => left - right)[
