@@ -186,6 +186,10 @@ describe("IntegrationService", () => {
 		}
 		expect(managedWorkbaseAgents).toContain("agency push --json")
 		expect(managedWorkbaseAgents).toContain("agency-execution-v1")
+		expect(managedWorkbaseAgents).toContain("agency context . --full --json")
+		expect(managedWorkbaseAgents).toContain(
+			"Workers use full context here because they need the assigned document prose",
+		)
 		expect(managedWorkbaseAgents).toContain(
 			"Never pass `--work` or `--auto` to `agency task create`",
 		)

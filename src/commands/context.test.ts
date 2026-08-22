@@ -161,9 +161,9 @@ Phase prose.
 		await cleanupTempDir(root)
 	})
 
-	test("returns complete phase context with graph, authority, Git, and validation state", async () => {
+	test("returns full phase context with graph, authority, Git, and validation state", async () => {
 		const target = "tasks/agent-contract/phases/context-command"
-		const result = await readContext(root, target)
+		const result = await readContext(root, target, false, true)
 
 		expect(result).toMatchObject({
 			projection: "complete",
@@ -273,7 +273,7 @@ status: working
 		const currentCommit = (await new Response(current.stdout).text()).trim()
 		expect(await current.exited).toBe(0)
 
-		const result = await readContext(root, "tasks/example")
+		const result = await readContext(root, "tasks/example", false, true)
 		expect(result.workspace.writable).toMatchObject({
 			branchCommit: null,
 			checkoutCommit: currentCommit,
@@ -286,14 +286,19 @@ status: working
 		)
 	})
 
-	test("makes compact projection explicit without omitting essential identity", async () => {
+	test("defaults to compact while preserving explicit compact compatibility", async () => {
 		const result = await readContext(
+			root,
+			"tasks/agent-contract/phases/context-command/code/agency",
+		)
+		const explicit = await readContext(
 			root,
 			"tasks/agent-contract/phases/context-command/code/agency",
 			true,
 		)
 
 		expect(result.projection).toBe("compact")
+		expect(explicit).toEqual(result)
 		expect(result.target.kind).toBe("phase")
 		expect(result.documents.phase.body).toBeUndefined()
 		expect(result.documents.phase.data.branch).toBe("feat/context")
@@ -441,7 +446,7 @@ status: dropped
 			join(root, "archive/tasks/foundations"),
 		)
 
-		const result = await readContext(root, "foundations")
+		const result = await readContext(root, "foundations", false, true)
 
 		expect(result.target).toMatchObject({
 			kind: "task",
@@ -488,6 +493,8 @@ status: dropped
 		const result = await readContext(
 			root,
 			"archive/tasks/agent-contract/phases/context-command",
+			false,
+			true,
 		)
 
 		expect(result.target).toMatchObject({
@@ -529,7 +536,7 @@ status: dropped
 			)
 		}
 
-		const result = await readContext(root, "epics/contract")
+		const result = await readContext(root, "epics/contract", false, true)
 
 		expect(result.target).toMatchObject({
 			kind: "epic",

@@ -631,7 +631,7 @@ included in generated or executed pull request commands.
 
 ### Target Context
 
-`agency context [target] --json` returns complete bootstrap context without
+`agency context [target] --json` returns compact bootstrap context without
 modifying the workbase or fetching repositories. At the workbase root it returns
 a discovery catalog of all epics, tasks, and phases, including frontmatter,
 paths, and document revisions. Elsewhere it returns context for an epic, task,
@@ -642,15 +642,15 @@ explicitly marked with `target.archived: true` and never grants writable
 document, repository checkout, or reference authority; restore the item before
 attempting mutation or execution.
 
-Root discovery is compact by default and includes a hint to run `agency context
-. --full --json` when document prose is needed. Entity context remains complete
-by default. `--compact` explicitly requests compact entity context.
+Root discovery and entity context are compact by default. Root discovery includes
+a hint to run `agency context . --full --json` when document prose is needed.
+`--compact` remains available as an explicit request for the compact projection.
 
-The result includes workbase and target identity, ancestor frontmatter and prose
-with SHA-256 hashes, dependency and readiness state, aggregate status, writable
-and reference authority, local checkout and resolved-commit state, recorded PR
-state, and validation warnings. Only `done` satisfies a dependency; `dropped` is
-terminal but remains a blocker.
+The result includes workbase and target identity, ancestor frontmatter with
+SHA-256 hashes, dependency and readiness state, aggregate status, writable and
+reference authority, local materialization state, recorded PR state, and
+validation warnings. Only `done` satisfies a dependency; `dropped` is terminal
+but remains a blocker.
 
 `authority.writable` identifies the writable repository checkout, while
 `authority.documents.writable` lists the absolute paths of Agency documents the
@@ -658,10 +658,9 @@ target may maintain. A single-phase task lists its `TASK.md`; a phase lists its
 owning `TASK.md` and active `PHASE.md`; orchestration targets list none. Use
 Agency commands rather than direct edits for structural frontmatter mutations.
 
-Complete output is the default for entity targets. Pass `--compact` explicitly
-to omit document prose and low-level Git details while retaining identity,
-hashes, authority, paths, graph state, materialization state, and validation
-warnings.
+Pass `--full` to include document prose and low-level VCS details. Compact output
+retains identity, hashes, authority, paths, graph state, materialization state,
+recorded PR state, and validation warnings.
 
 ### Workbase Graph
 

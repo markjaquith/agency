@@ -1239,9 +1239,10 @@ export class ContextService extends Effect.Service<ContextService>()(
 								? "complete"
 								: "partial"
 
+					const compact = !options.full
 					const projectDocument = <T>(document: Document<T> | null) =>
 						document
-							? options.compact
+							? compact
 								? {
 										id: document.id,
 										path: document.path,
@@ -1255,7 +1256,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 						(task?.data && "repo" in task.data ? task.data : null)
 
 					return {
-						projection: options.compact ? "compact" : "complete",
+						projection: compact ? "compact" : "complete",
 						workbase: {
 							root,
 							configPath: join(root, "agency.json"),
@@ -1308,7 +1309,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 								writable: writableDocuments,
 							},
 						},
-						workspace: options.compact
+						workspace: compact
 							? {
 									codePath,
 									materialization,

@@ -21,16 +21,16 @@ export const context = (options: ContextOptions = {}) =>
 export const help = `
 Usage: agency context [target] [options]
 
-Return complete, read-only context for a workbase, epic, task, or phase. The
-target defaults to the current directory and may be the workbase root, an entity
-path, or a task ID. Archived entities are inspectable but never receive mutation
-or execution authority. Workbase context catalogs all active epics, tasks, and
-phases.
+Return read-only context for a workbase, epic, task, or phase. Compact output is
+the default. The target defaults to the current directory and may be the workbase
+root, an entity path, or a task ID. Archived entities are inspectable but never
+receive mutation or execution authority. Workbase context catalogs all active
+epics, tasks, and phases.
 
 Options:
   --json              Output a versioned machine result
-  --compact           Omit prose bodies and low-level Git details
-  --full              Include prose bodies in root workbase context
+  --compact           Use compact output (default)
+  --full              Include prose bodies and low-level VCS details
   --epic <id>         Select an epic
   --task <id>         Select a task
   --phase <id>        Select a phase together with --task

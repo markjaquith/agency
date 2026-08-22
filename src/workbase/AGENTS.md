@@ -79,10 +79,11 @@ commands without prescribing an execution environment.
 Start every session with one read-only command:
 
 ```bash
-agency context . --json
+agency context . --full --json
 ```
 
-Use the returned target, document paths and revisions, dependency readiness,
+Workers use full context here because they need the assigned document prose. Use
+the returned target, document paths and revisions, dependency readiness,
 authority, checkout state, PR state, and validation result. Do not infer these
 from directory names or stale prose.
 
