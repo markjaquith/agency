@@ -14,13 +14,12 @@ describe("push command", () => {
 			fail: (message) => updates.push(`fail:${message}`),
 		}
 		const result = {
-			vcs: "jj" as const,
+			vcs: "git" as const,
 			taskId: "example",
 			branch: "task/example",
 			base: "main",
 			remote: "origin",
 			tip: "abc123",
-			changeId: "change",
 		}
 		const logs = await captureLogs(() =>
 			Effect.runPromise(

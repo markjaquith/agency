@@ -19,14 +19,13 @@ interface CommandResult {
 type CommitMetadata = PushCommitMetadata
 
 interface PushResult {
-	readonly vcs: "git" | "jj"
+	readonly vcs: "git"
 	readonly taskId: string
 	readonly phaseId?: string
 	readonly branch: string
 	readonly base: string
 	readonly remote: string
 	readonly tip: string
-	readonly changeId?: string
 }
 
 type PushStage = "context" | "fetch" | "inspect" | "validate" | "publish"
@@ -234,224 +233,6 @@ const publishGit = (
 		return { tip }
 	})
 
-const jjTemplate =
-	'"{\\"commitId\\":" ++ json(commit_id) ++ ",\\"changeId\\":" ++ json(change_id) ++ ",\\"description\\":" ++ json(description) ++ ",\\"empty\\":" ++ json(empty) ++ ",\\"authorName\\":" ++ json(author.name()) ++ ",\\"authorEmail\\":" ++ json(author.email()) ++ ",\\"conflict\\":" ++ json(conflict) ++ ",\\"parents\\":" ++ json(parents.map(|parent| parent.commit_id())) ++ "}\\n"'
-
-const jjExact = (value: string) =>
-	value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')
-
-const jj = (
-	fs: FileSystemService,
-	cwd: string,
-	args: readonly string[],
-	label: string,
-) => requireCommand(fs, ["jj", "--no-pager", ...args], cwd, label)
-
-const jjCommits = (fs: FileSystemService, cwd: string, revision: string) =>
-	jj(
-		fs,
-		cwd,
-		["log", "--no-graph", "-r", revision, "-T", jjTemplate],
-		"Failed to inspect jj changes",
-	).pipe(
-		Effect.map((result) =>
-			result.stdout
-				.split("\n")
-				.filter(Boolean)
-				.map((line) => JSON.parse(line) as CommitMetadata),
-		),
-	)
-
-const jjRevision = (fs: FileSystemService, cwd: string, revision: string) =>
-	jjCommits(fs, cwd, revision).pipe(
-		Effect.map((commits) => {
-			if (commits.length === 0) return null
-			if (commits.length === 1) return commits[0]!
-			throw new PushError({
-				message: `Revision '${revision}' resolves to multiple jj commits`,
-			})
-		}),
-	)
-
-const optionalJjRevision = (
-	fs: FileSystemService,
-	cwd: string,
-	revision: string,
-) =>
-	jjCommits(fs, cwd, revision).pipe(
-		Effect.catchTag("PushError", () => Effect.succeed([])),
-		Effect.map((commits) => {
-			if (commits.length === 0) return null
-			if (commits.length === 1) return commits[0]!
-			throw new PushError({
-				message: `Bookmark '${revision}' is conflicted or resolves to multiple commits`,
-			})
-		}),
-	)
-
-const jjAncestor = (
-	fs: FileSystemService,
-	cwd: string,
-	ancestor: string,
-	descendant: string,
-) =>
-	jjCommits(fs, cwd, `${ancestor} & ::${descendant}`).pipe(
-		Effect.map((commits) => commits.length === 1),
-	)
-
-const validateJjCommits = (
-	commits: readonly CommitMetadata[],
-	base: string,
-) => {
-	if (commits.length === 0) {
-		throw new PushError({
-			message: `No changes to publish after base '${base}'`,
-		})
-	}
-	const issues: string[] = []
-	for (const commit of commits) {
-		const id = commit.changeId!
-		if (commit.conflict) {
-			issues.push(`Change ${id} contains conflicts. Run: jj resolve -r ${id}`)
-		}
-		if (!commit.description.trim()) {
-			issues.push(`Change ${id} has no description. Run: jj describe -r ${id}`)
-		}
-		if (!commit.authorName.trim() || !validEmail(commit.authorEmail.trim())) {
-			issues.push(
-				`Change ${id} has an invalid author. Run: jj metaedit -r ${id} --author 'Name <email>'`,
-			)
-		}
-	}
-	if (issues.length > 0) throw new PushError({ message: issues.join("\n") })
-}
-
-const publishJj = (
-	fs: FileSystemService,
-	checkout: string,
-	remote: string,
-	branch: string,
-	base: string,
-	onProgress?: (stage: PushStage) => void,
-) =>
-	Effect.gen(function* () {
-		onProgress?.("fetch")
-		yield* jj(
-			fs,
-			checkout,
-			["git", "fetch", "--remote", remote],
-			`Failed to fetch remote '${remote}'`,
-		)
-		onProgress?.("inspect")
-		const workingCopy = yield* jjRevision(fs, checkout, "@")
-		if (!workingCopy) {
-			return yield* new PushError({
-				message: "jj working copy commit was not found",
-			})
-		}
-		const canonicalPostCommit =
-			workingCopy.empty &&
-			!workingCopy.description.trim() &&
-			workingCopy.parents.length === 1
-		const tip = canonicalPostCommit
-			? yield* jjRevision(fs, checkout, "@-")
-			: workingCopy
-		if (!tip) {
-			return yield* new PushError({
-				message: "jj publication tip was not found",
-			})
-		}
-
-		const baseBookmark = `${base}@${remote}`
-		const [baseRevision, localBookmark, remoteBookmark] = yield* Effect.all(
-			[
-				optionalJjRevision(
-					fs,
-					checkout,
-					`remote_bookmarks(exact:"${jjExact(base)}", exact:"${jjExact(remote)}")`,
-				),
-				optionalJjRevision(
-					fs,
-					checkout,
-					`bookmarks(exact:"${jjExact(branch)}")`,
-				),
-				optionalJjRevision(
-					fs,
-					checkout,
-					`remote_bookmarks(exact:"${jjExact(branch)}", exact:"${jjExact(remote)}")`,
-				),
-			],
-			{ concurrency: "unbounded" },
-		)
-		if (!baseRevision) {
-			return yield* new PushError({
-				message: `Declared base '${base}' was not found on remote '${remote}'`,
-			})
-		}
-		if (
-			!(yield* jjAncestor(fs, checkout, baseRevision.commitId, tip.commitId))
-		) {
-			return yield* new PushError({
-				message: `Declared base '${base}' (${baseRevision.commitId}) is not an ancestor of jj tip ${tip.changeId} (${tip.commitId}). Rebase the stack with: jj rebase -s 'roots(${baseBookmark}..@)' -d ${baseBookmark}`,
-			})
-		}
-
-		onProgress?.("validate")
-		const outgoing = yield* jjCommits(
-			fs,
-			checkout,
-			`${baseRevision.commitId}..${tip.commitId}`,
-		)
-		yield* Effect.try({
-			try: () => validateJjCommits(outgoing, base),
-			catch: (cause) => cause as PushError,
-		})
-
-		const [localBookmarkIsAncestor, remoteBookmarkIsAncestor] =
-			yield* Effect.all(
-				[
-					localBookmark
-						? jjAncestor(fs, checkout, localBookmark.commitId, tip.commitId)
-						: Effect.succeed(true),
-					remoteBookmark
-						? jjAncestor(fs, checkout, remoteBookmark.commitId, tip.commitId)
-						: Effect.succeed(true),
-				],
-				{ concurrency: "unbounded" },
-			)
-		if (!localBookmarkIsAncestor) {
-			return yield* new PushError({
-				message: `Local bookmark '${branch}' is not an ancestor of jj tip ${tip.changeId}; refusing to move it`,
-			})
-		}
-		if (!remoteBookmarkIsAncestor) {
-			return yield* new PushError({
-				message: `Remote bookmark '${branch}@${remote}' is not an ancestor of jj tip ${tip.changeId}; refusing a non-fast-forward update`,
-			})
-		}
-
-		onProgress?.("publish")
-		yield* jj(
-			fs,
-			checkout,
-			["bookmark", "set", branch, "-r", tip.commitId],
-			`Failed to set declared bookmark '${branch}'`,
-		)
-		yield* jj(
-			fs,
-			checkout,
-			["git", "push", "--remote", remote, "--bookmark", branch],
-			`Failed to push declared bookmark '${branch}'`,
-		)
-		yield* jj(
-			fs,
-			checkout,
-			["bookmark", "track", `${branch}@${remote}`],
-			`Failed to track remote bookmark '${branch}@${remote}'`,
-		)
-		return { tip: tip.commitId, changeId: tip.changeId }
-	})
-
 export class PushService extends Effect.Service<PushService>()("PushService", {
 	sync: () => ({
 		publish: (startPath: string = process.cwd(), options: PushOptions = {}) =>
@@ -534,26 +315,16 @@ export class PushService extends Effect.Service<PushService>()("PushService", {
 				const checkout = context.authority.writable.checkoutPath
 				const { config } = yield* workbase.loadConfig(context.workbase.root)
 				const remote = config.delivery?.remote ?? "origin"
-				const published =
-					context.workbase.vcs === "jj"
-						? yield* publishJj(
-								fs,
-								checkout,
-								remote,
-								execution.branch,
-								execution.base,
-								options.onProgress,
-							)
-						: yield* publishGit(
-								fs,
-								checkout,
-								remote,
-								execution.branch,
-								execution.base,
-								options.onProgress,
-							)
+				const published = yield* publishGit(
+					fs,
+					checkout,
+					remote,
+					execution.branch,
+					execution.base,
+					options.onProgress,
+				)
 				return {
-					vcs: context.workbase.vcs,
+					vcs: "git",
 					taskId,
 					...(phaseId ? { phaseId } : {}),
 					branch: execution.branch,

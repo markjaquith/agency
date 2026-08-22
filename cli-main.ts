@@ -48,12 +48,9 @@ import { DoctorService } from "./src/services/DoctorService"
 import { ReviewService } from "./src/services/ReviewService"
 import {
 	GitVersionControlService,
-	JjVersionControlService,
 	VersionControlService,
 } from "./src/services/VersionControlService"
 import { review, help as reviewHelp } from "./src/commands/review"
-import { vcs, help as vcsHelp } from "./src/commands/vcs"
-import { VcsMigrationService } from "./src/services/VcsMigrationService"
 import { act, help as actHelp } from "./src/commands/act"
 import {
 	claimCommand,
@@ -74,9 +71,7 @@ const CliLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
 	GitVersionControlService.Default,
-	JjVersionControlService.Default,
 	VersionControlService.Default,
-	VcsMigrationService.Default,
 	RepositoryService.Default,
 	EpicService.Default,
 	TaskService.Default,
@@ -623,26 +618,6 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
-	vcs: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) {
-				console.log(vcsHelp)
-				return
-			}
-			await runCommand(
-				vcs({
-					subcommand: args[0],
-					target: args[1],
-					apply: options.apply,
-					dryRun: options["dry-run"],
-					json: options.json,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
 	next: {
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) return console.log(nextHelp)
@@ -802,7 +777,6 @@ Commands:
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase
   worktree <subcommand>  Inspect and maintain managed workspaces
-  vcs <subcommand>       Inspect or migrate the version-control backend
   next                   List or select ready execution units
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit

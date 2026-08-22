@@ -30,7 +30,6 @@ import {
 	buildNonPrCompletion,
 	type NonPrCompletionInput,
 } from "../workbase/completion"
-import { VersionControlService } from "./VersionControlService"
 
 class PhaseError extends Data.TaggedError("PhaseError")<{
 	readonly message: string
@@ -93,10 +92,8 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
-					const versionControl = yield* VersionControlService
 					const tasks = yield* TaskService
 					const root = yield* workbase.discover(startPath)
-					const backend = yield* versionControl.forWorkbase(root)
 					const taskId = yield* decodeId(input.taskId, "task")
 					const id = yield* decodeId(input.id, "phase")
 					const task = yield* tasks.show(taskId, root)
@@ -274,213 +271,95 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 								firstData.repo,
 								...(firstData.repos ?? []).map((reference) => reference.repo),
 							]
-							if (backend.kind === "jj") {
-								const workspaces: {
-									alias: string
-									name: string
-									head: string
-									oldPath: string
-									newPath: string
-								}[] = []
-								const runBackend = <A>(
-									effect: Effect.Effect<A, unknown, any>,
-								) =>
-									Effect.runPromise(
-										effect.pipe(
-											Effect.provideService(FileSystemService, fs),
-										) as Effect.Effect<A, unknown, never>,
-									)
-								steps.push({
-									label: `move jj workspaces for ${taskId}/${firstPhaseId}`,
-									preflight: async () => {
-										for (const entry of await readdir(oldCodePath)) {
-											if (!checkoutAliases.includes(entry))
-												throw new Error(
-													`Cannot convert task '${taskId}'; code contains unmanaged entry '${entry}'`,
-												)
-										}
-										for (const alias of checkoutAliases) {
-											const oldPath = join(oldCodePath, alias)
-											try {
-												await lstat(oldPath)
-											} catch {
-												continue
-											}
-											const expected = await realpath(oldPath)
-											const registered = (
-												await runBackend(
-													backend.listWorkspaces(join(root, "repos", alias)),
-												)
-											).find((workspace) => workspace.path === expected)
-											if (!registered?.name)
-												throw new Error(
-													`Cannot convert task '${taskId}'; checkout '${alias}' is not registered as a jj workspace`,
-												)
-											if (await runBackend(backend.workspaceDirty(oldPath)))
-												throw new Error(
-													`Cannot convert task '${taskId}'; jj workspace '${alias}' has uncommitted changes`,
-												)
-											const head = await runBackend(
-												backend.workspaceHead(oldPath),
+							const repair = async (basePath: string) => {
+								for (const alias of checkoutAliases) {
+									const checkoutPath = join(basePath, alias)
+									try {
+										await lstat(checkoutPath)
+									} catch {
+										continue
+									}
+									const result = Bun.spawnSync([
+										"git",
+										"-C",
+										join(root, "repos", alias),
+										"worktree",
+										"repair",
+										checkoutPath,
+									])
+									if (result.exitCode !== 0) {
+										throw new Error(
+											`Failed to repair moved worktree for '${alias}': ${new TextDecoder().decode(result.stderr)}`,
+										)
+									}
+								}
+							}
+							steps.push({
+								label: `move and repair code for ${taskId}/${firstPhaseId}`,
+								preflight: async () => {
+									for (const entry of await readdir(oldCodePath)) {
+										if (!checkoutAliases.includes(entry))
+											throw new Error(
+												`Cannot convert task '${taskId}'; code contains unmanaged entry '${entry}'`,
 											)
-											if (!head)
-												throw new Error(
-													`Cannot resolve jj workspace '${alias}' before conversion`,
-												)
-											workspaces.push({
-												alias,
-												name: registered.name,
-												head,
-												oldPath,
-												newPath: join(firstCodePath, alias),
-											})
-										}
-									},
-									apply: async () => {
-										await mkdir(firstCodePath, { recursive: true })
-										for (const workspace of workspaces) {
-											const repositoryPath = join(
-												root,
-												"repos",
-												workspace.alias,
-											)
-											await runBackend(
-												backend.removeWorkspace({
-													repositoryPath,
-													workspacePath: workspace.oldPath,
-													workspaceName: workspace.name,
-												}),
-											)
-											await runBackend(
-												backend.createWorkspace({
-													repositoryPath,
-													workspacePath: workspace.newPath,
-													workspaceName: workspace.name,
-													revision: workspace.head,
-												}),
-											)
-										}
-										await rm(oldCodePath, { recursive: true, force: true })
-									},
-									rollback: async () => {
-										await mkdir(oldCodePath, { recursive: true })
-										for (const workspace of [...workspaces].reverse()) {
-											const repositoryPath = join(
-												root,
-												"repos",
-												workspace.alias,
-											)
-											await runBackend(
-												backend.removeWorkspace({
-													repositoryPath,
-													workspacePath: workspace.newPath,
-													workspaceName: workspace.name,
-												}),
-											)
-											await runBackend(
-												backend.createWorkspace({
-													repositoryPath,
-													workspacePath: workspace.oldPath,
-													workspaceName: workspace.name,
-													revision: workspace.head,
-												}),
-											)
-										}
-										await rm(firstDirectory, { recursive: true, force: true })
-									},
-									manualRecovery: `Restore jj workspaces from ${firstCodePath} to ${oldCodePath}`,
-								})
-							} else {
-								const repair = async (basePath: string) => {
+									}
 									for (const alias of checkoutAliases) {
-										const checkoutPath = join(basePath, alias)
+										const checkoutPath = join(oldCodePath, alias)
 										try {
 											await lstat(checkoutPath)
 										} catch {
 											continue
 										}
-										const result = Bun.spawnSync([
+										const listed = Bun.spawnSync([
 											"git",
 											"-C",
 											join(root, "repos", alias),
 											"worktree",
-											"repair",
-											checkoutPath,
+											"list",
+											"--porcelain",
 										])
-										if (result.exitCode !== 0) {
+										if (listed.exitCode !== 0)
 											throw new Error(
-												`Failed to repair moved worktree for '${alias}': ${new TextDecoder().decode(result.stderr)}`,
+												`Failed to inspect worktrees for '${alias}'`,
 											)
-										}
-									}
-								}
-								steps.push({
-									label: `move and repair code for ${taskId}/${firstPhaseId}`,
-									preflight: async () => {
-										for (const entry of await readdir(oldCodePath)) {
-											if (!checkoutAliases.includes(entry))
-												throw new Error(
-													`Cannot convert task '${taskId}'; code contains unmanaged entry '${entry}'`,
-												)
-										}
-										for (const alias of checkoutAliases) {
-											const checkoutPath = join(oldCodePath, alias)
+										const expected = await realpath(checkoutPath)
+										let registered = false
+										for (const line of new TextDecoder()
+											.decode(listed.stdout)
+											.split("\n")) {
+											if (!line.startsWith("worktree ")) continue
 											try {
-												await lstat(checkoutPath)
-											} catch {
-												continue
-											}
-											const listed = Bun.spawnSync([
-												"git",
-												"-C",
-												join(root, "repos", alias),
-												"worktree",
-												"list",
-												"--porcelain",
-											])
-											if (listed.exitCode !== 0)
-												throw new Error(
-													`Failed to inspect worktrees for '${alias}'`,
-												)
-											const expected = await realpath(checkoutPath)
-											let registered = false
-											for (const line of new TextDecoder()
-												.decode(listed.stdout)
-												.split("\n")) {
-												if (!line.startsWith("worktree ")) continue
-												try {
-													if ((await realpath(line.slice(9))) === expected) {
-														registered = true
-														break
-													}
-												} catch {}
-											}
-											if (!registered)
-												throw new Error(
-													`Cannot convert task '${taskId}'; checkout '${alias}' is not registered as a Git worktree`,
-												)
+												if ((await realpath(line.slice(9))) === expected) {
+													registered = true
+													break
+												}
+											} catch {}
 										}
-									},
-									apply: async () => {
-										await mkdir(firstDirectory, { recursive: true })
-										await rename(oldCodePath, firstCodePath)
-										try {
-											await repair(firstCodePath)
-										} catch (cause) {
-											await rename(firstCodePath, oldCodePath)
-											await repair(oldCodePath)
-											await rm(firstDirectory, { recursive: true, force: true })
-											throw cause
-										}
-									},
-									rollback: async () => {
+										if (!registered)
+											throw new Error(
+												`Cannot convert task '${taskId}'; checkout '${alias}' is not registered as a Git worktree`,
+											)
+									}
+								},
+								apply: async () => {
+									await mkdir(firstDirectory, { recursive: true })
+									await rename(oldCodePath, firstCodePath)
+									try {
+										await repair(firstCodePath)
+									} catch (cause) {
 										await rename(firstCodePath, oldCodePath)
 										await repair(oldCodePath)
 										await rm(firstDirectory, { recursive: true, force: true })
-									},
-									manualRecovery: `Move ${firstCodePath} back to ${oldCodePath} and run git worktree repair`,
-								})
-							}
+										throw cause
+									}
+								},
+								rollback: async () => {
+									await rename(firstCodePath, oldCodePath)
+									await repair(oldCodePath)
+									await rm(firstDirectory, { recursive: true, force: true })
+								},
+								manualRecovery: `Move ${firstCodePath} back to ${oldCodePath} and run git worktree repair`,
+							})
 						}
 						steps.push(
 							documentWriteStep(root, [

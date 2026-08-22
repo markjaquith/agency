@@ -674,25 +674,6 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
-	test("parses VCS status and migration commands", () => {
-		expect(parseCli(["vcs", "status", "--json"])).toMatchObject({
-			commandName: "vcs",
-			args: ["status"],
-			values: { json: true },
-		})
-		expect(
-			parseCli(["vcs", "migrate", "jj", "--apply", "--json"]),
-		).toMatchObject({
-			commandName: "vcs",
-			args: ["migrate", "jj"],
-			values: { apply: true, json: true },
-		})
-		expectUsageError(["vcs", "migrate"], "agency vcs migrate")
-		expect(() =>
-			parseCli(["vcs", "migrate", "jj", "--dry-run", "--apply"]),
-		).toThrow("cannot be combined")
-	})
-
 	test("parses push without accepting an alternate target", () => {
 		expect(parseCli(["push", "--json"])).toMatchObject({
 			commandName: "push",

@@ -16,14 +16,6 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install jj
-        uses: taiki-e/install-action@v2
-        with:
-          tool: jj-cli
-
-      - name: Check jj
-        run: jj --version
-
       - name: Install dependencies
         run: bun install
 

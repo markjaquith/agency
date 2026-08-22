@@ -9,7 +9,6 @@ read or write.
 
 - [Bun](https://bun.sh) 1.0 or newer
 - Git
-- [Jujutsu](https://jj-vcs.github.io/jj/) is preferred when available
 - [GitHub CLI](https://cli.github.com/) for `agency pr`
 - OpenCode, Claude Code, or a configured agent for `agency work`
 
@@ -151,15 +150,16 @@ the writable checkout's `.claude/skills`, `.agents/skills`,
 `.opencode/{skill,skills}`, and `.pi/skills` directories. `agency context`
 remains the authority for writes; reference checkouts remain read-only.
 
-Repository aliases, the version-control backend, and canonical fetch remotes are
-declared in tracked `agency.json`; local clones and symlinks remain ignored under
-`repos/{alias}`. A declaration contains no local path, symlink target, checkout,
-or credential:
+Repository aliases and canonical fetch remotes are declared in tracked
+`agency.json`; local Git clones and symlinks remain ignored under
+`repos/{alias}`. A declaration contains no local path, symlink target, worktree,
+or credential. The optional `vcs` field accepts only `"git"`; omitting it also
+selects Git:
 
 ```json
 {
 	"version": 2,
-	"vcs": "jj",
+	"vcs": "git",
 	"repositories": {
 		"frontend": {
 			"remote": "git@example.com:team/frontend.git"
@@ -168,39 +168,9 @@ or credential:
 }
 ```
 
-New workbases select `"jj"` when the `jj` executable is available and otherwise
-select `"git"`. Existing version 2 workbases without `vcs` remain Git workbases.
-The selected backend is a workbase-level invariant: jj workbases create
-non-colocated managed clones and jj workspaces, while Git workbases continue to
-use bare repositories and Git worktrees. Existing colocated jj repositories are
-also supported.
-
-Agency uses jj-native commands for repository validity, workspace registration,
-working-copy state, revisions, bookmarks, ancestry, fetch, and push. Raw Git is
-limited to backing-store plumbing such as durable review refs and integrations
-that require Git, including GitHub CLI commit discovery. For those operations,
-Agency obtains the backing repository with `jj git root` and supplies it as
-`GIT_DIR`; it does not use raw Git to infer jj workspace state.
-
-Inspect the current backend and migration readiness with:
-
-```bash
-agency vcs status
-agency vcs migrate jj          # dry-run
-agency vcs migrate jj --apply
-agency vcs migrate git --apply
-```
-
-Migration is workbase-wide and transactional. Agency locks every execution
-unit, requires clean registered workspaces, blocks active claims and working or
-delegated units, converts repository metadata, recreates checkout paths with the
-target backend, and updates `agency.json` last. Migration from jj to Git also
-blocks jj-only heads that are not preserved by a bookmark or workspace. Failed
-migrations restore the source repositories and workspaces when rollback is
-possible and report explicit manual recovery paths otherwise.
-Converting a non-colocated jj workbase to Git is currently blocked before any
-mutation because its backing Git object store is inside `.jj`; first convert the
-repositories to colocated jj so the Git store survives metadata removal.
+Agency materializes declared remotes as bare Git repositories and creates
+managed Git worktrees for execution units. Linked aliases remain symlinks to
+existing Git repositories.
 
 Existing version 2 workbases without `repositories` remain valid. Run
 `agency repo setup` to preview deterministic adoption of legacy local aliases;
@@ -274,63 +244,13 @@ Agency also reconciles known tool-owned artifacts such as Worktrunk's
 new and existing managed worktrees clean without changing the repository's
 tracked ignore configuration or overwriting user-maintained local excludes.
 
-The configured command applies only to the writable checkout of a Git workbase.
+The configured command applies only to the writable checkout.
 Supplemental read-only repositories remain detached Git worktrees at their
-declared refs so they do not acquire writable branches. Jj workbases always use
-jj workspaces and ignore this Git-specific customization.
-
-### Custom Jj Workspace Command
-
-Jj workbases normally create managed workspaces with `jj workspace add`. Set
-`workspaceCreateCommand` to an argv template when another tool should create or
-adopt a prepared workspace directly at Agency's destination:
-
-```json
-{
-	"version": 2,
-	"vcs": "jj",
-	"workspaceCreateCommand": [
-		"my-prewarm-tool",
-		"adopt",
-		"--repo",
-		"{repo}",
-		"--destination",
-		"{workspace}",
-		"--name",
-		"{name}",
-		"--revision",
-		"{revision}"
-	]
-}
-```
-
-Available placeholders are:
-
-- `{repo}`: absolute repository alias path under `repos/`
-- `{workspace}`: absolute managed workspace path Agency requires
-- `{name}`: unique jj workspace name Agency requires
-- `{revision}`: exact commit the new working copy must be based on
-- `{kind}`: `writable` or `reference`
-- `{requestedRef}`: configured branch, reference, or review commit
-
-`{repo}`, `{workspace}`, `{name}`, and `{revision}` are required. Agency invokes
-the command directly without a shell and sets matching `AGENCY_REPO`,
-`AGENCY_WORKSPACE`, `AGENCY_WORKSPACE_NAME`, `AGENCY_REVISION`,
-`AGENCY_CHECKOUT_KIND`, and `AGENCY_REQUESTED_REF` environment variables. The
-command applies to each new jj checkout and must leave `{workspace}` registered
-under `{name}` with its working-copy parent at `{revision}`. This lets a prewarm
-tool move or adopt a prepared workspace without first paying for Agency's normal
-full checkout.
-
-Agency validates the registration, name, path, and revision before running any
-`postCheckoutCommand`. A failed command or validation removes a partially
-created workspace when possible and otherwise reports manual recovery. Resume
-restoration continues to use Agency's built-in exact-target recovery path.
-Git workbases ignore this jj-specific customization.
+declared refs so they do not acquire writable branches.
 
 ### Post-checkout Commands
 
-Each repository declaration may provide a VCS-neutral `postCheckoutCommand` argv
+Each repository declaration may provide a `postCheckoutCommand` argv
 template for repository-specific setup. Agency invokes it directly, without a
 shell, with the new checkout as its working directory:
 
@@ -346,11 +266,10 @@ shell, with the new checkout as its working directory:
 }
 ```
 
-The hook runs for each newly created managed checkout, including writable and
-reference checkouts, after Git worktree or jj workspace creation has completed
-and Agency has validated the checkout. It does not run for a reused checkout or
-for inspection-only commands. A custom `worktreeCreateCommand` or
-`workspaceCreateCommand` completes and is validated before this hook runs.
+The hook runs for each newly created managed Git worktree, including writable
+and reference worktrees, after Agency has validated it. It does not run for a
+reused worktree or for inspection-only commands. A custom
+`worktreeCreateCommand` completes and is validated before this hook runs.
 
 Available placeholders and matching environment variables are:
 
@@ -362,7 +281,7 @@ Available placeholders and matching environment variables are:
 | `{checkoutKind}`   | `AGENCY_CHECKOUT_KIND`   | `writable` or `reference`                      |
 | `{requestedRef}`   | `AGENCY_REQUESTED_REF`   | Requested branch, reference, or review commit  |
 | `{base}`           | `AGENCY_BASE`            | Configured execution base                      |
-| `{vcs}`            | `AGENCY_VCS`             | `git` or `jj`                                  |
+| `{vcs}`            | `AGENCY_VCS`             | `git`                                          |
 | `{workbaseRoot}`   | `AGENCY_WORKBASE_ROOT`   | Absolute workbase root                         |
 | `{taskId}`         | `AGENCY_TASK_ID`         | Task ID                                        |
 | `{phaseId}`        | `AGENCY_PHASE_ID`        | Phase ID                                       |
@@ -1162,15 +1081,6 @@ conflicting worktrees. Repair is deliberately conservative: it repairs safe Git
 registration issues and materializes missing checkouts, but never switches a
 branch, resets a commit, or discards uncommitted work.
 
-For jj, explicit removal is a suspend operation. Agency records each workspace's
-exact `@` commit and stable change ID in `.agency-jj-resume.json`, roots that
-commit with an internal local bookmark, and only then forgets the workspace.
-The next `work prepare` validates all three identities, restores the workspace by
-editing the recorded commit, and consumes the resume metadata and bookmarks.
-Missing, ambiguous, or conflicting resume state stops instead of falling back to
-the declared delivery bookmark, `@-`, or the base. Unknown checkout cleanliness
-also stops removal. Git worktree removal and preparation are unchanged.
-
 Agency launches every agent beside its epic or task document. Single-phase tasks
 and phases first fetch repositories and create or reuse worktrees under `code/`,
 then launch the execution agent from the task directory with absolute context
@@ -1195,18 +1105,11 @@ that the declared base is in the publication history, validates every outgoing
 commit's description, author, and conflict state, and refuses non-fast-forward
 updates.
 
-For Git, YAML `branch` must exactly match the checked-out local branch, the
-worktree must be clean, and `HEAD` is pushed with upstream tracking. For jj, YAML
-`branch` is the authoritative delivery bookmark and need not exist before
-publication. Agency publishes `@` unless it is the canonical empty, undescribed
-post-commit working copy, in which case it publishes `@-`; described empty
-changes remain intentional publication tips. Missing descriptions or authors
-stop with exact change IDs and remediation commands. Agency creates or safely
-advances only the declared bookmark and never invents a `push-*` bookmark.
-If the fetched remote base advanced outside the local stack, Agency prints the
-exact `jj rebase` command needed to move the stack onto `<base>@<remote>`. Push
-reports deterministic fetch, inspection, validation, and publication progress
-on stderr, including while `--json` reserves stdout for one machine result.
+YAML `branch` must exactly match the checked-out local branch, the worktree must
+be clean, and `HEAD` is pushed with upstream tracking. Missing commit descriptions
+or authors stop publication with exact commits and remediation commands. Push
+reports deterministic fetch, inspection, validation, and publication progress on
+stderr, including while `--json` reserves stdout for one machine result.
 
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
 including readiness checks and durable PR recording. It accepts draft, title,
@@ -1216,8 +1119,7 @@ Other `agency pr`
 invocations forward every argument to `gh pr`. From an execution task or phase
 directory, including descendants, passthrough runs in that execution unit's
 authoritative writable checkout. Otherwise it runs in the caller's current
-directory. In jj workbases, Agency also supplies the repository and the work
-item's declared branch to subcommands that would otherwise infer Git context.
+directory.
 
 ### Status and Validation
 

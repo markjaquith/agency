@@ -83,7 +83,6 @@
     "benchmark:graph": "bun scripts/benchmark-graph.ts",
     "benchmark:push": "bun scripts/benchmark-push.ts",
     "benchmark:archive": "bun scripts/benchmark-archive.ts",
-    "benchmark:vcs": "bun scripts/benchmark-vcs.ts",
     "benchmark:sync": "bun scripts/benchmark-sync.ts",
     "benchmark:task": "bun scripts/benchmark-task.ts",
     "benchmark:validate": "bun scripts/benchmark-validate.ts",

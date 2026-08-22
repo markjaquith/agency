@@ -195,20 +195,6 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 					}
 
 					yield* backend.push(workspace.writablePath, remote, execution.branch)
-					const defaults =
-						backend.kind === "jj"
-							? yield* backend.pullRequestDefaults(
-									workspace.writablePath,
-									execution.base,
-								)
-							: null
-					if (backend.kind === "jj" && !defaults) {
-						return yield* new PullRequestError({
-							message:
-								"Failed to derive pull request title and body from jj commits",
-						})
-					}
-
 					const remoteUrl = yield* backend.remoteUrl(
 						workspace.writablePath,
 						remote,
@@ -230,22 +216,15 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 							})
 						: resolveGitHubCreateCommand({
 								base: execution.base,
-								branch: execution.branch,
-								repository,
 								draft,
-								vcs: config.vcs ?? "git",
 								title: options.title,
 								head: options.head,
 								labels: options.labels,
-								...(defaults ? { defaults } : {}),
 							})
-					const gitEnvironment = config.delivery
-						? {}
-						: yield* backend.gitEnvironment(workspace.writablePath)
 					const created = yield* fs.runCommand(resolved.argv, {
 						cwd: workspace.writablePath,
 						captureOutput: true,
-						env: { ...gitEnvironment, ...resolved.environment },
+						env: resolved.environment,
 					})
 					if (created.exitCode !== 0) {
 						return yield* new PullRequestError({

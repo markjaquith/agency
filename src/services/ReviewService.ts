@@ -1,4 +1,4 @@
-import { Data, Effect, Either, Layer } from "effect"
+import { Data, Effect, Layer } from "effect"
 import { randomUUID } from "node:crypto"
 import { lstat, mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
@@ -13,9 +13,7 @@ import {
 } from "./WorktreeService"
 import {
 	GitVersionControlService,
-	JjVersionControlService,
 	VersionControlService,
-	type VersionControlBackend,
 } from "./VersionControlService"
 import { withWorktreeLocks } from "./WorktreeLock"
 import {
@@ -70,7 +68,6 @@ const WorktreeLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
 	GitVersionControlService.Default,
-	JjVersionControlService.Default,
 	VersionControlService.Default,
 	TaskService.Default,
 	PhaseService.Default,
@@ -91,22 +88,6 @@ const restoreSnapshots = async (
 			continue
 		} catch {}
 		await mkdir(dirname(snapshot.path), { recursive: true })
-		if (snapshot.vcs === "jj") {
-			await runGit([
-				"jj",
-				"-R",
-				snapshot.repositoryPath,
-				"workspace",
-				"add",
-				"--name",
-				snapshot.workspaceName!,
-				"-r",
-				snapshot.head,
-				snapshot.path,
-			])
-			await runGit(["jj", "-R", snapshot.path, "edit", snapshot.head])
-			continue
-		}
 		await runGit(
 			snapshot.branch
 				? [
@@ -172,14 +153,9 @@ const normalizeBranch = (input: string) =>
 		return `refs/heads/${name}`
 	})
 
-const fetchCommit = (
-	repoPath: string,
-	sourceRef: string,
-	backend: VersionControlBackend,
-) =>
+const fetchCommit = (repoPath: string, sourceRef: string) =>
 	Effect.gen(function* () {
 		const fs = yield* FileSystemService
-		const environment = yield* backend.gitEnvironment(repoPath)
 		const temporaryRef = `refs/agency/review-fetch/${process.pid}-${randomUUID()}`
 		const fetched = yield* fs.runCommand(
 			[
@@ -191,12 +167,12 @@ const fetchCommit = (
 				"origin",
 				`+${sourceRef}:${temporaryRef}`,
 			],
-			{ captureOutput: true, env: environment },
+			{ captureOutput: true },
 		)
 		if (fetched.exitCode !== 0) {
 			const cleanup = yield* fs.runCommand(
 				["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
-				{ captureOutput: true, env: environment },
+				{ captureOutput: true },
 			)
 			return yield* new ReviewError({
 				message: `Review source '${sourceRef}' could not be fetched: ${fetched.stderr.trim()}${cleanup.exitCode === 0 ? "" : `; temporary ref cleanup failed: ${cleanup.stderr.trim()}`}`,
@@ -211,32 +187,25 @@ const fetchCommit = (
 				"--verify",
 				`${temporaryRef}^{commit}`,
 			],
-			{ captureOutput: true, env: environment },
+			{ captureOutput: true },
 		)
 		const commit = resolved.stdout.trim()
 		if (resolved.exitCode !== 0 || !/^[a-f0-9]{40}$/.test(commit)) {
 			yield* fs.runCommand(
 				["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
-				{ captureOutput: true, env: environment },
+				{ captureOutput: true },
 			)
 			return yield* new ReviewError({
 				message: `Review source '${sourceRef}' did not resolve to a commit`,
 			})
 		}
-		const imported = yield* Effect.either(backend.importGitRefs(repoPath))
 		const cleanup = yield* fs.runCommand(
 			["git", "-C", repoPath, "update-ref", "-d", temporaryRef],
-			{ captureOutput: true, env: environment },
+			{ captureOutput: true },
 		)
 		if (cleanup.exitCode !== 0) {
 			return yield* new ReviewError({
 				message: `Failed to remove temporary review fetch ref: ${cleanup.stderr.trim()}`,
-			})
-		}
-		if (Either.isLeft(imported)) {
-			return yield* new ReviewError({
-				message: `Review source '${sourceRef}' was fetched but could not be imported into ${backend.kind}`,
-				cause: imported.left,
 			})
 		}
 		return commit
@@ -253,8 +222,6 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 			) =>
 				Effect.gen(function* () {
 					const repositories = yield* RepositoryService
-					const versionControl = yield* VersionControlService
-					const backend = yield* versionControl.forWorkbase(startPath)
 					const repository = yield* repositories.show(repo, startPath)
 					if (!repository.remote || repository.states.includes("missing")) {
 						return yield* new ReviewError({
@@ -303,7 +270,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 							message: "Exactly one review source is required",
 						})
 					}
-					const commit = yield* fetchCommit(repository.path, sourceRef, backend)
+					const commit = yield* fetchCommit(repository.path, sourceRef)
 					return {
 						repo,
 						source,
@@ -371,8 +338,6 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 									message: `Repository alias '${task.data.review.repo}' must be materialized with an origin remote`,
 								})
 							}
-							const versionControl = yield* VersionControlService
-							const backend = yield* versionControl.forWorkbase(root)
 							const latest = {
 								...task.data.review,
 								commit: yield* fetchCommit(
@@ -380,7 +345,6 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 									task.data.review.source.kind === "pull-request"
 										? task.data.review.source.fetchRef
 										: task.data.review.source.ref,
-									backend,
 								),
 								refreshedAt: new Date().toISOString(),
 							} satisfies ReviewRecord
@@ -389,9 +353,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 								{ ...task.data, review: latest },
 								parsed.body,
 							)
-							const gitEnvironment = yield* backend.gitEnvironment(
-								repository.path,
-							)
+							const gitEnvironment: Record<string, string> = {}
 							const hadCheckout = inspection.checkouts.some(
 								(checkout) => checkout.exists || checkout.registered,
 							)
@@ -405,7 +367,6 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 											worktrees.remove(taskId, undefined, root, {
 												snapshots,
 												lockHeld: true,
-												persistResume: false,
 											}),
 										).then(() => undefined),
 									rollback: () => restoreSnapshots(snapshots),

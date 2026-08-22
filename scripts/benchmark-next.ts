@@ -7,7 +7,6 @@ import { FileSystemService } from "../src/services/FileSystemService"
 import { GraphService } from "../src/services/GraphService"
 import {
 	GitVersionControlService,
-	JjVersionControlService,
 	VersionControlService,
 } from "../src/services/VersionControlService"
 import { WorkbaseService } from "../src/services/WorkbaseService"
@@ -19,7 +18,6 @@ const benchmarkLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
 	GitVersionControlService.Default,
-	JjVersionControlService.Default,
 	VersionControlService.Default,
 	GraphService.Default,
 )

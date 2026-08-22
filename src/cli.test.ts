@@ -1929,9 +1929,9 @@ status: open
 				alias: "agency",
 				status: "applied",
 			})
-			expect(
-				(await stat(join(restored, "repos/agency/.jj"))).isDirectory(),
-			).toBe(true)
+			expect((await stat(join(restored, "repos/agency/HEAD"))).isFile()).toBe(
+				true,
+			)
 
 			const prepared = parseJson(
 				await runCli(["work", "prepare", "portable", "--json"], restored),

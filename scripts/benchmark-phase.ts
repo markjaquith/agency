@@ -8,7 +8,6 @@ import { TaskService } from "../src/services/TaskService"
 import { WorkbaseService } from "../src/services/WorkbaseService"
 import {
 	GitVersionControlService,
-	JjVersionControlService,
 	VersionControlService,
 } from "../src/services/VersionControlService"
 
@@ -19,7 +18,6 @@ const BenchmarkLayer = Layer.mergeAll(
 	TaskService.Default,
 	PhaseService.Default,
 	GitVersionControlService.Default,
-	JjVersionControlService.Default,
 	VersionControlService.Default,
 )
 

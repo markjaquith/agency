@@ -1,8 +1,8 @@
 # Agency Workbase
 
 This directory is an Agency workbase. Epics, tasks, and phases are durable
-Markdown documents; repository aliases and generated Git worktrees or jj
-workspaces provide code access according to the workbase's `vcs` setting.
+Markdown documents; repository aliases and generated Git worktrees provide code
+access.
 
 ## Command Fast Paths
 
@@ -184,9 +184,8 @@ repository's formatting, type checks, build, dead-code checks, and focused tests
 Review and commit the diff according to the repository's instructions.
 
 Use `agency push` from an execution task or phase to validate and publish its
-declared delivery branch or bookmark without creating a pull request. The
-command never authors semantic commit descriptions; resolve its reported change
-IDs and remediation commands before retrying.
+declared delivery branch without creating a pull request. The command never authors semantic commit descriptions;
+resolve its reported commits and remediation commands before retrying.
 
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work

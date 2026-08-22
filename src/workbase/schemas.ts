@@ -103,13 +103,12 @@ const DeliveryProvider = Schema.Struct({
 
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
-	vcs: Schema.optional(Schema.Literal("git", "jj")),
+	vcs: Schema.optional(Schema.Literal("git")),
 	repositories: Schema.optional(
 		Schema.Record({ key: RepositoryAlias, value: RepositoryDeclaration }),
 	),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
-	workspaceCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	agents: Schema.optional(
 		Schema.Record({
 			key: EntityId,

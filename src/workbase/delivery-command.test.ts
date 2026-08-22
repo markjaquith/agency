@@ -32,45 +32,18 @@ describe("delivery commands", () => {
 		})
 	})
 
-	test("adds explicit jj context to the default GitHub create command", () => {
+	test("builds the default GitHub create command", () => {
 		const input = {
 			base: "main",
-			branch: "feat/example",
-			repository: "example/agency",
 			draft: false,
 		} as const
-		expect(
-			resolveGitHubCreateCommand({
-				...input,
-				vcs: "jj",
-				defaults: { title: "Add example", body: "Details" },
-			}),
-		).toEqual({
-			argv: [
-				"gh",
-				"pr",
-				"create",
-				"--title",
-				"Add example",
-				"--body",
-				"Details",
-				"--base",
-				"main",
-				"--head",
-				"feat/example",
-				"--repo",
-				"example/agency",
-			],
-			environment: {},
-		})
-		expect(resolveGitHubCreateCommand({ ...input, vcs: "git" })).toEqual({
+		expect(resolveGitHubCreateCommand(input)).toEqual({
 			argv: ["gh", "pr", "create", "--fill", "--base", "main"],
 			environment: {},
 		})
 		expect(
 			resolveGitHubCreateCommand({
 				...input,
-				vcs: "git",
 				head: "feat/example",
 			}),
 		).toEqual({
@@ -89,9 +62,8 @@ describe("delivery commands", () => {
 		expect(
 			resolveGitHubCreateCommand({
 				...input,
-				vcs: "jj",
-				defaults: { title: "Generated", body: "Details" },
 				title: "Requested",
+				head: "feat/example",
 				labels: ["ai-assisted", "platform"],
 			}),
 		).toEqual({
@@ -99,16 +71,13 @@ describe("delivery commands", () => {
 				"gh",
 				"pr",
 				"create",
+				"--fill",
 				"--title",
 				"Requested",
-				"--body",
-				"Details",
 				"--base",
 				"main",
 				"--head",
 				"feat/example",
-				"--repo",
-				"example/agency",
 				"--label",
 				"ai-assisted",
 				"--label",

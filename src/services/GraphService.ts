@@ -821,10 +821,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 												checkoutCommit: materialized
 													? yield* backend.workspaceHead(checkoutPath)
 													: null,
-												checkoutBranch:
-													backend.kind === "jj" && materialized
-														? data.branch
-														: actualBranch,
+												checkoutBranch: actualBranch,
 												dirty: materialized
 													? yield* backend.workspaceDirty(checkoutPath)
 													: null,
@@ -1022,7 +1019,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 						version: GRAPH_VERSION,
 						workbase: {
 							version: config.version,
-							vcs: config.vcs ?? "git",
+							vcs: "git",
 							...(include.has("workspace") ? { root } : {}),
 						},
 						filters,

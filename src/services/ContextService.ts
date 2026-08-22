@@ -350,7 +350,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 								root,
 								configPath: join(root, "agency.json"),
 								version: config.version,
-								vcs: config.vcs ?? "git",
+								vcs: "git",
 							},
 							target: { kind: "workbase", path: root },
 							hint: compact
@@ -1025,51 +1025,9 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const inspectCheckout = (
 						repositoryPath: string,
 						checkoutPath: string,
-						expectedBranch: string | null = null,
-						branchCommit: string | null = null,
 					) =>
 						Effect.gen(function* (): Generator<any, CheckoutInspection, any> {
 							const materialized = yield* fs.isDirectory(checkoutPath)
-							if (backend.kind === "jj") {
-								const listed = yield* Effect.either(
-									backend.listWorkspaces(repositoryPath),
-								)
-								const workspaces = Either.isRight(listed) ? listed.right : []
-								if (Either.isLeft(listed)) {
-									inspectionWarnings.push(
-										`Unable to inspect jj workspace registrations for ${repositoryPath}`,
-									)
-								}
-								const canonicalCheckoutPath = materialized
-									? yield* fs.realPath(checkoutPath)
-									: resolve(checkoutPath)
-								const workspace = workspaces.find(
-									(workspace) => workspace.path === canonicalCheckoutPath,
-								)
-								const registered = workspace !== undefined
-								if (!materialized) {
-									return {
-										materialized: false,
-										registered,
-										checkoutCommit: null,
-										checkoutBranch: null,
-										detached: null,
-										dirty: null,
-									}
-								}
-								return {
-									materialized: true,
-									registered,
-									checkoutCommit: workspace?.commit ?? null,
-									checkoutBranch:
-										expectedBranch && branchCommit === workspace?.commit
-											? expectedBranch
-											: null,
-									detached:
-										!expectedBranch || branchCommit !== workspace?.commit,
-									dirty: workspace ? false : null,
-								}
-							}
 							const listed = yield* runGit(fs, repositoryPath, [
 								"worktree",
 								"list",
@@ -1136,7 +1094,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 								const repositoryPath =
 									repository?.path ?? join(root, "repos", executionData.repo)
 								const checkoutPath = join(codePath, executionData.repo)
-								let branchCommit = yield* backend.resolveRevision(
+								const branchCommit = yield* backend.resolveRevision(
 									repositoryPath,
 									executionData.branch,
 								)
@@ -1147,8 +1105,6 @@ export class ContextService extends Effect.Service<ContextService>()(
 								const checkout = yield* inspectCheckout(
 									repositoryPath,
 									checkoutPath,
-									executionData.branch,
-									branchCommit,
 								)
 								if (branchCommit === null) {
 									inspectionWarnings.push(
@@ -1261,7 +1217,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							root,
 							configPath: join(root, "agency.json"),
 							version: config.version,
-							vcs: config.vcs ?? "git",
+							vcs: "git",
 						},
 						target,
 						documents: {
