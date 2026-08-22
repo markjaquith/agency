@@ -7,13 +7,6 @@ import { EpicService } from "./EpicService"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
 import { PullRequestService } from "./PullRequestService"
-import { WorktreeService } from "./WorktreeService"
-
-const run = async (args: string[], cwd?: string) => {
-	const child = Bun.spawn(args, { cwd, stdout: "pipe", stderr: "pipe" })
-	const exitCode = await child.exited
-	if (exitCode !== 0) throw new Error(await new Response(child.stderr).text())
-}
 
 describe("task and phase services", () => {
 	let root: string
@@ -526,79 +519,6 @@ describe("task and phase services", () => {
 			},
 			status: "open",
 		})
-	})
-
-	test("recreates jj workspaces when converting a task to phases", async () => {
-		if (!Bun.which("jj")) return
-		const source = join(root, "source")
-		const repository = join(root, "repos/agency")
-		await rm(repository, { recursive: true, force: true })
-		await mkdir(source)
-		await run(["git", "init", "--initial-branch=main"], source)
-		await run(["git", "config", "user.email", "test@example.com"], source)
-		await run(["git", "config", "user.name", "Test"], source)
-		await Bun.write(join(source, "README.md"), "example\n")
-		await run(["git", "add", "README.md"], source)
-		await run(["git", "commit", "-m", "initial"], source)
-		await run(["git", "clone", source, repository])
-		await run(["jj", "git", "init", "--colocate", repository])
-		await Bun.write(
-			join(root, "agency.json"),
-			JSON.stringify({ version: 2, vcs: "jj" }),
-		)
-		await runTestEffect(
-			TaskService.pipe(
-				Effect.flatMap((service) =>
-					service.create(
-						{
-							id: "jj-single",
-							ticketUrl: null,
-							repo: "agency",
-							branch: "task/jj-single",
-							base: "main",
-						},
-						root,
-					),
-				),
-			),
-		)
-		const workspace = await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.materialize("jj-single", undefined, root),
-				),
-			),
-		)
-
-		await runTestEffect(
-			PhaseService.pipe(
-				Effect.flatMap((service) =>
-					service.create(
-						{
-							taskId: "jj-single",
-							id: "extra",
-							firstPhase: "implementation",
-							repo: "agency",
-							branch: "task/extra",
-							base: "main",
-						},
-						root,
-					),
-				),
-			),
-		)
-
-		const moved = join(
-			root,
-			"tasks/jj-single/phases/implementation/code/agency",
-		)
-		expect(await Bun.file(workspace.codePath).exists()).toBe(false)
-		expect(await Bun.file(join(moved, "README.md")).text()).toBe("example\n")
-		const listed = Bun.spawnSync(
-			["jj", "-R", repository, "workspace", "list", "-T", 'root ++ "\\n"'],
-			{ stdout: "pipe" },
-		)
-		expect(new TextDecoder().decode(listed.stdout)).toContain(moved)
 	})
 
 	test("preserves non-PR completion when converting a task to phases", async () => {

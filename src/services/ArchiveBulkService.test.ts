@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { chmod, mkdir, rm } from "node:fs/promises"
+import { chmod, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { ArchiveService } from "./ArchiveService"
@@ -12,13 +12,6 @@ import { WorktreeService } from "./WorktreeService"
 
 const git = (args: readonly string[], cwd?: string) => {
 	const result = Bun.spawnSync(["git", ...args], { cwd })
-	if (result.exitCode !== 0) {
-		throw new Error(new TextDecoder().decode(result.stderr))
-	}
-}
-
-const jj = (args: readonly string[], cwd?: string) => {
-	const result = Bun.spawnSync(["jj", ...args], { cwd })
 	if (result.exitCode !== 0) {
 		throw new Error(new TextDecoder().decode(result.stderr))
 	}
@@ -428,140 +421,6 @@ claim:
 				},
 			},
 		])
-	})
-
-	test("skips a dirty jj workspace", async () => {
-		if (!Bun.which("jj")) return
-		const repository = join(root, "repos/agency")
-		await rm(repository, { recursive: true, force: true })
-		git(["clone", source, repository])
-		const initialized = Bun.spawnSync([
-			"jj",
-			"git",
-			"init",
-			"--colocate",
-			repository,
-		])
-		if (initialized.exitCode !== 0) {
-			throw new Error(new TextDecoder().decode(initialized.stderr))
-		}
-		await Bun.write(
-			join(root, "agency.json"),
-			JSON.stringify({ version: 2, vcs: "jj" }),
-		)
-		await createTask("jj-dirty")
-		await dropTask("jj-dirty")
-		const workspace = await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.materialize("jj-dirty", undefined, root),
-				),
-			),
-		)
-		await Bun.write(join(workspace.writablePath!, "dirty.txt"), "keep\n")
-
-		const result = await archiveTasks()
-
-		expect(result.tasks[0]).toMatchObject({
-			id: "jj-dirty",
-			disposition: "skipped",
-			reason: { code: "dirty-worktree" },
-		})
-		expect(
-			await Bun.file(join(workspace.writablePath!, "dirty.txt")).exists(),
-		).toBe(true)
-	})
-
-	test("archives a jj working-copy commit preserved by its task bookmark", async () => {
-		if (!Bun.which("jj")) return
-		const repository = join(root, "repos/agency")
-		await rm(repository, { recursive: true, force: true })
-		git(["clone", source, repository])
-		jj(["git", "init", "--colocate", repository])
-		await Bun.write(
-			join(root, "agency.json"),
-			JSON.stringify({ version: 2, vcs: "jj" }),
-		)
-		await createTask("jj-bookmarked")
-		await dropTask("jj-bookmarked")
-		const workspace = await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.materialize("jj-bookmarked", undefined, root),
-				),
-			),
-		)
-		await Bun.write(join(workspace.writablePath!, "preserved.txt"), "keep\n")
-		jj(
-			["bookmark", "set", "task/jj-bookmarked", "-r", "@"],
-			workspace.writablePath!,
-		)
-
-		const preview = await archiveTasks(true)
-		expect(preview.tasks[0]).toMatchObject({
-			id: "jj-bookmarked",
-			disposition: "planned",
-			removedWorktrees: [workspace.writablePath!],
-		})
-		expect(
-			await Bun.file(join(workspace.writablePath!, "preserved.txt")).text(),
-		).toBe("keep\n")
-
-		const result = await archiveTasks()
-		expect(result.tasks[0]).toMatchObject({
-			id: "jj-bookmarked",
-			disposition: "archived",
-		})
-		expect(await Bun.file(workspace.writablePath!).exists()).toBe(false)
-		const preserved = Bun.spawnSync([
-			"jj",
-			"-R",
-			repository,
-			"file",
-			"show",
-			"-r",
-			"task/jj-bookmarked",
-			'root:"preserved.txt"',
-		])
-		if (preserved.exitCode !== 0) {
-			throw new Error(preserved.stderr.toString())
-		}
-		expect(preserved.stdout.toString()).toBe("keep\n")
-	})
-
-	test("archives a forgotten jj workspace preserved by its task bookmark", async () => {
-		if (!Bun.which("jj")) return
-		const repository = join(root, "repos/agency")
-		await rm(repository, { recursive: true, force: true })
-		git(["clone", source, repository])
-		jj(["git", "init", "--colocate", repository])
-		await Bun.write(
-			join(root, "agency.json"),
-			JSON.stringify({ version: 2, vcs: "jj" }),
-		)
-		await createTask("jj-stale")
-		await dropTask("jj-stale")
-		const workspace = await runTestEffect(
-			WorktreeService.pipe(
-				Effect.flatMap((service) =>
-					service.materialize("jj-stale", undefined, root),
-				),
-			),
-		)
-		await Bun.write(join(workspace.writablePath!, "preserved.txt"), "keep\n")
-		jj(["bookmark", "set", "task/jj-stale", "-r", "@"], workspace.writablePath!)
-		jj(["-R", repository, "workspace", "forget", "agency-jj-stale-task-agency"])
-
-		const result = await archiveTasks(true)
-
-		expect(result.tasks[0]).toMatchObject({
-			id: "jj-stale",
-			disposition: "planned",
-			removedWorktrees: [workspace.writablePath!],
-		})
-		expect(
-			await Bun.file(join(workspace.writablePath!, "preserved.txt")).text(),
-		).toBe("keep\n")
 	})
 
 	test("rolls back the entire cohort when application fails", async () => {

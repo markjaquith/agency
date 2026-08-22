@@ -5,7 +5,7 @@ export interface CheckoutCommandVariables {
 	readonly checkoutKind: "writable" | "reference"
 	readonly requestedRef: string
 	readonly base: string
-	readonly vcs: "git" | "jj"
+	readonly vcs: "git"
 	readonly workbaseRoot: string
 	readonly taskId: string
 	readonly phaseId: string

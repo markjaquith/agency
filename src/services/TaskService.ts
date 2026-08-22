@@ -4,7 +4,6 @@ import { readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService, type ValidationReport } from "./WorkbaseService"
-import { VersionControlService } from "./VersionControlService"
 import { EpicService, type EpicRecord } from "./EpicService"
 import {
 	EntityId,
@@ -231,7 +230,6 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				const fs = yield* FileSystemService
 				const workbase = yield* WorkbaseService
 				const epics = yield* EpicService
-				const versionControl = yield* VersionControlService
 				const root = yield* workbase.discover(startPath)
 				const id = yield* decodeId(input.id)
 				const directory = join(root, "tasks", id)
@@ -375,13 +373,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					const updated = formatMarkdownDocument(epicData, parsed.body)
 					writes.push({ path: parentEpic.path, content: updated })
 				}
-				let reviewEnvironment: Record<string, string> = {}
-				if (input.review) {
-					const backend = yield* versionControl.forWorkbase(root)
-					reviewEnvironment = yield* backend.gitEnvironment(
-						join(root, "repos", input.review.repo),
-					)
-				}
+				const reviewEnvironment: Record<string, string> = {}
 				yield* runLifecycleTransaction({
 					root,
 					preconditions: [

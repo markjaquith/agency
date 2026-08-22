@@ -121,6 +121,7 @@ describe("GraphService", () => {
 		const graph = await getGraph(root)
 
 		expect(Schema.decodeUnknownSync(AgencyGraph)(graph)).toEqual(graph)
+		expect(graph.workbase.vcs).toBe("git")
 		expect(graph.nodes.map((node) => node.id)).toEqual([
 			"epic:delivery",
 			"execution-unit:phase/ship/implement",

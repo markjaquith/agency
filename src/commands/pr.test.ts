@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { chmod, mkdir, realpath, rm } from "node:fs/promises"
+import { chmod, mkdir, realpath } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { PullRequestService } from "../services/PullRequestService"
 import {
@@ -31,7 +31,6 @@ describe("pr command", () => {
 			join(bin, "gh"),
 			`#!/bin/sh
 printf '%s\n' "$PWD" "$@" > "$GH_CAPTURE"
-if [ -n "$GIT_DIR" ]; then printf 'GIT_DIR=%s\n' "$GIT_DIR" >> "$GH_CAPTURE"; fi
 exit "\${GH_EXIT:-0}"
 `,
 		)
@@ -51,14 +50,13 @@ exit "\${GH_EXIT:-0}"
 	const captured = async () =>
 		(await Bun.file(capturePath).text()).trim().split("\n")
 
-	const createExecutionWorkbase = async (vcs: "git" | "jj" = "git") => {
+	const createExecutionWorkbase = async () => {
 		const root = join(tempRoot, "workbase")
 		await write(
 			root,
 			"agency.json",
 			`${JSON.stringify({
 				version: 2,
-				vcs,
 				repositories: {
 					agency: { remote: "https://github.com/example/agency.git" },
 				},
@@ -110,41 +108,6 @@ status: open
 # Build
 `,
 		)
-		if (vcs === "jj") {
-			const repository = join(root, "repos/agency")
-			await rm(join(root, "tasks/single/code/agency"), { recursive: true })
-			await rm(join(root, "tasks/multi/phases/build/code/agency"), {
-				recursive: true,
-			})
-			const initialized = Bun.spawn(
-				["jj", "git", "init", "--no-colocate", repository],
-				{ stdout: "pipe", stderr: "pipe" },
-			)
-			if ((await initialized.exited) !== 0)
-				throw new Error(await new Response(initialized.stderr).text())
-			for (const [name, path] of [
-				["single", join(root, "tasks/single/code/agency")],
-				["build", join(root, "tasks/multi/phases/build/code/agency")],
-			] as const) {
-				const workspace = Bun.spawn(
-					[
-						"jj",
-						"-R",
-						repository,
-						"workspace",
-						"add",
-						"--name",
-						name,
-						"-r",
-						"root()",
-						path,
-					],
-					{ stdout: "pipe", stderr: "pipe" },
-				)
-				if ((await workspace.exited) !== 0)
-					throw new Error(await new Response(workspace.stderr).text())
-			}
-		}
 		return root
 	}
 
@@ -258,54 +221,6 @@ status: working
 			"pr",
 			"view",
 			"--web",
-		])
-	})
-
-	test("injects the execution branch and repository for jj targets", async () => {
-		const root = await createExecutionWorkbase("jj")
-		const task = join(root, "tasks/single")
-		const phase = join(root, "tasks/multi/phases/build")
-
-		expect(await runTestEffect(pr(["view", "--web"], task))).toBe(0)
-		expect(await captured()).toEqual([
-			await realpath(join(task, "code/agency")),
-			"pr",
-			"view",
-			"feat/single",
-			"--repo",
-			"example/agency",
-			"--web",
-			expect.stringMatching(/^GIT_DIR=.*\.jj/),
-		])
-
-		expect(
-			await runTestEffect(pr(["create", "--title", "Example"], phase)),
-		).toBe(0)
-		expect(await captured()).toEqual([
-			await realpath(join(phase, "code/agency")),
-			"pr",
-			"create",
-			"--head",
-			"feat/build",
-			"--repo",
-			"example/agency",
-			"--title",
-			"Example",
-			expect.stringMatching(/^GIT_DIR=.*\.jj/),
-		])
-	})
-
-	test("preserves explicit jj PR and repository targets", async () => {
-		const root = await createExecutionWorkbase("jj")
-		const task = join(root, "tasks/single")
-		const args = ["view", "123", "--repo", "other/repository"]
-
-		expect(await runTestEffect(pr(args, task))).toBe(0)
-		expect(await captured()).toEqual([
-			await realpath(join(task, "code/agency")),
-			"pr",
-			...args,
-			expect.stringMatching(/^GIT_DIR=.*\.jj/),
 		])
 	})
 

@@ -3,10 +3,10 @@ import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
-import { TaskService } from "./TaskService"
 import { PushService } from "./PushService"
-import { parseGitCommits } from "./push-validation"
+import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
+import { parseGitCommits } from "./push-validation"
 
 interface CommandResult {
 	readonly stdout: string
@@ -40,7 +40,7 @@ const requireCommand = async (args: readonly string[], cwd?: string) => {
 }
 
 describe("PushService", () => {
-	test("parses and validates batched Git commit metadata", () => {
+	test("parses batched Git commit metadata", () => {
 		const output = [
 			"abc123\0Agency Test\0agency@example.com\0First change\0\x1e",
 			"def456\0Agency Test\0agency@example.com\0Second change\0\x1e",
@@ -64,17 +64,14 @@ describe("PushService", () => {
 		await Promise.all(roots.splice(0).map(cleanupTempDir))
 	})
 
-	const setup = async (vcs: "git" | "jj") => {
+	const setup = async () => {
 		const root = await createTempDir()
 		roots.push(root)
 		const remote = join(root, "remote.git")
 		const seed = join(root, "seed")
 		const repository = join(root, "repos", "agency")
 		await mkdir(join(root, "repos"), { recursive: true })
-		await Bun.write(
-			join(root, "agency.json"),
-			`${JSON.stringify({ version: 2, vcs }, null, 2)}\n`,
-		)
+		await Bun.write(join(root, "agency.json"), '{"version":2,"vcs":"git"}\n')
 		await requireCommand([
 			"git",
 			"init",
@@ -93,27 +90,7 @@ describe("PushService", () => {
 		await requireCommand(["git", "commit", "-m", "Initial commit"], seed)
 		await requireCommand(["git", "remote", "add", "origin", remote], seed)
 		await requireCommand(["git", "push", "-u", "origin", "main"], seed)
-		if (vcs === "jj") {
-			await requireCommand([
-				"jj",
-				"git",
-				"clone",
-				"--no-colocate",
-				remote,
-				repository,
-			])
-			expect(await Bun.file(join(repository, ".git")).exists()).toBe(false)
-			await requireCommand(
-				["jj", "config", "set", "--repo", "user.name", "Agency Test"],
-				repository,
-			)
-			await requireCommand(
-				["jj", "config", "set", "--repo", "user.email", "agency@example.com"],
-				repository,
-			)
-		} else {
-			await requireCommand(["git", "clone", "--bare", remote, repository])
-		}
+		await requireCommand(["git", "clone", "--bare", remote, repository])
 
 		await runTestEffect(
 			TaskService.pipe(
@@ -158,27 +135,31 @@ describe("PushService", () => {
 			PushService.pipe(Effect.flatMap((service) => service.publish(taskPath))),
 		)
 
-	const remoteBranch = async (remote: string, branch = "task/example") =>
+	const remoteBranch = async (remote: string) =>
 		(
 			await requireCommand([
 				"git",
 				"--git-dir",
 				remote,
 				"rev-parse",
-				`refs/heads/${branch}`,
+				"refs/heads/task/example",
 			])
 		).stdout
 
-	test("publishes a clean Git HEAD and establishes upstream tracking", async () => {
-		const fixture = await setup("git")
+	const configureAuthor = async (checkout: string) => {
 		await requireCommand(
 			["git", "config", "user.name", "Agency Test"],
-			fixture.checkout,
+			checkout,
 		)
 		await requireCommand(
 			["git", "config", "user.email", "agency@example.com"],
-			fixture.checkout,
+			checkout,
 		)
+	}
+
+	test("publishes a clean Git HEAD and establishes upstream tracking", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
 		await Bun.write(join(fixture.checkout, "feature.txt"), "published\n")
 		await requireCommand(["git", "add", "feature.txt"], fixture.checkout)
 		await requireCommand(
@@ -205,11 +186,11 @@ describe("PushService", () => {
 	})
 
 	test("rejects dirty, mismatched, and undescribed Git publication", async () => {
-		const dirty = await setup("git")
+		const dirty = await setup()
 		await Bun.write(join(dirty.checkout, "dirty.txt"), "dirty\n")
 		await expect(publish(dirty.taskPath)).rejects.toThrow("dirty Git worktree")
 
-		const mismatched = await setup("git")
+		const mismatched = await setup()
 		await requireCommand(
 			["git", "branch", "-m", "wrong-branch"],
 			mismatched.checkout,
@@ -218,15 +199,8 @@ describe("PushService", () => {
 			"does not match checked-out Git branch",
 		)
 
-		const undescribed = await setup("git")
-		await requireCommand(
-			["git", "config", "user.name", "Agency Test"],
-			undescribed.checkout,
-		)
-		await requireCommand(
-			["git", "config", "user.email", "agency@example.com"],
-			undescribed.checkout,
-		)
+		const undescribed = await setup()
+		await configureAuthor(undescribed.checkout)
 		await requireCommand(
 			["git", "commit", "--allow-empty", "--allow-empty-message", "-m", ""],
 			undescribed.checkout,
@@ -237,13 +211,8 @@ describe("PushService", () => {
 	})
 
 	test("rejects Git remote divergence after refreshing remote state", async () => {
-		const fixture = await setup("git")
-		for (const [key, value] of [
-			["user.name", "Agency Test"],
-			["user.email", "agency@example.com"],
-		] as const) {
-			await requireCommand(["git", "config", key, value], fixture.checkout)
-		}
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
 		await Bun.write(join(fixture.checkout, "feature.txt"), "first\n")
 		await requireCommand(["git", "add", "feature.txt"], fixture.checkout)
 		await requireCommand(
@@ -277,7 +246,7 @@ describe("PushService", () => {
 	})
 
 	test("requires working status and the declared Git base in history", async () => {
-		const open = await setup("git")
+		const open = await setup()
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
@@ -289,15 +258,8 @@ describe("PushService", () => {
 			"status 'open'; status must be working",
 		)
 
-		const unrelated = await setup("git")
-		await requireCommand(
-			["git", "config", "user.name", "Agency Test"],
-			unrelated.checkout,
-		)
-		await requireCommand(
-			["git", "config", "user.email", "agency@example.com"],
-			unrelated.checkout,
-		)
+		const unrelated = await setup()
+		await configureAuthor(unrelated.checkout)
 		await requireCommand(
 			["git", "checkout", "--orphan", "unrelated"],
 			unrelated.checkout,
@@ -318,16 +280,9 @@ describe("PushService", () => {
 		)
 	})
 
-	test("rejects invalid Git and jj authors", async () => {
-		const git = await setup("git")
-		await requireCommand(
-			["git", "config", "user.name", "Agency Test"],
-			git.checkout,
-		)
-		await requireCommand(
-			["git", "config", "user.email", "agency@example.com"],
-			git.checkout,
-		)
+	test("rejects invalid Git authors", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
 		await requireCommand(
 			[
 				"git",
@@ -338,231 +293,10 @@ describe("PushService", () => {
 				"-m",
 				"Invalid author",
 			],
-			git.checkout,
-		)
-		await expect(publish(git.taskPath)).rejects.toThrow("has an invalid author")
-
-		if (!Bun.which("jj")) return
-		const jj = await setup("jj")
-		await requireCommand(
-			["jj", "describe", "-m", "Invalid author"],
-			jj.checkout,
-		)
-		await requireCommand(
-			["jj", "metaedit", "--author", "Bad <bad>"],
-			jj.checkout,
-		)
-		const changeId = (
-			await requireCommand(
-				["jj", "log", "--no-graph", "-r", "@", "-T", "change_id"],
-				jj.checkout,
-			)
-		).stdout
-		await expect(publish(jj.taskPath)).rejects.toThrow(
-			`Change ${changeId} has an invalid author. Run: jj metaedit -r ${changeId} --author 'Name <email>'`,
-		)
-	})
-
-	test("publishes a described jj working-copy change under the declared bookmark", async () => {
-		if (!Bun.which("jj")) return
-		const fixture = await setup("jj")
-		await Bun.write(join(fixture.checkout, "feature.txt"), "published\n")
-		await requireCommand(
-			["jj", "describe", "-m", "Add published feature"],
-			fixture.checkout,
-		)
-
-		const result = await publish(fixture.taskPath)
-		expect(result).toMatchObject({
-			vcs: "jj",
-			branch: "task/example",
-			base: "main",
-			remote: "origin",
-		})
-		expect(await remoteBranch(fixture.remote)).toBe(result.tip)
-		expect(
-			(
-				await requireCommand(
-					[
-						"jj",
-						"bookmark",
-						"list",
-						"--all-remotes",
-						"-T",
-						'if(name == "task/example" && remote == "origin", tracked, "")',
-					],
-					fixture.checkout,
-				)
-			).stdout,
-		).toBe("true")
-
-		await requireCommand(["jj", "new", "@"], fixture.checkout)
-		await Bun.write(join(fixture.checkout, "follow-up.txt"), "follow up\n")
-		await requireCommand(
-			["jj", "describe", "-m", "Add follow-up"],
-			fixture.checkout,
-		)
-		const advanced = await publish(fixture.taskPath)
-		expect(advanced.tip).not.toBe(result.tip)
-		expect(await remoteBranch(fixture.remote)).toBe(advanced.tip)
-	}, 15_000)
-
-	test("diagnoses a jj stack whose remote base advanced", async () => {
-		if (!Bun.which("jj")) return
-		const fixture = await setup("jj")
-		await Bun.write(join(fixture.checkout, "feature.txt"), "local\n")
-		await requireCommand(
-			["jj", "describe", "-m", "Local feature"],
-			fixture.checkout,
-		)
-
-		const other = join(fixture.root, "other-main")
-		await requireCommand(["git", "clone", fixture.remote, other])
-		await requireCommand(["git", "config", "user.name", "Other"], other)
-		await requireCommand(
-			["git", "config", "user.email", "other@example.com"],
-			other,
-		)
-		await Bun.write(join(other, "remote.txt"), "remote\n")
-		await requireCommand(["git", "add", "remote.txt"], other)
-		await requireCommand(["git", "commit", "-m", "Advance main"], other)
-		await requireCommand(["git", "push", "origin", "main"], other)
-
-		await expect(publish(fixture.taskPath)).rejects.toThrow(
-			"jj rebase -s 'roots(main@origin..@)' -d main@origin",
-		)
-	})
-
-	test("selects the described parent of a canonical jj post-commit working copy", async () => {
-		if (!Bun.which("jj")) return
-		const fixture = await setup("jj")
-		await Bun.write(join(fixture.checkout, "feature.txt"), "published\n")
-		await requireCommand(
-			["jj", "commit", "-m", "Add published feature"],
-			fixture.checkout,
-		)
-		const parent = (
-			await requireCommand(
-				["jj", "log", "--no-graph", "-r", "@-", "-T", "commit_id"],
-				fixture.checkout,
-			)
-		).stdout
-
-		const result = await publish(fixture.taskPath)
-		expect(result.tip).toBe(parent)
-		expect(await remoteBranch(fixture.remote)).toBe(parent)
-	})
-
-	test("preserves a described empty jj change and diagnoses missing semantics", async () => {
-		if (!Bun.which("jj")) return
-		const described = await setup("jj")
-		await requireCommand(
-			["jj", "describe", "-m", "Record intentional empty change"],
-			described.checkout,
-		)
-		const describedTip = (
-			await requireCommand(
-				["jj", "log", "--no-graph", "-r", "@", "-T", "commit_id"],
-				described.checkout,
-			)
-		).stdout
-		expect((await publish(described.taskPath)).tip).toBe(describedTip)
-
-		const undescribed = await setup("jj")
-		await Bun.write(join(undescribed.checkout, "feature.txt"), "missing\n")
-		const changeId = (
-			await requireCommand(
-				["jj", "log", "--no-graph", "-r", "@", "-T", "change_id"],
-				undescribed.checkout,
-			)
-		).stdout
-		await expect(publish(undescribed.taskPath)).rejects.toThrow(
-			`Change ${changeId} has no description. Run: jj describe -r ${changeId}`,
-		)
-	}, 15_000)
-
-	test("rejects an empty jj task and remote bookmark divergence", async () => {
-		if (!Bun.which("jj")) return
-		const empty = await setup("jj")
-		await expect(publish(empty.taskPath)).rejects.toThrow(
-			"No changes to publish after base 'main'",
-		)
-
-		const fixture = await setup("jj")
-		await Bun.write(join(fixture.checkout, "feature.txt"), "first\n")
-		await requireCommand(
-			["jj", "describe", "-m", "First change"],
-			fixture.checkout,
-		)
-		await publish(fixture.taskPath)
-
-		const other = join(fixture.root, "other")
-		await requireCommand(["git", "clone", fixture.remote, other])
-		await requireCommand(["git", "checkout", "task/example"], other)
-		await requireCommand(["git", "config", "user.name", "Other"], other)
-		await requireCommand(
-			["git", "config", "user.email", "other@example.com"],
-			other,
-		)
-		await Bun.write(join(other, "remote.txt"), "remote\n")
-		await requireCommand(["git", "add", "remote.txt"], other)
-		await requireCommand(["git", "commit", "-m", "Remote change"], other)
-		await requireCommand(["git", "push", "origin", "task/example"], other)
-
-		await requireCommand(["jj", "new", "@"], fixture.checkout)
-		await Bun.write(join(fixture.checkout, "local.txt"), "local\n")
-		await requireCommand(
-			["jj", "describe", "-m", "Local change"],
 			fixture.checkout,
 		)
 		await expect(publish(fixture.taskPath)).rejects.toThrow(
-			"refusing to move it",
-		)
-	}, 15_000)
-
-	test("rejects conflicted jj changes with an actionable change ID", async () => {
-		if (!Bun.which("jj")) return
-		const fixture = await setup("jj")
-		await Bun.write(join(fixture.checkout, "README.md"), "left\n")
-		await requireCommand(
-			["jj", "describe", "-m", "Left change"],
-			fixture.checkout,
-		)
-		await requireCommand(
-			["jj", "bookmark", "create", "left", "-r", "@"],
-			fixture.checkout,
-		)
-		await requireCommand(["jj", "new", "main@origin"], fixture.checkout)
-		await Bun.write(join(fixture.checkout, "README.md"), "right\n")
-		await requireCommand(
-			["jj", "describe", "-m", "Right change"],
-			fixture.checkout,
-		)
-		await requireCommand(
-			["jj", "bookmark", "create", "right", "-r", "@"],
-			fixture.checkout,
-		)
-		await requireCommand(["jj", "new", "left", "right"], fixture.checkout)
-		await requireCommand(
-			["jj", "describe", "-m", "Conflicted merge"],
-			fixture.checkout,
-		)
-		const changeId = (
-			await requireCommand(
-				["jj", "log", "--no-graph", "-r", "@", "-T", "change_id"],
-				fixture.checkout,
-			)
-		).stdout
-		expect(
-			(
-				await requireCommand(
-					["jj", "log", "--no-graph", "-r", "@", "-T", "conflict"],
-					fixture.checkout,
-				)
-			).stdout,
-		).toBe("true")
-		await expect(publish(fixture.taskPath)).rejects.toThrow(
-			`Change ${changeId} contains conflicts. Run: jj resolve -r ${changeId}`,
+			"has an invalid author",
 		)
 	})
 })

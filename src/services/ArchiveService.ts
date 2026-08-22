@@ -13,7 +13,6 @@ import {
 } from "./WorktreeService"
 import {
 	GitVersionControlService,
-	JjVersionControlService,
 	VersionControlService,
 } from "./VersionControlService"
 import {
@@ -368,7 +367,6 @@ const WorktreeLayer = Layer.mergeAll(
 	FileSystemService.Default,
 	WorkbaseService.Default,
 	GitVersionControlService.Default,
-	JjVersionControlService.Default,
 	VersionControlService.Default,
 	TaskService.Default,
 	PhaseService.Default,
@@ -400,22 +398,6 @@ const restoreWorktreeSnapshots = async (
 			continue
 		} catch {}
 		await mkdir(dirname(snapshot.path), { recursive: true })
-		if (snapshot.vcs === "jj") {
-			await runGit([
-				"jj",
-				"-R",
-				snapshot.repositoryPath,
-				"workspace",
-				"add",
-				"--name",
-				snapshot.workspaceName!,
-				"-r",
-				snapshot.head,
-				snapshot.path,
-			])
-			await runGit(["jj", "-R", snapshot.path, "edit", snapshot.head])
-			continue
-		}
 		await runGit(
 			snapshot.branch
 				? [
@@ -724,7 +706,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						removedWorktrees.push(
 							...(yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
 								dryRun: true,
-								persistResume: false,
 							})),
 						)
 					}
@@ -783,7 +764,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 												worktrees.remove(unit.taskId, unit.phaseId, root, {
 													snapshots,
 													lockHeld: true,
-													persistResume: false,
 												}),
 											)
 									} catch (cause) {
@@ -897,7 +877,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							const result = yield* worktrees
 								.remove(unit.taskId, executionPhaseId(unit), root, {
 									dryRun: true,
-									persistResume: false,
 									task: context.task,
 									phase: unit.phaseId
 										? context.phases.find((phase) => phase.id === unit.phaseId)
@@ -1075,7 +1054,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 												worktrees.remove(unit.taskId, unit.phaseId, root, {
 													snapshots,
 													lockHeld: true,
-													persistResume: false,
 													task: contexts.get(unit.taskId)!.task,
 													phase: unit.phaseId
 														? contexts
@@ -1232,7 +1210,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 								root,
 								{
 									dryRun: true,
-									persistResume: false,
 								},
 							)),
 						)
@@ -1288,7 +1265,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 													{
 														snapshots,
 														lockHeld: true,
-														persistResume: false,
 													},
 												),
 											)
@@ -1381,7 +1357,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					yield* rejectExistingDestination(destination, "Archive")
 					const removedWorktrees = yield* worktrees.remove(taskId, id, root, {
 						dryRun: true,
-						persistResume: false,
 					})
 					const at = new Date().toISOString()
 					const content = yield* declarationContent(task, {
@@ -1430,7 +1405,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 													worktrees.remove(taskId, id, root, {
 														snapshots,
 														lockHeld: true,
-														persistResume: false,
 													}),
 												)
 											},

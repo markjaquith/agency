@@ -21,12 +21,10 @@ import {
 	type WorkbaseRegistration,
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
-import { validateWorkspaceCreateCommand } from "../workbase/workspace-command"
 import { validatePostCheckoutCommand } from "../workbase/checkout-command"
 import { validateAgents } from "../workbase/agent-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
-import { preferredVersionControl } from "../workbase/version-control"
 import { documentRevision } from "../workbase/document-revision"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
@@ -247,7 +245,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						[
 							fs.writeJSON(configPath, {
 								version: 2,
-								vcs: preferredVersionControl(),
+								vcs: "git",
 							}),
 							...["repos", "epics", "tasks"].map((directory) =>
 								fs.createDirectory(join(root, directory)),
@@ -329,21 +327,6 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												cause instanceof Error
 													? cause.message
 													: "Invalid worktreeCreateCommand",
-										})
-									}
-								}
-								if (decoded.value.workspaceCreateCommand) {
-									try {
-										validateWorkspaceCreateCommand(
-											decoded.value.workspaceCreateCommand,
-										)
-									} catch (cause) {
-										return yield* new WorkbaseConfigError({
-											path: configPath,
-											message:
-												cause instanceof Error
-													? cause.message
-													: "Invalid workspaceCreateCommand",
 										})
 									}
 								}

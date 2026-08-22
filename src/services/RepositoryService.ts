@@ -471,15 +471,9 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						})
 					}
 					const inspection = yield* backend.inspectRepository(resolvedTarget)
-					if (!inspection && backend.kind === "git") {
+					if (!inspection) {
 						return yield* new RepositoryError({
-							message: `Path is not a ${backend.kind} repository: ${resolvedTarget}`,
-						})
-					}
-					yield* backend.initializeRepository(resolvedTarget)
-					if (!(yield* backend.inspectRepository(resolvedTarget))) {
-						return yield* new RepositoryError({
-							message: `Path is not a ${backend.kind} repository: ${resolvedTarget}`,
+							message: `Path is not a Git repository: ${resolvedTarget}`,
 						})
 					}
 					const declaredRemote =
@@ -551,11 +545,6 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 
 					const state = yield* configState(startPath)
 					const backend = yield* versionControl.forWorkbase(state.root)
-					if (backend.kind !== "git") {
-						return yield* new RepositoryError({
-							message: `Repository alias materialization is only supported for Git workbases`,
-						})
-					}
 
 					const source = yield* fs.realPath(repository.path)
 					const registered = yield* backend.listWorkspaces(repository.path)

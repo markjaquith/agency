@@ -1,12 +1,8 @@
 export interface PushCommitMetadata {
 	readonly commitId: string
-	readonly changeId?: string
 	readonly description: string
-	readonly empty: boolean
 	readonly authorName: string
 	readonly authorEmail: string
-	readonly conflict: boolean
-	readonly parents: readonly string[]
 }
 
 export const parseGitCommits = (
@@ -26,10 +22,7 @@ export const parseGitCommits = (
 			return {
 				commitId,
 				description,
-				empty: false,
 				authorName,
 				authorEmail,
-				conflict: false,
-				parents: [],
 			}
 		})

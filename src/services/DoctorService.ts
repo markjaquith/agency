@@ -125,20 +125,12 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 							return available
 						})
 
-					const [gitAvailable, jjAvailable] = yield* Effect.all(
-						[
-							tool("tool.git", "git", "error", "Git"),
-							tool(
-								"tool.jj",
-								"jj",
-								config.vcs === "jj" ? "error" : "optional",
-								"Jujutsu",
-							),
-						],
-						{ concurrency: "unbounded", batching: true },
+					const versionControlAvailable = yield* tool(
+						"tool.git",
+						"git",
+						"error",
+						"Git",
 					)
-					const versionControlAvailable =
-						gitAvailable && (config.vcs !== "jj" || jjAvailable)
 					yield* Effect.all(
 						[
 							tool(
@@ -177,15 +169,6 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 										"integration.worktree-create",
 										config.worktreeCreateCommand,
 										"Worktree creator",
-									] as const,
-								]
-							: []),
-						...(config.workspaceCreateCommand
-							? [
-									[
-										"integration.workspace-create",
-										config.workspaceCreateCommand,
-										"Workspace creator",
 									] as const,
 								]
 							: []),
@@ -384,8 +367,9 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 							category: "repository",
 							level: "warning",
 							status: "fail",
-							message: `Repository, ref, remote, and workspace checks were skipped because the ${config.vcs ?? "git"} backend is unavailable`,
-							remediation: `Install '${config.vcs === "jj" ? "jj" : "git"}' and rerun 'agency doctor'.`,
+							message:
+								"Repository, ref, remote, and workspace checks were skipped because Git is unavailable",
+							remediation: "Install 'git' and rerun 'agency doctor'.",
 						})
 					}
 					for (const repository of repositoryList) {

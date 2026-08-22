@@ -352,7 +352,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						const registered: RegisteredWorktree[] = []
 						for (const item of listed.right) {
 							registered.push({
-								head: backend.kind === "jj" ? (item.head ?? null) : item.commit,
+								head: item.commit,
 								branch: item.branch,
 								path: (yield* fs.exists(item.path))
 									? yield* fs.realPath(item.path)
@@ -421,9 +421,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 										env: resolved.environment,
 									})
 								} else if (!config.delivery && existing) {
-									const environment = yield* Effect.either(
-										backend.gitEnvironment(repositoryPath),
-									)
 									result = yield* runExternal(
 										[
 											"gh",
@@ -435,13 +432,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 										],
 										{
 											cwd: repositoryPath,
-											env: Either.isRight(environment) ? environment.right : {},
+											env: {},
 										},
 									)
 								} else if (!config.delivery) {
-									const environment = yield* Effect.either(
-										backend.gitEnvironment(repositoryPath),
-									)
 									result = yield* runExternal(
 										[
 											"gh",
@@ -458,7 +452,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 										],
 										{
 											cwd: repositoryPath,
-											env: Either.isRight(environment) ? environment.right : {},
+											env: {},
 										},
 									)
 								}
@@ -550,34 +544,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							: (yield* fs.isDirectory(codePath))
 								? join(yield* fs.realPath(codePath), checkout.repo)
 								: resolve(checkoutPath)
-						let atPath = registered.find((item) => item.path === expectedPath)
-						if (backend.kind === "jj" && atPath && "branch" in checkout) {
-							atPath = { ...atPath, branch: checkout.branch }
-						}
-						if (
-							backend.kind === "jj" &&
-							atPath &&
-							exists &&
-							atPath.head === null
-						) {
-							atPath = {
-								...atPath,
-								head: yield* backend.workspaceHead(checkoutPath),
-							}
-						}
+						const atPath = registered.find((item) => item.path === expectedPath)
 						const branchRef =
-							"branch" in checkout
-								? backend.kind === "jj"
-									? checkout.branch
-									: `refs/heads/${checkout.branch}`
-								: null
-						const branchElsewhere =
-							branchRef && backend.kind !== "jj"
-								? registered.find(
-										(item) =>
-											item.branch === branchRef && item.path !== expectedPath,
-									)
-								: undefined
+							"branch" in checkout ? `refs/heads/${checkout.branch}` : null
+						const branchElsewhere = branchRef
+							? registered.find(
+									(item) =>
+										item.branch === branchRef && item.path !== expectedPath,
+								)
+							: undefined
 						if ("branch" in checkout && !exists && !branchElsewhere) {
 							const branch = yield* backend.resolveRevision(
 								repositoryPath,
@@ -773,9 +748,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 											head: checkout.resolvedCommit,
 											branch:
 												checkout.kind === "writable"
-													? backend.kind === "jj"
-														? checkout.requestedRef
-														: `refs/heads/${checkout.requestedRef}`
+													? `refs/heads/${checkout.requestedRef}`
 													: null,
 											dirty: false,
 										})

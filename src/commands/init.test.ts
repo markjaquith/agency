@@ -8,7 +8,6 @@ import {
 	runTestEffect,
 } from "../test-utils"
 import { init } from "./init"
-import { preferredVersionControl } from "../workbase/version-control"
 
 describe("init command", () => {
 	let parent: string
@@ -27,7 +26,7 @@ describe("init command", () => {
 
 		expect(await Bun.file(join(root, "agency.json")).json()).toEqual({
 			version: 2,
-			vcs: preferredVersionControl(),
+			vcs: "git",
 		})
 		for (const directory of ["repos", "epics", "tasks"]) {
 			expect((await stat(join(root, directory))).isDirectory()).toBe(true)

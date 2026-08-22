@@ -20,21 +20,13 @@ export const repositoryFromRemote = (remote: string) =>
 
 export const resolveGitHubCreateCommand = ({
 	base,
-	branch,
-	repository,
 	draft,
-	vcs,
-	defaults,
 	title,
 	head,
 	labels = [],
 }: {
 	readonly base: string
-	readonly branch: string
-	readonly repository: string
 	readonly draft: boolean
-	readonly vcs: "git" | "jj"
-	readonly defaults?: { readonly title: string; readonly body: string }
 	readonly title?: string
 	readonly head?: string
 	readonly labels?: readonly string[]
@@ -43,15 +35,10 @@ export const resolveGitHubCreateCommand = ({
 		"gh",
 		"pr",
 		"create",
-		...(defaults
-			? ["--title", title ?? defaults.title, "--body", defaults.body]
-			: title
-				? ["--fill", "--title", title]
-				: ["--fill"]),
+		...(title ? ["--fill", "--title", title] : ["--fill"]),
 		"--base",
 		base,
-		...(vcs === "jj" || head ? ["--head", head ?? branch] : []),
-		...(vcs === "jj" ? ["--repo", repository] : []),
+		...(head ? ["--head", head] : []),
 		...(draft ? ["--draft"] : []),
 		...labels.flatMap((label) => ["--label", label]),
 	],

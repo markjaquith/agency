@@ -57,7 +57,7 @@ export const GraphReadiness = Schema.Struct({
 
 export const GraphWorkbase = Schema.Struct({
 	version: Schema.Literal(2),
-	vcs: Schema.optional(Schema.Literal("git", "jj")),
+	vcs: Schema.optional(Schema.Literal("git")),
 	root: Schema.optional(Schema.String),
 })
 

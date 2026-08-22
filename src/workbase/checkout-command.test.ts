@@ -11,7 +11,7 @@ const variables = {
 	checkoutKind: "reference" as const,
 	requestedRef: "main",
 	base: "",
-	vcs: "jj" as const,
+	vcs: "git" as const,
 	workbaseRoot: "/work",
 	taskId: "example",
 	phaseId: "",

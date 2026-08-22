@@ -9,15 +9,11 @@ import {
 	worktreeCommandEnvironment,
 } from "../workbase/worktree-command"
 import {
-	expandWorkspaceCreateCommand,
-	workspaceCommandEnvironment,
-} from "../workbase/workspace-command"
-import {
 	expandPostCheckoutCommand,
 	postCheckoutCommandEnvironment,
 	type CheckoutCommandVariables,
 } from "../workbase/checkout-command"
-import type { RepositoryReference, WorkbaseConfig } from "../workbase/schemas"
+import type { RepositoryReference } from "../workbase/schemas"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 import { withWorktreeLocks } from "./WorktreeLock"
@@ -43,8 +39,6 @@ interface WorkspaceOperation {
 		| "fetch"
 		| "create-branch"
 		| "create-worktree"
-		| "create-workspace"
-		| "restore-workspace"
 		| "post-checkout"
 	readonly repo: string
 	readonly command: readonly string[]
@@ -81,6 +75,7 @@ interface GitWorktree {
 }
 
 const managedWorktreeIgnorePatterns = ["/.worktree.lock"] as const
+const vcs = "git" as const
 
 interface WorktreeOwner {
 	readonly kind: "task" | "phase"
@@ -157,24 +152,6 @@ export interface WorktreeRemovalSnapshot {
 	readonly repositoryPath: string
 	readonly head: string
 	readonly branch?: string
-	readonly vcs?: "git" | "jj"
-	readonly workspaceName?: string
-}
-
-interface JjResumeCheckout {
-	readonly repo: string
-	readonly workspacePath: string
-	readonly workspaceName: string
-	readonly commitId: string
-	readonly changeId: string
-	readonly bookmark: string
-}
-
-interface JjResumeState {
-	readonly version: 1
-	readonly taskId: string
-	readonly phaseId: string | null
-	readonly checkouts: readonly JjResumeCheckout[]
 }
 
 const parseWorktreeList = (output: string): readonly GitWorktree[] => {
@@ -285,7 +262,6 @@ interface RemoveOptions extends BaseCommandOptions {
 	readonly snapshots?: WorktreeRemovalSnapshot[]
 	readonly lockHeld?: boolean
 	readonly allowReferenceDrift?: boolean
-	readonly persistResume?: boolean
 	readonly task?: TaskRecord
 	readonly phase?: PhaseRecord
 }
@@ -455,87 +431,6 @@ const inspectExecution = (
 					exists: false,
 					registered: false,
 					dirty: null,
-					owners,
-					conflicts,
-				})
-				continue
-			}
-
-			if (backend.kind === "jj") {
-				const exists = yield* fs.isDirectory(checkoutPath)
-				const expectedPath = exists
-					? yield* fs.realPath(checkoutPath)
-					: resolve(checkoutPath)
-				const registered =
-					context?.workspacesByRepository.get(repositoryPath) ??
-					(yield* backend.listWorkspaces(repositoryPath))
-				const atPath = registered.find(
-					(workspace) => workspace.path === expectedPath,
-				)
-				const actualCommit = atPath
-					? atPath.head !== undefined
-						? atPath.head
-						: yield* backend.workspaceHead(checkoutPath)
-					: null
-				const dirty =
-					exists && atPath
-						? yield* backend.workspaceDirty(checkoutPath)
-						: (atPath?.dirty ?? null)
-				const expectedCommit =
-					"branch" in checkout && context?.skipWritableRevisionResolution
-						? actualCommit
-						: yield* backend.resolveRevision(repositoryPath, requestedRef)
-
-				if (owners.length > 1) {
-					conflict(
-						"duplicate-owner",
-						`Branch '${requestedRef}' for repository '${checkout.repo}' has multiple Agency owners`,
-						{ registeredPath: atPath?.path, commit: actualCommit, dirty },
-					)
-				}
-				if (atPath && !exists) {
-					conflict(
-						"stale-registration",
-						`Workspace registry contains a missing checkout at ${checkoutPath}`,
-						{ registeredPath: atPath.path, commit: actualCommit },
-					)
-				}
-				if (exists && !atPath) {
-					conflict(
-						"unregistered-checkout",
-						`Existing checkout ${checkoutPath} is not registered as a jj workspace`,
-						{ commit: actualCommit, dirty },
-					)
-				}
-				if (
-					"ref" in checkout &&
-					actualCommit &&
-					expectedCommit &&
-					actualCommit !== expectedCommit
-				) {
-					conflict(
-						"reference-drift",
-						`Reference checkout ${checkoutPath} is at ${actualCommit}, not ${expectedCommit}`,
-						{
-							registeredPath: atPath?.path,
-							commit: actualCommit,
-							dirty,
-						},
-					)
-				}
-
-				checkouts.push({
-					repo: checkout.repo,
-					kind,
-					path: checkoutPath,
-					registeredPath: atPath?.path ?? null,
-					requestedRef,
-					expectedCommit,
-					actualCommit,
-					actualBranch: "branch" in checkout ? checkout.branch : null,
-					exists,
-					registered: atPath !== undefined,
-					dirty,
 					owners,
 					conflicts,
 				})
@@ -795,258 +690,6 @@ const inspectExecution = (
 		} satisfies WorktreeInspection
 	})
 
-const jjWorkspaceName = (
-	taskId: string,
-	phaseId: string | undefined,
-	repo: string,
-) => `agency-${taskId}-${phaseId ?? "task"}-${repo}`
-
-const jjResumePath = (taskPath: string, phasePath: string | null) =>
-	join(dirname(phasePath ?? taskPath), ".agency-jj-resume.json")
-
-const jjResumeBookmark = (
-	taskId: string,
-	phaseId: string | undefined,
-	repo: string,
-) =>
-	`agency-resume/${Buffer.from(`${taskId}:${phaseId ?? "task"}:${repo}:${crypto.randomUUID()}`).toString("hex")}`
-
-const parseJjResumeState = (content: string, path: string): JjResumeState => {
-	let value: unknown
-	try {
-		value = JSON.parse(content)
-	} catch {
-		throw new WorktreeError({
-			message: `Invalid jj resume metadata at ${path}`,
-		})
-	}
-	if (
-		typeof value !== "object" ||
-		value === null ||
-		!("version" in value) ||
-		value.version !== 1 ||
-		!("taskId" in value) ||
-		typeof value.taskId !== "string" ||
-		!("phaseId" in value) ||
-		(value.phaseId !== null && typeof value.phaseId !== "string") ||
-		!("checkouts" in value) ||
-		!Array.isArray(value.checkouts) ||
-		value.checkouts.some(
-			(checkout) =>
-				typeof checkout !== "object" ||
-				checkout === null ||
-				![
-					"repo",
-					"workspacePath",
-					"workspaceName",
-					"commitId",
-					"changeId",
-					"bookmark",
-				].every((key) => key in checkout && typeof checkout[key] === "string"),
-		)
-	) {
-		throw new WorktreeError({
-			message: `Invalid jj resume metadata at ${path}`,
-		})
-	}
-	return value as JjResumeState
-}
-
-const readJjResumeState = (path: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		if (!(yield* fs.exists(path))) return null
-		return parseJjResumeState(yield* fs.readFile(path), path)
-	})
-
-const writeJjResumeState = (path: string, state: JjResumeState) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`
-		yield* Effect.gen(function* () {
-			yield* fs.writeJSON(temporary, state)
-			yield* fs.moveDirectory(temporary, path)
-		}).pipe(
-			Effect.catchAll((cause) =>
-				Effect.gen(function* () {
-					if (yield* fs.exists(temporary)) yield* fs.deleteFile(temporary)
-					return yield* Effect.fail(cause)
-				}),
-			),
-		)
-	})
-
-const jjIdentity = (repositoryPath: string, revision: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const result = yield* fs.runCommand(
-			[
-				"jj",
-				"-R",
-				repositoryPath,
-				"--no-pager",
-				"log",
-				"--ignore-working-copy",
-				"--no-graph",
-				"-r",
-				revision,
-				"-T",
-				'commit_id ++ "\\t" ++ change_id ++ "\\n"',
-			],
-			{ captureOutput: true },
-		)
-		const lines = result.stdout.trim().split("\n").filter(Boolean)
-		if (result.exitCode !== 0 || lines.length !== 1) return null
-		const [commitId, changeId] = lines[0]!.split("\t")
-		return commitId && changeId ? { commitId, changeId } : null
-	})
-
-const jjSetBookmark = (
-	repositoryPath: string,
-	bookmark: string,
-	commitId: string,
-) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const result = yield* fs.runCommand(
-			[
-				"jj",
-				"-R",
-				repositoryPath,
-				"bookmark",
-				"create",
-				bookmark,
-				"-r",
-				commitId,
-			],
-			{ captureOutput: true },
-		)
-		if (result.exitCode !== 0)
-			return yield* new WorktreeError({
-				message: `Failed to create internal jj resume bookmark '${bookmark}': ${result.stderr.trim()}`,
-			})
-	})
-
-const jjDeleteBookmark = (repositoryPath: string, bookmark: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const result = yield* fs.runCommand(
-			["jj", "-R", repositoryPath, "bookmark", "delete", bookmark],
-			{ captureOutput: true },
-		)
-		if (result.exitCode !== 0)
-			return yield* new WorktreeError({
-				message: `Failed to delete internal jj resume bookmark '${bookmark}': ${result.stderr.trim()}`,
-			})
-	})
-
-const jjEditWorkspace = (workspacePath: string, commitId: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const result = yield* fs.runCommand(
-			["jj", "-R", workspacePath, "edit", commitId],
-			{ captureOutput: true },
-		)
-		if (result.exitCode !== 0)
-			return yield* new WorktreeError({
-				message: `Failed to restore jj workspace ${workspacePath} at ${commitId}: ${result.stderr.trim()}`,
-			})
-	})
-
-const restoreJjWorkspace = (
-	backend: VersionControlBackend,
-	checkout: {
-		repositoryPath: string
-		workspacePath: string
-		workspaceName: string
-		commitId: string
-	},
-) =>
-	Effect.gen(function* () {
-		yield* backend.createWorkspace({
-			repositoryPath: checkout.repositoryPath,
-			workspacePath: checkout.workspacePath,
-			workspaceName: checkout.workspaceName,
-			revision: checkout.commitId,
-		})
-		yield* jjEditWorkspace(checkout.workspacePath, checkout.commitId)
-	})
-
-// A process can stop after `jj workspace forget` but before checkout deletion.
-// Only recover that residual when its repository and complete tree still match.
-const inspectJjResidual = (
-	root: string,
-	repositoryPath: string,
-	workspacePath: string,
-	revision: string,
-) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const repoPointer = join(workspacePath, ".jj", "repo")
-		if (!(yield* fs.exists(repoPointer))) return "unowned" as const
-
-		const pointer = (yield* fs.readFile(repoPointer)).trim()
-		if (!pointer) return "unowned" as const
-		const linkedRepository = resolve(dirname(repoPointer), pointer)
-		const expectedRepository = join(repositoryPath, ".jj", "repo")
-		if (
-			!(yield* fs.exists(linkedRepository)) ||
-			(yield* fs.realPath(linkedRepository)) !==
-				(yield* fs.realPath(expectedRepository))
-		)
-			return "unowned" as const
-
-		const comparisonPath = join(
-			root,
-			`.agency-jj-residual-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-		)
-		const comparisonName = basename(comparisonPath)
-		return yield* Effect.gen(function* () {
-			const created = yield* fs.runCommand(
-				[
-					"jj",
-					"-R",
-					repositoryPath,
-					"workspace",
-					"add",
-					"--name",
-					comparisonName,
-					"-r",
-					revision,
-					comparisonPath,
-				],
-				{ captureOutput: true },
-			)
-			if (created.exitCode !== 0) {
-				return yield* new WorktreeError({
-					message: `Cannot verify unregistered jj checkout ${workspacePath}: ${created.stderr}`,
-				})
-			}
-			const comparison = yield* fs.runCommand(
-				["diff", "-qr", "-x", ".jj", workspacePath, comparisonPath],
-				{ captureOutput: true },
-			)
-			if (comparison.exitCode > 1) {
-				return yield* new WorktreeError({
-					message: `Cannot verify unregistered jj checkout ${workspacePath}: ${comparison.stderr}`,
-				})
-			}
-			return comparison.exitCode === 0
-				? ("clean" as const)
-				: ("modified" as const)
-		}).pipe(
-			Effect.ensuring(
-				Effect.gen(function* () {
-					yield* fs.runCommand(
-						["jj", "-R", repositoryPath, "workspace", "forget", comparisonName],
-						{ captureOutput: true },
-					)
-					yield* fs.deleteDirectory(comparisonPath)
-				}).pipe(Effect.ignore),
-			),
-		)
-	})
-
 const buildInspectionContext = (
 	startPath: string,
 	skipWritableRevisionResolution: boolean,
@@ -1134,723 +777,6 @@ const buildInspectionContext = (
 			workspacesByRepository,
 			skipWritableRevisionResolution,
 		} satisfies InspectionContext
-	})
-
-const materializeJj = (options: {
-	readonly root: string
-	readonly taskId: string
-	readonly phaseId?: string
-	readonly taskPath: string
-	readonly phasePath: string | null
-	readonly codePath: string
-	readonly execution:
-		| {
-				repo: string
-				repos?: readonly RepositoryReference[]
-				branch: string
-				base: string
-		  }
-		| { review: { repo: string; commit: string } }
-	readonly requestedCheckouts: readonly (
-		| { readonly repo: string; readonly branch: string }
-		| RepositoryReference
-	)[]
-	readonly config: WorkbaseConfig
-	readonly commandOptions: MaterializeOptions
-}) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const versionControl = yield* VersionControlService
-		const backend = yield* versionControl.forWorkbase(options.root)
-		const operations: WorkspaceOperation[] = []
-		const reports: WorkspaceCheckout[] = []
-		const created: {
-			repositoryPath: string
-			workspacePath: string
-			workspaceName: string | null
-		}[] = []
-		const resumePath = jjResumePath(options.taskPath, options.phasePath)
-		const resume = yield* readJjResumeState(resumePath)
-		const base = "base" in options.execution ? options.execution.base : null
-		const { verboseLog } = createLoggers(options.commandOptions)
-		const forwardCommandOutput =
-			options.commandOptions.verbose === true &&
-			!options.commandOptions.silent &&
-			!options.commandOptions.json
-
-		if (!options.commandOptions.dryRun)
-			yield* fs.createDirectory(options.codePath)
-		if (resume) {
-			const requestedRepos = [
-				...options.requestedCheckouts.map(({ repo }) => repo),
-			].sort()
-			const resumeRepos = [...resume.checkouts.map(({ repo }) => repo)].sort()
-			if (
-				resume.taskId !== options.taskId ||
-				resume.phaseId !== (options.phaseId ?? null) ||
-				requestedRepos.join("\0") !== resumeRepos.join("\0")
-			) {
-				return yield* new WorktreeError({
-					message: `Jj resume metadata at ${resumePath} does not match this execution unit; restore or remove it manually before retrying`,
-				})
-			}
-			for (const checkout of resume.checkouts) {
-				const repositoryPath = join(options.root, "repos", checkout.repo)
-				const bookmark = yield* jjIdentity(repositoryPath, checkout.bookmark)
-				const commit = yield* jjIdentity(repositoryPath, checkout.commitId)
-				if (
-					!bookmark ||
-					!commit ||
-					bookmark.commitId !== checkout.commitId ||
-					bookmark.changeId !== checkout.changeId ||
-					commit.changeId !== checkout.changeId ||
-					checkout.workspacePath !== join(options.codePath, checkout.repo) ||
-					checkout.workspaceName !==
-						jjWorkspaceName(options.taskId, options.phaseId, checkout.repo)
-				) {
-					return yield* new WorktreeError({
-						message: `Cannot resume jj workspace for '${checkout.repo}'; recorded commit, change ID, path, or internal bookmark no longer agrees`,
-					})
-				}
-			}
-		}
-
-		return yield* Effect.gen(function* () {
-			for (const checkout of options.requestedCheckouts) {
-				const repositoryPath = join(options.root, "repos", checkout.repo)
-				const workspacePath = join(options.codePath, checkout.repo)
-				const workspaceName = jjWorkspaceName(
-					options.taskId,
-					options.phaseId,
-					checkout.repo,
-				)
-				const resumeCheckout = resume?.checkouts.find(
-					(entry) => entry.repo === checkout.repo,
-				)
-				if (!(yield* fs.exists(repositoryPath))) {
-					return yield* new WorktreeError({
-						message: `Repository alias '${checkout.repo}' is not materialized; run 'agency repo setup --apply'`,
-					})
-				}
-
-				let exists = yield* fs.isDirectory(workspacePath)
-				const canonicalPath = exists
-					? yield* fs.realPath(workspacePath)
-					: resolve(workspacePath)
-				const registeredWorkspaces =
-					yield* backend.listWorkspaces(repositoryPath)
-				const registered = registeredWorkspaces.find(
-					(workspace) => workspace.path === canonicalPath,
-				)
-				const registeredByName = registeredWorkspaces.find(
-					(workspace) => workspace.name === workspaceName,
-				)
-				if (exists && !registered && resumeCheckout) {
-					const residual = yield* inspectJjResidual(
-						options.root,
-						repositoryPath,
-						workspacePath,
-						resumeCheckout.commitId,
-					)
-					if (residual !== "clean") {
-						return yield* new WorktreeError({
-							message: `Cannot resume unregistered jj checkout ${workspacePath}; ${residual === "modified" ? "its contents differ from the recorded commit" : "its repository identity cannot be verified"}`,
-						})
-					}
-					if (!options.commandOptions.dryRun)
-						yield* fs.deleteDirectory(workspacePath)
-					exists = false
-				}
-				if (exists && !registered) {
-					return yield* new WorktreeError({
-						message: `Existing checkout ${workspacePath} is not registered as a jj workspace`,
-					})
-				}
-				if (!exists && registered) {
-					return yield* new WorktreeError({
-						message: `Workspace registry contains a missing checkout at ${workspacePath}`,
-					})
-				}
-				if (!exists && registeredByName) {
-					return yield* new WorktreeError({
-						message: `Jj workspace name '${workspaceName}' is already registered at ${registeredByName.path}`,
-					})
-				}
-				if (exists && registered) {
-					const actualCommit = resumeCheckout
-						? ((yield* jjIdentity(workspacePath, "@"))?.commitId ?? null)
-						: yield* backend.workspaceHead(workspacePath)
-					if (resumeCheckout && actualCommit !== resumeCheckout.commitId) {
-						return yield* new WorktreeError({
-							message: `Existing jj workspace ${workspacePath} is at ${actualCommit ?? "an unknown target"}, not recorded resume commit ${resumeCheckout.commitId}`,
-						})
-					}
-					if ("ref" in checkout && !resumeCheckout) {
-						const expectedCommit = yield* backend.resolveRevision(
-							repositoryPath,
-							checkout.ref,
-						)
-						if (!expectedCommit) {
-							return yield* new WorktreeError({
-								message: `Reference '${checkout.ref}' for repository '${checkout.repo}' does not resolve to a commit; run 'agency repo fetch ${checkout.repo}' and retry`,
-							})
-						}
-						if (
-							actualCommit !== expectedCommit &&
-							!options.commandOptions.allowReferenceDrift
-						) {
-							return yield* new WorktreeError({
-								message: `Existing checkout ${workspacePath} does not match reference '${checkout.ref}' (${expectedCommit})`,
-							})
-						}
-					}
-					reports.push({
-						repo: checkout.repo,
-						kind: "branch" in checkout ? "writable" : "reference",
-						path: workspacePath,
-						requestedRef: "branch" in checkout ? checkout.branch : checkout.ref,
-						resolvedCommit: actualCommit,
-						action: "reused",
-					})
-					continue
-				}
-
-				const requestedRevision =
-					"branch" in checkout ? checkout.branch : checkout.ref
-				let revision =
-					resumeCheckout?.commitId ??
-					(yield* backend.resolveRevision(repositoryPath, requestedRevision))
-				if (!revision && "branch" in checkout && base) {
-					revision = yield* backend.resolveRevision(repositoryPath, base)
-				}
-				if (!revision) {
-					const recovery =
-						backend.kind === "jj"
-							? `; run 'agency repo fetch ${checkout.repo}' and retry`
-							: ""
-					return yield* new WorktreeError({
-						message: `${"branch" in checkout ? "Base" : "Reference"} '${"branch" in checkout ? base : checkout.ref}' for repository '${checkout.repo}' does not resolve to a commit${recovery}`,
-					})
-				}
-
-				const defaultCommand = [
-					"jj",
-					"-R",
-					repositoryPath,
-					"workspace",
-					"add",
-					"--name",
-					workspaceName,
-					"-r",
-					revision,
-					workspacePath,
-				]
-				const workspaceVariables = {
-					repo: repositoryPath,
-					workspace: workspacePath,
-					name: workspaceName,
-					revision,
-					kind:
-						"branch" in checkout
-							? ("writable" as const)
-							: ("reference" as const),
-					requestedRef: requestedRevision,
-				}
-				let command = defaultCommand
-				let commandEnvironment: Record<string, string> | undefined
-				if (options.config.workspaceCreateCommand && !resumeCheckout) {
-					try {
-						command = expandWorkspaceCreateCommand(
-							options.config.workspaceCreateCommand,
-							workspaceVariables,
-						)
-						commandEnvironment = workspaceCommandEnvironment(workspaceVariables)
-					} catch (cause) {
-						return yield* new WorktreeError({
-							message:
-								cause instanceof Error
-									? cause.message
-									: "Invalid workspaceCreateCommand",
-							cause,
-						})
-					}
-				}
-				operations.push({
-					action: "create-workspace",
-					repo: checkout.repo,
-					command,
-					status: options.commandOptions.dryRun ? "planned" : "completed",
-				})
-				if (resumeCheckout) {
-					operations.push({
-						action: "restore-workspace",
-						repo: checkout.repo,
-						command: [
-							"jj",
-							"-R",
-							workspacePath,
-							"edit",
-							resumeCheckout.commitId,
-						],
-						status: options.commandOptions.dryRun ? "planned" : "completed",
-					})
-				}
-				if (!options.commandOptions.dryRun) {
-					if (resumeCheckout) {
-						yield* restoreJjWorkspace(backend, {
-							repositoryPath,
-							workspacePath,
-							workspaceName,
-							commitId: resumeCheckout.commitId,
-						})
-					} else if (options.config.workspaceCreateCommand) {
-						verboseLog(`Running workspace command: ${formatCommand(command)}`)
-						const result = yield* fs.runCommand(command, {
-							cwd: repositoryPath,
-							captureOutput: true,
-							forwardOutput: forwardCommandOutput,
-							env: commandEnvironment,
-						})
-						const createdPath = yield* fs.isDirectory(workspacePath)
-						const canonicalCreatedPath = createdPath
-							? yield* fs.realPath(workspacePath)
-							: resolve(workspacePath)
-						const registeredAfterCommand = (yield* backend.listWorkspaces(
-							repositoryPath,
-						)).find((workspace) => workspace.path === canonicalCreatedPath)
-						if (createdPath || registeredAfterCommand) {
-							created.push({
-								repositoryPath,
-								workspacePath,
-								workspaceName: registeredAfterCommand?.name ?? null,
-							})
-						}
-						if (result.exitCode !== 0) {
-							return yield* new WorktreeError({
-								message: `Failed to create jj workspace for '${checkout.repo}': ${result.stderr.trim() || result.stdout.trim()}`,
-							})
-						}
-						if (!createdPath) {
-							return yield* new WorktreeError({
-								message: `Workspace command did not create ${workspacePath}`,
-							})
-						}
-					} else {
-						yield* backend.createWorkspace({
-							repositoryPath,
-							workspacePath,
-							workspaceName,
-							revision,
-							...("branch" in checkout ? { branch: checkout.branch } : {}),
-						})
-					}
-					if (!options.config.workspaceCreateCommand || resumeCheckout) {
-						created.push({ repositoryPath, workspacePath, workspaceName })
-					}
-					const canonicalWorkspacePath = yield* fs.realPath(workspacePath)
-					const registeredAfterCreate = (yield* backend.listWorkspaces(
-						repositoryPath,
-					)).find((workspace) => workspace.path === canonicalWorkspacePath)
-					const head = resumeCheckout
-						? ((yield* jjIdentity(workspacePath, "@"))?.commitId ?? null)
-						: yield* backend.workspaceHead(workspacePath)
-					if (
-						registeredAfterCreate?.name !== workspaceName ||
-						head !== revision
-					) {
-						return yield* new WorktreeError({
-							message: `Created jj workspace for '${checkout.repo}' failed validation`,
-						})
-					}
-				}
-				yield* runPostCheckoutHook({
-					command:
-						options.config.repositories?.[checkout.repo]?.postCheckoutCommand,
-					variables: {
-						repoAlias: checkout.repo,
-						repositoryPath,
-						checkoutPath: workspacePath,
-						checkoutKind: "branch" in checkout ? "writable" : "reference",
-						requestedRef: requestedRevision,
-						base: base ?? "",
-						vcs: "jj",
-						workbaseRoot: options.root,
-						taskId: options.taskId,
-						phaseId: options.phaseId ?? "",
-					},
-					dryRun: options.commandOptions.dryRun === true,
-					forwardOutput: forwardCommandOutput,
-					verboseLog,
-					operations,
-				})
-				reports.push({
-					repo: checkout.repo,
-					kind: "branch" in checkout ? "writable" : "reference",
-					path: workspacePath,
-					requestedRef: requestedRevision,
-					resolvedCommit: revision,
-					action: "created",
-				})
-			}
-
-			if (resume && !options.commandOptions.dryRun) {
-				yield* fs.deleteFile(resumePath)
-				for (const checkout of resume.checkouts) {
-					yield* jjDeleteBookmark(
-						join(options.root, "repos", checkout.repo),
-						checkout.bookmark,
-					).pipe(Effect.ignore)
-				}
-			}
-
-			return {
-				root: options.root,
-				taskPath: options.taskPath,
-				phasePath: options.phasePath,
-				codePath: options.codePath,
-				writablePath:
-					"review" in options.execution
-						? null
-						: join(options.codePath, options.execution.repo),
-				reviewPath:
-					"review" in options.execution
-						? join(options.codePath, options.execution.review.repo)
-						: null,
-				repo:
-					"review" in options.execution
-						? options.execution.review.repo
-						: options.execution.repo,
-				repos:
-					"review" in options.execution ? [] : (options.execution.repos ?? []),
-				dryRun: options.commandOptions.dryRun === true,
-				checkouts: reports,
-				operations,
-			} satisfies ExecutionWorkspace
-		}).pipe(
-			Effect.catchAll((cause) =>
-				Effect.gen(function* () {
-					const rolledBack: string[] = []
-					const manualRecovery: string[] = []
-					for (const workspace of [...created].reverse()) {
-						const removed = yield* (
-							workspace.workspaceName
-								? backend.removeWorkspace({
-										repositoryPath: workspace.repositoryPath,
-										workspacePath: workspace.workspacePath,
-										workspaceName: workspace.workspaceName,
-									})
-								: fs.deleteDirectory(workspace.workspacePath)
-						).pipe(
-							Effect.as(true),
-							Effect.catchAll(() => Effect.succeed(false)),
-						)
-						if (removed)
-							rolledBack.push(`create-workspace ${workspace.workspaceName}`)
-						else
-							manualRecovery.push(
-								`Remove jj workspace ${workspace.workspacePath}`,
-							)
-					}
-					return yield* new WorktreeError({
-						message: `${cause instanceof Error ? cause.message : "Workspace creation failed"}. ${
-							manualRecovery.length
-								? "Some effects require manual recovery"
-								: "Created jj workspaces were rolled back"
-						}`,
-						rolledBack,
-						manualRecovery,
-						cause,
-					})
-				}),
-			),
-		)
-	})
-
-const removeJj = (
-	taskId: string,
-	phaseId: string | undefined,
-	root: string,
-	options: RemoveOptions,
-) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const versionControl = yield* VersionControlService
-		const tasks = yield* TaskService
-		const phases = yield* PhaseService
-		const backend = yield* versionControl.forWorkbase(root)
-		const inspection = yield* inspectExecution(taskId, phaseId, root)
-		const task = options.task ?? (yield* tasks.show(taskId, root))
-		const execution =
-			"phases" in task.data && phaseId
-				? (options.phase ?? (yield* phases.show(taskId, phaseId, root))).data
-				: task.data
-		const phasePath =
-			"phases" in task.data && phaseId
-				? (options.phase ?? (yield* phases.show(taskId, phaseId, root))).path
-				: null
-		const resumePath = jjResumePath(task.path, phasePath)
-		if (yield* fs.exists(resumePath)) {
-			return yield* new WorktreeError({
-				message: `Jj resume metadata already exists at ${resumePath}; run 'agency work prepare' to complete the previous resume before removing the workspace again`,
-			})
-		}
-		const recoverable = new Map<string, string>()
-		const modifiedResiduals = new Map<string, string>()
-		for (const checkout of inspection.checkouts) {
-			const recoveryRevision =
-				checkout.expectedCommit ??
-				(checkout.kind === "writable" && "base" in execution
-					? yield* backend.resolveRevision(
-							join(root, "repos", checkout.repo),
-							execution.base,
-						)
-					: null)
-			if (
-				!checkout.conflicts.some(
-					(conflict) => conflict.kind === "unregistered-checkout",
-				) ||
-				!recoveryRevision
-			)
-				continue
-			const repositoryPath = join(root, "repos", checkout.repo)
-			const residual = yield* inspectJjResidual(
-				root,
-				repositoryPath,
-				checkout.path,
-				recoveryRevision,
-			)
-			if (residual === "clean") recoverable.set(checkout.path, recoveryRevision)
-			else if (residual === "modified")
-				modifiedResiduals.set(checkout.path, recoveryRevision)
-		}
-		const blocking = inspection.checkouts.flatMap((checkout) =>
-			checkout.conflicts
-				.filter(
-					(conflict) =>
-						!(
-							options.allowReferenceDrift && conflict.kind === "reference-drift"
-						) &&
-						!(
-							conflict.kind === "unregistered-checkout" &&
-							recoverable.has(checkout.path)
-						),
-				)
-				.map((conflict) =>
-					conflict.kind === "unregistered-checkout" &&
-					modifiedResiduals.has(checkout.path)
-						? {
-								...conflict,
-								message: `Cannot remove unregistered jj checkout ${checkout.path}; its contents do not match expected revision '${modifiedResiduals.get(checkout.path)}'`,
-							}
-						: conflict,
-				),
-		)
-		if (blocking.length > 0) {
-			return yield* new WorktreeError({
-				message: blocking.map(({ message }) => message).join("\n"),
-				conflicts: blocking,
-			})
-		}
-
-		const plans: {
-			repo: string
-			repositoryPath: string
-			workspacePath: string
-			workspaceName: string
-			head: string
-			branch: string | null
-			registered: boolean
-			commitId: string
-			changeId: string
-			bookmark: string
-		}[] = []
-		for (const checkout of inspection.checkouts) {
-			const repositoryPath = join(root, "repos", checkout.repo)
-			const registered = checkout.registeredPath
-				? (yield* backend.listWorkspaces(repositoryPath)).find(
-						(workspace) => workspace.path === checkout.registeredPath,
-					)
-				: undefined
-			if (checkout.dirty === true && options.persistResume === false) {
-				const preservedByBookmark =
-					checkout.kind === "writable" &&
-					registered?.commit !== null &&
-					registered?.commit !== undefined &&
-					(yield* backend.resolveRevision(
-						repositoryPath,
-						checkout.requestedRef,
-					)) === registered.commit
-				if (!preservedByBookmark) {
-					return yield* new WorktreeError({
-						message: `Failed to remove workspace for '${checkout.repo}': checkout has uncommitted changes`,
-					})
-				}
-			}
-			if (
-				checkout.exists &&
-				checkout.dirty === null &&
-				!recoverable.has(checkout.path)
-			) {
-				return yield* new WorktreeError({
-					message: `Failed to remove workspace for '${checkout.repo}': checkout cleanliness could not be verified`,
-				})
-			}
-			if (!checkout.registeredPath) {
-				const recoveryRevision = recoverable.get(checkout.path)
-				if (!recoveryRevision) continue
-				const identity = yield* jjIdentity(repositoryPath, recoveryRevision)
-				if (!identity) {
-					return yield* new WorktreeError({
-						message: `Cannot prove the exact jj target for unregistered checkout ${checkout.path}`,
-					})
-				}
-				plans.push({
-					repo: checkout.repo,
-					repositoryPath,
-					workspacePath: checkout.path,
-					workspaceName: jjWorkspaceName(taskId, phaseId, checkout.repo),
-					head: recoveryRevision,
-					branch: checkout.actualBranch,
-					registered: false,
-					...identity,
-					bookmark: jjResumeBookmark(taskId, phaseId, checkout.repo),
-				})
-				continue
-			}
-			if (!registered?.name || !checkout.actualCommit || !registered.commit) {
-				return yield* new WorktreeError({
-					message: `Cannot identify jj workspace at ${checkout.registeredPath}`,
-				})
-			}
-			const identity = yield* jjIdentity(repositoryPath, registered.commit)
-			if (!identity || identity.commitId !== registered.commit) {
-				return yield* new WorktreeError({
-					message: `Cannot prove the exact jj target for workspace at ${checkout.registeredPath}`,
-				})
-			}
-			plans.push({
-				repo: checkout.repo,
-				repositoryPath,
-				workspacePath: checkout.path,
-				workspaceName: registered.name,
-				head: identity.commitId,
-				branch: checkout.actualBranch,
-				registered: true,
-				...identity,
-				bookmark: jjResumeBookmark(taskId, phaseId, checkout.repo),
-			})
-		}
-
-		for (const plan of plans) {
-			options.snapshots?.push({
-				path: plan.workspacePath,
-				repositoryPath: plan.repositoryPath,
-				head: plan.head,
-				...(plan.branch ? { branch: plan.branch } : {}),
-				vcs: "jj",
-				workspaceName: plan.workspaceName,
-			})
-		}
-		if (options.dryRun) return plans.map((plan) => plan.workspacePath)
-
-		const completed: typeof plans = []
-		const persistent = options.persistResume !== false && plans.length > 0
-		const resume: JjResumeState = {
-			version: 1,
-			taskId,
-			phaseId: phaseId ?? null,
-			checkouts: plans.map((plan) => ({
-				repo: plan.repo,
-				workspacePath: plan.workspacePath,
-				workspaceName: plan.workspaceName,
-				commitId: plan.commitId,
-				changeId: plan.changeId,
-				bookmark: plan.bookmark,
-			})),
-		}
-		const bookmarks: typeof plans = []
-		return yield* Effect.gen(function* () {
-			if (persistent) {
-				for (const plan of plans) {
-					yield* jjSetBookmark(
-						plan.repositoryPath,
-						plan.bookmark,
-						plan.commitId,
-					)
-					bookmarks.push(plan)
-				}
-				yield* writeJjResumeState(resumePath, resume)
-			}
-			for (const plan of plans) {
-				if (plan.registered) {
-					yield* backend.removeWorkspace({
-						repositoryPath: plan.repositoryPath,
-						workspacePath: plan.workspacePath,
-						workspaceName: plan.workspaceName,
-					})
-				} else {
-					yield* fs.deleteDirectory(plan.workspacePath)
-				}
-				completed.push(plan)
-			}
-			yield* fs.deleteDirectoryIfEmpty(inspection.codePath)
-			return plans.map((plan) => plan.workspacePath)
-		}).pipe(
-			Effect.catchAll((cause) =>
-				Effect.gen(function* () {
-					const rolledBack: string[] = []
-					const manualRecovery: string[] = []
-					const rollback = [...completed]
-					for (const plan of plans) {
-						if (completed.includes(plan)) continue
-						const registered = (yield* backend.listWorkspaces(
-							plan.repositoryPath,
-						)).some((workspace) => workspace.name === plan.workspaceName)
-						if (!registered) rollback.push(plan)
-					}
-					for (const plan of rollback.reverse()) {
-						if (yield* fs.exists(plan.workspacePath)) {
-							const removed = yield* fs
-								.deleteDirectory(plan.workspacePath)
-								.pipe(
-									Effect.as(true),
-									Effect.catchAll(() => Effect.succeed(false)),
-								)
-							if (!removed) {
-								manualRecovery.push(`Restore ${plan.workspacePath}`)
-								continue
-							}
-						}
-						const restored = yield* Effect.either(
-							restoreJjWorkspace(backend, {
-								repositoryPath: plan.repositoryPath,
-								workspacePath: plan.workspacePath,
-								workspaceName: plan.workspaceName,
-								commitId: plan.commitId,
-							}),
-						)
-						if (restored._tag === "Right") rolledBack.push(plan.workspacePath)
-						else manualRecovery.push(`Restore ${plan.workspacePath}`)
-					}
-					if (manualRecovery.length === 0 && persistent) {
-						if (yield* fs.exists(resumePath)) yield* fs.deleteFile(resumePath)
-						for (const plan of bookmarks)
-							yield* jjDeleteBookmark(plan.repositoryPath, plan.bookmark).pipe(
-								Effect.ignore,
-							)
-					}
-					return yield* new WorktreeError({
-						message: manualRecovery.length
-							? "Workspace removal failed and requires manual recovery"
-							: "Workspace removal failed; removed workspaces were restored",
-						completed: completed.map((plan) => plan.workspacePath),
-						rolledBack,
-						manualRecovery,
-						cause,
-					})
-				}),
-			),
-		)
 	})
 
 export class WorktreeService extends Effect.Service<WorktreeService>()(
@@ -1943,14 +869,12 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
-					const versionControl = yield* VersionControlService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
 					const { verboseLog } = createLoggers(options)
 					const forwardCommandOutput =
 						options.verbose === true && !options.silent && !options.json
 					const { root, config } = yield* workbase.loadConfig(startPath)
-					const backend = yield* versionControl.forWorkbase(root)
 					const materialization = Effect.gen(function* () {
 						if (!options.validationAlreadyPerformed) {
 							const report = yield* workbase.validate(root)
@@ -2009,20 +933,6 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 										...(execution.repos ?? []),
 									]
 						const executionBase = "base" in execution ? execution.base : ""
-						if (backend.kind === "jj") {
-							return yield* materializeJj({
-								root,
-								taskId,
-								...(phaseId ? { phaseId } : {}),
-								taskPath: task.path,
-								phasePath,
-								codePath,
-								execution,
-								requestedCheckouts,
-								config,
-								commandOptions: options,
-							})
-						}
 						const canonicalCodePath = (yield* fs.exists(codePath))
 							? yield* fs.realPath(codePath)
 							: resolve(codePath)
@@ -2519,7 +1429,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												checkoutKind: "writable",
 												requestedRef: checkout.branch,
 												base: executionBase,
-												vcs: "git",
+												vcs,
 												workbaseRoot: root,
 												taskId,
 												phaseId: phaseId ?? "",
@@ -2596,7 +1506,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											checkoutKind: "writable",
 											requestedRef: checkout.branch,
 											base: executionBase,
-											vcs: "git",
+											vcs,
 											workbaseRoot: root,
 											taskId,
 											phaseId: phaseId ?? "",
@@ -2711,7 +1621,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												checkoutKind: "reference",
 												requestedRef: checkout.ref,
 												base: executionBase,
-												vcs: "git",
+												vcs,
 												workbaseRoot: root,
 												taskId,
 												phaseId: phaseId ?? "",
@@ -2764,7 +1674,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											checkoutKind: "reference",
 											requestedRef: checkout.ref,
 											base: executionBase,
-											vcs: "git",
+											vcs,
 											workbaseRoot: root,
 											taskId,
 											phaseId: phaseId ?? "",
@@ -2927,328 +1837,311 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
-					const versionControl = yield* VersionControlService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
 					const root = yield* workbase.discover(startPath)
-					const backend = yield* versionControl.forWorkbase(root)
-					const removal =
-						backend.kind === "jj"
-							? removeJj(taskId, phaseId, root, options)
-							: Effect.gen(function* () {
-									const inspection = yield* inspectExecution(
-										taskId,
-										phaseId,
-										root,
-									)
-									const blockingConflicts = inspection.conflicts.filter(
-										(conflict) =>
-											conflict.kind !== "stale-registration" &&
-											!(
-												options.allowReferenceDrift &&
-												conflict.kind === "reference-drift"
-											),
-									)
-									if (blockingConflicts.length > 0) {
-										return yield* new WorktreeError({
-											message: blockingConflicts
-												.map(({ message }) => message)
-												.join("\n"),
-											conflicts: blockingConflicts,
-										})
-									}
-									const task = options.task ?? (yield* tasks.show(taskId, root))
+					const removal = Effect.gen(function* () {
+						const inspection = yield* inspectExecution(taskId, phaseId, root)
+						const blockingConflicts = inspection.conflicts.filter(
+							(conflict) =>
+								conflict.kind !== "stale-registration" &&
+								!(
+									options.allowReferenceDrift &&
+									conflict.kind === "reference-drift"
+								),
+						)
+						if (blockingConflicts.length > 0) {
+							return yield* new WorktreeError({
+								message: blockingConflicts
+									.map(({ message }) => message)
+									.join("\n"),
+								conflicts: blockingConflicts,
+							})
+						}
+						const task = options.task ?? (yield* tasks.show(taskId, root))
 
-									let execution:
-										| {
-												repo: string
-												repos?: readonly RepositoryReference[]
-												branch: string
-										  }
-										| { review: { repo: string; commit: string } }
-									let codePath: string
-									if ("phases" in task.data) {
-										if (!phaseId) {
-											return yield* new WorktreeError({
-												message: `Task '${taskId}' has multiple phases; phase ID is required`,
-											})
-										}
-										const phase =
-											options.phase ??
-											(yield* phases.show(taskId, phaseId, root))
-										execution = phase.data
-										codePath = join(dirname(phase.path), "code")
-									} else {
-										if (phaseId) {
-											return yield* new WorktreeError({
-												message: `Task '${taskId}' is single-phase and does not accept a phase ID`,
-											})
-										}
-										execution = task.data
-										codePath = join(dirname(task.path), "code")
-									}
+						let execution:
+							| {
+									repo: string
+									repos?: readonly RepositoryReference[]
+									branch: string
+							  }
+							| { review: { repo: string; commit: string } }
+						let codePath: string
+						if ("phases" in task.data) {
+							if (!phaseId) {
+								return yield* new WorktreeError({
+									message: `Task '${taskId}' has multiple phases; phase ID is required`,
+								})
+							}
+							const phase =
+								options.phase ?? (yield* phases.show(taskId, phaseId, root))
+							execution = phase.data
+							codePath = join(dirname(phase.path), "code")
+						} else {
+							if (phaseId) {
+								return yield* new WorktreeError({
+									message: `Task '${taskId}' is single-phase and does not accept a phase ID`,
+								})
+							}
+							execution = task.data
+							codePath = join(dirname(task.path), "code")
+						}
 
-									const codeDirectoryExists = yield* fs.isDirectory(codePath)
-									const removalPlans: {
-										alias: string
-										repositoryPath: string
-										checkoutPath: string
-										registeredPath: string
-										checkoutExists: boolean
-										head?: string
-										branch?: string
-									}[] = []
-									const expectedCheckouts: readonly (
-										| { readonly repo: string; readonly branch: string }
-										| RepositoryReference
-									)[] =
-										"review" in execution
-											? [
-													{
-														repo: execution.review.repo,
-														ref: execution.review.commit,
-													},
-												]
-											: [
-													{ repo: execution.repo, branch: execution.branch },
-													...(execution.repos ?? []),
-												]
-									const expectedAliases = expectedCheckouts.map(
-										({ repo }) => repo,
+						const codeDirectoryExists = yield* fs.isDirectory(codePath)
+						const removalPlans: {
+							alias: string
+							repositoryPath: string
+							checkoutPath: string
+							registeredPath: string
+							checkoutExists: boolean
+							head?: string
+							branch?: string
+						}[] = []
+						const expectedCheckouts: readonly (
+							| { readonly repo: string; readonly branch: string }
+							| RepositoryReference
+						)[] =
+							"review" in execution
+								? [
+										{
+											repo: execution.review.repo,
+											ref: execution.review.commit,
+										},
+									]
+								: [
+										{ repo: execution.repo, branch: execution.branch },
+										...(execution.repos ?? []),
+									]
+						const expectedAliases = expectedCheckouts.map(({ repo }) => repo)
+						if (codeDirectoryExists) {
+							const unmanaged = (yield* fs.readDirectory(codePath)).filter(
+								(entry) => !expectedAliases.includes(entry.name),
+							)
+							if (unmanaged.length > 0) {
+								return yield* new WorktreeError({
+									message: `Cannot remove ${codePath}; it contains unmanaged entries: ${unmanaged.map((entry) => entry.name).join(", ")}`,
+								})
+							}
+						}
+						for (const checkout of expectedCheckouts) {
+							const alias = checkout.repo
+							const repositoryPath = join(root, "repos", alias)
+							const checkoutPath = join(codePath, alias)
+							if (
+								(yield* fs.exists(checkoutPath)) &&
+								!(yield* fs.isDirectory(checkoutPath))
+							) {
+								return yield* new WorktreeError({
+									message: `Cannot remove ${codePath}; expected checkout ${checkoutPath} is not a directory`,
+								})
+							}
+							const listed = yield* fs.runCommand(
+								[
+									"git",
+									"-C",
+									repositoryPath,
+									"worktree",
+									"list",
+									"--porcelain",
+									"-z",
+								],
+								{ captureOutput: true },
+							)
+							if (listed.exitCode !== 0) {
+								return yield* new WorktreeError({
+									message: `Failed to inspect worktrees for '${alias}': ${listed.stderr}`,
+								})
+							}
+
+							const checkoutExists = yield* fs.isDirectory(checkoutPath)
+							const canonicalCheckoutPath = checkoutExists
+								? yield* fs.realPath(checkoutPath)
+								: join(
+										yield* fs.realPath(dirname(codePath)),
+										basename(codePath),
+										alias,
 									)
-									if (codeDirectoryExists) {
-										const unmanaged = (yield* fs.readDirectory(
-											codePath,
-										)).filter((entry) => !expectedAliases.includes(entry.name))
-										if (unmanaged.length > 0) {
-											return yield* new WorktreeError({
-												message: `Cannot remove ${codePath}; it contains unmanaged entries: ${unmanaged.map((entry) => entry.name).join(", ")}`,
-											})
-										}
-									}
-									for (const checkout of expectedCheckouts) {
-										const alias = checkout.repo
-										const repositoryPath = join(root, "repos", alias)
-										const checkoutPath = join(codePath, alias)
-										if (
-											(yield* fs.exists(checkoutPath)) &&
-											!(yield* fs.isDirectory(checkoutPath))
-										) {
-											return yield* new WorktreeError({
-												message: `Cannot remove ${codePath}; expected checkout ${checkoutPath} is not a directory`,
-											})
-										}
-										const listed = yield* fs.runCommand(
-											[
-												"git",
-												"-C",
-												repositoryPath,
-												"worktree",
-												"list",
-												"--porcelain",
-												"-z",
-											],
-											{ captureOutput: true },
-										)
-										if (listed.exitCode !== 0) {
-											return yield* new WorktreeError({
-												message: `Failed to inspect worktrees for '${alias}': ${listed.stderr}`,
-											})
-										}
+							let registered: GitWorktree | undefined
+							for (const worktree of parseWorktreeList(listed.stdout)) {
+								const worktreePath = (yield* fs.exists(worktree.path))
+									? yield* fs.realPath(worktree.path)
+									: resolve(worktree.path)
+								if (worktreePath === canonicalCheckoutPath) {
+									registered = { ...worktree, path: worktreePath }
+									break
+								}
+							}
+							if (!registered) {
+								if (checkoutExists) {
+									return yield* new WorktreeError({
+										message: `Existing checkout ${checkoutPath} is not registered as a Git worktree`,
+									})
+								}
+								continue
+							}
+							if ("branch" in checkout) {
+								const actualBranch = registered.branch?.replace(
+									/^refs\/heads\//,
+									"",
+								)
+								if (actualBranch !== checkout.branch) {
+									return yield* new WorktreeError({
+										message: `Cannot remove ${checkoutPath}; expected branch '${checkout.branch}', found '${actualBranch ?? "detached HEAD"}'`,
+									})
+								}
+							} else {
+								if (registered.branch) {
+									return yield* new WorktreeError({
+										message: `Cannot remove reference checkout ${checkoutPath}; it is attached to branch '${registered.branch.replace(/^refs\/heads\//, "")}'`,
+									})
+								}
+								const expected = yield* fs.runCommand(
+									[
+										"git",
+										"-C",
+										repositoryPath,
+										"rev-parse",
+										"--verify",
+										`${checkout.ref}^{commit}`,
+									],
+									{ captureOutput: true },
+								)
+								if (
+									expected.exitCode !== 0 ||
+									registered.head !== expected.stdout.trim()
+								) {
+									return yield* new WorktreeError({
+										message: `Cannot remove reference checkout ${checkoutPath}; it does not match '${checkout.ref}'`,
+									})
+								}
+							}
+							if (checkoutExists) {
+								const status = yield* fs.runCommand(
+									["git", "-C", checkoutPath, "status", "--porcelain"],
+									{ captureOutput: true },
+								)
+								if (status.exitCode !== 0 || status.stdout.trim()) {
+									return yield* new WorktreeError({
+										message: `Failed to remove worktree for '${alias}': checkout has uncommitted changes`,
+									})
+								}
+							}
+							removalPlans.push({
+								alias,
+								repositoryPath,
+								checkoutPath,
+								registeredPath: registered.path,
+								checkoutExists,
+								head: registered.head,
+								branch: registered.branch?.replace(/^refs\/heads\//, ""),
+							})
+						}
+						for (const plan of removalPlans) {
+							if (!plan.checkoutExists || !plan.head) continue
+							options.snapshots?.push({
+								path: plan.checkoutPath,
+								repositoryPath: plan.repositoryPath,
+								head: plan.head,
+								...(plan.branch ? { branch: plan.branch } : {}),
+							})
+						}
+						if (options.dryRun) {
+							return removalPlans.map((plan) =>
+								plan.checkoutExists ? plan.checkoutPath : plan.registeredPath,
+							)
+						}
 
-										const checkoutExists = yield* fs.isDirectory(checkoutPath)
-										const canonicalCheckoutPath = checkoutExists
-											? yield* fs.realPath(checkoutPath)
-											: join(
-													yield* fs.realPath(dirname(codePath)),
-													basename(codePath),
-													alias,
-												)
-										let registered: GitWorktree | undefined
-										for (const worktree of parseWorktreeList(listed.stdout)) {
-											const worktreePath = (yield* fs.exists(worktree.path))
-												? yield* fs.realPath(worktree.path)
-												: resolve(worktree.path)
-											if (worktreePath === canonicalCheckoutPath) {
-												registered = { ...worktree, path: worktreePath }
-												break
-											}
-										}
-										if (!registered) {
-											if (checkoutExists) {
-												return yield* new WorktreeError({
-													message: `Existing checkout ${checkoutPath} is not registered as a Git worktree`,
-												})
-											}
+						const completed: typeof removalPlans = []
+						const removed = yield* Effect.gen(function* () {
+							for (const plan of removalPlans) {
+								const command = plan.checkoutExists
+									? [
+											"git",
+											"-C",
+											plan.repositoryPath,
+											"worktree",
+											"remove",
+											plan.checkoutPath,
+										]
+									: [
+											"git",
+											"-C",
+											plan.repositoryPath,
+											"worktree",
+											"prune",
+											"--expire",
+											"now",
+										]
+								const result = yield* fs.runCommand(command, {
+									captureOutput: true,
+								})
+								if (result.exitCode !== 0) {
+									return yield* new WorktreeError({
+										message: `Failed to remove worktree for '${plan.alias}': ${result.stderr}`,
+									})
+								}
+								completed.push(plan)
+							}
+							if (codeDirectoryExists)
+								yield* fs.deleteDirectoryIfEmpty(codePath)
+							return removalPlans.map((plan) =>
+								plan.checkoutExists ? plan.checkoutPath : plan.registeredPath,
+							)
+						}).pipe(
+							Effect.catchAll((cause) =>
+								Effect.gen(function* () {
+									const rolledBack: string[] = []
+									const manualRecovery: string[] = []
+									for (const plan of [...completed].reverse()) {
+										if (!plan.checkoutExists) {
+											manualRecovery.push(
+												`Re-run worktree repair for stale registration ${plan.registeredPath}`,
+											)
 											continue
 										}
-										if ("branch" in checkout) {
-											const actualBranch = registered.branch?.replace(
-												/^refs\/heads\//,
-												"",
-											)
-											if (actualBranch !== checkout.branch) {
-												return yield* new WorktreeError({
-													message: `Cannot remove ${checkoutPath}; expected branch '${checkout.branch}', found '${actualBranch ?? "detached HEAD"}'`,
-												})
-											}
-										} else {
-											if (registered.branch) {
-												return yield* new WorktreeError({
-													message: `Cannot remove reference checkout ${checkoutPath}; it is attached to branch '${registered.branch.replace(/^refs\/heads\//, "")}'`,
-												})
-											}
-											const expected = yield* fs.runCommand(
-												[
+										yield* fs.createDirectory(dirname(plan.checkoutPath))
+										const command = plan.branch
+											? [
 													"git",
 													"-C",
-													repositoryPath,
-													"rev-parse",
-													"--verify",
-													`${checkout.ref}^{commit}`,
-												],
-												{ captureOutput: true },
-											)
-											if (
-												expected.exitCode !== 0 ||
-												registered.head !== expected.stdout.trim()
-											) {
-												return yield* new WorktreeError({
-													message: `Cannot remove reference checkout ${checkoutPath}; it does not match '${checkout.ref}'`,
-												})
-											}
-										}
-										if (checkoutExists) {
-											const status = yield* fs.runCommand(
-												["git", "-C", checkoutPath, "status", "--porcelain"],
-												{ captureOutput: true },
-											)
-											if (status.exitCode !== 0 || status.stdout.trim()) {
-												return yield* new WorktreeError({
-													message: `Failed to remove worktree for '${alias}': checkout has uncommitted changes`,
-												})
-											}
-										}
-										removalPlans.push({
-											alias,
-											repositoryPath,
-											checkoutPath,
-											registeredPath: registered.path,
-											checkoutExists,
-											head: registered.head,
-											branch: registered.branch?.replace(/^refs\/heads\//, ""),
+													plan.repositoryPath,
+													"worktree",
+													"add",
+													plan.checkoutPath,
+													plan.branch,
+												]
+											: [
+													"git",
+													"-C",
+													plan.repositoryPath,
+													"worktree",
+													"add",
+													"--detach",
+													plan.checkoutPath,
+													plan.head!,
+												]
+										const restored = yield* fs.runCommand(command, {
+											captureOutput: true,
 										})
+										if (restored.exitCode === 0)
+											rolledBack.push(plan.checkoutPath)
+										else manualRecovery.push(`Restore ${plan.checkoutPath}`)
 									}
-									for (const plan of removalPlans) {
-										if (!plan.checkoutExists || !plan.head) continue
-										options.snapshots?.push({
-											path: plan.checkoutPath,
-											repositoryPath: plan.repositoryPath,
-											head: plan.head,
-											...(plan.branch ? { branch: plan.branch } : {}),
-										})
-									}
-									if (options.dryRun) {
-										return removalPlans.map((plan) =>
-											plan.checkoutExists
-												? plan.checkoutPath
-												: plan.registeredPath,
-										)
-									}
-
-									const completed: typeof removalPlans = []
-									const removed = yield* Effect.gen(function* () {
-										for (const plan of removalPlans) {
-											const command = plan.checkoutExists
-												? [
-														"git",
-														"-C",
-														plan.repositoryPath,
-														"worktree",
-														"remove",
-														plan.checkoutPath,
-													]
-												: [
-														"git",
-														"-C",
-														plan.repositoryPath,
-														"worktree",
-														"prune",
-														"--expire",
-														"now",
-													]
-											const result = yield* fs.runCommand(command, {
-												captureOutput: true,
-											})
-											if (result.exitCode !== 0) {
-												return yield* new WorktreeError({
-													message: `Failed to remove worktree for '${plan.alias}': ${result.stderr}`,
-												})
-											}
-											completed.push(plan)
-										}
-										if (codeDirectoryExists)
-											yield* fs.deleteDirectoryIfEmpty(codePath)
-										return removalPlans.map((plan) =>
-											plan.checkoutExists
-												? plan.checkoutPath
-												: plan.registeredPath,
-										)
-									}).pipe(
-										Effect.catchAll((cause) =>
-											Effect.gen(function* () {
-												const rolledBack: string[] = []
-												const manualRecovery: string[] = []
-												for (const plan of [...completed].reverse()) {
-													if (!plan.checkoutExists) {
-														manualRecovery.push(
-															`Re-run worktree repair for stale registration ${plan.registeredPath}`,
-														)
-														continue
-													}
-													yield* fs.createDirectory(dirname(plan.checkoutPath))
-													const command = plan.branch
-														? [
-																"git",
-																"-C",
-																plan.repositoryPath,
-																"worktree",
-																"add",
-																plan.checkoutPath,
-																plan.branch,
-															]
-														: [
-																"git",
-																"-C",
-																plan.repositoryPath,
-																"worktree",
-																"add",
-																"--detach",
-																plan.checkoutPath,
-																plan.head!,
-															]
-													const restored = yield* fs.runCommand(command, {
-														captureOutput: true,
-													})
-													if (restored.exitCode === 0)
-														rolledBack.push(plan.checkoutPath)
-													else
-														manualRecovery.push(`Restore ${plan.checkoutPath}`)
-												}
-												return yield* new WorktreeError({
-													message: manualRecovery.length
-														? "Worktree removal failed and requires manual recovery"
-														: "Worktree removal failed; removed worktrees were restored",
-													completed: completed.map((plan) => plan.checkoutPath),
-													rolledBack,
-													manualRecovery,
-													cause,
-												})
-											}),
-										),
-									)
-									return removed
-								})
+									return yield* new WorktreeError({
+										message: manualRecovery.length
+											? "Worktree removal failed and requires manual recovery"
+											: "Worktree removal failed; removed worktrees were restored",
+										completed: completed.map((plan) => plan.checkoutPath),
+										rolledBack,
+										manualRecovery,
+										cause,
+									})
+								}),
+							),
+						)
+						return removed
+					})
 					return yield* options.lockHeld
 						? removal
 						: withWorktreeLocks(
@@ -3335,7 +2228,6 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							snapshots,
 							lockHeld: true,
 							allowReferenceDrift: true,
-							persistResume: false,
 						},
 					)
 					const workspace = yield* service
@@ -3350,51 +2242,30 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									const manualRecovery: string[] = []
 									for (const snapshot of [...snapshots].reverse()) {
 										yield* fs.createDirectory(dirname(snapshot.path))
-										const command =
-											snapshot.vcs === "jj"
-												? [
-														"jj",
-														"-R",
-														snapshot.repositoryPath,
-														"workspace",
-														"add",
-														"--name",
-														snapshot.workspaceName!,
-														"-r",
-														snapshot.head,
-														snapshot.path,
-													]
-												: snapshot.branch
-													? [
-															"git",
-															"-C",
-															snapshot.repositoryPath,
-															"worktree",
-															"add",
-															snapshot.path,
-															snapshot.branch,
-														]
-													: [
-															"git",
-															"-C",
-															snapshot.repositoryPath,
-															"worktree",
-															"add",
-															"--detach",
-															snapshot.path,
-															snapshot.head,
-														]
+										const command = snapshot.branch
+											? [
+													"git",
+													"-C",
+													snapshot.repositoryPath,
+													"worktree",
+													"add",
+													snapshot.path,
+													snapshot.branch,
+												]
+											: [
+													"git",
+													"-C",
+													snapshot.repositoryPath,
+													"worktree",
+													"add",
+													"--detach",
+													snapshot.path,
+													snapshot.head,
+												]
 										const restored = yield* fs.runCommand(command, {
 											captureOutput: true,
 										})
-										const edited =
-											restored.exitCode === 0 && snapshot.vcs === "jj"
-												? yield* fs.runCommand(
-														["jj", "-R", snapshot.path, "edit", snapshot.head],
-														{ captureOutput: true },
-													)
-												: restored
-										if (edited.exitCode === 0) rolledBack.push(snapshot.path)
+										if (restored.exitCode === 0) rolledBack.push(snapshot.path)
 										else manualRecovery.push(`Restore ${snapshot.path}`)
 									}
 									return yield* new WorktreeError({
@@ -3435,10 +2306,8 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const workbase = yield* WorkbaseService
-					const versionControl = yield* VersionControlService
 					const service = yield* WorktreeService
 					const root = yield* workbase.discover(startPath)
-					const backend = yield* versionControl.forWorkbase(root)
 					if (!options.lockHeld) {
 						return yield* withWorktreeLocks(
 							root,
@@ -3450,84 +2319,6 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						)
 					}
 					const inspection = yield* inspectExecution(taskId, phaseId, root)
-					if (backend.kind === "jj") {
-						const unsafe = inspection.conflicts.filter(
-							(conflict) => conflict.kind !== "stale-registration",
-						)
-						if (unsafe.length > 0) {
-							return yield* new WorktreeError({
-								message: unsafe.map(({ message }) => message).join("\n"),
-								conflicts: unsafe,
-							})
-						}
-						const actions: string[] = []
-						for (const checkout of inspection.checkouts) {
-							const repositoryPath = join(root, "repos", checkout.repo)
-							for (const conflict of checkout.conflicts) {
-								if (
-									conflict.kind !== "stale-registration" ||
-									!conflict.registeredPath
-								)
-									continue
-								const workspace = (yield* backend.listWorkspaces(
-									repositoryPath,
-								)).find((item) => item.path === conflict.registeredPath)
-								if (!workspace?.name) {
-									return yield* new WorktreeError({
-										message: `Cannot identify stale jj workspace at ${conflict.registeredPath}`,
-									})
-								}
-								const command = formatCommand([
-									"jj",
-									"-R",
-									repositoryPath,
-									"workspace",
-									"forget",
-									workspace.name,
-								])
-								actions.push(command)
-								if (!options.dryRun) {
-									yield* backend.removeWorkspace({
-										repositoryPath,
-										workspacePath: checkout.path,
-										workspaceName: workspace.name,
-									})
-								}
-							}
-						}
-						const missing = inspection.checkouts.some(
-							(checkout) => !checkout.exists,
-						)
-						if (missing) {
-							if (options.dryRun) {
-								actions.push(
-									...inspection.checkouts
-										.filter((checkout) => !checkout.exists)
-										.map((checkout) => `prepare ${checkout.path}`),
-								)
-							} else {
-								const workspace = yield* service.materialize(
-									taskId,
-									phaseId,
-									root,
-									{ ...options, lockHeld: true },
-								)
-								actions.push(
-									...workspace.operations.map((operation) =>
-										formatCommand(operation.command),
-									),
-								)
-							}
-						}
-						return {
-							operation: "repair",
-							dryRun: options.dryRun === true,
-							inspection: options.dryRun
-								? inspection
-								: yield* inspectExecution(taskId, phaseId, root),
-							actions,
-						} satisfies WorktreeLifecycleResult
-					}
 					const safeKinds = new Set<WorktreeConflict["kind"]>([
 						"stale-registration",
 						"unregistered-checkout",
