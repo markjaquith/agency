@@ -1077,12 +1077,17 @@ agency archive epic <epic-id> [--dry-run] [--json]
 agency archive task <task-id> [--dry-run] [--json]
 agency archive tasks [--dry-run] [--json]
 agency archive phase <task-id> <phase-id> [--dry-run] [--json]
+agency archive <path> [--dry-run] [--json]
 agency restore epic <epic-id> [--dry-run] [--json]
 agency restore task <task-id> [--dry-run] [--json]
 agency restore phase <task-id> <phase-id> [--dry-run] [--json]
 ```
 
-Archived work keeps its hierarchy under `archive/`. Epic archiving includes its
+An existing path within an active epic or task infers that work item, so
+`agency archive .` works from its directory. Collection roots are ambiguous,
+phase paths require the explicit `archive phase` form, and paths outside active
+epic or task trees are rejected. Archived work keeps its hierarchy under
+`archive/`. Epic archiving includes its
 listed tasks. A task can be archived only when its effective status is terminal
 (`done` or `dropped`). Multi-phase task status is derived from its phases, every
 phase must be terminal, and a task with no phases is not eligible.

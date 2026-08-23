@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import {
 	captureLogs,
@@ -93,6 +94,75 @@ describe("archive command", () => {
 		)
 	})
 
+	test("infers a task from a filesystem path", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				archive({
+					args: ["."],
+					cwd: join(root, "tasks/example"),
+					dryRun: true,
+					json: true,
+				}),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			operation: "archive",
+			kind: "task",
+			id: "example",
+			dryRun: true,
+		})
+	})
+
+	test("infers an epic from a filesystem path", async () => {
+		const directory = join(root, "epics/delivery")
+		await mkdir(directory, { recursive: true })
+		await Bun.write(
+			join(directory, "EPIC.md"),
+			`---
+ticketUrl: https://example.com/epic
+repos:
+  - repo: agency
+    ref: main
+tasks: []
+---
+
+# Delivery
+`,
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				archive({ args: ["."], cwd: directory, dryRun: true, json: true }),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			operation: "archive",
+			kind: "epic",
+			id: "delivery",
+			dryRun: true,
+		})
+	})
+
+	test("rejects ambiguous and unsupported archive paths", async () => {
+		await expect(
+			runTestEffect(archive({ args: ["."], cwd: root, silent: true })),
+		).rejects.toThrow("Archive path is ambiguous")
+		await expect(
+			runTestEffect(
+				archive({ args: ["repos/agency"], cwd: root, silent: true }),
+			),
+		).rejects.toThrow("Archive path must be within an active epic or task")
+
+		const phaseDirectory = join(root, "tasks/example/phases/build")
+		await mkdir(phaseDirectory, { recursive: true })
+		await expect(
+			runTestEffect(
+				archive({ args: ["."], cwd: phaseDirectory, silent: true }),
+			),
+		).rejects.toThrow("Archive path identifies a phase")
+	})
+
 	test("reports an already archived task", async () => {
 		await runTestEffect(
 			archive({ type: "task", args: ["example"], cwd: root, silent: true }),
@@ -143,7 +213,9 @@ describe("archive command", () => {
 	test("requires a supported work item type", async () => {
 		await expect(
 			runTestEffect(archive({ args: [], cwd: root, silent: true })),
-		).rejects.toThrow("Available: list, show, epic, task, tasks, phase")
+		).rejects.toThrow(
+			"Provide a path or use: list, show, epic, task, tasks, phase",
+		)
 	})
 
 	test("rejects an extra archive show identifier", async () => {

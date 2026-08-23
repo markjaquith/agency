@@ -1,7 +1,7 @@
 import { Schema, TreeFormatter } from "@effect/schema"
 import { Data, Effect, Either, Layer } from "effect"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
-import { dirname, join, relative } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { EpicService, type EpicRecord } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService, type PhaseRecord } from "./PhaseService"
@@ -52,6 +52,11 @@ class ArchiveError extends Data.TaggedError("ArchiveError")<{
 }> {}
 
 export type ArchiveKind = "epic" | "task" | "phase"
+
+interface ArchivePathTarget {
+	readonly kind: "epic" | "task"
+	readonly id: string
+}
 
 const LifecycleEventSchema = Schema.Struct({
 	operation: Schema.Literal("archive", "restore"),
@@ -496,6 +501,59 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 	"ArchiveService",
 	{
 		sync: () => ({
+			resolvePathTarget: (path: string, cwd: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const workbase = yield* WorkbaseService
+					const candidate = resolve(cwd, path)
+					if (!(yield* fs.exists(candidate))) {
+						return yield* new ArchiveError({
+							message: `Archive path does not exist: ${candidate}`,
+						})
+					}
+
+					const canonicalPath = yield* fs.realPath(candidate)
+					const root = yield* workbase.discover(canonicalPath)
+					const child = relative(root, canonicalPath)
+					const parts = child.split(sep)
+					if (child === "" || parts.length === 1) {
+						return yield* new ArchiveError({
+							message: `Archive path is ambiguous; it does not identify a single epic or task: ${canonicalPath}`,
+						})
+					}
+
+					const [collection, id] = parts
+					const kind =
+						collection === "epics"
+							? "epic"
+							: collection === "tasks"
+								? "task"
+								: undefined
+					if (!kind || !id) {
+						return yield* new ArchiveError({
+							message: `Archive path must be within an active epic or task: ${canonicalPath}`,
+						})
+					}
+					if (kind === "task" && parts[2] === "phases") {
+						return yield* new ArchiveError({
+							message: `Archive path identifies a phase; use 'agency archive phase <task-id> <phase-id>': ${canonicalPath}`,
+						})
+					}
+
+					const document = join(
+						root,
+						kind === "epic" ? "epics" : "tasks",
+						id,
+						kind === "epic" ? "EPIC.md" : "TASK.md",
+					)
+					if (!(yield* fs.exists(document))) {
+						return yield* new ArchiveError({
+							message: `Archive path does not identify an active ${kind}: ${canonicalPath}`,
+						})
+					}
+					return { kind, id } satisfies ArchivePathTarget
+				}),
+
 			list: (filters: ArchiveFilters = {}, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService

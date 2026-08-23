@@ -475,6 +475,11 @@ describe("strict CLI parsing", () => {
 	})
 
 	test("accepts archive dry-run", () => {
+		expect(parseCli(["archive", ".", "--dry-run"])).toMatchObject({
+			commandName: "archive",
+			args: ["."],
+			values: { "dry-run": true },
+		})
 		expect(parseCli(["archive", "task", "example", "--dry-run"])).toMatchObject(
 			{
 				commandName: "archive",
