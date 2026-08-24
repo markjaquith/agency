@@ -24,6 +24,14 @@ export const archive = (options: ArchiveOptions) =>
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const [id, phaseId] = options.args
+		let archiveType = options.type
+		let archiveId = id
+
+		if (!archiveType && id) {
+			const target = yield* archives.resolvePathTarget(id, cwd)
+			archiveType = target.kind
+			archiveId = target.id
+		}
 
 		if (options.type === "list") {
 			const records = yield* archives.list(
@@ -73,22 +81,22 @@ export const archive = (options: ArchiveOptions) =>
 		}
 
 		let result
-		switch (options.type) {
+		switch (archiveType) {
 			case "epic":
-				if (!id)
+				if (!archiveId)
 					return yield* Effect.fail(
 						new Error("Usage: agency archive epic <epic-id>"),
 					)
-				result = yield* archives.archiveEpic(id, cwd, {
+				result = yield* archives.archiveEpic(archiveId, cwd, {
 					dryRun: options.dryRun,
 				})
 				break
 			case "task":
-				if (!id)
+				if (!archiveId)
 					return yield* Effect.fail(
 						new Error("Usage: agency archive task <task-id>"),
 					)
-				result = yield* archives.archiveTask(id, cwd, {
+				result = yield* archives.archiveTask(archiveId, cwd, {
 					dryRun: options.dryRun,
 				})
 				break
@@ -109,7 +117,7 @@ export const archive = (options: ArchiveOptions) =>
 			default:
 				return yield* Effect.fail(
 					new Error(
-						"Archive operation is required. Available: list, show, epic, task, tasks, phase",
+						"Archive target is required. Provide a path or use: list, show, epic, task, tasks, phase",
 					),
 				)
 		}
@@ -141,11 +149,14 @@ export const archive = (options: ArchiveOptions) =>
 	})
 
 export const help = `
-Usage: agency archive <list|show|epic|task|tasks|phase>
+Usage: agency archive <path|list|show|epic|task|tasks|phase>
 
 Browse or archive work items after preflighting worktrees and graph references.
 
+An existing path within an active epic or task infers that work item.
+
 Commands:
+  <path>                                 Archive the containing epic or task
   list [filters]                         List archived work
   show <type> <id>                       Show an archived epic or task
   show phase <task-id> <phase-id>        Show an archived phase

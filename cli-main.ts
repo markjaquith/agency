@@ -396,10 +396,18 @@ const commands: Record<string, Command> = {
 				console.log(archiveHelp)
 				return
 			}
+			const explicitType = [
+				"list",
+				"show",
+				"epic",
+				"task",
+				"tasks",
+				"phase",
+			].includes(args[0] ?? "")
 			await runCommand(
 				archive({
-					type: args[0],
-					args: args.slice(1),
+					type: explicitType ? args[0] : undefined,
+					args: explicitType ? args.slice(1) : args,
 					json: options.json,
 					dryRun: options["dry-run"],
 					kinds: options.kind,

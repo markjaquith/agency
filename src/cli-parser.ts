@@ -763,7 +763,7 @@ const commands = {
 		},
 	},
 	archive: {
-		usage: "agency archive <list|show|epic|task|tasks|phase>",
+		usage: "agency archive <path|list|show|epic|task|tasks|phase>",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
@@ -771,6 +771,12 @@ const commands = {
 			kind: { type: "string", multiple: true },
 			status: { type: "string", multiple: true },
 			repository: { type: "string", multiple: true },
+		},
+		command: {
+			usage: "agency archive <path> [--dry-run] [--json]",
+			minArgs: 1,
+			maxArgs: 1,
+			options: ["dry-run", "json"],
 		},
 		subcommands: {
 			list: {
@@ -1474,9 +1480,8 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			values: parsed.values,
 		}
 	}
-	const spec = definition.subcommands
-		? definition.subcommands[subcommand ?? ""]
-		: definition.command
+	const selectedSubcommand = definition.subcommands?.[subcommand ?? ""]
+	const spec = selectedSubcommand ?? definition.command
 	if (!spec) {
 		const message = subcommand
 			? `Unknown subcommand '${subcommand}' for 'agency ${commandName}'.`
@@ -1484,7 +1489,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		throw usageError(message, definition.usage)
 	}
 
-	let commandPositionals = definition.subcommands
+	let commandPositionals = selectedSubcommand
 		? parsed.positionals.slice(1)
 		: parsed.positionals
 	const allowed = new Set([...commonOptionNames, ...(spec.options ?? [])])
@@ -1535,7 +1540,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 
 	commandPositionals = applyEntitySelectors(
 		commandName,
-		subcommand,
+		selectedSubcommand ? subcommand : undefined,
 		commandPositionals,
 		parsed.values,
 		spec,
@@ -1708,7 +1713,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 
 	return {
 		commandName: commandName as keyof typeof commands,
-		args: definition.subcommands
+		args: selectedSubcommand
 			? [subcommand!, ...commandPositionals]
 			: commandPositionals,
 		values: parsed.values,
