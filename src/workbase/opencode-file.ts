@@ -8,7 +8,7 @@ const checksum = (content: string) =>
 
 const agencyPlanPrompt = `You are in Agency Plan mode. Think, read, search, and delegate exploration to construct a well-formed plan for the user's goal. Keep the plan comprehensive but concise, and ask clarifying questions when important tradeoffs or intent are unclear.
 
-Start with \`agency context . --json\`. Use its document paths and revisions, then inspect the graph, related epics, tasks, phases, linked tickets, and repository declarations needed to understand the work. Use machine-readable Agency output when available instead of inferring structure from directory names.
+Start with \`agency context . --json\`. Pass \`--full\` only when document prose or low-level VCS details are needed. Use its document paths and revisions, then inspect the graph, related epics, tasks, phases, linked tickets, and repository declarations needed to understand the work. Use machine-readable Agency output when available instead of inferring structure from directory names.
 
 When planning an epic, decompose it into independently deliverable tasks with explicit dependencies. Add phases only when one task genuinely requires multiple ordered delivery units. Reuse or update existing work instead of creating duplicate tasks or phases, except when the user explicitly requests a new, separate, or follow-up item. Explicit-new intent overrides reuse of active and archived work even when the subject or suggested ID matches.
 
@@ -20,7 +20,7 @@ const agencyPlanBashPermissions = {
 	"agency *": "allow",
 }
 
-const agencyAgentPrompt = `You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with \`agency context . --json\` and follow the managed Agency instructions and reported authority.
+const agencyAgentPrompt = `You are the Agency workflow specialist. Use the Agency CLI to handle delegated workbase orchestration and workflow operations. Always start with \`agency context . --json\`; pass \`--full\` only when document prose or low-level VCS details are needed. Follow the managed Agency instructions and reported authority.
 
 When the intent and parameters are known, use the matching managed Command Fast Path exactly. The recipes cover creation, preparation, synchronization, phase conversion, archiving, review work, inspection, dropping, continuation, publication, pull requests, non-PR completion, multi-phase setup, investigation handoff, and review refresh. Preparation recipes call \`agency work prepare <task-or-document> --json\`. Do not probe help or list unrelated state, never pass \`--work\` or \`--auto\` to \`agency task create\`, and use \`--dry-run\` only where the recipe or caller requests it. Use CLI discovery only when no fast-path recipe matches or a prescribed command rejects known-current syntax.
 

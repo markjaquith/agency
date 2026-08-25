@@ -186,9 +186,12 @@ describe("IntegrationService", () => {
 		}
 		expect(managedWorkbaseAgents).toContain("agency push --json")
 		expect(managedWorkbaseAgents).toContain("agency-execution-v1")
-		expect(managedWorkbaseAgents).toContain("agency context . --full --json")
+		expect(managedWorkbaseAgents).toContain("agency context . --json")
 		expect(managedWorkbaseAgents).toContain(
-			"Workers use full context here because they need the assigned document prose",
+			"Pass `--full` only when document prose or low-level VCS details are needed",
+		)
+		expect(managedWorkbaseAgents).not.toContain(
+			"agency context . --full --json",
 		)
 		expect(managedWorkbaseAgents).toContain(
 			"Never pass `--work` or `--auto` to `agency task create`",
@@ -726,8 +729,14 @@ describe("IntegrationService", () => {
 		expect(config.agent.agency.prompt).toContain(
 			"Return the prepared execution contract to the caller",
 		)
+		expect(config.agent.agency.prompt).toContain(
+			"pass `--full` only when document prose or low-level VCS details are needed",
+		)
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Start with `agency context . --json`",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"Pass `--full` only when document prose or low-level VCS details are needed",
 		)
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"decompose it into independently deliverable tasks",
