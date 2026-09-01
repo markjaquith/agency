@@ -66,7 +66,7 @@ workbase/
   .agency/
     AGENTS.md              # managed Agency instructions
   .opencode/
-    opencode.jsonc         # managed @agency subagent, instructions, and reference
+    opencode.jsonc         # managed planning agent, instructions, and reference
     tui.jsonc              # managed TUI plugin registration
     plugins/agency-repository-skills.ts # managed workbase access and checkout skills
     tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
@@ -116,17 +116,14 @@ Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
 can load the hidden file. A customized root file, including a symlink, is
 preserved as user-owned content.
 
-The OpenCode config defines an `@agency` subagent for delegated workbase
-orchestration, loads Agency's hidden instructions in addition to any user-owned
-root `AGENTS.md`, advertises the complete workbase as one portable reference,
-and replaces the built-in Plan agent with `agency-plan`. That planning agent can
-update `TASK.md`, `PHASE.md`, and `EPIC.md`, inspect the workbase through
-read-only Agency commands, and use explicit Agency CLI permissions to create or
-update planning structure. Its normal research tools and the complete Agency CLI
-remain available; managed Agency instructions and reported authority govern each
-operation.
-When the subagent launches work in another agent, it verifies that the agent
-started and returns without waiting for the task to finish.
+The OpenCode config loads Agency's hidden instructions in addition to any
+user-owned root `AGENTS.md`, advertises the complete workbase as one portable
+reference, and replaces the built-in Plan agent with `agency-plan`. That
+planning agent can update `TASK.md`, `PHASE.md`, and `EPIC.md`, inspect the
+workbase through read-only Agency commands, and use explicit Agency CLI
+permissions to create or update planning structure. Its normal research tools
+and the complete Agency CLI remain available; managed Agency instructions and
+reported authority govern each operation.
 The TUI-only `/agency-debug` command reports TUI companion initialization and
 whether the server plugin registered writable-checkout skills. It uses a native
 toast and does not submit a prompt to an LLM. When no writable checkout skill

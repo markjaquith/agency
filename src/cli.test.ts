@@ -1373,30 +1373,13 @@ status: open
 				}
 				if (launch === launches[0]) {
 					expect(effectiveConfig.instructions).toContain(".agency/AGENTS.md")
-					expect(effectiveConfig.agent.agency).toMatchObject({
-						description: expect.stringContaining(
-							"Agency workbase orchestration",
-						),
-						mode: "subagent",
-					})
+					expect(effectiveConfig.agent.agency).toBeUndefined()
 					expect(effectiveConfig.references).toEqual({
 						workbase: {
 							path: "..",
 							description:
 								"Complete Agency workbase context; write authority still comes only from agency context",
 						},
-					})
-					const agencyProbe = Bun.spawnSync(
-						["opencode", "debug", "agent", "agency"],
-						{ cwd: contract.cwd, env: environment },
-					)
-					expect(agencyProbe.exitCode).toBe(0)
-					expect(JSON.parse(agencyProbe.stdout.toString())).toMatchObject({
-						name: "agency",
-						description: expect.stringContaining(
-							"Agency workbase orchestration",
-						),
-						mode: "subagent",
 					})
 					for (const document of documents) {
 						const read = Bun.spawnSync(

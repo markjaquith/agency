@@ -684,19 +684,11 @@ describe("IntegrationService", () => {
 		)
 	})
 
-	test("configures Agency agents with complete workbase access", () => {
+	test("configures Agency planning with complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
 		expect(config.agent).toEqual({
-			agency: {
-				description:
-					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
-				mode: "subagent",
-				prompt: expect.stringMatching(
-					/agency context \. --json[\s\S]+agency work prepare[\s\S]+never pass `--work` or `--auto`/,
-				),
-			},
 			plan: {
 				disable: true,
 			},
@@ -719,19 +711,10 @@ describe("IntegrationService", () => {
 				},
 			},
 		})
-		expect(config.agent.agency.model).toBeUndefined()
-		expect(config.agent.agency.permission).toBeUndefined()
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Explicit-new intent overrides reuse",
 		)
-		expect(config.agent.agency.hidden).toBeUndefined()
-		expect(config.agent.agency.steps).toBeUndefined()
-		expect(config.agent.agency.prompt).toContain(
-			"Return the prepared execution contract to the caller",
-		)
-		expect(config.agent.agency.prompt).toContain(
-			"pass `--full` only when document prose or low-level VCS details are needed",
-		)
+		expect(config.agent.agency).toBeUndefined()
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Start with `agency context . --json`",
 		)
