@@ -21,7 +21,7 @@ jobs:
 
       - name: Install OpenCode
         run: |
-          bun install --global opencode-ai@1.18.4
+          bun install --global opencode-ai@1.18.25
           opencode --version
 
       - name: Check formatting
