@@ -618,6 +618,7 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					dryRun: options["dry-run"],
+					force: options.force,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,

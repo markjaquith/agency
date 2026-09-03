@@ -259,6 +259,7 @@ interface MaterializeOptions extends BaseCommandOptions {
 }
 
 interface RemoveOptions extends BaseCommandOptions {
+	readonly force?: boolean
 	readonly snapshots?: WorktreeRemovalSnapshot[]
 	readonly lockHeld?: boolean
 	readonly allowReferenceDrift?: boolean
@@ -267,6 +268,7 @@ interface RemoveOptions extends BaseCommandOptions {
 }
 
 interface LifecycleOptions extends BaseCommandOptions {
+	readonly force?: boolean
 	readonly lockHeld?: boolean
 }
 
@@ -1825,6 +1827,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								root,
 								[{ taskId, ...(phaseId ? { phaseId } : {}) }],
 								materialization,
+								{ force: options.force },
 							)
 				}),
 
@@ -2148,6 +2151,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								root,
 								[{ taskId, ...(phaseId ? { phaseId } : {}) }],
 								removal,
+								{ force: options.force },
 							)
 				}),
 
@@ -2170,6 +2174,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								...options,
 								lockHeld: true,
 							}),
+							{ force: options.force },
 						)
 					}
 					const inspection = yield* inspectExecution(taskId, phaseId, root)
@@ -2316,6 +2321,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								...options,
 								lockHeld: true,
 							}),
+							{ force: options.force },
 						)
 					}
 					const inspection = yield* inspectExecution(taskId, phaseId, root)
