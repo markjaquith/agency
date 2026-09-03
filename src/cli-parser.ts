@@ -870,6 +870,7 @@ const commands = {
 			...outputOptions,
 			...entitySelectorOptions,
 			"dry-run": { type: "boolean" },
+			force: { type: "boolean" },
 		},
 		subcommands: {
 			list: {
@@ -886,31 +887,31 @@ const commands = {
 			},
 			prepare: {
 				usage:
-					"agency worktree prepare <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree prepare <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			remove: {
 				usage:
-					"agency worktree remove <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree remove <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			rebuild: {
 				usage:
-					"agency worktree rebuild <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree rebuild <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			repair: {
 				usage:
-					"agency worktree repair <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree repair <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 		},
 	},

@@ -664,11 +664,17 @@ describe("strict CLI parsing", () => {
 				"--phase",
 				"verify",
 				"--dry-run",
+				"--force",
 			]),
 		).toMatchObject({
 			commandName: "worktree",
 			args: ["rebuild", "example", "verify"],
-			values: { task: "example", phase: "verify", "dry-run": true },
+			values: {
+				task: "example",
+				phase: "verify",
+				"dry-run": true,
+				force: true,
+			},
 		})
 		expectUsageError(
 			["worktree", "inspect", "example", "--dry-run"],
