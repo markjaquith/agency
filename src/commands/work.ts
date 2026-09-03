@@ -577,7 +577,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 
 export const help = `
 Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto]
-       agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
+       agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
@@ -592,7 +592,8 @@ changes without fetching, creating branches, or creating worktrees.
 It emits revision-bound validation evidence and an idempotent external-orchestrator
 contract. Evidence is reused only while the target, workbase, configuration, and
 repository mapping remain unchanged. Dynamic readiness and workspace safety checks
-always run.
+always run. With prepare, --force overrides readiness without launching or changing
+lifecycle status.
 
 Options:
   --epic <id>          Work on an epic
@@ -605,8 +606,8 @@ Options:
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset
-  --force              Override readiness; reopen terminal execution units
-	--evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
+  --force              Override readiness; launched terminal work is reopened
+  --evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
   --no-input           Never open an interactive selector
 
 Without interactive input, provide an explicit workbase or cwd and an entity

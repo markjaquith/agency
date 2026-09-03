@@ -1028,7 +1028,7 @@ until restored.
 
 ```text
 agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-command]
-agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
+agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
 agency pr create <task-id> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
@@ -1062,9 +1062,11 @@ work and reading context. It does not prescribe how callers present or execute
 prepared work.
 The evidence argument may be an evidence object, task-creation JSON, or a path to
 either. Use `--dry-run` to report planned fetch, branch, and worktree changes
-without applying them. Validation reuse never skips readiness, active-claim,
-repository, ownership, reference-drift, dirty-workspace, or worktree safety
-checks.
+without applying them. Use `--force` to prepare work blocked by readiness, such
+as a follow-on phase whose dependency is still active; preparation still does
+not launch an agent or change lifecycle status. Validation reuse never skips
+readiness, active-claim, repository, ownership, reference-drift, dirty-workspace,
+or worktree safety checks.
 
 The authoritative implementation locations for this contract are
 `src/commands/task.ts` (creation output),

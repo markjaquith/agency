@@ -397,9 +397,11 @@ describe("strict CLI parsing", () => {
 			commandName: "work",
 			values: { force: true },
 		})
-		expect(() => parseCli(["work", "prepare", "example", "--force"])).toThrow(
-			"cannot be combined",
-		)
+		expect(parseCli(["work", "prepare", "example", "--force"])).toMatchObject({
+			commandName: "work",
+			args: ["prepare", "example"],
+			values: { force: true },
+		})
 	})
 
 	test("preserves every argument after pr without parsing it", () => {
