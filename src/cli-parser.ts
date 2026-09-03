@@ -916,7 +916,7 @@ const commands = {
 	},
 	work: {
 		usage:
-			"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
+			"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--force] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
 			...entitySelectorOptions,
@@ -932,7 +932,7 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
+				"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--force] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: [
@@ -1690,8 +1690,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 					parsed.values.claude ||
 					parsed.values.agent ||
 					parsed.values.auto ||
-					parsed.values["print-command"] ||
-					parsed.values.force))
+					parsed.values["print-command"]))
 		) {
 			throw usageError(
 				preparing

@@ -569,6 +569,49 @@ describe("work command", () => {
 		).rejects.toThrow("Recalled repository conflicts")
 	})
 
+	test("force prepares a phase blocked by an active dependency without launching or changing status", async () => {
+		const blocked = createHarness({
+			workspace: multiPhaseWorkspace,
+			multiPhaseTasks: ["example"],
+			guardError: new Error("Phase dependency is working"),
+		})
+		await expect(
+			blocked.runPrepare({
+				cwd: "/workbase",
+				taskId: "example",
+				phaseId: "implementation",
+			}),
+		).rejects.toThrow("Phase dependency is working")
+		expect(blocked.events).toEqual(["guard"])
+
+		const forced = createHarness({
+			workspace: multiPhaseWorkspace,
+			multiPhaseTasks: ["example"],
+			guardError: new Error("Phase dependency is working"),
+		})
+		await forced.runPrepare({
+			cwd: "/workbase",
+			taskId: "example",
+			phaseId: "implementation",
+			force: true,
+			silent: true,
+		})
+
+		expect(forced.guards).toEqual([
+			{
+				target: "execution-unit:phase/example/implementation",
+				override: true,
+			},
+		])
+		expect(forced.events).toEqual(["guard", "materialize"])
+		expect(forced.materializeOptions[0]).toMatchObject({
+			force: true,
+			validationAlreadyPerformed: true,
+		})
+		expect(forced.launches).toEqual([])
+		expect(forced.statusUpdates).toEqual([])
+	})
+
 	test("launches an epic agent from an epic directory", async () => {
 		const harness = createHarness()
 
