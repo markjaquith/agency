@@ -2,26 +2,43 @@
 
 import { execSync } from "child_process"
 
+interface Commit {
+	parents: string[]
+	subject: string
+}
+
 // Regex to match Conventional Commits
 const regex = /^(feat|fix|chore|docs|style|refactor|perf|test|ci)(\(.+\))?: .+/
 
+function parseCommits(output: string): Commit[] {
+	return output
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const separator = line.indexOf("\0")
+			const parents = line.slice(0, separator).split(" ").filter(Boolean)
+			return { parents, subject: line.slice(separator + 1) }
+		})
+}
+
 try {
 	// Get commits that are ahead of origin/main (or just HEAD if no remote)
-	let commits: string[]
+	let commits: Commit[]
 	try {
-		const output = execSync("git log origin/main..HEAD --format=%s", {
+		const output = execSync("git log origin/main..HEAD --format=%P%x00%s", {
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
 		})
-		commits = output.trim().split("\n").filter(Boolean)
+		commits = parseCommits(output)
 	} catch {
 		// If origin/main doesn't exist, just check the last commit
 		try {
-			const output = execSync("git log -1 --format=%s", {
+			const output = execSync("git log -1 --format=%P%x00%s", {
 				encoding: "utf-8",
 				stdio: ["pipe", "pipe", "pipe"],
 			})
-			commits = output.trim().split("\n").filter(Boolean)
+			commits = parseCommits(output)
 		} catch {
 			// No commits yet
 			commits = []
@@ -35,9 +52,9 @@ try {
 
 	// Check each commit
 	const invalidCommits: string[] = []
-	commits.forEach((msg) => {
-		if (!regex.test(msg)) {
-			invalidCommits.push(msg)
+	commits.forEach((commit) => {
+		if (commit.parents.length < 2 && !regex.test(commit.subject)) {
+			invalidCommits.push(commit.subject)
 		}
 	})
 
