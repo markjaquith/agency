@@ -186,18 +186,71 @@ const portableRemote = (path: string, backend?: VersionControlBackend) =>
 		return yield* validateRemote(remote)
 	})
 
-const find = (alias: string, startPath: string) =>
+const inspectRepository = (
+	alias: string,
+	state: Effect.Effect.Success<ReturnType<typeof configState>>,
+	backend: VersionControlBackend,
+) =>
 	Effect.gen(function* () {
-		const service = yield* RepositoryService
-		const validAlias = yield* validateAlias(alias)
-		const repositories = yield* service.list(startPath)
-		const repository = repositories.find((item) => item.alias === validAlias)
-		if (!repository) {
+		const fs = yield* FileSystemService
+		const path = join(state.root, "repos", alias)
+		const declaredRemote = state.config.repositories?.[alias]?.remote ?? null
+		const entry = yield* fs.inspectFile(path)
+		if (entry.kind === "missing") {
+			if (declaredRemote) {
+				return {
+					alias,
+					path,
+					kind: null,
+					remote: null,
+					declaredRemote,
+					target: null,
+					states: ["declared", "missing"],
+				} as RepositoryInfo
+			}
 			return yield* new RepositoryError({
-				message: `Unknown repository alias '${validAlias}'`,
+				message: `Unknown repository alias '${alias}'`,
 			})
 		}
-		return repository
+		const isSymlink = entry.kind === "symlink"
+		if (!isSymlink && !(yield* fs.isDirectory(path))) {
+			return {
+				alias,
+				path,
+				kind: null,
+				remote: null,
+				declaredRemote,
+				target: null,
+				states: [...(declaredRemote ? (["declared"] as const) : []), "invalid"],
+			} as RepositoryInfo
+		}
+		const target = isSymlink ? yield* fs.readSymlinkTarget(path) : null
+		const inspection = yield* backend.inspectRepository(path)
+		const remote = inspection?.remote ?? null
+		const states: RepositoryState[] = []
+		if (declaredRemote) states.push("declared")
+		states.push(isSymlink ? "linked" : "materialized")
+		if (!inspection) states.push("invalid")
+		if (declaredRemote && remote !== declaredRemote)
+			states.push("remote-drifted")
+		return {
+			alias,
+			path,
+			kind: isSymlink ? "symlink" : (inspection?.kind ?? "repository"),
+			remote,
+			declaredRemote,
+			target,
+			states,
+		} as RepositoryInfo
+	})
+
+const find = (alias: string, startPath: string) =>
+	Effect.gen(function* () {
+		const versionControl = yield* VersionControlService
+		const validAlias = yield* validateAlias(alias)
+		const state = yield* configState(startPath)
+		const backend = yield* versionControl.forWorkbase(state.root)
+		return yield* inspectRepository(validAlias, state, backend)
 	})
 
 const requireMaterialized = (repository: RepositoryInfo) =>
@@ -450,14 +503,11 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const backend = yield* versionControl.forWorkbase(state.root)
 					const destination = join(state.root, "repos", validAlias)
 					const resolvedTarget = resolve(startPath, target)
-					const existing = (yield* RepositoryService)
-						.list(state.root)
-						.pipe(
-							Effect.map((items) =>
-								items.find((item) => item.alias === validAlias),
-							),
-						)
-					const current = yield* existing
+					const current =
+						state.config.repositories?.[validAlias] ||
+						(yield* fs.exists(destination))
+							? yield* inspectRepository(validAlias, state, backend)
+							: undefined
 					const localCurrent =
 						current && !current.states.includes("missing") ? current : undefined
 					if (localCurrent?.kind === "symlink") {
@@ -521,10 +571,17 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const versionControl = yield* VersionControlService
-					const repository = yield* find(alias, startPath)
+					const validAlias = yield* validateAlias(alias)
+					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
+					const repository = yield* inspectRepository(
+						validAlias,
+						state,
+						backend,
+					)
 					if (repository.kind !== "symlink" || !repository.target) {
 						return yield* new RepositoryError({
-							message: `Repository alias '${alias}' is not linked`,
+							message: `Repository alias '${validAlias}' is not linked`,
 						})
 					}
 					if (repository.states.includes("invalid")) {
@@ -542,9 +599,6 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							message: `Repository alias '${alias}' has no portable remote declaration`,
 						})
 					}
-
-					const state = yield* configState(startPath)
-					const backend = yield* versionControl.forWorkbase(state.root)
 
 					const source = yield* fs.realPath(repository.path)
 					const registered = yield* backend.listWorkspaces(repository.path)
@@ -854,78 +908,22 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 			list: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
-					const { root, config } = yield* WorkbaseService.pipe(
-						Effect.flatMap((service) => service.loadConfig(startPath)),
-					)
 					const versionControl = yield* VersionControlService
-					const backend = yield* versionControl.forWorkbase(root)
-					const reposPath = join(root, "repos")
+					const state = yield* configState(startPath)
+					const backend = yield* versionControl.forWorkbase(state.root)
+					const reposPath = join(state.root, "repos")
 					const entries = (yield* fs.isDirectory(reposPath))
 						? (yield* fs.readDirectory(reposPath)).filter(
 								(entry) => !entry.name.startsWith(".agency-"),
 							)
 						: []
-					const local = new Map(entries.map((entry) => [entry.name, entry]))
 					const aliases = new Set([
-						...Object.keys(config.repositories ?? {}),
-						...local.keys(),
+						...Object.keys(state.config.repositories ?? {}),
+						...entries.map((entry) => entry.name),
 					])
 					return yield* Effect.forEach(
 						[...aliases].sort(),
-						(alias) =>
-							Effect.gen(function* () {
-								const path = join(reposPath, alias)
-								const entry = local.get(alias)
-								const declaredRemote =
-									config.repositories?.[alias]?.remote ?? null
-								if (!entry) {
-									return {
-										alias,
-										path,
-										kind: null,
-										remote: null,
-										declaredRemote,
-										target: null,
-										states: ["declared", "missing"] as RepositoryState[],
-									} satisfies RepositoryInfo
-								}
-								if (!entry.isDirectory && !entry.isSymlink) {
-									return {
-										alias,
-										path,
-										kind: null,
-										remote: null,
-										declaredRemote,
-										target: null,
-										states: [
-											...(declaredRemote ? (["declared"] as const) : []),
-											"invalid",
-										] as RepositoryState[],
-									} satisfies RepositoryInfo
-								}
-								const target = entry.isSymlink
-									? yield* fs.readSymlinkTarget(path)
-									: null
-								const inspection = yield* backend.inspectRepository(path)
-								const remote = inspection?.remote ?? null
-								const states: RepositoryState[] = []
-								if (declaredRemote) states.push("declared")
-								states.push(entry.isSymlink ? "linked" : "materialized")
-								if (!inspection) states.push("invalid")
-								if (declaredRemote && remote !== declaredRemote)
-									states.push("remote-drifted")
-								return {
-									alias,
-									path,
-									kind: entry.isSymlink
-										? "symlink"
-										: (inspection?.kind ?? "repository"),
-									remote,
-									declaredRemote,
-									target,
-									states,
-								} satisfies RepositoryInfo
-							}),
+						(alias) => inspectRepository(alias, state, backend),
 						{ concurrency: 8 },
 					)
 				}),
