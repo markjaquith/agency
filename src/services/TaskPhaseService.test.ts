@@ -615,7 +615,19 @@ describe("task and phase services", () => {
 					),
 				),
 			),
-		).rejects.toThrow("Delegation requires explicit ownership")
+		).rejects.toThrow("Delegated status cannot be set directly")
+		await Bun.write(
+			createdTask.path,
+			workingTask.content.replace("status: working", "status: delegated"),
+		)
+		const reopenedDelegatedTask = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("single-status", "open", root),
+				),
+			),
+		)
+		expect(reopenedDelegatedTask.data.status).toBe("open")
 		await expect(
 			runTestEffect(
 				TaskService.pipe(

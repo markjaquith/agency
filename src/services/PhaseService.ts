@@ -230,7 +230,6 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							base: taskData.base,
 							pr: taskData.pr,
 							status: taskData.status,
-							...(taskData.claim ? { claim: taskData.claim } : {}),
 							...(taskData.completion
 								? { completion: taskData.completion }
 								: {}),
@@ -515,16 +514,10 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 					const validStatus = yield* decodeStatus(status)
 					if (validStatus === "delegated") {
 						return yield* new PhaseError({
-							message:
-								"Delegation requires explicit ownership; use 'agency claim'",
+							message: "Delegated status cannot be set directly",
 						})
 					}
 					const record = yield* service.show(taskId, id, startPath)
-					if (record.data.claim?.state === "active") {
-						return yield* new PhaseError({
-							message: `Phase '${id}' has an active claim; use agency release or agency finish`,
-						})
-					}
 					if (nonPrCompletion && validStatus !== "done") {
 						return yield* new PhaseError({
 							message: "Non-PR completion is valid only with a done status",

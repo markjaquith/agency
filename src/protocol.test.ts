@@ -118,31 +118,6 @@ describe("machine protocol", () => {
 		])
 		expect(
 			errorEnvelope({
-				_tag: "ClaimConflictError",
-				message: "already claimed",
-				target: "task 'example'",
-				currentRevision: "a".repeat(64),
-				claim: {
-					claimant: "orchestrator",
-					agent: "agent",
-					sessionId: "job-1",
-					startedAt: "2026-07-17T12:00:00.000Z",
-					targetRevision: "0".repeat(64),
-					state: "active",
-				},
-			}),
-		).toMatchObject({
-			error: {
-				code: "CLAIM_CONFLICT",
-				retryable: true,
-				fields: {
-					target: "task 'example'",
-					claim: { agent: "agent", sessionId: "job-1" },
-				},
-			},
-		})
-		expect(
-			errorEnvelope({
 				_tag: "RevisionConflictError",
 				message: "revision conflict",
 				path: "tasks/example/TASK.md",

@@ -210,131 +210,23 @@ describe("CLI", () => {
 		expect(exported.stdout).not.toContain("/private/value")
 	})
 
-	test("coordinates claims through revision-guarded machine commands", async () => {
+	test("records status-based non-PR completion", async () => {
 		const root = await createTempDir()
 		tempDirs.push(root)
 		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
 		await mkdir(join(root, "repos", "agency"), { recursive: true })
 		parseJson(
 			await runCli(
-				["task", "create", "claimed", "--repo", "agency", "--json"],
-				root,
-			),
-		)
-		const context = parseJson(
-			await runCli(["context", "tasks/claimed", "--json"], root),
-		)
-		const revision = context.documents.task.sha256
-		const claimed = parseJson(
-			await runCli(
-				[
-					"claim",
-					"claimed",
-					"--claimant",
-					"orchestrator",
-					"--agent",
-					"agent",
-					"--session-id",
-					"job-1",
-					"--revision",
-					revision,
-					"--json",
-				],
-				root,
-			),
-		)
-		expect(claimed.claim).toMatchObject({
-			claimant: "orchestrator",
-			agent: "agent",
-			sessionId: "job-1",
-			state: "active",
-		})
-
-		const conflict = await runCli(
-			[
-				"claim",
-				"claimed",
-				"--claimant",
-				"other",
-				"--agent",
-				"other-agent",
-				"--session-id",
-				"job-2",
-				"--revision",
-				claimed.revision,
-				"--json",
-			],
-			root,
-		)
-		expect(conflict.exitCode).toBe(1)
-		expect(JSON.parse(conflict.stdout)).toMatchObject({
-			ok: false,
-			error: {
-				code: "CLAIM_CONFLICT",
-				retryable: true,
-				fields: { claim: { agent: "agent", sessionId: "job-1" } },
-			},
-		})
-
-		const finished = parseJson(
-			await runCli(
-				[
-					"finish",
-					"claimed",
-					"--session-id",
-					"job-1",
-					"--revision",
-					claimed.revision,
-					"--outcome",
-					"done",
-					"--json",
-				],
-				root,
-			),
-		)
-		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
-		expect(
-			parseJson(await runCli(["task", "show", "claimed", "--json"], root)).data
-				.status,
-		).toBe("working")
-
-		parseJson(
-			await runCli(
 				["task", "create", "non-pr", "--repo", "agency", "--json"],
 				root,
 			),
 		)
-		const nonPrContext = parseJson(
-			await runCli(["context", "tasks/non-pr", "--json"], root),
-		)
-		const nonPrClaim = parseJson(
-			await runCli(
-				[
-					"claim",
-					"non-pr",
-					"--claimant",
-					"orchestrator",
-					"--agent",
-					"agent",
-					"--session-id",
-					"job-2",
-					"--revision",
-					nonPrContext.documents.task.sha256,
-					"--json",
-				],
-				root,
-			),
-		)
 		parseJson(
 			await runCli(
 				[
-					"finish",
+					"task",
+					"status",
 					"non-pr",
-					"--session-id",
-					"job-2",
-					"--revision",
-					nonPrClaim.revision,
-					"--outcome",
 					"done",
 					"--no-pull-request",
 					"--summary",

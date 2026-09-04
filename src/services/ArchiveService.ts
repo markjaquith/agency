@@ -111,7 +111,6 @@ interface LifecycleOptions {
 
 type TaskArchiveSkipCode =
 	| "non-terminal"
-	| "active-claim"
 	| "dirty-worktree"
 	| "checkout-preflight-failed"
 	| "retained-dependent"
@@ -169,7 +168,6 @@ interface TaskArchiveContext {
 	readonly executionUnits: readonly { taskId: string; phaseId?: string }[]
 	readonly terminal: boolean
 	readonly terminalDetails: readonly string[]
-	readonly activeClaims: readonly string[]
 }
 
 const loadTaskArchiveContext = (task: TaskRecord, root: string) =>
@@ -182,8 +180,6 @@ const loadTaskArchiveContext = (task: TaskRecord, root: string) =>
 				executionUnits: [{ taskId: task.id }],
 				terminal: isTerminalStatus(task.data.status),
 				terminalDetails: [`status=${task.data.status}`],
-				activeClaims:
-					task.data.claim?.state === "active" ? [`task:${task.id}`] : [],
 			} satisfies TaskArchiveContext
 		}
 
@@ -207,18 +203,12 @@ const loadTaskArchiveContext = (task: TaskRecord, root: string) =>
 					: phaseRecords.map(
 							(phase) => `phase:${phase.id}:status=${phase.data.status}`,
 						),
-			activeClaims: phaseRecords
-				.filter((phase) => phase.data.claim?.state === "active")
-				.map((phase) => `phase:${task.id}/${phase.id}`),
 		} satisfies TaskArchiveContext
 	})
 
 const archiveEligibilityError = (context: TaskArchiveContext) => {
 	if (!context.terminal) {
 		return `Task '${context.task.id}' is not terminal (${context.terminalDetails.join(", ")}); only done or dropped tasks can be archived`
-	}
-	if (context.activeClaims.length > 0) {
-		return `Task '${context.task.id}' has active claims (${context.activeClaims.join(", ")}); release or finish them before archiving`
 	}
 	return undefined
 }
@@ -735,11 +725,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					const executionUnits: { taskId: string; phaseId?: string }[] = []
 					const phaseRecords: PhaseRecord[] = []
 					for (const task of taskRecords) {
-						if ("claim" in task.data && task.data.claim?.state === "active") {
-							return yield* new ArchiveError({
-								message: `Task '${task.id}' has an active claim; release or finish it before archiving`,
-							})
-						}
 						if ("phases" in task.data) {
 							for (const phase of task.data.phases) {
 								const record = yield* (yield* PhaseService).show(
@@ -747,11 +732,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 									phase.id,
 									root,
 								)
-								if (record.data.claim?.state === "active") {
-									return yield* new ArchiveError({
-										message: `Phase '${phase.id}' has an active claim; release or finish it before archiving`,
-									})
-								}
 								phaseRecords.push(record)
 								executionUnits.push({ taskId: task.id, phaseId: phase.id })
 							}
@@ -907,13 +887,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 							skipped.set(task.id, {
 								code: "non-terminal",
 								details: context.terminalDetails,
-							})
-							continue
-						}
-						if (context.activeClaims.length > 0) {
-							skipped.set(task.id, {
-								code: "active-claim",
-								details: context.activeClaims,
 							})
 							continue
 						}
@@ -1398,11 +1371,6 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					const declaration = task.data.phases.find(
 						(candidate) => candidate.id === id,
 					)!
-					if (phase.data.claim?.state === "active") {
-						return yield* new ArchiveError({
-							message: `Phase '${id}' has an active claim; release or finish it before archiving`,
-						})
-					}
 					const dependent = task.data.phases.find((candidate) =>
 						candidate.dependsOn?.includes(id),
 					)

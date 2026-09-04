@@ -12,9 +12,7 @@ const variables = {
 	target: "execution-unit:phase/task/build",
 	task: "task",
 	phase: "build",
-	claimant: "orchestrator",
 	sessionId: "session-1",
-	claimRevision: "revision-1",
 }
 
 describe("agent commands", () => {
@@ -116,7 +114,6 @@ describe("agent commands", () => {
 
 		expect(environment).toMatchObject({
 			AGENCY_AGENT: "custom",
-			AGENCY_CLAIMANT: "orchestrator",
 			AGENCY_SESSION_ID: "session-1",
 			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:phase/task/build",

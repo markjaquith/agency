@@ -106,9 +106,6 @@ const entityChoices = (
 		value: entityKey(node),
 	}))
 
-const activeClaim = (node: EntityNode) =>
-	"claim" in node.data && node.data.claim?.state === "active"
-
 const executionNode = (
 	node: EntityNode,
 	executions: ReadonlyMap<
@@ -131,7 +128,6 @@ const canWork = (
 	const execution = executionNode(node, executions)
 	return Boolean(
 		execution &&
-		!activeClaim(node) &&
 		(execution.readiness.ready ||
 			(execution.status === "working" &&
 				execution.readiness.blockers.every(
@@ -168,10 +164,10 @@ const actionChoices = (
 	if (canCreatePr(node, executions)) {
 		choices.push({ key: "pr", label: "Create pull request", value: "pr" })
 	}
-	if (execution && isTerminalStatus(node.status) && !activeClaim(node)) {
+	if (execution && isTerminalStatus(node.status)) {
 		choices.push({ key: "reopen", label: "Reopen", value: "reopen" })
 	}
-	if (execution && !isTerminalStatus(node.status) && !activeClaim(node)) {
+	if (execution && !isTerminalStatus(node.status)) {
 		choices.push({ key: "drop", label: "Drop", value: "drop" })
 	}
 	if (node.readiness.terminal) {

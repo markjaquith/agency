@@ -46,9 +46,7 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
     `agency push --json`. Create and record a pull request with
     `agency pr create <task> [phase] [--draft] [--title <title>] [--label <label>] --json`;
     do not run a separate push first because `pr create` owns publication.
-12. Complete genuine non-PR work. For an active claim, run
-    `agency finish <task> [phase] --session-id <id> --revision <revision> --outcome done --no-pull-request --summary <text> [--evidence-url <url>]`.
-    Without a claim, run
+12. Complete genuine non-PR work. Run
     `agency task status <task> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`
     or
     `agency phase status <task> <phase> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`.
@@ -162,14 +160,14 @@ revision stale, and Agency must not silently rewrite that evidence.
 
 ## Safety
 
-- Stop on validation errors, dependency blockers, an unexpected writable
-  repository, or a conflicting active claim.
+- Stop on validation errors, dependency blockers, or an unexpected writable
+  repository.
 - Do not manually create, move, or remove worktrees under `code/`.
 - Use `agency archive`, rather than moving work item folders manually.
 - Do not edit bare repositories or repository symlinks under `repos/`.
 - Never invent entity IDs, revisions, PR state, dependency completion, or
   checkout state. Preserve parent backlinks and dependency declarations.
-- Do not bypass dirty-worktree, active-claim, revision, or readiness protections.
+- Do not bypass dirty-worktree, revision, or readiness protections.
 - Do not run `agency work` from an active agent session unless the user
   explicitly asks to launch another agent.
 - Run `agency validate` before worktree or pull-request operations.
@@ -189,10 +187,8 @@ resolve its reported commits and remediation commands before retrying.
 
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work
-`working` without creating a claim, and starts the agent. Epic and multi-phase
-task launches remain orchestration-only. External orchestrators instead claim
-an execution unit, launch and monitor their agent separately, and finish or
-release the claim with the current document revision.
+`working`, and starts the agent. Epic and multi-phase task launches remain
+orchestration-only.
 
 An Agency-launched agent receives process-local worker identity through both
 the `AGENCY_SESSION_ID` and `AGENCY_TARGET` environment variables and a generated
@@ -228,13 +224,11 @@ intent, `--no-pull-request`, and a durable outcome summary.
 At each closeout trigger (creating or updating a PR, marking it ready, completing
 a refinement loop, or pausing or handing off completed implementation work):
 
-- Finish an active claim with the current revision via `agency finish`; a
-  successful claim outcome leaves unmerged work `working`. For unclaimed work,
-  keep the execution unit `working` through review and merge.
+- Keep the execution unit `working` through review and merge.
 - After merge, run `agency sync` to reconcile the execution unit to
   `done`.
-- For an approved non-PR outcome, finish an active claim or update unclaimed
-  status with `--no-pull-request --summary <text>` and optional supporting URL.
+- For an approved non-PR outcome, update status with
+  `--no-pull-request --summary <text>` and an optional supporting URL.
 - Refresh durable delivery context in `TASK.md` or `PHASE.md`, including recorded
   PR state, current head, diff summary, and verification results after later
   pushes when those details are maintained there.

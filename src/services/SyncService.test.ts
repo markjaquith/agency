@@ -3,7 +3,6 @@ import { Effect } from "effect"
 import { chmod, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
-import { ClaimService } from "./ClaimService"
 import { PullRequestService } from "./PullRequestService"
 import { SyncService } from "./SyncService"
 import { TaskService } from "./TaskService"
@@ -143,30 +142,6 @@ pr: null
 			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
 			join(root, "repos/agency"),
 		)
-		const inspected = await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.inspect("example", undefined, root),
-				),
-			),
-		)
-		await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.claim(
-						{
-							taskId: "example",
-							claimant: "orchestrator",
-							agent: "agent",
-							sessionId: "session-1",
-							revision: inspected.revision,
-							expiresAt: "2099-01-01T00:00:00.000Z",
-						},
-						root,
-					),
-				),
-			),
-		)
 		await Bun.write(
 			join(workspace.codePath, "reference", "LOCAL.md"),
 			"dirty\n",
@@ -176,21 +151,13 @@ pr: null
 		const before = await Bun.file(taskPath).text()
 		const observed = await runTestEffect(
 			SyncService.pipe(
-				Effect.flatMap((service) =>
-					service.reconcile({ cwd: root, now: new Date("2100-01-02") }),
-				),
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
 			),
 		)
 
 		expect(observed.mode).toBe("dry-run")
-		expect(observed.warnings).toContainEqual(
-			expect.objectContaining({
-				kind: "dirty-reference",
-				target: "task:example",
-			}),
-		)
+		expect(observed.warnings).toEqual([])
 		expect(observed.changes.map((change) => change.kind)).toEqual([
-			"release-stale-claim",
 			"record-pr",
 			"mark-done",
 		])
@@ -199,16 +166,11 @@ pr: null
 		const applied = await runTestEffect(
 			SyncService.pipe(
 				Effect.flatMap((service) =>
-					service.reconcile({
-						cwd: root,
-						apply: true,
-						now: new Date("2100-01-02"),
-					}),
+					service.reconcile({ cwd: root, apply: true }),
 				),
 			),
 		)
 		expect(applied.changes.map((change) => change.kind)).toEqual([
-			"release-stale-claim",
 			"record-pr",
 			"mark-done",
 		])
@@ -236,7 +198,6 @@ pr: null
 				baseBranch: "main",
 				mergeable: true,
 			},
-			claim: { state: "released", sessionId: "session-1" },
 		})
 	})
 
@@ -311,6 +272,70 @@ JSON
 		expect(task.data).toMatchObject({
 			status: "open",
 			pr: { state: "open", merged: false, mergeable: false },
+		})
+	})
+
+	test("rejects a concurrent target change before recording a pull request", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "concurrent",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await git(
+			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+			join(root, "repos/agency"),
+		)
+		const taskPath = join(root, "tasks/concurrent/TASK.md")
+		await Bun.write(
+			join(root, "bin", "gh"),
+			`#!/bin/sh
+printf '\nConcurrent edit.\n' >> ${JSON.stringify(taskPath)}
+cat <<'JSON'
+[{"number":42,"state":"MERGED","title":"Ship","isDraft":false,"headRefName":"feat/example","baseRefName":"main","headRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":"2100-01-01T00:00:00Z","mergeCommit":{"oid":"abc"},"mergeable":"MERGEABLE"}]
+JSON
+`,
+		)
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const failure = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+				Effect.flip,
+			),
+		)
+		expect(failure).toMatchObject({
+			_tag: "RevisionConflictError",
+			message: expect.stringContaining("Revision conflict"),
+		})
+		const content = await Bun.file(taskPath).text()
+		expect(content).toContain("Concurrent edit.")
+		expect(content).not.toContain("provider: github")
+
+		await Bun.write(join(root, ".agency-graph-mutation.lock"), "busy")
+		const transactionFailure = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, apply: true }),
+				),
+				Effect.flip,
+			),
+		)
+		expect(transactionFailure).toMatchObject({
+			_tag: "SyncError",
+			message: expect.stringContaining("graph mutation is in progress"),
 		})
 	})
 
@@ -400,13 +425,13 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 		expect("pr" in task.data && task.data.pr).toEqual(record)
 	})
 
-	test("marks a successfully finished claim done only after merge", async () => {
+	test("marks working execution done after merge", async () => {
 		await runTestEffect(
 			TaskService.pipe(
 				Effect.flatMap((service) =>
 					service.create(
 						{
-							id: "finished-claim",
+							id: "working",
 							ticketUrl: null,
 							repo: "agency",
 							branch: "feat/example",
@@ -420,7 +445,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 		await runTestEffect(
 			WorktreeService.pipe(
 				Effect.flatMap((service) =>
-					service.materialize("finished-claim", undefined, root),
+					service.materialize("working", undefined, root),
 				),
 			),
 		)
@@ -428,48 +453,13 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 			["remote", "set-url", "origin", "git@github.com:example/agency.git"],
 			join(root, "repos/agency"),
 		)
-		const initial = await runTestEffect(
-			ClaimService.pipe(
+		await runTestEffect(
+			TaskService.pipe(
 				Effect.flatMap((service) =>
-					service.inspect("finished-claim", undefined, root),
+					service.setStatus("working", "working", root),
 				),
 			),
 		)
-		const claimed = await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.claim(
-						{
-							taskId: "finished-claim",
-							claimant: "orchestrator",
-							agent: "agent",
-							sessionId: "session-1",
-							revision: initial.revision,
-						},
-						root,
-					),
-				),
-			),
-		)
-		const finished = await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.finish(
-						{
-							taskId: "finished-claim",
-							sessionId: "session-1",
-							revision: claimed.revision,
-							outcome: "done",
-						},
-						root,
-					),
-				),
-			),
-		)
-		expect(finished.data).toMatchObject({
-			status: "working",
-			claim: { state: "finished", outcome: "done" },
-		})
 
 		const synced = await runTestEffect(
 			SyncService.pipe(
@@ -482,14 +472,11 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 		expect(
 			await runTestEffect(
 				TaskService.pipe(
-					Effect.flatMap((service) => service.show("finished-claim", root)),
+					Effect.flatMap((service) => service.show("working", root)),
 				),
 			),
 		).toMatchObject({
-			data: {
-				status: "done",
-				claim: { state: "finished", outcome: "done" },
-			},
+			data: { status: "done" },
 		})
 	})
 

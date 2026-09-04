@@ -114,21 +114,6 @@ const mutationOptions = {
 	"no-epic": { type: "boolean" },
 } satisfies OptionConfig
 
-const claimOptions = {
-	...outputOptions,
-	claimant: { type: "string" },
-	agent: { type: "string" },
-	"session-id": { type: "string" },
-	revision: { type: "string" },
-	"expires-at": { type: "string" },
-} satisfies OptionConfig
-
-const ownedClaimOptions = {
-	...outputOptions,
-	"session-id": { type: "string" },
-	revision: { type: "string" },
-} satisfies OptionConfig
-
 const nonPrCompletionOptions = {
 	"no-pull-request": { type: "boolean" },
 	summary: { type: "string" },
@@ -679,75 +664,6 @@ const commands = {
 			},
 		},
 	},
-	claim: {
-		usage: "agency claim <task-id> [phase-id] [options]",
-		options: {
-			...claimOptions,
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		command: {
-			usage:
-				"agency claim <task-id> [phase-id] --claimant <id> --agent <id> --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]",
-			minArgs: 1,
-			maxArgs: 2,
-			options: [
-				"claimant",
-				"agent",
-				"session-id",
-				"revision",
-				"expires-at",
-				"json",
-				"task",
-				"phase",
-			],
-			required: ["claimant", "agent", "session-id", "revision"],
-		},
-	},
-	release: {
-		usage: "agency release <task-id> [phase-id] [options]",
-		options: {
-			...ownedClaimOptions,
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		command: {
-			usage:
-				"agency release <task-id> [phase-id] --session-id <id> --revision <sha256> [--json]",
-			minArgs: 1,
-			maxArgs: 2,
-			options: ["session-id", "revision", "json", "task", "phase"],
-			required: ["session-id", "revision"],
-		},
-	},
-	finish: {
-		usage: "agency finish <task-id> [phase-id] [options]",
-		options: {
-			...ownedClaimOptions,
-			...nonPrCompletionOptions,
-			outcome: { type: "string" },
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		command: {
-			usage:
-				"agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [options] [--json]",
-			minArgs: 1,
-			maxArgs: 2,
-			options: [
-				"session-id",
-				"revision",
-				"outcome",
-				"no-pull-request",
-				"summary",
-				"evidence-url",
-				"json",
-				"task",
-				"phase",
-			],
-			required: ["session-id", "revision", "outcome"],
-		},
-	},
 	sync: {
 		usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
 		options: {
@@ -1177,8 +1093,6 @@ const targetSlots = (
 		return ["task"]
 	if (commandName === "phase")
 		return subcommand === "list" ? ["task"] : ["task", "phase"]
-	if (["claim", "release", "finish"].includes(commandName))
-		return ["task", "phase"]
 	if (["archive", "restore"].includes(commandName))
 		return subcommand === "epic"
 			? ["epic"]
@@ -1637,16 +1551,6 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	) {
 		validateViewOptions(parsed.values, spec)
 	}
-	if (
-		commandName === "finish" &&
-		parsed.values.outcome !== "done" &&
-		parsed.values.outcome !== "dropped"
-	) {
-		throw usageError(
-			"Option '--outcome' must be 'done' or 'dropped'.",
-			spec.usage,
-		)
-	}
 	const nonPrCompletion = parsed.values["no-pull-request"] === true
 	const completionSummary = parsed.values.summary
 	const completionEvidenceUrl = parsed.values["evidence-url"]
@@ -1670,13 +1574,12 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			)
 		}
 		const completesDone =
-			(commandName === "finish" && parsed.values.outcome === "done") ||
-			(["task", "phase"].includes(commandName) &&
-				subcommand === "status" &&
-				commandPositionals.at(-1) === "done")
+			["task", "phase"].includes(commandName) &&
+			subcommand === "status" &&
+			commandPositionals.at(-1) === "done"
 		if (!completesDone) {
 			throw usageError(
-				"Option '--no-pull-request' is valid only with a done status or outcome.",
+				"Option '--no-pull-request' is valid only with a done status.",
 				spec.usage,
 			)
 		}

@@ -288,7 +288,6 @@ export const work = (
 		const defaultAgents = ["opencode2", "opencode", "pi", "claude"] as const
 		let defaultAgentIndex = 0
 		let agent: string = selectedAgent ?? defaultAgents[defaultAgentIndex]!
-		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 		const resume =
@@ -300,9 +299,7 @@ export const work = (
 			target: targetNodeId(target),
 			task: target.kind === "epic" ? "" : target.taskId,
 			phase: target.kind === "phase" ? target.phaseId : "",
-			claimant,
 			sessionId,
-			claimRevision: "",
 		}
 		let resolved = resolveAgentCommand(
 			agent,

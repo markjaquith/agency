@@ -77,7 +77,6 @@ The principal durable model is:
 - An epic groups dependent work but is not itself an execution unit.
 - A single-phase task is an execution unit; a multi-phase task contains phase
   execution units.
-- Claims coordinate revision-guarded execution ownership.
 - Context, graph, readiness, and sync services expose and reconcile workbase
   state.
 - Pull-request delivery is provider-aware; GitHub is the default, not a required

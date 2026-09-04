@@ -1031,12 +1031,10 @@ describe("work command", () => {
 		})
 		expect(harness.launchEnvironments[0]).toMatchObject({
 			AGENCY_AGENT: "custom",
-			AGENCY_CLAIMANT: process.env.USER ?? "agency",
 			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:task/example",
 			AGENCY_TASK_ID: "example",
 			AGENCY_PHASE_ID: "",
-			AGENCY_CLAIM_REVISION: "",
 			CUSTOM_TARGET: "execution-unit:task/example",
 		})
 	})

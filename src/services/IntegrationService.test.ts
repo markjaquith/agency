@@ -177,7 +177,7 @@ describe("IntegrationService", () => {
 			"agency task status <task> dropped --if-revision <revision> --json",
 			"Continue already materialized work",
 			"agency pr create <task> [phase]",
-			"agency finish <task> [phase] --session-id <id>",
+			"agency task status <task> done --if-revision <revision> --no-pull-request",
 			"agency task create <slug> --multi-phase",
 			"agency task handoff <investigation-task> <new-task>",
 			"agency review refresh <task> --if-revision <revision> --json",
@@ -626,7 +626,7 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toContain("Never invent entity IDs")
 		expect(body).toContain("Preserve parent backlinks")
-		expect(body).toContain("dirty-worktree, active-claim, revision")
+		expect(body).toContain("dirty-worktree, revision")
 		expect(body).toContain("`agency work` is the human launch flow")
 		expect(body).toContain("Agency worker launch target: <target>.")
 		expect(body).toContain("environment variables and a generated")
@@ -636,7 +636,7 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toMatch(/If\s+the prompt\s+and context disagree/)
 		expect(body).toContain("marks execution work")
-		expect(body).toContain("without creating a claim")
+		expect(body).toContain("marks execution work")
 		expect(body).toContain("formatting, type checks, build, dead-code checks")
 		expect(body).toContain("Review and commit the diff")
 		expect(body).toContain("Use `agency push`")
@@ -650,7 +650,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("marking it ready")
 		expect(body).toMatch(/completing\s+a refinement loop/)
 		expect(body).toContain("pausing or handing off")
-		expect(body).toContain("`agency finish`")
+		expect(body).toContain("update status")
 		expect(body).toContain("`agency sync`")
 		expect(body).toContain("`--no-pull-request --summary <text>`")
 		expect(body).toContain("`TASK.md` or `PHASE.md`")
