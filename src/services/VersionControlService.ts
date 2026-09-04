@@ -171,7 +171,15 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 						yield* requireSuccess(
 							"Failed to clone Git repository",
 							fs.runCommand(
-								["git", "clone", "--bare", "--", source, destination],
+								[
+									"git",
+									"clone",
+									"--bare",
+									"--no-hardlinks",
+									"--",
+									source,
+									destination,
+								],
 								{
 									captureOutput: true,
 								},

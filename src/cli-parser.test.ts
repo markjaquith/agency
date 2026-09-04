@@ -7,6 +7,25 @@ const expectUsageError = (args: string[], usage: string) => {
 }
 
 describe("strict CLI parsing", () => {
+	test("returns canonical paths without positional values", () => {
+		expect(parseCli(["task", "show", "private-task-id"]).commandPath).toBe(
+			"task/show",
+		)
+		expect(parseCli(["validate", "/private/customer/path"]).commandPath).toBe(
+			"validate",
+		)
+		expect(parseCli(["work", "prepare", "private-task-id"]).commandPath).toBe(
+			"work/prepare",
+		)
+		expect(parseCli(["pr", "view", "private-task-id"]).commandPath).toBe("pr")
+		try {
+			parseCli(["task", "create", "private-task-id"])
+			expect.unreachable()
+		} catch (error) {
+			expect(error).toMatchObject({ commandPath: "task/create" })
+		}
+	})
+
 	test("parses act selectors, dry-run, and JSON options", () => {
 		expect(
 			parseCli([
@@ -338,51 +357,6 @@ describe("strict CLI parsing", () => {
 			[["graph", "extra"], "agency graph"],
 			[["next", "extra"], "agency next"],
 			[["sync", "one", "two", "three"], "agency sync"],
-			[
-				[
-					"claim",
-					"one",
-					"two",
-					"three",
-					"--claimant",
-					"a",
-					"--agent",
-					"r",
-					"--session-id",
-					"s",
-					"--revision",
-					"0".repeat(64),
-				],
-				"agency claim",
-			],
-			[
-				[
-					"release",
-					"one",
-					"two",
-					"three",
-					"--session-id",
-					"s",
-					"--revision",
-					"0".repeat(64),
-				],
-				"agency release",
-			],
-			[
-				[
-					"finish",
-					"one",
-					"two",
-					"three",
-					"--session-id",
-					"s",
-					"--revision",
-					"0".repeat(64),
-					"--outcome",
-					"done",
-				],
-				"agency finish",
-			],
 		] as const) {
 			expectUsageError([...args], usage)
 		}
@@ -397,15 +371,18 @@ describe("strict CLI parsing", () => {
 			commandName: "work",
 			values: { force: true },
 		})
-		expect(() => parseCli(["work", "prepare", "example", "--force"])).toThrow(
-			"cannot be combined",
-		)
+		expect(parseCli(["work", "prepare", "example", "--force"])).toMatchObject({
+			commandName: "work",
+			args: ["prepare", "example"],
+			values: { force: true },
+		})
 	})
 
 	test("preserves every argument after pr without parsing it", () => {
 		const args = ["create", "--title", "two words", "--", "--literal"]
 		expect(parseCli(["--cwd", "/workbase", "pr", ...args])).toEqual({
 			commandName: "pr",
+			commandPath: "pr",
 			args,
 			passthrough: true,
 			values: { cwd: "/workbase" },
@@ -425,6 +402,7 @@ describe("strict CLI parsing", () => {
 			]),
 		).toEqual({
 			commandName: "pr",
+			commandPath: "pr/create",
 			args: ["create", "ship", "release"],
 			values: { draft: true, force: true, json: true },
 		})
@@ -498,76 +476,10 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
-	test("validates revision-guarded claim operations", () => {
-		const revision = "0".repeat(64)
-		expect(
-			parseCli([
-				"claim",
-				"task",
-				"phase",
-				"--claimant",
-				"orchestrator",
-				"--agent",
-				"agent",
-				"--session-id",
-				"job-1",
-				"--revision",
-				revision,
-				"--expires-at",
-				"2026-07-17T13:00:00.000Z",
-			]),
-		).toMatchObject({ commandName: "claim", args: ["task", "phase"] })
-		expect(() =>
-			parseCli(["release", "task", "--session-id", "job-1"]),
-		).toThrow("--revision' is required")
-		expect(() =>
-			parseCli([
-				"finish",
-				"task",
-				"--session-id",
-				"job-1",
-				"--revision",
-				revision,
-				"--outcome",
-				"working",
-			]),
-		).toThrow("must be 'done' or 'dropped'")
-		expect(
-			parseCli([
-				"finish",
-				"task",
-				"--session-id",
-				"job-1",
-				"--revision",
-				revision,
-				"--outcome",
-				"done",
-				"--no-pull-request",
-				"--summary",
-				"Investigation completed",
-				"--evidence-url",
-				"https://example.com/result",
-			]),
-		).toMatchObject({
-			values: {
-				"no-pull-request": true,
-				summary: "Investigation completed",
-				"evidence-url": "https://example.com/result",
-			},
-		})
-		expect(() =>
-			parseCli([
-				"finish",
-				"task",
-				"--session-id",
-				"job-1",
-				"--revision",
-				revision,
-				"--outcome",
-				"done",
-				"--no-pull-request",
-			]),
-		).toThrow("--summary' is required")
+	test("rejects removed claim protocol commands", () => {
+		for (const command of ["claim", "release", "finish"]) {
+			expect(() => parseCli([command])).toThrow(`Unknown command '${command}'`)
+		}
 		expect(() =>
 			parseCli([
 				"task",
@@ -647,6 +559,15 @@ describe("strict CLI parsing", () => {
 		expect(() => parseCli(["work", "prepare", "--opencode"])).toThrow(
 			"cannot be combined",
 		)
+		expect(() => parseCli(["work", "prepare", "first", "second"])).toThrow(
+			"Expected 0-2 positional arguments",
+		)
+		expect(() =>
+			parseCli(["work", "prepare", "example", "--task", "other"]),
+		).toThrow("Entity selector options cannot be combined")
+		expect(() => parseCli(["work", "prepare", "--phase", "build"])).toThrow(
+			"requires '--task'",
+		)
 	})
 
 	test("parses worktree lifecycle commands and selectors", () => {
@@ -664,11 +585,17 @@ describe("strict CLI parsing", () => {
 				"--phase",
 				"verify",
 				"--dry-run",
+				"--force",
 			]),
 		).toMatchObject({
 			commandName: "worktree",
 			args: ["rebuild", "example", "verify"],
-			values: { task: "example", phase: "verify", "dry-run": true },
+			values: {
+				task: "example",
+				phase: "verify",
+				"dry-run": true,
+				force: true,
+			},
 		})
 		expectUsageError(
 			["worktree", "inspect", "example", "--dry-run"],
@@ -969,23 +896,6 @@ describe("strict CLI parsing", () => {
 			commandName: "phase",
 			args: ["status", "ship", "release", "done"],
 		})
-		expect(
-			parseCli([
-				"claim",
-				"--task",
-				"ship",
-				"--phase",
-				"release",
-				"--claimant",
-				"agent",
-				"--agent",
-				"opencode",
-				"--session-id",
-				"session",
-				"--revision",
-				"0".repeat(64),
-			]),
-		).toMatchObject({ args: ["ship", "release"] })
 		expect(parseCli(["context", "--epic", "delivery"]).values.epic).toBe(
 			"delivery",
 		)

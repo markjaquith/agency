@@ -50,19 +50,6 @@ export const DocumentRevision = Schema.String.pipe(
 	Schema.pattern(/^[a-f0-9]{64}$/),
 )
 
-export const ClaimRecord = Schema.Struct({
-	claimant: NonEmptyString,
-	agent: NonEmptyString,
-	sessionId: NonEmptyString,
-	startedAt: IsoTimestamp,
-	targetRevision: DocumentRevision,
-	expiresAt: Schema.optional(IsoTimestamp),
-	state: Schema.Literal("active", "released", "finished"),
-	releasedAt: Schema.optional(IsoTimestamp),
-	finishedAt: Schema.optional(IsoTimestamp),
-	outcome: Schema.optional(Schema.Literal("done", "dropped")),
-})
-
 const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
 
 const GitHubPullRequestUrl = NonEmptyString.pipe(
@@ -163,7 +150,6 @@ const ExecutionUnit = {
 	base: NonEmptyString,
 	pr: Schema.NullOr(Schema.Union(GitHubPullRequestUrl, PullRequestRecord)),
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
-	claim: Schema.optional(ClaimRecord),
 	completion: Schema.optional(CompletionRecord),
 }
 
@@ -262,7 +248,6 @@ const ReviewTaskFrontmatter = Schema.Struct({
 	...TaskMetadata,
 	review: ReviewRecord,
 	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
-	claim: Schema.optional(ClaimRecord),
 	completion: Schema.optional(CompletionRecord),
 })
 
@@ -288,7 +273,6 @@ export type RepositoryDeclaration = Schema.Schema.Type<
 	typeof RepositoryDeclaration
 >
 export type WorkStatus = Schema.Schema.Type<typeof WorkStatus>
-export type ClaimRecord = Schema.Schema.Type<typeof ClaimRecord>
 export type PullRequestRecord = Schema.Schema.Type<typeof PullRequestRecord>
 export type ReviewSource = Schema.Schema.Type<typeof ReviewSource>
 export type ReviewRecord = Schema.Schema.Type<typeof ReviewRecord>

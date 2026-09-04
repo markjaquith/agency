@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { chmod, mkdir } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import { errorEnvelope } from "../protocol"
 import { PushService } from "./PushService"
 import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
@@ -130,9 +131,18 @@ describe("PushService", () => {
 		}
 	}
 
-	const publish = (taskPath: string) =>
+	const publish = (
+		taskPath: string,
+		options: {
+			fetchTimeoutMs?: number
+			pushTimeoutMs?: number
+			retryDelayMs?: number
+		} = {},
+	) =>
 		runTestEffect(
-			PushService.pipe(Effect.flatMap((service) => service.publish(taskPath))),
+			PushService.pipe(
+				Effect.flatMap((service) => service.publish(taskPath, options)),
+			),
 		)
 
 	const remoteBranch = async (remote: string) =>
@@ -156,6 +166,17 @@ describe("PushService", () => {
 			checkout,
 		)
 	}
+
+	const prePushHook = async (checkout: string) =>
+		resolve(
+			checkout,
+			(
+				await requireCommand(
+					["git", "rev-parse", "--git-path", "hooks/pre-push"],
+					checkout,
+				)
+			).stdout,
+		)
 
 	test("publishes a clean Git HEAD and establishes upstream tracking", async () => {
 		const fixture = await setup()
@@ -298,5 +319,90 @@ describe("PushService", () => {
 		await expect(publish(fixture.taskPath)).rejects.toThrow(
 			"has an invalid author",
 		)
+	})
+
+	test("bounds a stalled pre-push hook and confirms non-publication", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await Bun.write(join(fixture.checkout, "feature.txt"), "timeout\n")
+		await requireCommand(["git", "add", "feature.txt"], fixture.checkout)
+		await requireCommand(
+			["git", "commit", "-m", "Add timed publication"],
+			fixture.checkout,
+		)
+		const hook = await prePushHook(fixture.checkout)
+		await Bun.write(hook, "#!/bin/sh\nsleep 30\n")
+		await chmod(hook, 0o755)
+
+		const startedAt = performance.now()
+		const failure = await publish(fixture.taskPath, {
+			pushTimeoutMs: 25,
+		}).catch((error) => error)
+		expect(performance.now() - startedAt).toBeLessThan(1_000)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_TIMEOUT",
+			fields: { category: "timeout", stage: "publish" },
+			retryable: true,
+		})
+		await expect(remoteBranch(fixture.remote)).rejects.toThrow()
+	})
+
+	test("classifies hook rejection separately from transport failure", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await Bun.write(join(fixture.checkout, "feature.txt"), "rejected\n")
+		await requireCommand(["git", "add", "feature.txt"], fixture.checkout)
+		await requireCommand(
+			["git", "commit", "-m", "Add rejected publication"],
+			fixture.checkout,
+		)
+		const hook = await prePushHook(fixture.checkout)
+		await Bun.write(
+			hook,
+			"#!/bin/sh\necho 'pre-push hook declined' >&2\nexit 1\n",
+		)
+		await chmod(hook, 0o755)
+
+		const failure = await publish(fixture.taskPath).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_HOOK_REJECTED",
+			fields: { category: "hook_rejection", stage: "publish" },
+			retryable: false,
+		})
+	})
+
+	test("retries one transient fetch with non-interactive authentication", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await Bun.write(join(fixture.checkout, "feature.txt"), "retried\n")
+		await requireCommand(["git", "add", "feature.txt"], fixture.checkout)
+		await requireCommand(
+			["git", "commit", "-m", "Add retried publication"],
+			fixture.checkout,
+		)
+		const attempts = join(fixture.root, "upload-pack-attempts")
+		const uploadPack = join(fixture.root, "upload-pack")
+		await Bun.write(
+			uploadPack,
+			`#!/bin/sh
+echo x >> ${JSON.stringify(attempts)}
+test "$GIT_TERMINAL_PROMPT" = 0 || exit 2
+test "$GCM_INTERACTIVE" = Never || exit 2
+if test "$(wc -l < ${JSON.stringify(attempts)})" -eq 1; then
+  echo 'Connection reset by peer' >&2
+  exit 1
+fi
+exec git-upload-pack "$@"
+`,
+		)
+		await chmod(uploadPack, 0o755)
+		await requireCommand(
+			["git", "config", "remote.origin.uploadpack", uploadPack],
+			fixture.checkout,
+		)
+
+		const result = await publish(fixture.taskPath, { retryDelayMs: 0 })
+		expect(result.tip).toBe(await remoteBranch(fixture.remote))
+		expect((await Bun.file(attempts).text()).trim().split("\n")).toHaveLength(2)
 	})
 })

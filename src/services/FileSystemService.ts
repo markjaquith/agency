@@ -245,6 +245,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					readonly forwardOutput?: boolean
 					readonly passthrough?: boolean
 					readonly env?: Record<string, string>
+					readonly timeoutMs?: number
 				},
 			) =>
 				pipe(
@@ -264,6 +265,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 								? "tee"
 								: "pipe",
 						env: options?.env,
+						timeoutMs: options?.timeoutMs,
 					}),
 					Effect.mapError(
 						(processError) =>

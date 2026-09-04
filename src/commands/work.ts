@@ -36,6 +36,7 @@ import {
 	normalizeRecalledContext,
 	readValidationEvidence,
 } from "../workbase/execution-contract"
+import { ValidationFailedError } from "./validate"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -288,7 +289,6 @@ export const work = (
 		const defaultAgents = ["opencode2", "opencode", "pi", "claude"] as const
 		let defaultAgentIndex = 0
 		let agent: string = selectedAgent ?? defaultAgents[defaultAgentIndex]!
-		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 		const resume =
@@ -300,9 +300,7 @@ export const work = (
 			target: targetNodeId(target),
 			task: target.kind === "epic" ? "" : target.taskId,
 			phase: target.kind === "phase" ? target.phaseId : "",
-			claimant,
 			sessionId,
-			claimRevision: "",
 		}
 		let resolved = resolveAgentCommand(
 			agent,
@@ -439,7 +437,8 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		const cwd = options.cwd ?? process.cwd()
 		const targetPath = options.directory ? resolve(cwd, options.directory) : cwd
 		const isDirectory = yield* fs.isDirectory(targetPath)
-		const root = yield* workbase.discover(isDirectory ? targetPath : cwd)
+		const targetExists = isDirectory || (yield* fs.exists(targetPath))
+		const root = yield* workbase.discover(targetExists ? targetPath : cwd)
 
 		let taskId = options.taskId
 		let phaseId = options.phaseId
@@ -447,7 +446,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			const task = yield* tasks.show(taskId, root)
 			taskId = task.id
 			if (phaseId) phaseId = (yield* phases.show(task.id, phaseId, root)).id
-		} else if (options.directory && !isDirectory) {
+		} else if (options.directory && !targetExists) {
 			const task = yield* tasks.show(options.directory, root)
 			taskId = task.id
 		} else {
@@ -526,9 +525,17 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		})
 		let validation: unknown = { valid: true, source: "evidence" }
 		if (assessment.disposition.status === "refreshed") {
-			validation = yield* workbase.validate(root)
-			if (!(validation as { valid: boolean }).valid && !options.force) {
-				return yield* Effect.fail(new Error("Workbase validation failed"))
+			const report = yield* workbase.validate(root)
+			validation = report
+			if (!report.valid && !options.force) {
+				const details = report.issues
+					.map((issue) => `- ${issue.path}: ${issue.message}`)
+					.join("\n")
+				return yield* new ValidationFailedError({
+					message: `Workbase validation failed with ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"}:\n${details}`,
+					root: report.root,
+					issues: report.issues,
+				})
 			}
 		}
 		yield* readiness.guardWorkTarget(target, root, options.force)
@@ -577,7 +584,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 
 export const help = `
 Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto]
-       agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
+       agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 
 Launch an agent for an epic, task, or phase. With no directory, select one
 interactively. A positional argument resolves as a directory first, then as a task
@@ -592,7 +599,8 @@ changes without fetching, creating branches, or creating worktrees.
 It emits revision-bound validation evidence and an idempotent external-orchestrator
 contract. Evidence is reused only while the target, workbase, configuration, and
 repository mapping remain unchanged. Dynamic readiness and workspace safety checks
-always run.
+always run. With prepare, --force overrides readiness without launching or changing
+lifecycle status.
 
 Options:
   --epic <id>          Work on an epic
@@ -605,8 +613,8 @@ Options:
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset
-  --force              Override readiness; reopen terminal execution units
-	--evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
+  --force              Override readiness; launched terminal work is reopened
+  --evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
   --no-input           Never open an interactive selector
 
 Without interactive input, provide an explicit workbase or cwd and an entity

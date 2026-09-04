@@ -16,7 +16,6 @@ import { ArchiveService } from "./services/ArchiveService"
 import { IntegrationService } from "./services/IntegrationService"
 import { ContextService } from "./services/ContextService"
 import { GraphService } from "./services/GraphService"
-import { ClaimService } from "./services/ClaimService"
 import { SyncService } from "./services/SyncService"
 import { ReadinessService } from "./services/ReadinessService"
 import { GraphMutationService } from "./services/GraphMutationService"
@@ -48,7 +47,6 @@ const TestLayer = Layer.mergeAll(
 	IntegrationService.Default,
 	ContextService.Default,
 	GraphService.Default,
-	ClaimService.Default,
 	SyncService.Default,
 	ReadinessService.Default,
 	GraphMutationService.Default,

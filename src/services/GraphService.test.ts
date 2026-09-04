@@ -230,7 +230,7 @@ describe("GraphService", () => {
 		expect(calls).toBe(0)
 	})
 
-	test("never reports claimed or terminal execution units as ready", async () => {
+	test("never reports active or terminal execution units as ready", async () => {
 		const root = await createWorkbase()
 		roots.push(root)
 		const path = "tasks/ship/phases/implement/PHASE.md"

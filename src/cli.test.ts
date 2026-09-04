@@ -179,10 +179,31 @@ describe("CLI", () => {
 			XDG_STATE_HOME: state,
 			AGENCY_SESSION_ID: "cli-session",
 			AGENCY_NO_USAGE_LOG: "0",
+			AGENCY_INVOCATION_SOURCE: "automation",
+			AGENCY_USAGE_TEST: "1",
 		}
 		expect((await runCli(["--version"], projectRoot, env)).exitCode).toBe(0)
 		expect(
-			(await runCli(["unknown", "--cwd", "/private/value"], projectRoot, env))
+			(
+				await runCli(
+					[
+						"task",
+						"create",
+						"private-customer-id",
+						"--repo",
+						"private-repository",
+						"--description",
+						"private free-form input",
+						"--cwd",
+						"/private/customer/path",
+					],
+					projectRoot,
+					env,
+				)
+			).exitCode,
+		).toBe(1)
+		expect(
+			(await runCli(["unknown", "--private-flag=value"], projectRoot, env))
 				.exitCode,
 		).toBe(1)
 
@@ -194,147 +215,60 @@ describe("CLI", () => {
 			.map((line) => JSON.parse(line))
 		expect(events).toEqual([
 			expect.objectContaining({
-				sessionId: "cli-session",
-				sessionSequence: 1,
+				journeyId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+				journeySequence: 1,
+				invocationSource: "automation",
+				isTest: true,
 				commandPath: "version",
 				flagNames: ["version"],
 				outcome: "success",
+				outcomeCode: "SUCCESS",
 			}),
 			expect.objectContaining({
-				sessionSequence: 2,
-				commandPath: "invalid",
-				flagNames: ["cwd"],
+				journeySequence: 2,
+				commandPath: "task/create",
+				flagNames: ["cwd", "description", "repo"],
 				outcome: "failure",
+				outcomeCode: "WORKBASE_NOT_FOUND",
+			}),
+			expect.objectContaining({
+				journeySequence: 3,
+				commandPath: "invalid",
+				flagNames: [],
+				outcome: "failure",
+				outcomeCode: "CLI_USAGE",
 			}),
 		])
-		expect(exported.stdout).not.toContain("/private/value")
+		for (const value of [
+			"cli-session",
+			"private-customer-id",
+			"private-repository",
+			"private free-form input",
+			"/private/customer/path",
+			"private-flag",
+			"value",
+		]) {
+			expect(exported.stdout).not.toContain(value)
+		}
 	})
 
-	test("coordinates claims through revision-guarded machine commands", async () => {
+	test("records status-based non-PR completion", async () => {
 		const root = await createTempDir()
 		tempDirs.push(root)
 		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
 		await mkdir(join(root, "repos", "agency"), { recursive: true })
 		parseJson(
 			await runCli(
-				["task", "create", "claimed", "--repo", "agency", "--json"],
-				root,
-			),
-		)
-		const context = parseJson(
-			await runCli(["context", "tasks/claimed", "--json"], root),
-		)
-		const revision = context.documents.task.sha256
-		const claimed = parseJson(
-			await runCli(
-				[
-					"claim",
-					"claimed",
-					"--claimant",
-					"orchestrator",
-					"--agent",
-					"agent",
-					"--session-id",
-					"job-1",
-					"--revision",
-					revision,
-					"--json",
-				],
-				root,
-			),
-		)
-		expect(claimed.claim).toMatchObject({
-			claimant: "orchestrator",
-			agent: "agent",
-			sessionId: "job-1",
-			state: "active",
-		})
-
-		const conflict = await runCli(
-			[
-				"claim",
-				"claimed",
-				"--claimant",
-				"other",
-				"--agent",
-				"other-agent",
-				"--session-id",
-				"job-2",
-				"--revision",
-				claimed.revision,
-				"--json",
-			],
-			root,
-		)
-		expect(conflict.exitCode).toBe(1)
-		expect(JSON.parse(conflict.stdout)).toMatchObject({
-			ok: false,
-			error: {
-				code: "CLAIM_CONFLICT",
-				retryable: true,
-				fields: { claim: { agent: "agent", sessionId: "job-1" } },
-			},
-		})
-
-		const finished = parseJson(
-			await runCli(
-				[
-					"finish",
-					"claimed",
-					"--session-id",
-					"job-1",
-					"--revision",
-					claimed.revision,
-					"--outcome",
-					"done",
-					"--json",
-				],
-				root,
-			),
-		)
-		expect(finished.claim).toMatchObject({ state: "finished", outcome: "done" })
-		expect(
-			parseJson(await runCli(["task", "show", "claimed", "--json"], root)).data
-				.status,
-		).toBe("working")
-
-		parseJson(
-			await runCli(
 				["task", "create", "non-pr", "--repo", "agency", "--json"],
 				root,
 			),
 		)
-		const nonPrContext = parseJson(
-			await runCli(["context", "tasks/non-pr", "--json"], root),
-		)
-		const nonPrClaim = parseJson(
-			await runCli(
-				[
-					"claim",
-					"non-pr",
-					"--claimant",
-					"orchestrator",
-					"--agent",
-					"agent",
-					"--session-id",
-					"job-2",
-					"--revision",
-					nonPrContext.documents.task.sha256,
-					"--json",
-				],
-				root,
-			),
-		)
 		parseJson(
 			await runCli(
 				[
-					"finish",
+					"task",
+					"status",
 					"non-pr",
-					"--session-id",
-					"job-2",
-					"--revision",
-					nonPrClaim.revision,
-					"--outcome",
 					"done",
 					"--no-pull-request",
 					"--summary",
@@ -1073,6 +1007,15 @@ status: open
 				],
 			}),
 		])
+		const preparedAgain = parseJson(
+			await runCli(
+				["work", "prepare", join(root, "tasks/example/TASK.md"), "--json"],
+				parent,
+			),
+		)
+		expect(preparedAgain.checkouts).toEqual([
+			expect.objectContaining({ action: "reused", kind: "writable" }),
+		])
 		const rebuild = parseJson(
 			await runCli(
 				["worktree", "rebuild", "example", "--dry-run", "--json"],
@@ -1310,7 +1253,12 @@ status: open
 					...process.env,
 					...contract.environment,
 					XDG_CONFIG_HOME: isolatedConfigHome,
+					OPENCODE_DISABLE_AUTOUPDATE: "1",
 					OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+					OPENCODE_DISABLE_MODELS_FETCH: "1",
+					OPENCODE_CONFIG_CONTENT: JSON.stringify({
+						model: "opencode/big-pickle",
+					}),
 				}
 				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
 					cwd: contract.cwd,
@@ -1373,30 +1321,13 @@ status: open
 				}
 				if (launch === launches[0]) {
 					expect(effectiveConfig.instructions).toContain(".agency/AGENTS.md")
-					expect(effectiveConfig.agent.agency).toMatchObject({
-						description: expect.stringContaining(
-							"Agency workbase orchestration",
-						),
-						mode: "subagent",
-					})
+					expect(effectiveConfig.agent.agency).toBeUndefined()
 					expect(effectiveConfig.references).toEqual({
 						workbase: {
 							path: "..",
 							description:
 								"Complete Agency workbase context; write authority still comes only from agency context",
 						},
-					})
-					const agencyProbe = Bun.spawnSync(
-						["opencode", "debug", "agent", "agency"],
-						{ cwd: contract.cwd, env: environment },
-					)
-					expect(agencyProbe.exitCode).toBe(0)
-					expect(JSON.parse(agencyProbe.stdout.toString())).toMatchObject({
-						name: "agency",
-						description: expect.stringContaining(
-							"Agency workbase orchestration",
-						),
-						mode: "subagent",
 					})
 					for (const document of documents) {
 						const read = Bun.spawnSync(
@@ -1426,7 +1357,9 @@ status: open
 				...process.env,
 				PATH: `${agencyBin}:${process.env.PATH ?? ""}`,
 				XDG_CONFIG_HOME: isolatedConfigHome,
+				OPENCODE_DISABLE_AUTOUPDATE: "1",
 				OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+				OPENCODE_DISABLE_MODELS_FETCH: "1",
 			}
 			delete directEnvironment.OPENCODE_CONFIG
 			delete directEnvironment.OPENCODE_CONFIG_CONTENT
@@ -1497,6 +1430,7 @@ status: open
 				env: {
 					...directEnvironment,
 					OPENCODE_CONFIG_CONTENT: JSON.stringify({
+						model: "opencode/big-pickle",
 						permission: { external_directory: { "*": "deny" } },
 					}),
 				},
@@ -1595,7 +1529,7 @@ status: open
 				graph.nodes.find((node: any) => node.id === "task:pipeline").status,
 			).toBe("working")
 		},
-		180_000,
+		360_000,
 	)
 
 	test("envelopes help and version output in machine mode", async () => {

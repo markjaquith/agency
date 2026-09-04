@@ -118,31 +118,6 @@ describe("machine protocol", () => {
 		])
 		expect(
 			errorEnvelope({
-				_tag: "ClaimConflictError",
-				message: "already claimed",
-				target: "task 'example'",
-				currentRevision: "a".repeat(64),
-				claim: {
-					claimant: "orchestrator",
-					agent: "agent",
-					sessionId: "job-1",
-					startedAt: "2026-07-17T12:00:00.000Z",
-					targetRevision: "0".repeat(64),
-					state: "active",
-				},
-			}),
-		).toMatchObject({
-			error: {
-				code: "CLAIM_CONFLICT",
-				retryable: true,
-				fields: {
-					target: "task 'example'",
-					claim: { agent: "agent", sessionId: "job-1" },
-				},
-			},
-		})
-		expect(
-			errorEnvelope({
 				_tag: "RevisionConflictError",
 				message: "revision conflict",
 				path: "tasks/example/TASK.md",
@@ -158,6 +133,30 @@ describe("machine protocol", () => {
 					expectedRevision: "a".repeat(64),
 					currentRevision: "b".repeat(64),
 				},
+			},
+		})
+	})
+
+	test("uses dynamic protocol metadata without duplicating it in fields", () => {
+		expect(
+			errorEnvelope({
+				_tag: "PushError",
+				message: "remote timed out",
+				protocolCode: "PUSH_TIMEOUT",
+				retryable: true,
+				remediation: "Retry after checking connectivity.",
+				category: "timeout",
+				stage: "fetch",
+			}),
+		).toEqual({
+			version: 1,
+			ok: false,
+			error: {
+				code: "PUSH_TIMEOUT",
+				message: "remote timed out",
+				fields: { category: "timeout", stage: "fetch" },
+				retryable: true,
+				remediation: "Retry after checking connectivity.",
 			},
 		})
 	})

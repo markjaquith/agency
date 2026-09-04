@@ -177,7 +177,7 @@ describe("IntegrationService", () => {
 			"agency task status <task> dropped --if-revision <revision> --json",
 			"Continue already materialized work",
 			"agency pr create <task> [phase]",
-			"agency finish <task> [phase] --session-id <id>",
+			"agency task status <task> done --if-revision <revision> --no-pull-request",
 			"agency task create <slug> --multi-phase",
 			"agency task handoff <investigation-task> <new-task>",
 			"agency review refresh <task> --if-revision <revision> --json",
@@ -186,9 +186,12 @@ describe("IntegrationService", () => {
 		}
 		expect(managedWorkbaseAgents).toContain("agency push --json")
 		expect(managedWorkbaseAgents).toContain("agency-execution-v1")
-		expect(managedWorkbaseAgents).toContain("agency context . --full --json")
+		expect(managedWorkbaseAgents).toContain("agency context . --json")
 		expect(managedWorkbaseAgents).toContain(
-			"Workers use full context here because they need the assigned document prose",
+			"Pass `--full` only when document prose or low-level VCS details are needed",
+		)
+		expect(managedWorkbaseAgents).not.toContain(
+			"agency context . --full --json",
 		)
 		expect(managedWorkbaseAgents).toContain(
 			"Never pass `--work` or `--auto` to `agency task create`",
@@ -257,6 +260,9 @@ describe("IntegrationService", () => {
 			"!result.authority?.writable?.checkoutPath",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain('status !== "working"')
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'output.env.AGENCY_INVOCATION_SOURCE = "agent"',
+		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"output.env.AGENCY_SESSION_ID = sessionID",
 		)
@@ -623,7 +629,7 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toContain("Never invent entity IDs")
 		expect(body).toContain("Preserve parent backlinks")
-		expect(body).toContain("dirty-worktree, active-claim, revision")
+		expect(body).toContain("dirty-worktree, revision")
 		expect(body).toContain("`agency work` is the human launch flow")
 		expect(body).toContain("Agency worker launch target: <target>.")
 		expect(body).toContain("environment variables and a generated")
@@ -633,7 +639,7 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toMatch(/If\s+the prompt\s+and context disagree/)
 		expect(body).toContain("marks execution work")
-		expect(body).toContain("without creating a claim")
+		expect(body).toContain("marks execution work")
 		expect(body).toContain("formatting, type checks, build, dead-code checks")
 		expect(body).toContain("Review and commit the diff")
 		expect(body).toContain("Use `agency push`")
@@ -647,7 +653,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("marking it ready")
 		expect(body).toMatch(/completing\s+a refinement loop/)
 		expect(body).toContain("pausing or handing off")
-		expect(body).toContain("`agency finish`")
+		expect(body).toContain("update status")
 		expect(body).toContain("`agency sync`")
 		expect(body).toContain("`--no-pull-request --summary <text>`")
 		expect(body).toContain("`TASK.md` or `PHASE.md`")
@@ -681,19 +687,11 @@ describe("IntegrationService", () => {
 		)
 	})
 
-	test("configures Agency agents with complete workbase access", () => {
+	test("configures Agency planning with complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
 		expect(config.agent).toEqual({
-			agency: {
-				description:
-					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
-				mode: "subagent",
-				prompt: expect.stringMatching(
-					/agency context \. --json[\s\S]+agency work prepare[\s\S]+never pass `--work` or `--auto`/,
-				),
-			},
 			plan: {
 				disable: true,
 			},
@@ -716,18 +714,15 @@ describe("IntegrationService", () => {
 				},
 			},
 		})
-		expect(config.agent.agency.model).toBeUndefined()
-		expect(config.agent.agency.permission).toBeUndefined()
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Explicit-new intent overrides reuse",
 		)
-		expect(config.agent.agency.hidden).toBeUndefined()
-		expect(config.agent.agency.steps).toBeUndefined()
-		expect(config.agent.agency.prompt).toContain(
-			"Return the prepared execution contract to the caller",
-		)
+		expect(config.agent.agency).toBeUndefined()
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Start with `agency context . --json`",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"Pass `--full` only when document prose or low-level VCS details are needed",
 		)
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"decompose it into independently deliverable tasks",

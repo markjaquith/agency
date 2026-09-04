@@ -114,21 +114,6 @@ const mutationOptions = {
 	"no-epic": { type: "boolean" },
 } satisfies OptionConfig
 
-const claimOptions = {
-	...outputOptions,
-	claimant: { type: "string" },
-	agent: { type: "string" },
-	"session-id": { type: "string" },
-	revision: { type: "string" },
-	"expires-at": { type: "string" },
-} satisfies OptionConfig
-
-const ownedClaimOptions = {
-	...outputOptions,
-	"session-id": { type: "string" },
-	revision: { type: "string" },
-} satisfies OptionConfig
-
 const nonPrCompletionOptions = {
 	"no-pull-request": { type: "boolean" },
 	summary: { type: "string" },
@@ -679,75 +664,6 @@ const commands = {
 			},
 		},
 	},
-	claim: {
-		usage: "agency claim <task-id> [phase-id] [options]",
-		options: {
-			...claimOptions,
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		command: {
-			usage:
-				"agency claim <task-id> [phase-id] --claimant <id> --agent <id> --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]",
-			minArgs: 1,
-			maxArgs: 2,
-			options: [
-				"claimant",
-				"agent",
-				"session-id",
-				"revision",
-				"expires-at",
-				"json",
-				"task",
-				"phase",
-			],
-			required: ["claimant", "agent", "session-id", "revision"],
-		},
-	},
-	release: {
-		usage: "agency release <task-id> [phase-id] [options]",
-		options: {
-			...ownedClaimOptions,
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		command: {
-			usage:
-				"agency release <task-id> [phase-id] --session-id <id> --revision <sha256> [--json]",
-			minArgs: 1,
-			maxArgs: 2,
-			options: ["session-id", "revision", "json", "task", "phase"],
-			required: ["session-id", "revision"],
-		},
-	},
-	finish: {
-		usage: "agency finish <task-id> [phase-id] [options]",
-		options: {
-			...ownedClaimOptions,
-			...nonPrCompletionOptions,
-			outcome: { type: "string" },
-			task: { type: "string" },
-			phase: { type: "string" },
-		},
-		command: {
-			usage:
-				"agency finish <task-id> [phase-id] --session-id <id> --revision <sha256> --outcome <done|dropped> [options] [--json]",
-			minArgs: 1,
-			maxArgs: 2,
-			options: [
-				"session-id",
-				"revision",
-				"outcome",
-				"no-pull-request",
-				"summary",
-				"evidence-url",
-				"json",
-				"task",
-				"phase",
-			],
-			required: ["session-id", "revision", "outcome"],
-		},
-	},
 	sync: {
 		usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
 		options: {
@@ -870,6 +786,7 @@ const commands = {
 			...outputOptions,
 			...entitySelectorOptions,
 			"dry-run": { type: "boolean" },
+			force: { type: "boolean" },
 		},
 		subcommands: {
 			list: {
@@ -886,37 +803,37 @@ const commands = {
 			},
 			prepare: {
 				usage:
-					"agency worktree prepare <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree prepare <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			remove: {
 				usage:
-					"agency worktree remove <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree remove <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			rebuild: {
 				usage:
-					"agency worktree rebuild <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree rebuild <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			repair: {
 				usage:
-					"agency worktree repair <task-id> [phase-id] [--dry-run] [--json]",
+					"agency worktree repair <task-id> [phase-id] [--dry-run] [--force] [--json]",
 				minArgs: 1,
 				maxArgs: 2,
-				options: ["dry-run", "json", "task", "phase"],
+				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 		},
 	},
 	work: {
 		usage:
-			"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
+			"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--force] [--dry-run] [--json]",
 		options: {
 			...commonOptions,
 			...entitySelectorOptions,
@@ -932,7 +849,7 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--dry-run] [--json]",
+				"agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto] | agency work prepare [target] [--force] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: [
@@ -1115,6 +1032,7 @@ const preCommandValueOptions = new Set(["--workbase", "--cwd"])
 
 export interface ParsedCli {
 	readonly commandName?: keyof typeof commands
+	readonly commandPath: string
 	readonly args: string[]
 	readonly passthrough?: boolean
 	readonly values: Record<
@@ -1123,8 +1041,14 @@ export interface ParsedCli {
 	>
 }
 
+const canonicalCommandPath = (
+	commandName: string,
+	subcommand: string | undefined,
+) => (subcommand ? `${commandName}/${subcommand}` : commandName)
+
 class CliUsageError extends Error {
 	readonly _tag = "CliUsageError"
+	readonly commandPath: string
 
 	constructor(
 		readonly detail: string,
@@ -1132,6 +1056,15 @@ class CliUsageError extends Error {
 	) {
 		super(`${detail}\n\nUsage: ${usage}`)
 		this.name = "CliUsageError"
+		const [, commandName, subcommand] = usage.split(/\s+/)
+		const definition: CommandDefinition | undefined =
+			commands[commandName as keyof typeof commands]
+		this.commandPath = !definition
+			? "invalid"
+			: subcommand && definition.subcommands?.[subcommand]
+				? `${commandName}/${subcommand}`
+				: commandName!
+		Object.defineProperty(this, "commandPath", { enumerable: false })
 	}
 }
 
@@ -1176,8 +1109,6 @@ const targetSlots = (
 		return ["task"]
 	if (commandName === "phase")
 		return subcommand === "list" ? ["task"] : ["task", "phase"]
-	if (["claim", "release", "finish"].includes(commandName))
-		return ["task", "phase"]
 	if (["archive", "restore"].includes(commandName))
 		return subcommand === "epic"
 			? ["epic"]
@@ -1408,7 +1339,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 				"agency <command> [options]",
 			)
 		}
-		return { args: [], values: parsed.values }
+		return { commandPath: "root", args: [], values: parsed.values }
 	}
 
 	const commandName = args[commandIndex]!
@@ -1453,6 +1384,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		}
 		return {
 			commandName,
+			commandPath: "pr",
 			args: prArgs,
 			passthrough: true,
 			values: parsed.values,
@@ -1476,6 +1408,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		assertNoDuplicateOptions(parsed.tokens, new Set(), definition.usage)
 		return {
 			commandName: commandName as keyof typeof commands,
+			commandPath: commandName,
 			args: parsed.positionals,
 			values: parsed.values,
 		}
@@ -1526,6 +1459,10 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	if (parsed.values.version) {
 		return {
 			commandName: commandName as keyof typeof commands,
+			commandPath: canonicalCommandPath(
+				commandName,
+				selectedSubcommand ? subcommand : undefined,
+			),
 			args: parsed.positionals,
 			values: parsed.values,
 		}
@@ -1533,6 +1470,10 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	if (parsed.values.help) {
 		return {
 			commandName: commandName as keyof typeof commands,
+			commandPath: canonicalCommandPath(
+				commandName,
+				selectedSubcommand ? subcommand : undefined,
+			),
 			args: parsed.positionals,
 			values: parsed.values,
 		}
@@ -1636,16 +1577,6 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	) {
 		validateViewOptions(parsed.values, spec)
 	}
-	if (
-		commandName === "finish" &&
-		parsed.values.outcome !== "done" &&
-		parsed.values.outcome !== "dropped"
-	) {
-		throw usageError(
-			"Option '--outcome' must be 'done' or 'dropped'.",
-			spec.usage,
-		)
-	}
 	const nonPrCompletion = parsed.values["no-pull-request"] === true
 	const completionSummary = parsed.values.summary
 	const completionEvidenceUrl = parsed.values["evidence-url"]
@@ -1669,19 +1600,24 @@ export function parseCli(args: readonly string[]): ParsedCli {
 			)
 		}
 		const completesDone =
-			(commandName === "finish" && parsed.values.outcome === "done") ||
-			(["task", "phase"].includes(commandName) &&
-				subcommand === "status" &&
-				commandPositionals.at(-1) === "done")
+			["task", "phase"].includes(commandName) &&
+			subcommand === "status" &&
+			commandPositionals.at(-1) === "done"
 		if (!completesDone) {
 			throw usageError(
-				"Option '--no-pull-request' is valid only with a done status or outcome.",
+				"Option '--no-pull-request' is valid only with a done status.",
 				spec.usage,
 			)
 		}
 	}
 	if (commandName === "work") {
 		const preparing = commandPositionals[0] === "prepare"
+		if (preparing && parsed.values.phase && !parsed.values.task) {
+			throw usageError(
+				"Option '--phase' requires '--task' with work preparation.",
+				spec.usage,
+			)
+		}
 		if (
 			(!preparing && commandPositionals.length > 1) ||
 			(preparing &&
@@ -1690,8 +1626,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 					parsed.values.claude ||
 					parsed.values.agent ||
 					parsed.values.auto ||
-					parsed.values["print-command"] ||
-					parsed.values.force))
+					parsed.values["print-command"]))
 		) {
 			throw usageError(
 				preparing
@@ -1713,6 +1648,14 @@ export function parseCli(args: readonly string[]): ParsedCli {
 
 	return {
 		commandName: commandName as keyof typeof commands,
+		commandPath: canonicalCommandPath(
+			commandName,
+			selectedSubcommand
+				? subcommand
+				: commandName === "work" && commandPositionals[0] === "prepare"
+					? "prepare"
+					: undefined,
+		),
 		args: selectedSubcommand
 			? [subcommand!, ...commandPositionals]
 			: commandPositionals,

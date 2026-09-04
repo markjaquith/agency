@@ -610,19 +610,13 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 				const validStatus = yield* decodeStatus(status)
 				if (validStatus === "delegated") {
 					return yield* new TaskError({
-						message:
-							"Delegation requires explicit ownership; use 'agency claim'",
+						message: "Delegated status cannot be set directly",
 					})
 				}
 				const record = yield* service.show(id, startPath)
 				if ("phases" in record.data) {
 					return yield* new TaskError({
 						message: `Task '${id}' has multiple phases; set status on a phase instead`,
-					})
-				}
-				if (record.data.claim?.state === "active") {
-					return yield* new TaskError({
-						message: `Task '${id}' has an active claim; use agency release or agency finish`,
 					})
 				}
 				if (nonPrCompletion && validStatus !== "done") {

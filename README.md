@@ -26,14 +26,20 @@ Agency records privacy-safe CLI usage events locally so command journeys,
 failures, and flag adoption can be analyzed. Events are stored in SQLite at
 `$XDG_STATE_HOME/agency/usage.sqlite3` (or
 `~/.local/state/agency/usage.sqlite3`) and retained for 90 days by default.
-Each event contains the normalized command path, flag names, timing, outcome,
-Agency version, and ordered `AGENCY_SESSION_ID` correlation. Raw arguments,
+Each event contains the parser-derived command and subcommand path, flag names,
+timing, a bounded outcome code, Agency version, invocation source, explicit test
+attribution, and ordered journey correlation. Journey IDs are one-way hashes of
+`AGENCY_SESSION_ID`; raw session IDs, positional arguments, entity IDs, paths,
 flag values, free-form input, and the current directory are never recorded.
 
 Export events as JSON Lines with `agency usage export`. Set
 `AGENCY_NO_USAGE_LOG=1` to opt out, `AGENCY_USAGE_RETENTION_DAYS` to change
-retention, or `AGENCY_USAGE_DB` to select a different database path. Logging is
-best effort and never changes command output or exit behavior.
+retention, or `AGENCY_USAGE_DB` to select a different database path. Expired
+events are pruned on every read and write. Set `AGENCY_INVOCATION_SOURCE` to one
+of `human`, `agent`, or `automation`, and set `AGENCY_USAGE_TEST=1` for explicit
+test attribution. Logging is best effort and never changes command output or
+exit behavior. Databases created by versions before this privacy boundary are
+cleared because their command paths may contain positional values.
 
 ## Core Model
 
@@ -66,7 +72,7 @@ workbase/
   .agency/
     AGENTS.md              # managed Agency instructions
   .opencode/
-    opencode.jsonc         # managed @agency subagent, instructions, and reference
+    opencode.jsonc         # managed planning agent, instructions, and reference
     tui.jsonc              # managed TUI plugin registration
     plugins/agency-repository-skills.ts # managed workbase access and checkout skills
     tui/agency-debug.ts    # managed /agency-debug TUI diagnostic
@@ -116,17 +122,14 @@ Agency-managed root `AGENTS.md` to `.agency/AGENTS.md` once the OpenCode config
 can load the hidden file. A customized root file, including a symlink, is
 preserved as user-owned content.
 
-The OpenCode config defines an `@agency` subagent for delegated workbase
-orchestration, loads Agency's hidden instructions in addition to any user-owned
-root `AGENTS.md`, advertises the complete workbase as one portable reference,
-and replaces the built-in Plan agent with `agency-plan`. That planning agent can
-update `TASK.md`, `PHASE.md`, and `EPIC.md`, inspect the workbase through
-read-only Agency commands, and use explicit Agency CLI permissions to create or
-update planning structure. Its normal research tools and the complete Agency CLI
-remain available; managed Agency instructions and reported authority govern each
-operation.
-When the subagent launches work in another agent, it verifies that the agent
-started and returns without waiting for the task to finish.
+The OpenCode config loads Agency's hidden instructions in addition to any
+user-owned root `AGENTS.md`, advertises the complete workbase as one portable
+reference, and replaces the built-in Plan agent with `agency-plan`. That
+planning agent can update `TASK.md`, `PHASE.md`, and `EPIC.md`, inspect the
+workbase through read-only Agency commands, and use explicit Agency CLI
+permissions to create or update planning structure. Its normal research tools
+and the complete Agency CLI remain available; managed Agency instructions and
+reported authority govern each operation.
 The TUI-only `/agency-debug` command reports TUI companion initialization and
 whether the server plugin registered writable-checkout skills. It uses a native
 toast and does not submit a prompt to an LLM. When no writable checkout skill
@@ -339,19 +342,18 @@ Custom agents are direct argv commands, never shell snippets:
 ```
 
 Available placeholders are `{prompt}`, `{workbase}`, `{target}`, `{task}`,
-`{phase}`, `{claimant}`, `{sessionId}`, and `{claimRevision}`. Task and phase
+`{phase}`, and `{sessionId}`. Task and phase
 placeholders are empty when they do not apply. `{prompt}` is empty unless
 `--auto` is set. If `resumeCommand` is omitted, the fresh command is also used
 for resumed sessions. If `autoResumeCommand` is omitted, `autoCommand` is used;
 configured agents without `autoCommand` reject `--auto`.
 
-Every agent receives the same `AGENCY_AGENT`, `AGENCY_CLAIMANT`,
-`AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
+Every agent receives the same `AGENCY_AGENT`, `AGENCY_SESSION_ID`,
+`AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
 Execution-unit agents also receive `AGENCY_WRITABLE_CHECKOUT` with the
 authoritative writable checkout path.
-`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
 Autonomous prompts begin `Agency worker launch target: <target>.`, carrying the
 same canonical target as `AGENCY_TARGET`. This is the process-local fallback for
@@ -627,8 +629,8 @@ untargeted `agency pr` invocations leave command semantics to `gh`.
 
 `agency sync` first compares portable repository declarations with local
 materializations, then compares every execution declaration with local branch
-and worktree registration, checkout dirtiness, resolved reference commits, claim
-expiry, and pull request state, merge state, and mergeability. It reports
+and worktree registration, checkout dirtiness, resolved reference commits, and
+pull request state, merge state, and mergeability. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default mode applies safe reconciliation transitions; `--dry-run` is explicitly
 observational.
@@ -642,13 +644,12 @@ phase. Scoped sync does not query, materialize, or reconcile unrelated work.
 - materialize declared but missing repositories from their canonical remotes;
 - adopt legacy materializations only when they have an unambiguous portable origin;
 - materialize missing checkouts when no registration, branch, or path conflicts;
-- release an active claim only after its declared expiry has passed;
 - record or refresh a single PR whose head and base match the declaration; and
-- mark work done after its authoritative PR is merged and no active claim remains.
+- mark work done after its authoritative PR is merged.
 
 Apply never overwrites linked or invalid repositories, repairs remote drift,
 modifies dirty checkouts, moves worktrees, switches branches, resets reference
-commits, chooses among conflicting remotes or PRs, or bypasses active claims.
+commits, or chooses among conflicting remotes or PRs.
 Those conditions remain visible in `warnings` or `unresolved` with a suggested
 action.
 
@@ -839,8 +840,8 @@ fork pull requests exposed through that ref. Review workspaces contain one
 detached checkout and no writable branch. Source movement is observed separately
 from the pin and applied only by `review refresh`; sync, doctor, work, cleanup,
 and archive never move the pin implicitly. Dirty or structurally unexpected
-review checkouts block refresh and cleanup. Review tasks support normal status
-and claim lifecycle, but reject phase conversion and delivery PR operations.
+review checkouts block refresh and cleanup. Review tasks support the normal status
+lifecycle, but reject phase conversion and delivery PR operations.
 Each active or archived review task owns one internal task-scoped pin ref. A
 refresh advances that ref transactionally; failed creation removes it. Archiving
 retains the pin so a deleted source can still be restored and inspected.
@@ -929,23 +930,20 @@ writing anything.
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Running `agency work` again can relaunch unclaimed `working` work.
+before launch. Running `agency work` again can relaunch `working` work.
 By default, `done` requires an authoritative merged pull request and is applied
 by `agency sync`. Work whose intended outcome genuinely requires no pull
 request may instead use an explicit `--no-pull-request --summary <text>` status
 transition. Agency records the summary, completion time, and optional evidence
 URL durably; reopening removes that evidence. This exceptional path refuses work
 that already has a recorded pull request.
-Use explicit claims only when an external orchestrator needs coordinated
-ownership. The interactive work selector displays status markers before
-execution units. Existing working and delegated work may be released to `open`
-or assigned a terminal outcome. Done and dropped work are terminal and may only
+The interactive work selector displays status markers before execution units.
+Existing working and delegated work may be returned to `open` or assigned a
+terminal outcome. Done and dropped work are terminal and may only
 remain unchanged or transition to open; reopen terminal work before changing its
 outcome.
 
 `delegated` remains readable for existing workbases but cannot be newly assigned.
-Delegation is now explicit: the claimant identifies the orchestrator and the
-agent identifies the assigned agent.
 
 Human list output is a compact table with lifecycle, readiness, parent,
 repository, branch, recorded PR, and worktree state where applicable. List and
@@ -953,37 +951,6 @@ status views accept composable `--status <status>` and `--repository <alias>`
 filters, plus `--ready`, `--blocked`, `--pr`, and `--no-pr`. Status and repository
 filters are repeatable. Rows follow task and phase declaration order; plain text
 labels remain complete without color or icon fonts.
-
-### Claims
-
-Claim mutations require the SHA-256 revision exposed by `agency context` or
-`agency graph`. Every operation compares that revision while holding an exclusive
-document lock and atomically replaces the execution document.
-
-```text
-agency claim <task-id> [phase-id] --claimant <id> --agent <id>
-  --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]
-agency release <task-id> [phase-id] --session-id <id>
-  --revision <sha256> [--json]
-agency finish <task-id> [phase-id] --session-id <id>
-  --revision <sha256> --outcome <done|dropped>
-  [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
-```
-
-An active claim sets status to `working`. Release returns it to `open`. Finish
-records the claim outcome and ownership history; a `done` claim outcome leaves
-the execution unit `working` until its pull request is merged, while `dropped`
-remains terminal. For a genuine non-PR outcome, `--no-pull-request` atomically
-records completion evidence, finishes the claim, and sets the execution unit to
-`done`; `--summary` is required and `--evidence-url` is optional. Conflicts return
-the current revision and complete ownership record in the machine error envelope
-rather than overwriting it. Expired claims may be replaced with a
-revision-guarded claim.
-
-`agency work` does not claim execution units. It refuses active explicit claims,
-marks open execution work `working`, and launches the agent. External
-orchestrators use `agency claim`, launch and monitor their agent separately, and
-later call `agency release` or `agency finish`.
 
 ### Archive
 
@@ -1015,8 +982,8 @@ default; `--dry-run` performs the same preflight without mutation. A dependency
 is work required by a candidate, while a dependent is work that requires the
 candidate. Dependencies within the selected cohort can be archived together,
 but a retained dependent excludes its dependency, including exclusions that
-propagate through a dependency chain. Active claims, dirty or otherwise unsafe
-managed checkouts, and occupied archive destinations are reported as per-task
+propagate through a dependency chain. Dirty or otherwise unsafe managed
+checkouts and occupied archive destinations are reported as per-task
 skips. Invalid workbase structure and infrastructure failures abort the command.
 
 Task and phase archiving update active parent documents. Agency removes
@@ -1031,7 +998,7 @@ until restored.
 
 ```text
 agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-command]
-agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
+agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
 agency pr create <task-id> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
@@ -1050,7 +1017,8 @@ promptless by default; use `--auto` to send Agency's generated context prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without
-launching an agent or changing status.
+launching an agent or changing status. Its target may be a task ID or any path
+inside the task or phase, including its `TASK.md` or `PHASE.md` document.
 Managed workbase guidance provides exact fast paths for 15 common intents:
 single-phase creation; create-and-start; materialization; remote PR sync; phase
 conversion; archive; review creation and start; status inspection; drop;
@@ -1065,9 +1033,11 @@ work and reading context. It does not prescribe how callers present or execute
 prepared work.
 The evidence argument may be an evidence object, task-creation JSON, or a path to
 either. Use `--dry-run` to report planned fetch, branch, and worktree changes
-without applying them. Validation reuse never skips readiness, active-claim,
-repository, ownership, reference-drift, dirty-workspace, or worktree safety
-checks.
+without applying them. Use `--force` to prepare work blocked by readiness, such
+as a follow-on phase whose dependency is still active; preparation still does
+not launch an agent or change lifecycle status. Validation reuse never skips
+readiness, repository, ownership, reference-drift, dirty-workspace, or worktree
+safety checks.
 
 The authoritative implementation locations for this contract are
 `src/commands/task.ts` (creation output),
@@ -1108,13 +1078,21 @@ without creating a pull request. It requires a valid, registered writable
 checkout in `working` state, fetches the configured delivery remote, verifies
 that the declared base is in the publication history, validates every outgoing
 commit's description, author, and conflict state, and refuses non-fast-forward
-updates.
+updates. Local commit validation runs before network access when cached remote
+state is available, and the network fetch is limited to the declared base and
+delivery branch.
 
 YAML `branch` must exactly match the checked-out local branch, the worktree must
 be clean, and `HEAD` is pushed with upstream tracking. Missing commit descriptions
 or authors stop publication with exact commits and remediation commands. Push
 reports deterministic fetch, inspection, validation, and publication progress on
-stderr, including while `--json` reserves stdout for one machine result.
+stderr, including while `--json` reserves stdout for one machine result. Git
+authentication is non-interactive. Fetch defaults to a 30-second deadline and
+one retry for transient failures; push defaults to a 120-second deadline. Set
+`AGENCY_PUSH_FETCH_TIMEOUT_MS` or `AGENCY_PUSH_TIMEOUT_MS` to positive millisecond
+values to override them. After a failed or timed-out push, Agency compares the
+exact remote delivery ref with the expected tip before reporting success, a safe
+retryable failure, or an unknown publication outcome.
 
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
 including readiness checks and durable PR recording. It accepts draft, title,
@@ -1186,10 +1164,7 @@ recovery action. Version 1 defines these codes:
 | `EPIC_ERROR`              | Epic operation failed                                     |
 | `TASK_ERROR`              | Task operation failed                                     |
 | `PHASE_ERROR`             | Phase operation failed                                    |
-| `CLAIM_ERROR`             | Claim input or lifecycle state is invalid                 |
-| `CLAIM_CONFLICT`          | Active or legacy ownership conflicts with an operation    |
 | `REVISION_CONFLICT`       | A durable document changed since inspection               |
-| `CLAIM_OWNERSHIP`         | The session does not own the active claim                 |
 | `ARCHIVE_ERROR`           | Archive operation failed                                  |
 | `WORKTREE_ERROR`          | Worktree operation failed                                 |
 | `PULL_REQUEST_ERROR`      | Pull request operation failed                             |
@@ -1212,7 +1187,7 @@ Success, help, and version output exit `0`; usage and command failures exit `1`.
 There are no error-specific exit statuses. `graph --jsonl` streams versioned
 records on success instead of wrapping them in an envelope; JSONL failures still
 use one error envelope. Revision and concurrency behavior is documented under
-Tasks, Phases, and Claims; selector behavior under Noninteractive Use; projection
+Tasks and Phases; selector behavior under Noninteractive Use; projection
 behavior under Target Context and Workbase Graph; and retry behavior in the
 machine error contract above.
 
