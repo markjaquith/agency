@@ -261,6 +261,9 @@ describe("IntegrationService", () => {
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain('status !== "working"')
 		expect(managedWorkbaseOpencodePlugin).toContain(
+			'output.env.AGENCY_INVOCATION_SOURCE = "agent"',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
 			"output.env.AGENCY_SESSION_ID = sessionID",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(

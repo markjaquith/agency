@@ -118,6 +118,7 @@ export const agentEnvironment = (
 	variables: AgentCommandVariables,
 ): Record<string, string> => ({
 	AGENCY_AGENT: agent,
+	AGENCY_INVOCATION_SOURCE: "agent",
 	AGENCY_SESSION_ID: variables.sessionId,
 	AGENCY_WORKBASE: variables.workbase,
 	AGENCY_TARGET: variables.target,

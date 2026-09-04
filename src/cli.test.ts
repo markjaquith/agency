@@ -179,10 +179,31 @@ describe("CLI", () => {
 			XDG_STATE_HOME: state,
 			AGENCY_SESSION_ID: "cli-session",
 			AGENCY_NO_USAGE_LOG: "0",
+			AGENCY_INVOCATION_SOURCE: "automation",
+			AGENCY_USAGE_TEST: "1",
 		}
 		expect((await runCli(["--version"], projectRoot, env)).exitCode).toBe(0)
 		expect(
-			(await runCli(["unknown", "--cwd", "/private/value"], projectRoot, env))
+			(
+				await runCli(
+					[
+						"task",
+						"create",
+						"private-customer-id",
+						"--repo",
+						"private-repository",
+						"--description",
+						"private free-form input",
+						"--cwd",
+						"/private/customer/path",
+					],
+					projectRoot,
+					env,
+				)
+			).exitCode,
+		).toBe(1)
+		expect(
+			(await runCli(["unknown", "--private-flag=value"], projectRoot, env))
 				.exitCode,
 		).toBe(1)
 
@@ -194,20 +215,41 @@ describe("CLI", () => {
 			.map((line) => JSON.parse(line))
 		expect(events).toEqual([
 			expect.objectContaining({
-				sessionId: "cli-session",
-				sessionSequence: 1,
+				journeyId: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+				journeySequence: 1,
+				invocationSource: "automation",
+				isTest: true,
 				commandPath: "version",
 				flagNames: ["version"],
 				outcome: "success",
+				outcomeCode: "SUCCESS",
 			}),
 			expect.objectContaining({
-				sessionSequence: 2,
-				commandPath: "invalid",
-				flagNames: ["cwd"],
+				journeySequence: 2,
+				commandPath: "task/create",
+				flagNames: ["cwd", "description", "repo"],
 				outcome: "failure",
+				outcomeCode: "WORKBASE_NOT_FOUND",
+			}),
+			expect.objectContaining({
+				journeySequence: 3,
+				commandPath: "invalid",
+				flagNames: [],
+				outcome: "failure",
+				outcomeCode: "CLI_USAGE",
 			}),
 		])
-		expect(exported.stdout).not.toContain("/private/value")
+		for (const value of [
+			"cli-session",
+			"private-customer-id",
+			"private-repository",
+			"private free-form input",
+			"/private/customer/path",
+			"private-flag",
+			"value",
+		]) {
+			expect(exported.stdout).not.toContain(value)
+		}
 	})
 
 	test("records status-based non-PR completion", async () => {

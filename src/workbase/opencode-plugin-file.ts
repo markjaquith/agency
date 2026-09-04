@@ -195,6 +195,7 @@ const plugin: Plugin = async ({ directory }) => {
       if (!sessionID) return
       const context = workerSessions.get(sessionID)
       if (!context?.target) return
+      output.env.AGENCY_INVOCATION_SOURCE = "agent"
       output.env.AGENCY_SESSION_ID = sessionID
       output.env.AGENCY_TARGET = context.target
       if (context.root) output.env.AGENCY_WORKBASE = context.root

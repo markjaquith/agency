@@ -1032,6 +1032,7 @@ const preCommandValueOptions = new Set(["--workbase", "--cwd"])
 
 export interface ParsedCli {
 	readonly commandName?: keyof typeof commands
+	readonly commandPath: string
 	readonly args: string[]
 	readonly passthrough?: boolean
 	readonly values: Record<
@@ -1040,8 +1041,14 @@ export interface ParsedCli {
 	>
 }
 
+const canonicalCommandPath = (
+	commandName: string,
+	subcommand: string | undefined,
+) => (subcommand ? `${commandName}/${subcommand}` : commandName)
+
 class CliUsageError extends Error {
 	readonly _tag = "CliUsageError"
+	readonly commandPath: string
 
 	constructor(
 		readonly detail: string,
@@ -1049,6 +1056,15 @@ class CliUsageError extends Error {
 	) {
 		super(`${detail}\n\nUsage: ${usage}`)
 		this.name = "CliUsageError"
+		const [, commandName, subcommand] = usage.split(/\s+/)
+		const definition: CommandDefinition | undefined =
+			commands[commandName as keyof typeof commands]
+		this.commandPath = !definition
+			? "invalid"
+			: subcommand && definition.subcommands?.[subcommand]
+				? `${commandName}/${subcommand}`
+				: commandName!
+		Object.defineProperty(this, "commandPath", { enumerable: false })
 	}
 }
 
@@ -1323,7 +1339,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 				"agency <command> [options]",
 			)
 		}
-		return { args: [], values: parsed.values }
+		return { commandPath: "root", args: [], values: parsed.values }
 	}
 
 	const commandName = args[commandIndex]!
@@ -1368,6 +1384,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		}
 		return {
 			commandName,
+			commandPath: "pr",
 			args: prArgs,
 			passthrough: true,
 			values: parsed.values,
@@ -1391,6 +1408,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		assertNoDuplicateOptions(parsed.tokens, new Set(), definition.usage)
 		return {
 			commandName: commandName as keyof typeof commands,
+			commandPath: commandName,
 			args: parsed.positionals,
 			values: parsed.values,
 		}
@@ -1441,6 +1459,10 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	if (parsed.values.version) {
 		return {
 			commandName: commandName as keyof typeof commands,
+			commandPath: canonicalCommandPath(
+				commandName,
+				selectedSubcommand ? subcommand : undefined,
+			),
 			args: parsed.positionals,
 			values: parsed.values,
 		}
@@ -1448,6 +1470,10 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	if (parsed.values.help) {
 		return {
 			commandName: commandName as keyof typeof commands,
+			commandPath: canonicalCommandPath(
+				commandName,
+				selectedSubcommand ? subcommand : undefined,
+			),
 			args: parsed.positionals,
 			values: parsed.values,
 		}
@@ -1622,6 +1648,14 @@ export function parseCli(args: readonly string[]): ParsedCli {
 
 	return {
 		commandName: commandName as keyof typeof commands,
+		commandPath: canonicalCommandPath(
+			commandName,
+			selectedSubcommand
+				? subcommand
+				: commandName === "work" && commandPositionals[0] === "prepare"
+					? "prepare"
+					: undefined,
+		),
 		args: selectedSubcommand
 			? [subcommand!, ...commandPositionals]
 			: commandPositionals,
