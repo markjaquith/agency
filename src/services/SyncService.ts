@@ -493,6 +493,34 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						{ concurrency: 8 },
 					),
 				)
+				const reviewSourceQueries = new Map(
+					yield* Effect.forEach(
+						reviewRecords,
+						(task) =>
+							Effect.gen(function* () {
+								if (!("review" in task.data)) return [task.id, null] as const
+								const repositoryPath = join(
+									root,
+									"repos",
+									task.data.review.repo,
+								)
+								const remote = yield* backend.remoteUrl(
+									repositoryPath,
+									"origin",
+								)
+								const source = yield* runExternal([
+									"git",
+									"ls-remote",
+									remote ?? "origin",
+									task.data.review.source.kind === "pull-request"
+										? task.data.review.source.fetchRef
+										: originRef(task.data.review.source.ref),
+								])
+								return [task.id, source] as const
+							}),
+						{ concurrency: 8 },
+					),
+				)
 				const executionTotal = records.length + reviewRecords.length
 				let reconciledExecutions = 0
 				const reportExecution = (target: string) => {
@@ -504,6 +532,55 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						target,
 					})
 				}
+				const checkoutRecords = records.filter((record) => {
+					if (record.data.completion) return false
+					const merged = config.delivery
+						? null
+						: mergedPullRequestFromGitHub(
+								record.data,
+								prQueries.get(record.key),
+							)
+					return merged === null || record.data.claim?.state === "active"
+				})
+				const checkoutCandidates = checkoutRecords.flatMap((record) => {
+					const codePath = join(dirname(record.path), "code")
+					return [
+						{ repo: record.data.repo, path: join(codePath, record.data.repo) },
+						...(record.data.repos ?? []).map((reference) => ({
+							repo: reference.repo,
+							path: join(codePath, reference.repo),
+						})),
+					]
+				})
+				const checkoutRepositoryPaths = [
+					...new Set(
+						checkoutCandidates.map(({ repo }) => join(root, "repos", repo)),
+					),
+				]
+				yield* Effect.forEach(checkoutRepositoryPaths, listRegistered, {
+					concurrency: 8,
+				})
+				const dirtyByCheckoutPath = new Map<string, boolean | null>()
+				yield* Effect.forEach(
+					checkoutCandidates,
+					({ repo, path }) =>
+						Effect.gen(function* () {
+							if (!(yield* fs.isDirectory(path))) return
+							const repositoryPath = join(root, "repos", repo)
+							const registered = registeredByRepository.get(repositoryPath)
+							if (!registered) return
+							const expectedPath = yield* fs.realPath(path)
+							const atPath = registered.find(
+								(item) => item.path === expectedPath,
+							)
+							if (!atPath) return
+							dirtyByCheckoutPath.set(
+								path,
+								atPath.dirty ?? (yield* backend.workspaceDirty(path)),
+							)
+						}),
+					{ concurrency: 8 },
+				)
 
 				for (const record of records.sort((a, b) =>
 					a.key.localeCompare(b.key),
@@ -666,8 +743,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 
 						const dirty =
 							exists && atPath
-								? (atPath.dirty ??
-									(yield* backend.workspaceDirty(checkoutPath)))
+								? atPath.dirty !== undefined
+									? atPath.dirty
+									: dirtyByCheckoutPath.has(checkoutPath)
+										? dirtyByCheckoutPath.get(checkoutPath)!
+										: yield* backend.workspaceDirty(checkoutPath)
 								: null
 						if (exists && atPath && dirty === null) {
 							warnings.push({
@@ -1021,20 +1101,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							status: apply ? "applied" : "planned",
 						})
 					}
-					const repositoryPath = join(root, "repos", data.review.repo)
-					const reviewRemote = yield* backend.remoteUrl(
-						repositoryPath,
-						"origin",
-					)
-					const source = yield* runExternal([
-						"git",
-						"ls-remote",
-						reviewRemote ?? "origin",
-						data.review.source.kind === "pull-request"
-							? data.review.source.fetchRef
-							: originRef(data.review.source.ref),
-					])
-					const sourceCommit = source.stdout.trim().split(/\s+/)[0] || null
+					const source = reviewSourceQueries.get(task.id)
+					const sourceCommit = source?.stdout.trim().split(/\s+/)[0] || null
 					if (!sourceCommit) {
 						warnings.push({
 							kind: "review-source-unavailable",
