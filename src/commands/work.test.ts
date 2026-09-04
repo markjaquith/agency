@@ -84,6 +84,8 @@ interface HarnessOptions {
 		Record<string, "open" | "working" | "delegated" | "done" | "dropped">
 	>
 	readonly taskRepo?: string
+	readonly existingPaths?: readonly string[]
+	readonly validationIssues?: readonly { path: string; message: string }[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -142,15 +144,17 @@ const createHarness = (options: HarnessOptions = {}) => {
 				},
 			}),
 		repositoryAliases: () => Effect.succeed(["agency"]),
-		validate: () =>
-			Effect.succeed({
+		validate: () => {
+			const issues = options.validationIssues ?? []
+			return Effect.succeed({
 				root: "/workbase",
-				issues: [],
+				issues,
 				epicCount: 0,
 				taskCount: 1,
 				phaseCount: 0,
-				valid: true,
-			}),
+				valid: issues.length === 0,
+			})
+		},
 	}
 	const epics = {
 		show: (id: string) =>
@@ -281,7 +285,8 @@ const createHarness = (options: HarnessOptions = {}) => {
 		readFile: (path: string) =>
 			Effect.succeed(path.endsWith("agency.json") ? '{"version":2}\n' : ""),
 		readDirectory: () => Effect.succeed([]),
-		exists: () => Effect.succeed(false),
+		exists: (path: string) =>
+			Effect.succeed(options.existingPaths?.includes(path) ?? false),
 		realPath: (path: string) => Effect.succeed(path),
 		runCommand: (args: readonly string[]) => {
 			const cli = args[1]!
@@ -567,6 +572,65 @@ describe("work command", () => {
 				evidence: JSON.stringify(result.validationEvidence.evidence),
 			}),
 		).rejects.toThrow("Recalled repository conflicts")
+	})
+
+	test("resolves task and phase document paths", async () => {
+		const taskDocument = "/workbase/tasks/example/TASK.md"
+		const taskHarness = createHarness({
+			existingDirectories: [],
+			existingPaths: [taskDocument],
+		})
+
+		await taskHarness.runPrepare({
+			directory: taskDocument,
+			dryRun: true,
+			silent: true,
+		})
+		expect(taskHarness.guards[0]?.target).toBe("execution-unit:task/example")
+		expect(taskHarness.shownTasks).toEqual(["example", "example"])
+
+		const phaseDocument =
+			"/workbase/tasks/example/phases/implementation/PHASE.md"
+		const phaseHarness = createHarness({
+			existingDirectories: [],
+			existingPaths: [phaseDocument],
+			multiPhaseTasks: ["example"],
+			workspace: multiPhaseWorkspace,
+		})
+
+		await phaseHarness.runPrepare({
+			directory: phaseDocument,
+			dryRun: true,
+			silent: true,
+		})
+		expect(phaseHarness.guards[0]?.target).toBe(
+			"execution-unit:phase/example/implementation",
+		)
+		expect(phaseHarness.materializeOptions).toHaveLength(1)
+	})
+
+	test("returns structured validation issues before readiness or materialization", async () => {
+		const harness = createHarness({
+			existingDirectories: [],
+			validationIssues: [
+				{
+					path: "tasks/example/TASK.md",
+					message: "Repository alias 'missing' is not configured",
+				},
+			],
+		})
+
+		await expect(
+			harness.runPrepare({
+				cwd: "/workbase",
+				directory: "example",
+				dryRun: true,
+			}),
+		).rejects.toThrow(
+			"Workbase validation failed with 1 issue:\n- tasks/example/TASK.md: Repository alias 'missing' is not configured",
+		)
+		expect(harness.guards).toEqual([])
+		expect(harness.events).toEqual([])
 	})
 
 	test("force prepares a phase blocked by an active dependency without launching or changing status", async () => {

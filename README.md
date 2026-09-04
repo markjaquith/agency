@@ -1011,7 +1011,8 @@ promptless by default; use `--auto` to send Agency's generated context prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without
-launching an agent or changing status.
+launching an agent or changing status. Its target may be a task ID or any path
+inside the task or phase, including its `TASK.md` or `PHASE.md` document.
 Managed workbase guidance provides exact fast paths for 15 common intents:
 single-phase creation; create-and-start; materialization; remote PR sync; phase
 conversion; archive; review creation and start; status inspection; drop;

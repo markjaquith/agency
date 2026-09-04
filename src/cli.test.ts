@@ -965,6 +965,15 @@ status: open
 				],
 			}),
 		])
+		const preparedAgain = parseJson(
+			await runCli(
+				["work", "prepare", join(root, "tasks/example/TASK.md"), "--json"],
+				parent,
+			),
+		)
+		expect(preparedAgain.checkouts).toEqual([
+			expect.objectContaining({ action: "reused", kind: "writable" }),
+		])
 		const rebuild = parseJson(
 			await runCli(
 				["worktree", "rebuild", "example", "--dry-run", "--json"],

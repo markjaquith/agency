@@ -36,6 +36,7 @@ import {
 	normalizeRecalledContext,
 	readValidationEvidence,
 } from "../workbase/execution-contract"
+import { ValidationFailedError } from "./validate"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -436,7 +437,8 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		const cwd = options.cwd ?? process.cwd()
 		const targetPath = options.directory ? resolve(cwd, options.directory) : cwd
 		const isDirectory = yield* fs.isDirectory(targetPath)
-		const root = yield* workbase.discover(isDirectory ? targetPath : cwd)
+		const targetExists = isDirectory || (yield* fs.exists(targetPath))
+		const root = yield* workbase.discover(targetExists ? targetPath : cwd)
 
 		let taskId = options.taskId
 		let phaseId = options.phaseId
@@ -444,7 +446,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			const task = yield* tasks.show(taskId, root)
 			taskId = task.id
 			if (phaseId) phaseId = (yield* phases.show(task.id, phaseId, root)).id
-		} else if (options.directory && !isDirectory) {
+		} else if (options.directory && !targetExists) {
 			const task = yield* tasks.show(options.directory, root)
 			taskId = task.id
 		} else {
@@ -523,9 +525,17 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		})
 		let validation: unknown = { valid: true, source: "evidence" }
 		if (assessment.disposition.status === "refreshed") {
-			validation = yield* workbase.validate(root)
-			if (!(validation as { valid: boolean }).valid && !options.force) {
-				return yield* Effect.fail(new Error("Workbase validation failed"))
+			const report = yield* workbase.validate(root)
+			validation = report
+			if (!report.valid && !options.force) {
+				const details = report.issues
+					.map((issue) => `- ${issue.path}: ${issue.message}`)
+					.join("\n")
+				return yield* new ValidationFailedError({
+					message: `Workbase validation failed with ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"}:\n${details}`,
+					root: report.root,
+					issues: report.issues,
+				})
 			}
 		}
 		yield* readiness.guardWorkTarget(target, root, options.force)

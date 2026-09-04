@@ -538,6 +538,15 @@ describe("strict CLI parsing", () => {
 		expect(() => parseCli(["work", "prepare", "--opencode"])).toThrow(
 			"cannot be combined",
 		)
+		expect(() => parseCli(["work", "prepare", "first", "second"])).toThrow(
+			"Expected 0-2 positional arguments",
+		)
+		expect(() =>
+			parseCli(["work", "prepare", "example", "--task", "other"]),
+		).toThrow("Entity selector options cannot be combined")
+		expect(() => parseCli(["work", "prepare", "--phase", "build"])).toThrow(
+			"requires '--task'",
+		)
 	})
 
 	test("parses worktree lifecycle commands and selectors", () => {

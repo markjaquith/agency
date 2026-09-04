@@ -1586,6 +1586,12 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	if (commandName === "work") {
 		const preparing = commandPositionals[0] === "prepare"
+		if (preparing && parsed.values.phase && !parsed.values.task) {
+			throw usageError(
+				"Option '--phase' requires '--task' with work preparation.",
+				spec.usage,
+			)
+		}
 		if (
 			(!preparing && commandPositionals.length > 1) ||
 			(preparing &&
