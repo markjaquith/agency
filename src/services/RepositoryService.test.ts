@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, realpath } from "node:fs/promises"
+import { mkdir, realpath, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { RepositoryService } from "./RepositoryService"
@@ -136,6 +136,30 @@ describe("RepositoryService", () => {
 		})
 	})
 
+	test("inspects only the requested repository alias", async () => {
+		const requested = join(root, "repos/requested")
+		const unrelated = join(root, "repos/unrelated")
+		await mkdir(requested, { recursive: true })
+		await mkdir(unrelated, { recursive: true })
+		await runGit(["init", "--initial-branch=main", requested])
+		await runGit(["init", "--initial-branch=main", unrelated])
+
+		const spawn = spyOn(Bun, "spawn")
+		try {
+			const repository = await runTestEffect(
+				RepositoryService.pipe(
+					Effect.flatMap((service) => service.show("requested", root)),
+				),
+			)
+			expect(repository.alias).toBe("requested")
+			expect(spawn.mock.calls).toHaveLength(1)
+			expect(spawn.mock.calls[0]?.[0]).toContain(requested)
+			expect(spawn.mock.calls[0]?.[0]).not.toContain(unrelated)
+		} finally {
+			spawn.mockRestore()
+		}
+	})
+
 	test("materializes a linked alias without invalidating active worktrees", async () => {
 		const target = join(root, "linked-repository")
 		const checkout = join(root, "tasks/active/code/linked")
@@ -146,6 +170,13 @@ describe("RepositoryService", () => {
 		await Bun.write(join(target, "README.md"), "linked\n")
 		await runGit(["-C", target, "add", "README.md"])
 		await runGit(["-C", target, "commit", "-m", "initial"])
+		const commit = await gitOutput(["-C", target, "rev-parse", "HEAD"])
+		const sourceObject = join(
+			target,
+			".git/objects",
+			commit.slice(0, 2),
+			commit.slice(2),
+		)
 		await setPortableOrigin(target, "materialized")
 		await runTestEffect(
 			RepositoryService.pipe(
@@ -218,6 +249,15 @@ status: working
 				"refs/agency/reviews/active",
 			]),
 		).toBe(await gitOutput(["-C", target, "rev-parse", "main"]))
+		const materializedObject = join(
+			root,
+			"repos/linked/objects",
+			commit.slice(0, 2),
+			commit.slice(2),
+		)
+		expect((await stat(materializedObject)).ino).not.toBe(
+			(await stat(sourceObject)).ino,
+		)
 	})
 
 	test("preserves detached registered worktree commits from a shallow linked repository", async () => {
