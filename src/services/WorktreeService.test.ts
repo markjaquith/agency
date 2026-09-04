@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { mkdir, realpath, rename, rm } from "node:fs/promises"
+import { mkdir, realpath, rename, rm, symlink } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import {
 	captureErrors,
@@ -1526,6 +1526,107 @@ pr: null
 		).toBe("keep me\n")
 	})
 
+	test("refuses to remove worktrees for active work", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "active-removal",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/active-removal",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("active-removal", undefined, root),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.setStatus("active-removal", "working", root),
+				),
+			),
+		)
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("active-removal", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("active 'working' ownership")
+		expect(
+			await Bun.file(join(workspace.writablePath!, "README.md")).exists(),
+		).toBe(true)
+	})
+
+	test("restores earlier worktrees and preserves the Git failure diagnostic", async () => {
+		await ensureEffectRepository()
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "locked-removal",
+							ticketUrl: null,
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/locked-removal",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("locked-removal", undefined, root),
+				),
+			),
+		)
+		const referencePath = join(workspace.codePath, "effect")
+		await git([
+			"-C",
+			join(root, "repos/effect"),
+			"worktree",
+			"lock",
+			referencePath,
+		])
+
+		const failure = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("locked-removal", undefined, root),
+				),
+				Effect.flip,
+			),
+		)
+
+		expect(failure.message).toContain("locked working tree")
+		expect(failure).toMatchObject({
+			completed: [workspace.writablePath!],
+			rolledBack: [workspace.writablePath!],
+			manualRecovery: [],
+		})
+		for (const checkout of [workspace.writablePath!, referencePath]) {
+			expect(await Bun.file(join(checkout, "README.md")).exists()).toBe(true)
+		}
+	})
+
 	test("handles a missing checkout without deleting its branch", async () => {
 		await runTestEffect(
 			TaskService.pipe(
@@ -1581,6 +1682,52 @@ pr: null
 				"refs/heads/task/stale",
 			]).exitCode,
 		).toBe(0)
+	})
+
+	test("does not prune unrelated stale worktree registrations", async () => {
+		for (const id of ["stale-target", "stale-unrelated"]) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: null,
+								repo: "agency",
+								branch: `task/${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			const workspace = await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) => service.materialize(id, undefined, root)),
+				),
+			)
+			await rm(workspace.codePath, { recursive: true })
+		}
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("stale-target", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("would also remove unrelated stale registrations")
+		const registered = await gitOutput([
+			"-C",
+			join(root, "repos/agency"),
+			"worktree",
+			"list",
+			"--porcelain",
+		])
+		expect(registered).toContain("tasks/stale-target/code/agency")
+		expect(registered).toContain("tasks/stale-unrelated/code/agency")
 	})
 
 	test("lists and inspects ownership, registration, commits, and dirtiness", async () => {
@@ -1710,6 +1857,50 @@ pr: null
 			),
 		).rejects.toThrow("is not a directory")
 		expect(await Bun.file(unexpected).text()).toBe("keep me\n")
+	})
+
+	test("does not follow a symlink named for an expected checkout", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "symlink-removal",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/symlink-removal",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const repository = join(root, "repos/agency")
+		await git(["-C", repository, "branch", "task/symlink-removal", "main"])
+		const outside = join(root, "outside-symlink-removal")
+		await git([
+			"-C",
+			repository,
+			"worktree",
+			"add",
+			outside,
+			"task/symlink-removal",
+		])
+		const codePath = join(root, "tasks/symlink-removal/code")
+		await mkdir(codePath, { recursive: true })
+		await symlink(outside, join(codePath, "agency"), "dir")
+
+		await expect(
+			runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove("symlink-removal", undefined, root),
+					),
+				),
+			),
+		).rejects.toThrow("is a symbolic link")
+		expect(await Bun.file(join(outside, "README.md")).exists()).toBe(true)
 	})
 
 	test("refuses removal when a branch has duplicate Agency owners", async () => {
