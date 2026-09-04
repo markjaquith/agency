@@ -540,10 +540,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								record.data,
 								prQueries.get(record.key),
 							)
-					return (
-						merged === null ||
-						("claim" in record.data && record.data.claim?.state === "active")
-					)
+					return merged === null
 				})
 				const checkoutCandidates = checkoutRecords.flatMap((record) => {
 					const codePath = join(dirname(record.path), "code")
