@@ -271,78 +271,57 @@ export class ContextService extends Effect.Service<ContextService>()(
 
 					if (relative(root, candidate) === "") {
 						const compact = !options.full
-						const discover = <S extends Schema.Schema.AnyNoContext>(
-							id: string,
-							path: string,
-							schema: S,
+						const validation = yield* provideContextServices(
+							workbase.validate(root, { includeDocuments: true }),
+						)
+						const projectDiscoveryDocument = <T>(
+							document: {
+								readonly id: string
+								readonly path: string
+								readonly content: string
+								readonly revision: string
+								readonly data: T
+							},
 							extra: Record<string, string> = {},
 						) =>
 							Effect.gen(function* () {
-								if (!(yield* fs.exists(path))) return null
-								const content = yield* fs.readFile(path)
-								const parsed = yield* Effect.either(
-									parseFrontmatter(content, path),
-								)
-								if (Either.isLeft(parsed)) return null
-								const decoded = decode(schema, parsed.right.data)
-								if (!decoded.ok) return null
+								const body = compact
+									? {}
+									: {
+											body: (yield* parseFrontmatter(
+												document.content,
+												document.path,
+											)).body,
+										}
 								return {
 									...extra,
-									id,
-									path,
-									sha256: documentRevision(content),
-									data: decoded.value,
-									...(compact ? {} : { body: parsed.right.body }),
+									id: document.id,
+									path: document.path,
+									sha256: document.revision,
+									data: document.data,
+									...body,
 								}
 							})
-
-						const epics: unknown[] = []
-						const tasks: unknown[] = []
-						const phases: unknown[] = []
-						const epicRoot = join(root, "epics")
-						if (yield* fs.isDirectory(epicRoot)) {
-							for (const entry of (yield* fs.readDirectory(epicRoot))
-								.filter((item) => item.isDirectory)
-								.sort((a, b) => a.name.localeCompare(b.name))) {
-								const document = yield* discover(
-									entry.name,
-									join(epicRoot, entry.name, "EPIC.md"),
-									EpicFrontmatter,
-								)
-								if (document) epics.push(document)
-							}
-						}
-
-						const taskRoot = join(root, "tasks")
-						if (yield* fs.isDirectory(taskRoot)) {
-							for (const entry of (yield* fs.readDirectory(taskRoot))
-								.filter((item) => item.isDirectory)
-								.sort((a, b) => a.name.localeCompare(b.name))) {
-								const document = yield* discover(
-									entry.name,
-									join(taskRoot, entry.name, "TASK.md"),
-									TaskFrontmatter,
-								)
-								if (document) tasks.push(document)
-
-								const phaseRoot = join(taskRoot, entry.name, "phases")
-								if (!(yield* fs.isDirectory(phaseRoot))) continue
-								for (const phaseEntry of (yield* fs.readDirectory(phaseRoot))
-									.filter((item) => item.isDirectory)
-									.sort((a, b) => a.name.localeCompare(b.name))) {
-									const phase = yield* discover(
-										phaseEntry.name,
-										join(phaseRoot, phaseEntry.name, "PHASE.md"),
-										PhaseFrontmatter,
-										{ taskId: entry.name },
-									)
-									if (phase) phases.push(phase)
-								}
-							}
-						}
-
-						const validation = yield* provideContextServices(
-							workbase.validate(root),
+						const documents = validation.documents!
+						const epics = yield* Effect.all(
+							documents.epics.map((document) =>
+								projectDiscoveryDocument(document),
+							),
+							{ concurrency: "unbounded" },
+						)
+						const tasks = yield* Effect.all(
+							documents.tasks.map((document) =>
+								projectDiscoveryDocument(document),
+							),
+							{ concurrency: "unbounded" },
+						)
+						const phases = yield* Effect.all(
+							[...documents.phasesByTask].flatMap(([taskId, records]) =>
+								records.map((document) =>
+									projectDiscoveryDocument(document, { taskId }),
+								),
+							),
+							{ concurrency: "unbounded" },
 						)
 						return {
 							projection: compact ? "compact" : "complete",
@@ -556,104 +535,74 @@ export class ContextService extends Effect.Service<ContextService>()(
 						})
 					}
 
-					const taskDocuments = new Map<string, Document<TaskData>>()
+					const validation = yield* provideContextServices(
+						workbase.validate(root, { includeDocuments: true }),
+					)
+					const validationDocuments = validation.documents!
+					const taskDocuments = new Map<string, Document<TaskData>>(
+						validationDocuments.tasks.map((document) => [
+							document.id,
+							{
+								id: document.id,
+								path: document.path,
+								sha256: document.revision,
+								data: document.data,
+								body: "",
+							},
+						]),
+					)
 					const phaseDocuments = new Map<string, Document<PhaseData>>()
-					for (const taskRoot of [
-						join(root, "tasks"),
-						join(root, "archive", "tasks"),
-					]) {
-						if (!(yield* fs.isDirectory(taskRoot))) continue
-						const entries = (yield* fs.readDirectory(taskRoot))
-							.filter((entry) => entry.isDirectory)
-							.sort((a, b) => a.name.localeCompare(b.name))
-						const documents = yield* Effect.all(
-							entries.map((entry) =>
-								Effect.gen(function* () {
-									const path = join(taskRoot, entry.name, "TASK.md")
-									let taskDocument: Document<TaskData> | null = null
-									if (yield* fs.exists(path)) {
-										const content = yield* fs.readFile(path)
-										const parsed = yield* Effect.either(
-											parseFrontmatter(content, path),
-										)
-										if (Either.isRight(parsed)) {
-											const decoded = decode(TaskFrontmatter, parsed.right.data)
-											if (decoded.ok) {
-												taskDocument = {
-													id: entry.name,
-													path,
-													sha256: documentRevision(content),
-													data: decoded.value,
-													body: parsed.right.body,
-												}
-											}
-										}
-									}
-
-									const phasesPath = join(taskRoot, entry.name, "phases")
-									if (!(yield* fs.isDirectory(phasesPath))) {
-										return { taskDocument, phaseDocuments: [] }
-									}
-									const phaseEntries = (yield* fs.readDirectory(phasesPath))
-										.filter((item) => item.isDirectory)
-										.sort((a, b) => a.name.localeCompare(b.name))
-									const childDocuments = yield* Effect.all(
-										phaseEntries.map((phaseEntry) =>
-											Effect.gen(function* () {
-												const phasePath = join(
-													phasesPath,
-													phaseEntry.name,
-													"PHASE.md",
-												)
-												if (!(yield* fs.exists(phasePath))) return null
-												const content = yield* fs.readFile(phasePath)
-												const parsed = yield* Effect.either(
-													parseFrontmatter(content, phasePath),
-												)
-												if (Either.isLeft(parsed)) return null
-												const decoded = decode(
-													PhaseFrontmatter,
-													parsed.right.data,
-												)
-												if (!decoded.ok) return null
-												return [
-													`${entry.name}/${phaseEntry.name}`,
-													{
-														id: phaseEntry.name,
-														path: phasePath,
-														sha256: documentRevision(content),
-														data: decoded.value,
-														body: parsed.right.body,
-													},
-												] as const
-											}),
-										),
-										{ concurrency: "unbounded" },
-									)
-									return {
-										taskDocument,
-										phaseDocuments: childDocuments.filter(
-											(document): document is NonNullable<typeof document> =>
-												document !== null,
-										),
-									}
-								}),
-							),
-							{ concurrency: "unbounded" },
-						)
+					for (const [taskId, documents] of validationDocuments.phasesByTask) {
 						for (const document of documents) {
-							if (
-								document.taskDocument &&
-								!taskDocuments.has(document.taskDocument.id)
-							) {
-								taskDocuments.set(
-									document.taskDocument.id,
-									document.taskDocument,
-								)
-							}
-							for (const [key, phaseDocument] of document.phaseDocuments) {
-								if (!phaseDocuments.has(key))
-									phaseDocuments.set(key, phaseDocument)
+							phaseDocuments.set(`${taskId}/${document.id}`, {
+								id: document.id,
+								path: document.path,
+								sha256: document.revision,
+								data: document.data,
+								body: "",
+							})
+						}
+					}
+					if (task && !taskDocuments.has(task.id))
+						taskDocuments.set(task.id, task)
+					if (phase && target.taskId) {
+						phaseDocuments.set(`${target.taskId}/${phase.id}`, phase)
+					}
+					const relevantTaskIds = new Set([
+						...(target.taskId ? [target.taskId] : []),
+						...(epic?.data.tasks.map((child: Dependency) => child.id) ?? []),
+					])
+					for (const taskId of relevantTaskIds) {
+						let document = taskDocuments.get(taskId)
+						if (!document) {
+							const archived = yield* Effect.either(
+								readOptionalDocument(
+									taskId,
+									join(archivedTaskDirectory(root, taskId), "TASK.md"),
+									TaskFrontmatter,
+								),
+							)
+							document = Either.isRight(archived)
+								? (archived.right ?? undefined)
+								: undefined
+							if (document) taskDocuments.set(taskId, document)
+						}
+						if (!document || !("phases" in document.data)) continue
+						for (const child of document.data.phases) {
+							const key = `${taskId}/${child.id}`
+							if (phaseDocuments.has(key)) continue
+							const archived = yield* Effect.either(
+								readOptionalDocument(
+									child.id,
+									join(
+										archivedPhaseDirectory(root, taskId, child.id),
+										"PHASE.md",
+									),
+									PhaseFrontmatter,
+								),
+							)
+							if (Either.isRight(archived) && archived.right) {
+								phaseDocuments.set(key, archived.right)
 							}
 						}
 					}
@@ -720,9 +669,6 @@ export class ContextService extends Effect.Service<ContextService>()(
 						})
 					}
 
-					const validation = yield* provideContextServices(
-						workbase.validate(root),
-					)
 					const relevantPaths = new Set<string>(
 						[epic?.path, task?.path, phase?.path]
 							.filter((path): path is string => Boolean(path))
@@ -1017,9 +963,11 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const codePath = join(entityDirectory, "code")
 					const inspectionWarnings: string[] = []
 					const repositories = new Map(
-						(yield* provideContextServices(repositoryService.list(root))).map(
-							(repository) => [repository.alias, repository],
-						),
+						reviewData
+							? (yield* provideContextServices(
+									repositoryService.list(root),
+								)).map((repository) => [repository.alias, repository])
+							: [],
 					)
 
 					const inspectCheckout = (
@@ -1027,12 +975,18 @@ export class ContextService extends Effect.Service<ContextService>()(
 						checkoutPath: string,
 					) =>
 						Effect.gen(function* (): Generator<any, CheckoutInspection, any> {
-							const materialized = yield* fs.isDirectory(checkoutPath)
-							const listed = yield* runGit(fs, repositoryPath, [
-								"worktree",
-								"list",
-								"--porcelain",
-							])
+							const [materialized, listed, canonicalRoot] = yield* Effect.all(
+								[
+									fs.isDirectory(checkoutPath),
+									runGit(fs, repositoryPath, [
+										"worktree",
+										"list",
+										"--porcelain",
+									]),
+									fs.realPath(root),
+								],
+								{ concurrency: "unbounded" },
+							)
 							if (listed === null) {
 								inspectionWarnings.push(
 									`Unable to inspect worktree registrations for ${repositoryPath}`,
@@ -1040,7 +994,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							}
 							const listedPaths = worktreePaths(listed)
 							const canonicalCheckoutPath = join(
-								yield* fs.realPath(root),
+								canonicalRoot,
 								relative(root, checkoutPath),
 							)
 							let registered =
@@ -1056,21 +1010,25 @@ export class ContextService extends Effect.Service<ContextService>()(
 									dirty: null,
 								}
 							}
-							const checkoutCommit = yield* runGit(fs, checkoutPath, [
-								"rev-parse",
-								"HEAD",
-							])
-							const checkoutBranch = yield* runGit(fs, checkoutPath, [
-								"symbolic-ref",
-								"--quiet",
-								"--short",
-								"HEAD",
-							])
-							const checkoutStatus = yield* runGitText(fs, checkoutPath, [
-								"status",
-								"--porcelain",
-							])
-							const resolvedCheckoutPath = yield* fs.realPath(checkoutPath)
+							const [
+								checkoutCommit,
+								checkoutBranch,
+								checkoutStatus,
+								resolvedCheckoutPath,
+							] = yield* Effect.all(
+								[
+									runGit(fs, checkoutPath, ["rev-parse", "HEAD"]),
+									runGit(fs, checkoutPath, [
+										"symbolic-ref",
+										"--quiet",
+										"--short",
+										"HEAD",
+									]),
+									runGitText(fs, checkoutPath, ["status", "--porcelain"]),
+									fs.realPath(checkoutPath),
+								],
+								{ concurrency: "unbounded" },
+							)
 							registered = registered || listedPaths.has(resolvedCheckoutPath)
 							if (checkoutCommit === null) {
 								inspectionWarnings.push(
@@ -1094,17 +1052,16 @@ export class ContextService extends Effect.Service<ContextService>()(
 								const repositoryPath =
 									repository?.path ?? join(root, "repos", executionData.repo)
 								const checkoutPath = join(codePath, executionData.repo)
-								const branchCommit = yield* backend.resolveRevision(
-									repositoryPath,
-									executionData.branch,
-								)
-								const baseCommit = yield* backend.resolveRevision(
-									repositoryPath,
-									executionData.base,
-								)
-								const checkout = yield* inspectCheckout(
-									repositoryPath,
-									checkoutPath,
+								const [branchCommit, baseCommit, checkout] = yield* Effect.all(
+									[
+										backend.resolveRevision(
+											repositoryPath,
+											executionData.branch,
+										),
+										backend.resolveRevision(repositoryPath, executionData.base),
+										inspectCheckout(repositoryPath, checkoutPath),
+									],
+									{ concurrency: "unbounded" },
 								)
 								if (branchCommit === null) {
 									inspectionWarnings.push(
