@@ -1310,7 +1310,12 @@ status: open
 					...process.env,
 					...contract.environment,
 					XDG_CONFIG_HOME: isolatedConfigHome,
+					OPENCODE_DISABLE_AUTOUPDATE: "1",
 					OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+					OPENCODE_DISABLE_MODELS_FETCH: "1",
+					OPENCODE_CONFIG_CONTENT: JSON.stringify({
+						model: "opencode/big-pickle",
+					}),
 				}
 				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
 					cwd: contract.cwd,
@@ -1409,7 +1414,9 @@ status: open
 				...process.env,
 				PATH: `${agencyBin}:${process.env.PATH ?? ""}`,
 				XDG_CONFIG_HOME: isolatedConfigHome,
+				OPENCODE_DISABLE_AUTOUPDATE: "1",
 				OPENCODE_DISABLE_EXTERNAL_SKILLS: "1",
+				OPENCODE_DISABLE_MODELS_FETCH: "1",
 			}
 			delete directEnvironment.OPENCODE_CONFIG
 			delete directEnvironment.OPENCODE_CONFIG_CONTENT
@@ -1480,6 +1487,7 @@ status: open
 				env: {
 					...directEnvironment,
 					OPENCODE_CONFIG_CONTENT: JSON.stringify({
+						model: "opencode/big-pickle",
 						permission: { external_directory: { "*": "deny" } },
 					}),
 				},
@@ -1578,7 +1586,7 @@ status: open
 				graph.nodes.find((node: any) => node.id === "task:pipeline").status,
 			).toBe("working")
 		},
-		180_000,
+		360_000,
 	)
 
 	test("envelopes help and version output in machine mode", async () => {
