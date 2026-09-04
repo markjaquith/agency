@@ -7,6 +7,25 @@ const expectUsageError = (args: string[], usage: string) => {
 }
 
 describe("strict CLI parsing", () => {
+	test("returns canonical paths without positional values", () => {
+		expect(parseCli(["task", "show", "private-task-id"]).commandPath).toBe(
+			"task/show",
+		)
+		expect(parseCli(["validate", "/private/customer/path"]).commandPath).toBe(
+			"validate",
+		)
+		expect(parseCli(["work", "prepare", "private-task-id"]).commandPath).toBe(
+			"work/prepare",
+		)
+		expect(parseCli(["pr", "view", "private-task-id"]).commandPath).toBe("pr")
+		try {
+			parseCli(["task", "create", "private-task-id"])
+			expect.unreachable()
+		} catch (error) {
+			expect(error).toMatchObject({ commandPath: "task/create" })
+		}
+	})
+
 	test("parses act selectors, dry-run, and JSON options", () => {
 		expect(
 			parseCli([
@@ -363,6 +382,7 @@ describe("strict CLI parsing", () => {
 		const args = ["create", "--title", "two words", "--", "--literal"]
 		expect(parseCli(["--cwd", "/workbase", "pr", ...args])).toEqual({
 			commandName: "pr",
+			commandPath: "pr",
 			args,
 			passthrough: true,
 			values: { cwd: "/workbase" },
@@ -382,6 +402,7 @@ describe("strict CLI parsing", () => {
 			]),
 		).toEqual({
 			commandName: "pr",
+			commandPath: "pr/create",
 			args: ["create", "ship", "release"],
 			values: { draft: true, force: true, json: true },
 		})

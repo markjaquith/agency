@@ -57,7 +57,11 @@ import {
 	successEnvelope,
 	writeEnvelope,
 } from "./src/protocol"
-import { exportUsageEvents, recordUsageEvent } from "./src/usage-log"
+import {
+	exportUsageEvents,
+	recordUsageEvent,
+	usageOutcomeCode,
+} from "./src/usage-log"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -752,9 +756,7 @@ const machineMode = process.argv
 const invocationStartedAt = performance.now()
 const rawArguments = process.argv.slice(2)
 let usageCommandPath = "invalid"
-let usageFlagNames = rawArguments
-	.filter((argument) => argument.startsWith("--"))
-	.map((argument) => argument.slice(2).split("=", 1)[0]!)
+let usageFlagNames: string[] = []
 
 const pushUsageDetails = (error?: unknown) => {
 	if (usageCommandPath !== "push") return {}
@@ -795,17 +797,12 @@ const pushUsageDetails = (error?: unknown) => {
 try {
 	const {
 		commandName,
+		commandPath,
 		args: commandArgs,
 		passthrough,
 		values,
 	} = parseCli(rawArguments)
-	usageCommandPath =
-		[commandName, commandArgs[0]]
-			.filter(
-				(part): part is string =>
-					typeof part === "string" && part.length > 0 && !part.startsWith("-"),
-			)
-			.join("/") || "root"
+	usageCommandPath = commandPath
 	usageFlagNames = Object.entries(values)
 		.filter(([, value]) => value !== undefined && value !== false)
 		.map(([name]) => name)
@@ -823,6 +820,7 @@ try {
 				flagNames: usageFlagNames,
 				durationMs: performance.now() - invocationStartedAt,
 				outcome: "success",
+				outcomeCode: "SUCCESS",
 				exitStatus: 0,
 			},
 			VERSION,
@@ -841,6 +839,7 @@ try {
 				flagNames: usageFlagNames,
 				durationMs: performance.now() - invocationStartedAt,
 				outcome: exitStatus === 0 ? "success" : "failure",
+				outcomeCode: exitStatus === 0 ? "SUCCESS" : "NONZERO_EXIT",
 				exitStatus,
 			},
 			VERSION,
@@ -884,18 +883,28 @@ try {
 			flagNames: usageFlagNames,
 			durationMs: performance.now() - invocationStartedAt,
 			outcome: exitStatus === 0 ? "success" : "failure",
+			outcomeCode: exitStatus === 0 ? "SUCCESS" : "NONZERO_EXIT",
 			exitStatus,
 			...pushUsageDetails(),
 		},
 		VERSION,
 	)
 } catch (error) {
+	if (
+		typeof error === "object" &&
+		error !== null &&
+		"commandPath" in error &&
+		typeof error.commandPath === "string"
+	) {
+		usageCommandPath = error.commandPath
+	}
 	await recordUsageEvent(
 		{
 			commandPath: usageCommandPath,
 			flagNames: usageFlagNames,
 			durationMs: performance.now() - invocationStartedAt,
 			outcome: "failure",
+			outcomeCode: usageOutcomeCode(error),
 			exitStatus: 1,
 			...pushUsageDetails(error),
 		},

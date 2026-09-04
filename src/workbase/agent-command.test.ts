@@ -114,6 +114,7 @@ describe("agent commands", () => {
 
 		expect(environment).toMatchObject({
 			AGENCY_AGENT: "custom",
+			AGENCY_INVOCATION_SOURCE: "agent",
 			AGENCY_SESSION_ID: "session-1",
 			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:phase/task/build",

@@ -26,14 +26,20 @@ Agency records privacy-safe CLI usage events locally so command journeys,
 failures, and flag adoption can be analyzed. Events are stored in SQLite at
 `$XDG_STATE_HOME/agency/usage.sqlite3` (or
 `~/.local/state/agency/usage.sqlite3`) and retained for 90 days by default.
-Each event contains the normalized command path, flag names, timing, outcome,
-Agency version, and ordered `AGENCY_SESSION_ID` correlation. Raw arguments,
+Each event contains the parser-derived command and subcommand path, flag names,
+timing, a bounded outcome code, Agency version, invocation source, explicit test
+attribution, and ordered journey correlation. Journey IDs are one-way hashes of
+`AGENCY_SESSION_ID`; raw session IDs, positional arguments, entity IDs, paths,
 flag values, free-form input, and the current directory are never recorded.
 
 Export events as JSON Lines with `agency usage export`. Set
 `AGENCY_NO_USAGE_LOG=1` to opt out, `AGENCY_USAGE_RETENTION_DAYS` to change
-retention, or `AGENCY_USAGE_DB` to select a different database path. Logging is
-best effort and never changes command output or exit behavior.
+retention, or `AGENCY_USAGE_DB` to select a different database path. Expired
+events are pruned on every read and write. Set `AGENCY_INVOCATION_SOURCE` to one
+of `human`, `agent`, or `automation`, and set `AGENCY_USAGE_TEST=1` for explicit
+test attribution. Logging is best effort and never changes command output or
+exit behavior. Databases created by versions before this privacy boundary are
+cleared because their command paths may contain positional values.
 
 ## Core Model
 
