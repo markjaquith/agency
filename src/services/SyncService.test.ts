@@ -4,6 +4,7 @@ import { chmod, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { PullRequestService } from "./PullRequestService"
+import { ReviewService } from "./ReviewService"
 import { SyncService } from "./SyncService"
 import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
@@ -1119,6 +1120,134 @@ exit 9
 		expect(
 			result.warnings.filter(
 				(warning) => warning.kind === "pr-discovery-unavailable",
+			),
+		).toEqual([])
+	})
+
+	test("inspects workspace dirtiness concurrently", async () => {
+		for (const id of ["first", "second", "third"]) {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id,
+								ticketUrl: null,
+								repo: "agency",
+								branch: `feat/${id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) => service.materialize(id, undefined, root)),
+				),
+			)
+		}
+
+		const barrier = join(root, "status-barrier")
+		await mkdir(barrier)
+		const realGit = Bun.which("git")!
+		await Bun.write(
+			join(root, "bin", "git"),
+			`#!/bin/sh
+case "$*" in
+*" status --porcelain"*)
+  workspace=""
+  previous=""
+  for argument in "$@"; do
+    if [ "$previous" = "-C" ]; then workspace="$argument"; fi
+    previous="$argument"
+  done
+  id="$(basename "$(dirname "$(dirname "$workspace")")")"
+  touch ${JSON.stringify(barrier)}/"$id"
+  attempt=0
+  while [ "$attempt" -lt 200 ]; do
+    set -- ${JSON.stringify(barrier)}/*
+    if [ -e "$1" ] && [ "$#" -ge 3 ]; then exec ${JSON.stringify(realGit)} -C "$workspace" status --porcelain; fi
+    attempt=$((attempt + 1))
+    sleep 0.01
+  done
+  echo "workspace inspections were serialized" >&2
+  exit 9
+  ;;
+esac
+exec ${JSON.stringify(realGit)} "$@"
+`,
+		)
+		await chmod(join(root, "bin", "git"), 0o755)
+
+		const result = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(
+			result.warnings.filter(
+				(warning) => warning.kind === "status-inspection-failed",
+			),
+		).toEqual([])
+	})
+
+	test("queries review sources concurrently", async () => {
+		const source = join(root, "source")
+		for (const id of ["first", "second", "third"]) {
+			const ref = `review-${id}`
+			await git(["branch", ref, "main"], source)
+			const review = await runTestEffect(
+				ReviewService.pipe(
+					Effect.flatMap((service) => service.resolve("agency", { ref }, root)),
+				),
+			)
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create({ id, ticketUrl: null, review }, root),
+					),
+				),
+			)
+		}
+
+		const barrier = join(root, "review-query-barrier")
+		await mkdir(barrier)
+		const realGit = Bun.which("git")!
+		await Bun.write(
+			join(root, "bin", "git"),
+			`#!/bin/sh
+case "$*" in
+*"ls-remote"*)
+  ref=""
+  for argument in "$@"; do ref="$argument"; done
+  id="\${ref##*-}"
+  touch ${JSON.stringify(barrier)}/"$id"
+  attempt=0
+  while [ "$attempt" -lt 200 ]; do
+    set -- ${JSON.stringify(barrier)}/*
+    if [ -e "$1" ] && [ "$#" -ge 3 ]; then printf '%s\t%s\n' '0123456789012345678901234567890123456789' "$ref"; exit 0; fi
+    attempt=$((attempt + 1))
+    sleep 0.01
+  done
+  echo "review source queries were serialized" >&2
+  exit 9
+  ;;
+esac
+exec ${JSON.stringify(realGit)} "$@"
+`,
+		)
+		await chmod(join(root, "bin", "git"), 0o755)
+
+		const result = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) => service.reconcile({ cwd: root })),
+			),
+		)
+		expect(
+			result.warnings.filter(
+				(warning) => warning.kind === "review-source-unavailable",
 			),
 		).toEqual([])
 	})
