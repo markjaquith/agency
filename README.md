@@ -1108,13 +1108,21 @@ without creating a pull request. It requires a valid, registered writable
 checkout in `working` state, fetches the configured delivery remote, verifies
 that the declared base is in the publication history, validates every outgoing
 commit's description, author, and conflict state, and refuses non-fast-forward
-updates.
+updates. Local commit validation runs before network access when cached remote
+state is available, and the network fetch is limited to the declared base and
+delivery branch.
 
 YAML `branch` must exactly match the checked-out local branch, the worktree must
 be clean, and `HEAD` is pushed with upstream tracking. Missing commit descriptions
 or authors stop publication with exact commits and remediation commands. Push
 reports deterministic fetch, inspection, validation, and publication progress on
-stderr, including while `--json` reserves stdout for one machine result.
+stderr, including while `--json` reserves stdout for one machine result. Git
+authentication is non-interactive. Fetch defaults to a 30-second deadline and
+one retry for transient failures; push defaults to a 120-second deadline. Set
+`AGENCY_PUSH_FETCH_TIMEOUT_MS` or `AGENCY_PUSH_TIMEOUT_MS` to positive millisecond
+values to override them. After a failed or timed-out push, Agency compares the
+exact remote delivery ref with the expected tip before reporting success, a safe
+retryable failure, or an unknown publication outcome.
 
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
 including readiness checks and durable PR recording. It accepts draft, title,

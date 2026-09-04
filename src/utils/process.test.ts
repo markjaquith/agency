@@ -64,4 +64,14 @@ describe("spawnProcess", () => {
 		expect(result.stderr).toContain("err:0:")
 		expect(result.stderr).toContain(`err:${lineCount - 1}:`)
 	})
+
+	test("terminates timed-out process groups", async () => {
+		const startedAt = performance.now()
+		await expect(
+			Effect.runPromise(
+				spawnProcess(["sh", "-c", "sleep 30 & wait"], { timeoutMs: 25 }),
+			),
+		).rejects.toThrow("Process timed out")
+		expect(performance.now() - startedAt).toBeLessThan(1_000)
+	})
 })

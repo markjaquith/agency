@@ -161,4 +161,28 @@ describe("machine protocol", () => {
 			},
 		})
 	})
+
+	test("uses dynamic protocol metadata without duplicating it in fields", () => {
+		expect(
+			errorEnvelope({
+				_tag: "PushError",
+				message: "remote timed out",
+				protocolCode: "PUSH_TIMEOUT",
+				retryable: true,
+				remediation: "Retry after checking connectivity.",
+				category: "timeout",
+				stage: "fetch",
+			}),
+		).toEqual({
+			version: 1,
+			ok: false,
+			error: {
+				code: "PUSH_TIMEOUT",
+				message: "remote timed out",
+				fields: { category: "timeout", stage: "fetch" },
+				retryable: true,
+				remediation: "Retry after checking connectivity.",
+			},
+		})
+	})
 })

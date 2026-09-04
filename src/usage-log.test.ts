@@ -24,6 +24,13 @@ describe("usage logging", () => {
 					durationMs: 12.4,
 					outcome: "success",
 					exitStatus: 0,
+					...(commandPath === "context"
+						? {
+								vcs: "git" as const,
+								terminalStage: "publish",
+								category: "success",
+							}
+						: {}),
 				},
 				"1.2.3",
 				env,
@@ -35,7 +42,7 @@ describe("usage logging", () => {
 		)
 		expect(await exportUsageEvents(env)).toEqual([
 			expect.objectContaining({
-				version: 1,
+				version: 2,
 				sessionId: "session-1",
 				sessionSequence: 1,
 				agencyVersion: "1.2.3",
@@ -48,6 +55,9 @@ describe("usage logging", () => {
 			expect.objectContaining({
 				sessionSequence: 2,
 				commandPath: "context",
+				vcs: "git",
+				terminalStage: "publish",
+				category: "success",
 			}),
 		])
 	})

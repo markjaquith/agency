@@ -198,6 +198,36 @@ const errorTag = (error: unknown): string | undefined => {
 	return undefined
 }
 
+const unwrapEffectError = (error: unknown): unknown => {
+	const seen = new Set<object>()
+	const visit = (value: unknown): unknown => {
+		if (typeof value !== "object" || value === null || seen.has(value))
+			return null
+		seen.add(value)
+		if ("protocolCode" in value && typeof value.protocolCode === "string") {
+			return value
+		}
+		for (const nested of [
+			...Object.values(value),
+			...Object.getOwnPropertySymbols(value).map(
+				(symbol) => (value as Record<symbol, unknown>)[symbol],
+			),
+		]) {
+			const found = visit(nested)
+			if (found) return found
+		}
+		if (
+			"_tag" in value &&
+			typeof value._tag === "string" &&
+			value._tag.endsWith("Error")
+		) {
+			return value
+		}
+		return null
+	}
+	return visit(error) ?? error
+}
+
 const errorMessage = (error: unknown): string => {
 	if (
 		typeof error === "object" &&
@@ -219,6 +249,9 @@ const errorFields = (error: unknown): Record<string, unknown> => {
 				key !== "name" &&
 				key !== "message" &&
 				key !== "cause" &&
+				key !== "protocolCode" &&
+				key !== "retryable" &&
+				key !== "remediation" &&
 				value !== undefined,
 		),
 	)
@@ -231,17 +264,36 @@ export const successEnvelope = (result: unknown): SuccessEnvelope => ({
 })
 
 export const errorEnvelope = (error: unknown): ErrorEnvelope => {
-	const metadata = errorMetadata[errorTag(error) ?? ""] ?? {
+	const normalized = unwrapEffectError(error)
+	const defaults = errorMetadata[errorTag(normalized) ?? ""] ?? {
 		code: "COMMAND_FAILED",
 		retryable: false,
 	}
+	const dynamic =
+		typeof normalized === "object" && normalized !== null
+			? {
+					...("protocolCode" in normalized &&
+					typeof normalized.protocolCode === "string"
+						? { code: normalized.protocolCode }
+						: {}),
+					...("retryable" in normalized &&
+					typeof normalized.retryable === "boolean"
+						? { retryable: normalized.retryable }
+						: {}),
+					...("remediation" in normalized &&
+					typeof normalized.remediation === "string"
+						? { remediation: normalized.remediation }
+						: {}),
+				}
+			: {}
 	return {
 		version: PROTOCOL_VERSION,
 		ok: false,
 		error: {
-			...metadata,
-			message: errorMessage(error),
-			fields: errorFields(error),
+			...defaults,
+			...dynamic,
+			message: errorMessage(normalized),
+			fields: errorFields(normalized),
 		},
 	}
 }

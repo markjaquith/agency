@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite"
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 
-const USAGE_EVENT_VERSION = 1 as const
+const USAGE_EVENT_VERSION = 2 as const
 const DEFAULT_RETENTION_DAYS = 90
 
 export interface UsageEvent {
@@ -11,6 +11,9 @@ export interface UsageEvent {
 	readonly durationMs: number
 	readonly exitStatus: number
 	readonly outcome: "success" | "failure"
+	readonly vcs?: "git"
+	readonly terminalStage?: string
+	readonly category?: string
 }
 
 const stateDirectory = (env: NodeJS.ProcessEnv) =>
@@ -50,6 +53,13 @@ const openDatabase = async (env: NodeJS.ProcessEnv) => {
 			exit_status INTEGER NOT NULL
 		)
 	`)
+	for (const column of ["vcs", "terminal_stage", "category"]) {
+		try {
+			database.run(`ALTER TABLE usage_events ADD COLUMN ${column} TEXT`)
+		} catch {
+			// Existing databases already have migrated columns.
+		}
+	}
 	database.run(
 		"CREATE INDEX IF NOT EXISTS usage_events_session ON usage_events(session_id, session_sequence)",
 	)
@@ -74,11 +84,11 @@ export async function recordUsageEvent(
 					INSERT INTO usage_events (
 						event_version, session_id, session_sequence, occurred_at,
 						agency_version, command_path, flag_names, duration_ms,
-						outcome, exit_status
+						outcome, exit_status, vcs, terminal_stage, category
 					) VALUES (
 						?, ?,
 						(SELECT COALESCE(MAX(session_sequence), 0) + 1 FROM usage_events WHERE session_id = ?),
-						?, ?, ?, ?, ?, ?, ?
+						?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 					)
 				`)
 			.run(
@@ -92,6 +102,9 @@ export async function recordUsageEvent(
 				Math.max(0, Math.round(event.durationMs)),
 				event.outcome,
 				event.exitStatus,
+				event.vcs ?? null,
+				event.terminalStage ?? null,
+				event.category ?? null,
 			)
 		if (Math.random() < 0.01) {
 			const days = retentionDays(env)
@@ -119,7 +132,7 @@ export async function exportUsageEvents(
 			.query(`
 				SELECT event_version, session_id, session_sequence, occurred_at,
 					agency_version, command_path, flag_names, duration_ms,
-					outcome, exit_status
+					outcome, exit_status, vcs, terminal_stage, category
 				FROM usage_events ORDER BY occurred_at, id
 			`)
 			.all() as Record<string, string | number>[]
@@ -134,6 +147,11 @@ export async function exportUsageEvents(
 			durationMs: row.duration_ms,
 			outcome: row.outcome,
 			exitStatus: row.exit_status,
+			...(row.vcs == null ? {} : { vcs: row.vcs }),
+			...(row.terminal_stage == null
+				? {}
+				: { terminalStage: row.terminal_stage }),
+			...(row.category == null ? {} : { category: row.category }),
 		}))
 	} catch {
 		return []

@@ -827,6 +827,42 @@ let usageFlagNames = rawArguments
 	.filter((argument) => argument.startsWith("--"))
 	.map((argument) => argument.slice(2).split("=", 1)[0]!)
 
+const pushUsageDetails = (error?: unknown) => {
+	if (usageCommandPath !== "push") return {}
+	const seen = new Set<object>()
+	const visit = (
+		value: unknown,
+	): { stage?: string; category?: string } | null => {
+		if (typeof value !== "object" || value === null || seen.has(value))
+			return null
+		seen.add(value)
+		if (
+			"stage" in value &&
+			typeof value.stage === "string" &&
+			"category" in value &&
+			typeof value.category === "string"
+		) {
+			return { stage: value.stage, category: value.category }
+		}
+		for (const nestedValue of [
+			...Object.values(value),
+			...Object.getOwnPropertySymbols(value).map(
+				(symbol) => (value as Record<symbol, unknown>)[symbol],
+			),
+		]) {
+			const nested = visit(nestedValue)
+			if (nested) return nested
+		}
+		return null
+	}
+	const details = error ? visit(error) : null
+	return {
+		vcs: "git" as const,
+		terminalStage: details?.stage ?? (error ? "unknown" : "publish"),
+		category: details?.category ?? (error ? "unknown" : "success"),
+	}
+}
+
 try {
 	const {
 		commandName,
@@ -920,6 +956,7 @@ try {
 			durationMs: performance.now() - invocationStartedAt,
 			outcome: exitStatus === 0 ? "success" : "failure",
 			exitStatus,
+			...pushUsageDetails(),
 		},
 		VERSION,
 	)
@@ -931,6 +968,7 @@ try {
 			durationMs: performance.now() - invocationStartedAt,
 			outcome: "failure",
 			exitStatus: 1,
+			...pushUsageDetails(error),
 		},
 		VERSION,
 	)
