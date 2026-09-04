@@ -19,16 +19,18 @@ export const repositoryFromRemote = (remote: string) =>
 		.replace(/\/$/, "")
 
 export const resolveGitHubCreateCommand = ({
+	repository,
 	base,
 	draft,
 	title,
 	head,
 	labels = [],
 }: {
+	readonly repository: string
 	readonly base: string
 	readonly draft: boolean
 	readonly title?: string
-	readonly head?: string
+	readonly head: string
 	readonly labels?: readonly string[]
 }) => ({
 	argv: [
@@ -36,9 +38,12 @@ export const resolveGitHubCreateCommand = ({
 		"pr",
 		"create",
 		...(title ? ["--fill", "--title", title] : ["--fill"]),
+		"--repo",
+		repository,
 		"--base",
 		base,
-		...(head ? ["--head", head] : []),
+		"--head",
+		head,
 		...(draft ? ["--draft"] : []),
 		...labels.flatMap((label) => ["--label", label]),
 	],

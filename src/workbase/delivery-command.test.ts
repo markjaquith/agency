@@ -34,24 +34,19 @@ describe("delivery commands", () => {
 
 	test("builds the default GitHub create command", () => {
 		const input = {
+			repository: "example/agency",
 			base: "main",
 			draft: false,
+			head: "feat/example",
 		} as const
 		expect(resolveGitHubCreateCommand(input)).toEqual({
-			argv: ["gh", "pr", "create", "--fill", "--base", "main"],
-			environment: {},
-		})
-		expect(
-			resolveGitHubCreateCommand({
-				...input,
-				head: "feat/example",
-			}),
-		).toEqual({
 			argv: [
 				"gh",
 				"pr",
 				"create",
 				"--fill",
+				"--repo",
+				"example/agency",
 				"--base",
 				"main",
 				"--head",
@@ -74,6 +69,8 @@ describe("delivery commands", () => {
 				"--fill",
 				"--title",
 				"Requested",
+				"--repo",
+				"example/agency",
 				"--base",
 				"main",
 				"--head",

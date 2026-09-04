@@ -15,11 +15,15 @@ import type { PullRequestRecord } from "../workbase/schemas"
 import {
 	normalizePullRequestRecord,
 	parsePullRequestRecord,
+	recordFromGitHubJson,
 	recordFromGitHubUrl,
 	repositoryFromRemote,
 	resolveDeliveryCommand,
 	resolveGitHubCreateCommand,
 } from "../workbase/delivery-command"
+
+const GITHUB_PR_FIELDS =
+	"number,state,isDraft,headRefName,baseRefName,headRepository,url,mergedAt,mergeable"
 
 class PullRequestError extends Data.TaggedError("PullRequestError")<{
 	readonly message: string
@@ -205,6 +209,84 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						})
 					}
 					const repository = repositoryFromRemote(remoteUrl)
+					const isGitHubRepository = /^[^/]+\/[^/]+$/.test(repository)
+					const discoverGitHubPullRequest = () =>
+						Effect.gen(function* () {
+							const listed = yield* fs.runCommand(
+								[
+									"gh",
+									"pr",
+									"list",
+									"--repo",
+									repository,
+									"--head",
+									execution.branch,
+									"--base",
+									execution.base,
+									"--state",
+									"all",
+									"--json",
+									GITHUB_PR_FIELDS,
+								],
+								{ cwd: workspace.writablePath!, captureOutput: true },
+							)
+							if (listed.exitCode !== 0) {
+								return yield* new PullRequestError({
+									message: `Failed to discover existing pull requests: ${listed.stderr}`,
+								})
+							}
+							const records = yield* Effect.try({
+								try: () => {
+									const parsed: unknown = JSON.parse(listed.stdout)
+									if (!Array.isArray(parsed)) {
+										throw new Error(
+											"GitHub CLI did not return a pull request list",
+										)
+									}
+									return parsed.map((value) =>
+										recordFromGitHubJson(value as Record<string, unknown>),
+									)
+								},
+								catch: (cause) =>
+									new PullRequestError({
+										message:
+											cause instanceof Error ? cause.message : String(cause),
+									}),
+							})
+							const matches = records.filter(
+								(record) =>
+									(!isGitHubRepository ||
+										(record.repository.toLowerCase() ===
+											repository.toLowerCase() &&
+											record.headRepository?.toLowerCase() ===
+												repository.toLowerCase() &&
+											record.baseRepository?.toLowerCase() ===
+												repository.toLowerCase())) &&
+									record.headBranch === execution.branch &&
+									record.baseBranch === execution.base,
+							)
+							if (matches.length > 1) {
+								return yield* new PullRequestError({
+									message: `Multiple pull requests match '${execution.branch}' -> '${execution.base}'`,
+								})
+							}
+							return matches[0] ?? null
+						})
+					const recoverGitHubPullRequest = () =>
+						discoverGitHubPullRequest().pipe(
+							Effect.catchAll(() => Effect.succeed(null)),
+						)
+					if (!config.delivery) {
+						const existing = yield* discoverGitHubPullRequest()
+						if (existing) {
+							return yield* service.setRecord(
+								taskId,
+								phaseId,
+								existing,
+								workspace.root,
+							)
+						}
+					}
 					const resolved = config.delivery
 						? resolveDeliveryCommand(config.delivery, "create", {
 								repository,
@@ -215,10 +297,11 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								identifier: "",
 							})
 						: resolveGitHubCreateCommand({
+								repository,
 								base: execution.base,
 								draft,
 								title: options.title,
-								head: options.head,
+								head: execution.branch,
 								labels: options.labels,
 							})
 					const created = yield* fs.runCommand(resolved.argv, {
@@ -227,38 +310,79 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						env: resolved.environment,
 					})
 					if (created.exitCode !== 0) {
+						if (!config.delivery) {
+							const recovered = yield* recoverGitHubPullRequest()
+							if (recovered) {
+								return yield* service.setRecord(
+									taskId,
+									phaseId,
+									recovered,
+									workspace.root,
+								)
+							}
+						}
 						return yield* new PullRequestError({
 							message: `Failed to create pull request: ${created.stderr}`,
 						})
 					}
-					const record = yield* Effect.try({
-						try: () => {
-							if (config.delivery) return parsePullRequestRecord(created.stdout)
-							const url = created.stdout.split(/\s+/).find((value) => {
-								try {
-									recordFromGitHubUrl(value)
-									return true
-								} catch {
-									return false
+					const parsedRecord = yield* Effect.either(
+						Effect.try({
+							try: () => {
+								if (config.delivery)
+									return parsePullRequestRecord(created.stdout)
+								const url = created.stdout.split(/\s+/).find((value) => {
+									try {
+										recordFromGitHubUrl(value)
+										return true
+									} catch {
+										return false
+									}
+								})
+								if (!url)
+									throw new Error(
+										"GitHub CLI did not return a pull request URL",
+									)
+								const normalized = normalizePullRequestRecord(url)
+								if (
+									isGitHubRepository &&
+									normalized.repository.toLowerCase() !==
+										repository.toLowerCase()
+								) {
+									throw new Error(
+										"GitHub CLI returned a pull request for the wrong repository",
+									)
 								}
-							})
-							if (!url)
-								throw new Error("GitHub CLI did not return a pull request URL")
-							const normalized = normalizePullRequestRecord(url)
-							return {
-								...normalized,
-								headRepository: repository,
-								headBranch: execution.branch,
-								baseRepository: normalized.repository,
-								baseBranch: execution.base,
-								draft,
+								return {
+									...normalized,
+									headRepository: repository,
+									headBranch: execution.branch,
+									baseRepository: normalized.repository,
+									baseBranch: execution.base,
+									draft,
+								}
+							},
+							catch: (cause) =>
+								new PullRequestError({
+									message:
+										cause instanceof Error ? cause.message : String(cause),
+								}),
+						}),
+					)
+					if (parsedRecord._tag === "Left") {
+						if (!config.delivery) {
+							const recovered = yield* recoverGitHubPullRequest()
+							if (recovered) {
+								return yield* service.setRecord(
+									taskId,
+									phaseId,
+									recovered,
+									workspace.root,
+								)
 							}
-						},
-						catch: (cause) =>
-							new PullRequestError({
-								message: cause instanceof Error ? cause.message : String(cause),
-							}),
-					})
+						}
+						return yield* parsedRecord.left
+					}
+					const record = parsedRecord.right
 					if (
 						config.delivery &&
 						(record.provider !== config.delivery.provider ||
