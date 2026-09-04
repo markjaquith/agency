@@ -262,7 +262,11 @@ export const runLifecycleTransaction = ({
 					})
 				}
 			} catch (cause) {
-				if (cause instanceof LifecycleTransactionError) throw cause
+				if (
+					cause instanceof LifecycleTransactionError ||
+					cause instanceof RevisionConflictError
+				)
+					throw cause
 				const rollbackErrors: unknown[] = []
 				for (const step of [...completed].reverse()) {
 					if (!step.rollback) continue

@@ -224,40 +224,6 @@ describe("ReadinessService", () => {
 			readiness.guardWorkTarget("execution-unit:phase/ship/implement", root),
 		)
 
-		await write(
-			root,
-			"tasks/ship/phases/implement/PHASE.md",
-			`---
-repo: agency
-branch: feat/implement
-base: main
-pr: null
-status: working
-claim:
-  claimant: orchestrator
-  agent: opencode
-  sessionId: session-1
-  startedAt: 2026-07-20T00:00:00.000Z
-  targetRevision: ${"a".repeat(64)}
-  state: active
----
-
-# Execution
-`,
-		)
-		expect(
-			await service((readiness) => readiness.getWorkTargetIds(root)),
-		).not.toContain("execution-unit:phase/ship/implement")
-		await expect(
-			service((readiness) =>
-				readiness.guardWorkTarget(
-					"execution-unit:phase/ship/implement",
-					root,
-					true,
-				),
-			),
-		).rejects.toThrow("active claim")
-
 		const blocked = await service((readiness) =>
 			Effect.either(readiness.guardWorkTarget("phase:ship/verify", root)),
 		)

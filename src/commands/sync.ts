@@ -125,7 +125,7 @@ export const help = `
 Usage: agency sync [<task-id> [phase-id]] [--dry-run] [--json]
 
 Compare portable repository declarations and execution state with local Git
-repositories, worktrees, branches, references, claims, and pull requests.
+repositories, worktrees, branches, references, and pull requests.
 Safe reconciliation transitions are applied by default.
 When a task or phase is provided, only that target and its repositories are
 queried or reconciled. Task scope includes all phases of a multi-phase task.
@@ -135,7 +135,7 @@ Options:
   --json                    Output one versioned machine result
 
 Sync may materialize declared repositories and unambiguous missing checkouts,
-adopt legacy repositories with portable origins, release expired claims,
-record a uniquely matched PR, and mark merged work done. Dirty, stale, or
+adopt legacy repositories with portable origins, record a uniquely matched PR,
+and mark merged work done. Dirty, stale, or
 conflicting checkouts are always left unresolved.
 `

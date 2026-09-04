@@ -6,9 +6,7 @@ export interface AgentCommandVariables {
 	readonly target: string
 	readonly task: string
 	readonly phase: string
-	readonly claimant: string
 	readonly sessionId: string
-	readonly claimRevision: string
 }
 
 interface AgentDefinition {
@@ -25,9 +23,7 @@ const PLACEHOLDERS = new Set<keyof AgentCommandVariables>([
 	"target",
 	"task",
 	"phase",
-	"claimant",
 	"sessionId",
-	"claimRevision",
 ])
 
 const BUILTIN_AGENTS: Readonly<Record<string, AgentDefinition>> = {
@@ -122,9 +118,7 @@ export const agentEnvironment = (
 	variables: AgentCommandVariables,
 ): Record<string, string> => ({
 	AGENCY_AGENT: agent,
-	AGENCY_CLAIMANT: variables.claimant,
 	AGENCY_SESSION_ID: variables.sessionId,
-	AGENCY_CLAIM_REVISION: variables.claimRevision,
 	AGENCY_WORKBASE: variables.workbase,
 	AGENCY_TARGET: variables.target,
 	AGENCY_TASK_ID: variables.task,

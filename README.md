@@ -336,19 +336,18 @@ Custom agents are direct argv commands, never shell snippets:
 ```
 
 Available placeholders are `{prompt}`, `{workbase}`, `{target}`, `{task}`,
-`{phase}`, `{claimant}`, `{sessionId}`, and `{claimRevision}`. Task and phase
+`{phase}`, and `{sessionId}`. Task and phase
 placeholders are empty when they do not apply. `{prompt}` is empty unless
 `--auto` is set. If `resumeCommand` is omitted, the fresh command is also used
 for resumed sessions. If `autoResumeCommand` is omitted, `autoCommand` is used;
 configured agents without `autoCommand` reject `--auto`.
 
-Every agent receives the same `AGENCY_AGENT`, `AGENCY_CLAIMANT`,
-`AGENCY_SESSION_ID`, `AGENCY_CLAIM_REVISION`, `AGENCY_WORKBASE`, `AGENCY_TARGET`,
+Every agent receives the same `AGENCY_AGENT`, `AGENCY_SESSION_ID`,
+`AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
 Execution-unit agents also receive `AGENCY_WRITABLE_CHECKOUT` with the
 authoritative writable checkout path.
-`AGENCY_CLAIM_REVISION` is empty for local `agency work` launches.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
 Autonomous prompts begin `Agency worker launch target: <target>.`, carrying the
 same canonical target as `AGENCY_TARGET`. This is the process-local fallback for
@@ -624,8 +623,8 @@ untargeted `agency pr` invocations leave command semantics to `gh`.
 
 `agency sync` first compares portable repository declarations with local
 materializations, then compares every execution declaration with local branch
-and worktree registration, checkout dirtiness, resolved reference commits, claim
-expiry, and pull request state, merge state, and mergeability. It reports
+and worktree registration, checkout dirtiness, resolved reference commits, and
+pull request state, merge state, and mergeability. It reports
 structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default mode applies safe reconciliation transitions; `--dry-run` is explicitly
 observational.
@@ -639,13 +638,12 @@ phase. Scoped sync does not query, materialize, or reconcile unrelated work.
 - materialize declared but missing repositories from their canonical remotes;
 - adopt legacy materializations only when they have an unambiguous portable origin;
 - materialize missing checkouts when no registration, branch, or path conflicts;
-- release an active claim only after its declared expiry has passed;
 - record or refresh a single PR whose head and base match the declaration; and
-- mark work done after its authoritative PR is merged and no active claim remains.
+- mark work done after its authoritative PR is merged.
 
 Apply never overwrites linked or invalid repositories, repairs remote drift,
 modifies dirty checkouts, moves worktrees, switches branches, resets reference
-commits, chooses among conflicting remotes or PRs, or bypasses active claims.
+commits, or chooses among conflicting remotes or PRs.
 Those conditions remain visible in `warnings` or `unresolved` with a suggested
 action.
 
@@ -836,8 +834,8 @@ fork pull requests exposed through that ref. Review workspaces contain one
 detached checkout and no writable branch. Source movement is observed separately
 from the pin and applied only by `review refresh`; sync, doctor, work, cleanup,
 and archive never move the pin implicitly. Dirty or structurally unexpected
-review checkouts block refresh and cleanup. Review tasks support normal status
-and claim lifecycle, but reject phase conversion and delivery PR operations.
+review checkouts block refresh and cleanup. Review tasks support the normal status
+lifecycle, but reject phase conversion and delivery PR operations.
 Each active or archived review task owns one internal task-scoped pin ref. A
 refresh advances that ref transactionally; failed creation removes it. Archiving
 retains the pin so a deleted source can still be restored and inspected.
@@ -926,23 +924,20 @@ writing anything.
 
 Single-phase tasks and phases store status in YAML. New execution units start
 `open`, and `agency work` marks the selected execution unit `working` immediately
-before launch. Running `agency work` again can relaunch unclaimed `working` work.
+before launch. Running `agency work` again can relaunch `working` work.
 By default, `done` requires an authoritative merged pull request and is applied
 by `agency sync`. Work whose intended outcome genuinely requires no pull
 request may instead use an explicit `--no-pull-request --summary <text>` status
 transition. Agency records the summary, completion time, and optional evidence
 URL durably; reopening removes that evidence. This exceptional path refuses work
 that already has a recorded pull request.
-Use explicit claims only when an external orchestrator needs coordinated
-ownership. The interactive work selector displays status markers before
-execution units. Existing working and delegated work may be released to `open`
-or assigned a terminal outcome. Done and dropped work are terminal and may only
+The interactive work selector displays status markers before execution units.
+Existing working and delegated work may be returned to `open` or assigned a
+terminal outcome. Done and dropped work are terminal and may only
 remain unchanged or transition to open; reopen terminal work before changing its
 outcome.
 
 `delegated` remains readable for existing workbases but cannot be newly assigned.
-Delegation is now explicit: the claimant identifies the orchestrator and the
-agent identifies the assigned agent.
 
 Human list output is a compact table with lifecycle, readiness, parent,
 repository, branch, recorded PR, and worktree state where applicable. List and
@@ -950,37 +945,6 @@ status views accept composable `--status <status>` and `--repository <alias>`
 filters, plus `--ready`, `--blocked`, `--pr`, and `--no-pr`. Status and repository
 filters are repeatable. Rows follow task and phase declaration order; plain text
 labels remain complete without color or icon fonts.
-
-### Claims
-
-Claim mutations require the SHA-256 revision exposed by `agency context` or
-`agency graph`. Every operation compares that revision while holding an exclusive
-document lock and atomically replaces the execution document.
-
-```text
-agency claim <task-id> [phase-id] --claimant <id> --agent <id>
-  --session-id <id> --revision <sha256> [--expires-at <timestamp>] [--json]
-agency release <task-id> [phase-id] --session-id <id>
-  --revision <sha256> [--json]
-agency finish <task-id> [phase-id] --session-id <id>
-  --revision <sha256> --outcome <done|dropped>
-  [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
-```
-
-An active claim sets status to `working`. Release returns it to `open`. Finish
-records the claim outcome and ownership history; a `done` claim outcome leaves
-the execution unit `working` until its pull request is merged, while `dropped`
-remains terminal. For a genuine non-PR outcome, `--no-pull-request` atomically
-records completion evidence, finishes the claim, and sets the execution unit to
-`done`; `--summary` is required and `--evidence-url` is optional. Conflicts return
-the current revision and complete ownership record in the machine error envelope
-rather than overwriting it. Expired claims may be replaced with a
-revision-guarded claim.
-
-`agency work` does not claim execution units. It refuses active explicit claims,
-marks open execution work `working`, and launches the agent. External
-orchestrators use `agency claim`, launch and monitor their agent separately, and
-later call `agency release` or `agency finish`.
 
 ### Archive
 
@@ -1012,8 +976,8 @@ default; `--dry-run` performs the same preflight without mutation. A dependency
 is work required by a candidate, while a dependent is work that requires the
 candidate. Dependencies within the selected cohort can be archived together,
 but a retained dependent excludes its dependency, including exclusions that
-propagate through a dependency chain. Active claims, dirty or otherwise unsafe
-managed checkouts, and occupied archive destinations are reported as per-task
+propagate through a dependency chain. Dirty or otherwise unsafe managed
+checkouts and occupied archive destinations are reported as per-task
 skips. Invalid workbase structure and infrastructure failures abort the command.
 
 Task and phase archiving update active parent documents. Agency removes
@@ -1065,8 +1029,8 @@ either. Use `--dry-run` to report planned fetch, branch, and worktree changes
 without applying them. Use `--force` to prepare work blocked by readiness, such
 as a follow-on phase whose dependency is still active; preparation still does
 not launch an agent or change lifecycle status. Validation reuse never skips
-readiness, active-claim, repository, ownership, reference-drift, dirty-workspace,
-or worktree safety checks.
+readiness, repository, ownership, reference-drift, dirty-workspace, or worktree
+safety checks.
 
 The authoritative implementation locations for this contract are
 `src/commands/task.ts` (creation output),
@@ -1185,10 +1149,7 @@ recovery action. Version 1 defines these codes:
 | `EPIC_ERROR`              | Epic operation failed                                     |
 | `TASK_ERROR`              | Task operation failed                                     |
 | `PHASE_ERROR`             | Phase operation failed                                    |
-| `CLAIM_ERROR`             | Claim input or lifecycle state is invalid                 |
-| `CLAIM_CONFLICT`          | Active or legacy ownership conflicts with an operation    |
 | `REVISION_CONFLICT`       | A durable document changed since inspection               |
-| `CLAIM_OWNERSHIP`         | The session does not own the active claim                 |
 | `ARCHIVE_ERROR`           | Archive operation failed                                  |
 | `WORKTREE_ERROR`          | Worktree operation failed                                 |
 | `PULL_REQUEST_ERROR`      | Pull request operation failed                             |
@@ -1211,7 +1172,7 @@ Success, help, and version output exit `0`; usage and command failures exit `1`.
 There are no error-specific exit statuses. `graph --jsonl` streams versioned
 records on success instead of wrapping them in an envelope; JSONL failures still
 use one error envelope. Revision and concurrency behavior is documented under
-Tasks, Phases, and Claims; selector behavior under Noninteractive Use; projection
+Tasks and Phases; selector behavior under Noninteractive Use; projection
 behavior under Target Context and Workbase Graph; and retry behavior in the
 machine error contract above.
 

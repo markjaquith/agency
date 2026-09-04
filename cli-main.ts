@@ -40,7 +40,6 @@ import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
 import { GraphService } from "./src/services/GraphService"
-import { ClaimService } from "./src/services/ClaimService"
 import { SyncService } from "./src/services/SyncService"
 import { ReadinessService } from "./src/services/ReadinessService"
 import { GraphMutationService } from "./src/services/GraphMutationService"
@@ -52,12 +51,6 @@ import {
 } from "./src/services/VersionControlService"
 import { review, help as reviewHelp } from "./src/commands/review"
 import { act, help as actHelp } from "./src/commands/act"
-import {
-	claimCommand,
-	claimHelp,
-	releaseHelp,
-	finishHelp,
-} from "./src/commands/claim"
 import {
 	collectCommandResult,
 	errorEnvelope,
@@ -83,7 +76,6 @@ const CliLayer = Layer.mergeAll(
 	IntegrationService.Default,
 	ContextService.Default,
 	GraphService.Default,
-	ClaimService.Default,
 	SyncService.Default,
 	ReadinessService.Default,
 	GraphMutationService.Default,
@@ -192,67 +184,6 @@ const commands: Record<string, Command> = {
 					taskId: options.task,
 					phaseId: options.phase,
 					inputAllowed: options.inputAllowed,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
-	claim: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) return console.log(claimHelp)
-			await runCommand(
-				claimCommand({
-					operation: "claim",
-					taskId: args[0],
-					phaseId: args[1],
-					claimant: options.claimant,
-					agent: options.agent,
-					sessionId: options["session-id"],
-					revision: options.revision,
-					expiresAt: options["expires-at"],
-					json: options.json,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
-	release: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) return console.log(releaseHelp)
-			await runCommand(
-				claimCommand({
-					operation: "release",
-					taskId: args[0],
-					phaseId: args[1],
-					sessionId: options["session-id"],
-					revision: options.revision,
-					json: options.json,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
-	finish: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) return console.log(finishHelp)
-			await runCommand(
-				claimCommand({
-					operation: "finish",
-					taskId: args[0],
-					phaseId: args[1],
-					sessionId: options["session-id"],
-					revision: options.revision,
-					outcome: options.outcome,
-					noPullRequest: options["no-pull-request"],
-					summary: options.summary,
-					evidenceUrl: options["evidence-url"],
-					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
 					cwd: options.cwd,
@@ -779,9 +710,6 @@ Commands:
   usage export          Export local usage events as JSON Lines
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
-  claim <task> [phase]   Claim an execution unit
-  release <task> [phase] Release an execution unit
-  finish <task> [phase]  Finish an execution unit
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase

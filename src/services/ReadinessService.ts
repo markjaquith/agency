@@ -46,22 +46,13 @@ const executionNodeId = (taskId: string, phaseId?: string) =>
 		? `execution-unit:phase/${taskId}/${phaseId}`
 		: `execution-unit:task/${taskId}`
 
-const hasActiveClaim = (node: GraphNode) =>
-	node.kind !== "epic" &&
-	node.kind !== "repository" &&
-	"claim" in node.data &&
-	node.data.claim?.state === "active"
-
 const isResumableWork = (node: GraphNode) =>
 	node.kind !== "repository" &&
 	node.status === "working" &&
-	!hasActiveClaim(node) &&
 	node.readiness.blockers.every((blocker) => blocker.kind !== "validation")
 
 const isWorkTarget = (node: GraphNode) =>
-	node.kind !== "repository" &&
-	!hasActiveClaim(node) &&
-	(node.readiness.ready || isResumableWork(node))
+	node.kind !== "repository" && (node.readiness.ready || isResumableWork(node))
 
 const itemFor = (
 	node: ExecutionNode,
@@ -198,16 +189,6 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 							status: "open",
 							blockedBy: [],
 							blockers: [],
-						})
-					}
-					if (hasActiveClaim(node)) {
-						return yield* new ExecutionGuardError({
-							message: `Cannot work on '${node.key}': it has an active claim. Use agency release or agency finish first.`,
-							action: "work",
-							target,
-							status: node.status!,
-							blockedBy: node.readiness!.blockedBy,
-							blockers: node.readiness!.blockers,
 						})
 					}
 					if (override) return

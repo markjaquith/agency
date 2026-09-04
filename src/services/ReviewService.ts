@@ -302,11 +302,6 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 								})
 							}
 							const previousReview = task.data.review
-							if (task.data.claim?.state === "active") {
-								return yield* new ReviewError({
-									message: `Review task '${taskId}' has an active claim; release or finish it before refreshing`,
-								})
-							}
 							if (ifRevision && task.revision !== ifRevision) {
 								return yield* new RevisionConflictError({
 									path: task.path,

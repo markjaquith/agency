@@ -23,20 +23,6 @@
     "--json"
   ],
   [
-    "claim",
-    "checkout",
-    "ui",
-    "--claimant",
-    "orchestrator-1",
-    "--agent",
-    "opencode",
-    "--session-id",
-    "session-123",
-    "--revision",
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "--json"
-  ],
-  [
     "work",
     "prepare",
     "--task",
@@ -50,29 +36,18 @@
   ["work", "tasks/checkout/phases/ui", "--agent", "opencode"],
   ["sync", "--dry-run", "--json"],
   ["sync", "--json"],
-  ["pr", "create", "checkout", "ui", "--json"],
   [
-    "finish",
-    "checkout",
-    "ui",
-    "--session-id",
-    "session-123",
-    "--revision",
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "--outcome",
+    "task",
+    "status",
+    "implement-checkout",
     "done",
+    "--no-pull-request",
+    "--summary",
+    "Completed without a pull request",
     "--json"
   ],
+  ["pr", "create", "checkout", "ui", "--json"],
+  ["sync", "checkout", "ui", "--json"],
   ["doctor", "--json"],
-  ["worktree", "repair", "checkout", "ui", "--dry-run", "--json"],
-  [
-    "release",
-    "checkout",
-    "ui",
-    "--session-id",
-    "session-123",
-    "--revision",
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "--json"
-  ]
+  ["worktree", "repair", "checkout", "ui", "--dry-run", "--json"]
 ]

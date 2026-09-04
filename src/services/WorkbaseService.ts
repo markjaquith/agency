@@ -870,9 +870,6 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								"Non-PR completion cannot have a recorded pull request",
 							)
 						}
-						if (record.data.claim?.state === "active") {
-							issue(record.path, "Completed work cannot have an active claim")
-						}
 					}
 
 					for (const epic of epics.values()) {
