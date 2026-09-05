@@ -694,7 +694,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 									.map((entry) => entry.name)
 									.sort(),
 							),
-							Effect.catchAll(() => Effect.succeed([])),
+							Effect.catchTag("FileNotFoundError", () => Effect.succeed([])),
 						)
 
 					const aliases = new Set(Object.keys(config.repositories ?? {}))
@@ -710,12 +710,18 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						schema: S,
 					) =>
 						Effect.gen(function* () {
-							const content = yield* Effect.option(fs.readFile(path))
-							if (content._tag === "None") {
+							const content = yield* fs
+								.readFile(path)
+								.pipe(
+									Effect.catchTag("FileNotFoundError", () =>
+										Effect.succeed(null),
+									),
+								)
+							if (content === null) {
 								issue(path, "Required document is missing")
 								return null
 							}
-							const documentContent = content.value
+							const documentContent = content
 							const parsed = yield* Effect.either(
 								parseFrontmatter(documentContent, path),
 							)

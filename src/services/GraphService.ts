@@ -158,7 +158,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 									.map((entry) => entry.name)
 									.sort(),
 							),
-							Effect.catchAll(() => Effect.succeed([])),
+							Effect.catchTag("FileNotFoundError", () => Effect.succeed([])),
 						)
 
 					const readDocument = <S extends Schema.Schema.AnyNoContext>(

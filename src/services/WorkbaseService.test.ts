@@ -164,6 +164,21 @@ pr: null
 		expect(exists).not.toContain(join(root, "tasks/example/TASK.md"))
 	})
 
+	test("propagates document read failures instead of reporting them as missing", async () => {
+		await write(root, "agency.json", '{"version":2}\n')
+		await mkdir(join(root, "tasks/example/TASK.md"), { recursive: true })
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.validate(root)),
+				),
+			),
+		).rejects.toThrow(
+			`Failed to read file: ${join(root, "tasks/example/TASK.md")}`,
+		)
+	})
+
 	test("validates non-PR completion invariants without rejecting legacy done work", async () => {
 		await write(
 			root,
