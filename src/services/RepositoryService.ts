@@ -1,5 +1,5 @@
 import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Cause, Data, Effect, Either, Exit } from "effect"
 import { join, resolve } from "node:path"
 import { cp, lstat, realpath, rename, rm } from "node:fs/promises"
 import { FileSystemService } from "./FileSystemService"
@@ -9,6 +9,7 @@ import {
 	directoryMoveStep,
 	documentWriteStep,
 	runLifecycleTransaction,
+	transactionEffect,
 	type TransactionStep,
 } from "./LifecycleTransaction"
 import {
@@ -322,14 +323,13 @@ const assertRemovable = (
 		}
 	})
 
-const effectPreflightStep = (
+const effectPreflightStep = <R>(
 	label: string,
-	check: Effect.Effect<void, unknown, any>,
-): TransactionStep => ({
+	check: Effect.Effect<void, unknown, R>,
+): TransactionStep<R> => ({
 	label,
-	preflight: () =>
-		Effect.runPromise(check as Effect.Effect<void, unknown, never>),
-	apply: async () => undefined,
+	preflight: check,
+	apply: Effect.void,
 })
 
 const deleteAfterMoveStep = (
@@ -338,7 +338,7 @@ const deleteAfterMoveStep = (
 	to: string,
 ): TransactionStep => ({
 	...directoryMoveStep(root, from, to),
-	finalize: () => rm(to, { recursive: true, force: true }),
+	finalize: transactionEffect(() => rm(to, { recursive: true, force: true })),
 	manualRecovery: `Remove ${to} or move it back to ${from}`,
 })
 
@@ -348,7 +348,7 @@ const replaceWithMoveStep = (
 	backup: string,
 ): TransactionStep => ({
 	label: `replace ${current} with ${replacement}`,
-	preflight: async () => {
+	preflight: transactionEffect(async () => {
 		await lstat(current)
 		await lstat(replacement)
 		try {
@@ -363,8 +363,8 @@ const replaceWithMoveStep = (
 			)
 				throw cause
 		}
-	},
-	apply: async () => {
+	}),
+	apply: transactionEffect(async () => {
 		await rename(current, backup)
 		try {
 			await rename(replacement, current)
@@ -372,12 +372,14 @@ const replaceWithMoveStep = (
 			await rename(backup, current)
 			throw cause
 		}
-	},
-	rollback: async () => {
+	}),
+	rollback: transactionEffect(async () => {
 		await rename(current, replacement)
 		await rename(backup, current)
-	},
-	finalize: () => rm(backup, { recursive: true, force: true }),
+	}),
+	finalize: transactionEffect(() =>
+		rm(backup, { recursive: true, force: true }),
+	),
 	manualRecovery: `Restore ${backup} to ${current}`,
 })
 
@@ -386,26 +388,24 @@ const runGit = (
 	args: readonly string[],
 	label: string,
 ) =>
-	Effect.runPromise(
-		fs
-			.runCommand(["git", ...args], { captureOutput: true })
-			.pipe(
-				Effect.flatMap((result) =>
-					result.exitCode === 0
-						? Effect.void
-						: Effect.fail(
-								new Error(
-									`${label}: ${result.stderr.trim() || result.stdout.trim()}`,
-								),
+	fs
+		.runCommand(["git", ...args], { captureOutput: true })
+		.pipe(
+			Effect.flatMap((result) =>
+				result.exitCode === 0
+					? Effect.void
+					: Effect.fail(
+							new Error(
+								`${label}: ${result.stderr.trim() || result.stdout.trim()}`,
 							),
-				),
-			) as Effect.Effect<void, unknown, never>,
-	)
+						),
+			),
+		)
 
 const runTransaction = (
 	state: Effect.Effect.Success<ReturnType<typeof configState>>,
 	config: WorkbaseConfig,
-	steps: readonly TransactionStep[],
+	steps: readonly TransactionStep<any>[],
 ) =>
 	runLifecycleTransaction({
 		root: state.root,
@@ -418,7 +418,11 @@ const runTransaction = (
 		],
 	}).pipe(
 		Effect.mapError(
-			(cause) => new RepositoryError({ message: cause.message, cause }),
+			(cause) =>
+				new RepositoryError({
+					message: cause instanceof Error ? cause.message : String(cause),
+					cause,
+				}),
 		),
 	)
 
@@ -785,7 +789,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const workspacePaths = worktrees.map((workspace) => workspace.path)
 					const repair = (gitDirectory: string) =>
 						workspacePaths.length === 0
-							? Promise.resolve()
+							? Effect.void
 							: runGit(
 									fs,
 									[
@@ -797,98 +801,122 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 									],
 									"Failed to repair Git worktrees",
 								)
-					const rollbackMigration = async () => {
+					const rollbackMigration = Effect.gen(function* () {
 						const errors: unknown[] = []
+						const attempt = (effect: Effect.Effect<void, unknown, any>) =>
+							effect.pipe(
+								Effect.exit,
+								Effect.tap((exit) => {
+									if (Exit.isFailure(exit))
+										errors.push(Cause.squash(exit.cause))
+								}),
+							)
 						if (metadataMoved) {
-							try {
-								await rename(metadataBackup, sourceWorktrees)
-								metadataMoved = false
-								await repair(commonDirectory)
-							} catch (error) {
-								errors.push(error)
-							}
+							yield* attempt(
+								transactionEffect(async () => {
+									await rename(metadataBackup, sourceWorktrees)
+									metadataMoved = false
+								}).pipe(Effect.zipRight(repair(commonDirectory))),
+							)
 						}
 						if (cloneInstalled) {
-							try {
-								await rename(repository.path, staging)
-								cloneInstalled = false
-							} catch (error) {
-								errors.push(error)
-							}
+							yield* attempt(
+								transactionEffect(async () => {
+									await rename(repository.path, staging)
+									cloneInstalled = false
+								}),
+							)
 						}
 						if (aliasMoved) {
-							try {
-								await rename(aliasBackup, repository.path)
-								aliasMoved = false
-							} catch (error) {
-								errors.push(error)
-							}
+							yield* attempt(
+								transactionEffect(async () => {
+									await rename(aliasBackup, repository.path)
+									aliasMoved = false
+								}),
+							)
 						}
-						if (errors.length > 0) throw new AggregateError(errors)
-					}
-					const migration: TransactionStep = {
+						if (errors.length > 0)
+							return yield* Effect.fail(new AggregateError(errors))
+					})
+					const migration: TransactionStep<any> = {
 						label: `materialize linked repository ${repository.alias}`,
-						preflight: async () => {
-							const stats = await lstat(repository.path)
+						preflight: Effect.gen(function* () {
+							const stats = yield* transactionEffect(() =>
+								lstat(repository.path),
+							)
 							if (
 								!stats.isSymbolicLink() ||
-								(await realpath(repository.path)) !== source
+								(yield* transactionEffect(() => realpath(repository.path))) !==
+									source
 							)
-								throw new Error(
-									`Repository alias '${repository.alias}' changed during materialization`,
+								return yield* Effect.fail(
+									new Error(
+										`Repository alias '${repository.alias}' changed during materialization`,
+									),
 								)
-							const current = await Effect.runPromise(
-								backend
-									.listWorkspaces(repository.path)
-									.pipe(
-										Effect.provideService(FileSystemService, fs),
-									) as unknown as Effect.Effect<
-									readonly RegisteredWorkspace[],
-									unknown,
-									never
-								>,
-							)
+							const current = yield* backend
+								.listWorkspaces(repository.path)
+								.pipe(
+									Effect.provideService(FileSystemService, fs),
+								) as Effect.Effect<readonly RegisteredWorkspace[], unknown, any>
 							const currentState = current
 								.map(({ path, commit, branch }) => ({ path, commit, branch }))
 								.sort((left, right) => left.path.localeCompare(right.path))
 							if (
 								JSON.stringify(currentState) !== JSON.stringify(registeredState)
 							)
-								throw new Error(
-									`Git worktree registrations changed during materialization`,
+								return yield* Effect.fail(
+									new Error(
+										`Git worktree registrations changed during materialization`,
+									),
 								)
-						},
-						apply: async () => {
-							try {
-								if (hasWorktreeMetadata) {
+						}),
+						apply: Effect.gen(function* () {
+							if (hasWorktreeMetadata) {
+								yield* transactionEffect(async () => {
 									await rename(sourceWorktrees, metadataBackup)
 									metadataMoved = true
-									await cp(metadataBackup, join(staging, "worktrees"), {
+								})
+								yield* transactionEffect(() =>
+									cp(metadataBackup, join(staging, "worktrees"), {
 										recursive: true,
-									})
-								}
+									}),
+								)
+							}
+							yield* transactionEffect(async () => {
 								await rename(repository.path, aliasBackup)
 								aliasMoved = true
+							})
+							yield* transactionEffect(async () => {
 								await rename(staging, repository.path)
 								cloneInstalled = true
-								await repair(repository.path)
-							} catch (cause) {
-								try {
-									await rollbackMigration()
-								} catch (rollbackCause) {
-									throw new Error(
-										`Repository materialization failed and rollback requires manual recovery: restore ${aliasBackup} to ${repository.path} and ${metadataBackup} to ${sourceWorktrees}`,
-										{ cause: new AggregateError([cause, rollbackCause]) },
-									)
-								}
-								throw cause
-							}
-						},
+							})
+							yield* repair(repository.path)
+						}).pipe(
+							Effect.catchAllCause((cause) =>
+								rollbackMigration.pipe(
+									Effect.catchAllCause((rollbackCause) =>
+										Effect.fail(
+											new Error(
+												`Repository materialization failed and rollback requires manual recovery: restore ${aliasBackup} to ${repository.path} and ${metadataBackup} to ${sourceWorktrees}`,
+												{
+													cause: new AggregateError([
+														Cause.squash(cause),
+														Cause.squash(rollbackCause),
+													]),
+												},
+											),
+										),
+									),
+									Effect.zipRight(Effect.failCause(cause)),
+								),
+							),
+						),
 						rollback: rollbackMigration,
-						finalize: async () => {
+						finalize: transactionEffect(async () => {
 							await rm(aliasBackup, { recursive: true, force: true })
 							await rm(metadataBackup, { recursive: true, force: true })
-						},
+						}),
 						manualRecovery: `Restore ${aliasBackup} to ${repository.path} and ${metadataBackup} to ${sourceWorktrees}`,
 					}
 
@@ -898,7 +926,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						steps: [migration],
 					}).pipe(
 						Effect.mapError(
-							(cause) => new RepositoryError({ message: cause.message, cause }),
+							(cause) =>
+								new RepositoryError({
+									message:
+										cause instanceof Error ? cause.message : String(cause),
+									cause,
+								}),
 						),
 						Effect.ensuring(fs.deleteDirectory(staging).pipe(Effect.ignore)),
 					)
@@ -1016,7 +1049,12 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						],
 					}).pipe(
 						Effect.mapError(
-							(cause) => new RepositoryError({ message: cause.message, cause }),
+							(cause) =>
+								new RepositoryError({
+									message:
+										cause instanceof Error ? cause.message : String(cause),
+									cause,
+								}),
 						),
 					)
 					return repository
@@ -1096,7 +1134,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						...(state.config.repositories ?? {}),
 						[repository.alias]: { remote: portable },
 					})
-					const steps: TransactionStep[] = []
+					const steps: TransactionStep<any>[] = []
 					if (
 						repository.kind !== null &&
 						repository.kind !== "symlink" &&
@@ -1104,35 +1142,32 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					) {
 						const previous = repository.remote
 						const update = (value: string | null) =>
-							Effect.runPromise(
-								backend
-									.setRemoteUrl(repository.path, "origin", value)
-									.pipe(
-										Effect.provideService(FileSystemService, fs),
-									) as Effect.Effect<void, unknown, never>,
-							)
+							backend
+								.setRemoteUrl(repository.path, "origin", value)
+								.pipe(Effect.provideService(FileSystemService, fs))
 						steps.push({
 							label: `update origin for repos/${repository.alias}`,
-							preflight: async () => {
-								const stats = await lstat(repository.path)
+							preflight: Effect.gen(function* () {
+								const stats = yield* Effect.tryPromise({
+									try: () => lstat(repository.path),
+									catch: (cause) => cause,
+								})
 								if (stats.isSymbolicLink()) {
 									throw new Error(
 										`Repository alias '${repository.alias}' changed to a linked checkout; retry the remote update`,
 									)
 								}
-								const currentRemote = await Effect.runPromise(
-									backend
-										.remoteUrl(repository.path, "origin")
-										.pipe(Effect.provideService(FileSystemService, fs)),
-								)
+								const currentRemote = yield* backend
+									.remoteUrl(repository.path, "origin")
+									.pipe(Effect.provideService(FileSystemService, fs))
 								if (currentRemote !== previous) {
 									throw new Error(
 										`Origin for repository '${repository.alias}' changed; retry the remote update`,
 									)
 								}
-							},
-							apply: () => update(portable),
-							rollback: () => update(previous),
+							}),
+							apply: update(portable),
+							rollback: update(previous),
 							manualRecovery: `Restore origin for ${repository.path} to ${previous ?? "no remote"}`,
 						})
 					}

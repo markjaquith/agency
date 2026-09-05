@@ -1,4 +1,4 @@
-import { Data, Effect, Layer } from "effect"
+import { Data, Effect } from "effect"
 import { randomUUID } from "node:crypto"
 import { lstat, mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
@@ -19,6 +19,7 @@ import { withWorktreeLocks } from "./WorktreeLock"
 import {
 	documentWriteStep,
 	runLifecycleTransaction,
+	transactionEffect,
 	type TransactionStep,
 } from "./LifecycleTransaction"
 import {
@@ -63,21 +64,6 @@ const runGit = async (
 	if (exitCode !== 0) throw new Error(stderr.trim() || args.join(" "))
 	return stdout.trim()
 }
-
-const WorktreeLayer = Layer.mergeAll(
-	FileSystemService.Default,
-	WorkbaseService.Default,
-	GitVersionControlService.Default,
-	VersionControlService.Default,
-	TaskService.Default,
-	PhaseService.Default,
-	WorktreeService.Default,
-)
-
-const runWorktreeEffect = <A, E>(effect: Effect.Effect<A, E, any>) =>
-	Effect.runPromise(
-		effect.pipe(Effect.provide(WorktreeLayer)) as Effect.Effect<A, E, never>,
-	)
 
 const restoreSnapshots = async (
 	snapshots: readonly WorktreeRemovalSnapshot[],
@@ -353,18 +339,26 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 								(checkout) => checkout.exists || checkout.registered,
 							)
 							const snapshots: WorktreeRemovalSnapshot[] = []
-							const steps: TransactionStep[] = []
+							const steps: TransactionStep<any>[] = []
 							if (hadCheckout) {
 								steps.push({
 									label: `remove review checkout for ${taskId}`,
-									apply: () =>
-										runWorktreeEffect(
-											worktrees.remove(taskId, undefined, root, {
-												snapshots,
-												lockHeld: true,
-											}),
-										).then(() => undefined),
-									rollback: () => restoreSnapshots(snapshots),
+									apply: worktrees
+										.remove(taskId, undefined, root, {
+											snapshots,
+											lockHeld: true,
+										})
+										.pipe(
+											Effect.asVoid,
+											Effect.catchAllCause((cause) =>
+												transactionEffect(() =>
+													restoreSnapshots(snapshots),
+												).pipe(Effect.zipRight(Effect.failCause(cause))),
+											),
+										),
+									rollback: transactionEffect(() =>
+										restoreSnapshots(snapshots),
+									),
 									manualRecovery: `Restore the detached checkout under ${inspection.codePath}`,
 								})
 							}
@@ -373,7 +367,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 							)
 							steps.push({
 								label: `advance review pin for ${taskId}`,
-								apply: () =>
+								apply: transactionEffect(() =>
 									runGit(
 										[
 											"git",
@@ -385,8 +379,9 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 											previousReview.commit,
 										],
 										gitEnvironment,
-									).then(() => undefined),
-								rollback: () =>
+									),
+								),
+								rollback: transactionEffect(() =>
 									runGit(
 										[
 											"git",
@@ -398,18 +393,18 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 											latest.commit,
 										],
 										gitEnvironment,
-									).then(() => undefined),
+									),
+								),
 								manualRecovery: `Reset ${pinRef(taskId)} to ${previousReview.commit}`,
 							})
 							if (hadCheckout) {
 								steps.push({
 									label: `create refreshed review checkout for ${taskId}`,
-									apply: () =>
-										runWorktreeEffect(
-											worktrees.materialize(taskId, undefined, root, {
-												lockHeld: true,
-											}),
-										).then(() => undefined),
+									apply: worktrees
+										.materialize(taskId, undefined, root, {
+											lockHeld: true,
+										})
+										.pipe(Effect.asVoid),
 									manualRecovery: `Run agency work prepare for review task '${taskId}'`,
 								})
 							}

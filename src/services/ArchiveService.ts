@@ -1,5 +1,5 @@
 import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either, Layer } from "effect"
+import { Data, Effect, Either } from "effect"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { EpicService, type EpicRecord } from "./EpicService"
@@ -40,6 +40,7 @@ import {
 	directoryMoveStep,
 	documentWriteStep,
 	runLifecycleTransaction,
+	transactionEffect,
 	type TransactionStep,
 } from "./LifecycleTransaction"
 import { withWorktreeLocks } from "./WorktreeLock"
@@ -357,21 +358,6 @@ const applyMutation = (moves: readonly Move[], writes: readonly Write[]) =>
 						cause,
 					}),
 	})
-
-const WorktreeLayer = Layer.mergeAll(
-	FileSystemService.Default,
-	WorkbaseService.Default,
-	GitVersionControlService.Default,
-	VersionControlService.Default,
-	TaskService.Default,
-	PhaseService.Default,
-	WorktreeService.Default,
-)
-
-const runWorktreeEffect = <A, E>(effect: Effect.Effect<A, E, any>) =>
-	Effect.runPromise(
-		effect.pipe(Effect.provide(WorktreeLayer)) as Effect.Effect<A, E, never>,
-	)
 
 const runGit = async (args: readonly string[]) => {
 	const process = Bun.spawn([...args], { stdout: "pipe", stderr: "pipe" })
@@ -791,25 +777,26 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					})
 					if (!options.dryRun) {
 						const snapshots: WorktreeRemovalSnapshot[] = []
-						const steps: TransactionStep[] = [
+						const steps: TransactionStep<any>[] = [
 							documentWriteStep(root, writes),
 							{
 								label: `remove worktrees for epic ${id}`,
-								apply: async () => {
-									try {
-										for (const unit of executionUnits)
-											await runWorktreeEffect(
-												worktrees.remove(unit.taskId, unit.phaseId, root, {
-													snapshots,
-													lockHeld: true,
-												}),
-											)
-									} catch (cause) {
-										await restoreWorktreeSnapshots(snapshots)
-										throw cause
-									}
-								},
-								rollback: () => restoreWorktreeSnapshots(snapshots),
+								apply: Effect.gen(function* () {
+									for (const unit of executionUnits)
+										yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
+											snapshots,
+											lockHeld: true,
+										})
+								}).pipe(
+									Effect.catchAllCause((cause) =>
+										transactionEffect(() =>
+											restoreWorktreeSnapshots(snapshots),
+										).pipe(Effect.zipRight(Effect.failCause(cause))),
+									),
+								),
+								rollback: transactionEffect(() =>
+									restoreWorktreeSnapshots(snapshots),
+								),
 								manualRecovery: `Run agency work prepare for each execution unit in epic '${id}'`,
 							},
 						]
@@ -1074,34 +1061,33 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						)
 					if (!options.dryRun && selected.length > 0) {
 						const snapshots: WorktreeRemovalSnapshot[] = []
-						const steps: TransactionStep[] = [
+						const steps: TransactionStep<any>[] = [
 							documentWriteStep(root, writes),
 							{
 								label: "remove worktrees for task archive cohort",
-								apply: async () => {
-									try {
-										for (const unit of executionUnits) {
-											await runWorktreeEffect(
-												worktrees.remove(unit.taskId, unit.phaseId, root, {
-													snapshots,
-													lockHeld: true,
-													task: contexts.get(unit.taskId)!.task,
-													phase: unit.phaseId
-														? contexts
-																.get(unit.taskId)!
-																.phases.find(
-																	(phase) => phase.id === unit.phaseId,
-																)
-														: undefined,
-												}),
-											)
-										}
-									} catch (cause) {
-										await restoreWorktreeSnapshots(snapshots)
-										throw cause
+								apply: Effect.gen(function* () {
+									for (const unit of executionUnits) {
+										yield* worktrees.remove(unit.taskId, unit.phaseId, root, {
+											snapshots,
+											lockHeld: true,
+											task: contexts.get(unit.taskId)!.task,
+											phase: unit.phaseId
+												? contexts
+														.get(unit.taskId)!
+														.phases.find((phase) => phase.id === unit.phaseId)
+												: undefined,
+										})
 									}
-								},
-								rollback: () => restoreWorktreeSnapshots(snapshots),
+								}).pipe(
+									Effect.catchAllCause((cause) =>
+										transactionEffect(() =>
+											restoreWorktreeSnapshots(snapshots),
+										).pipe(Effect.zipRight(Effect.failCause(cause))),
+									),
+								),
+								rollback: transactionEffect(() =>
+									restoreWorktreeSnapshots(snapshots),
+								),
 								manualRecovery:
 									"Run agency work prepare for each archived execution unit",
 							},
@@ -1281,30 +1267,31 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 					})
 					if (!options.dryRun) {
 						const snapshots: WorktreeRemovalSnapshot[] = []
-						const steps: TransactionStep[] = [
+						const steps: TransactionStep<any>[] = [
 							documentWriteStep(root, writes),
 							{
 								label: `remove worktrees for task ${id}`,
-								apply: async () => {
-									try {
-										for (const unit of executionUnits)
-											await runWorktreeEffect(
-												worktrees.remove(
-													unit.taskId,
-													executionPhaseId(unit),
-													root,
-													{
-														snapshots,
-														lockHeld: true,
-													},
-												),
-											)
-									} catch (cause) {
-										await restoreWorktreeSnapshots(snapshots)
-										throw cause
-									}
-								},
-								rollback: () => restoreWorktreeSnapshots(snapshots),
+								apply: Effect.gen(function* () {
+									for (const unit of executionUnits)
+										yield* worktrees.remove(
+											unit.taskId,
+											executionPhaseId(unit),
+											root,
+											{
+												snapshots,
+												lockHeld: true,
+											},
+										)
+								}).pipe(
+									Effect.catchAllCause((cause) =>
+										transactionEffect(() =>
+											restoreWorktreeSnapshots(snapshots),
+										).pipe(Effect.zipRight(Effect.failCause(cause))),
+									),
+								),
+								rollback: transactionEffect(() =>
+									restoreWorktreeSnapshots(snapshots),
+								),
 								manualRecovery: `Run agency work prepare for task '${id}'`,
 							},
 							directoryMoveStep(root, dirname(task.path), destination),
@@ -1426,15 +1413,22 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 										documentWriteStep(root, writes),
 										{
 											label: `remove worktrees for phase ${taskId}/${id}`,
-											apply: async () => {
-												await runWorktreeEffect(
-													worktrees.remove(taskId, id, root, {
-														snapshots,
-														lockHeld: true,
-													}),
-												)
-											},
-											rollback: () => restoreWorktreeSnapshots(snapshots),
+											apply: worktrees
+												.remove(taskId, id, root, {
+													snapshots,
+													lockHeld: true,
+												})
+												.pipe(
+													Effect.asVoid,
+													Effect.catchAllCause((cause) =>
+														transactionEffect(() =>
+															restoreWorktreeSnapshots(snapshots),
+														).pipe(Effect.zipRight(Effect.failCause(cause))),
+													),
+												),
+											rollback: transactionEffect(() =>
+												restoreWorktreeSnapshots(snapshots),
+											),
 											manualRecovery: `Run agency work prepare for phase '${taskId}/${id}'`,
 										},
 										directoryMoveStep(root, dirname(phase.path), destination),
