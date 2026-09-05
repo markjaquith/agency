@@ -21,22 +21,38 @@ interface SpawnOptions {
 	readonly timeoutMs?: number
 }
 
-const readOutput = async (
+interface OutputReader {
+	readonly output: Promise<string>
+	readonly cancel: () => Promise<void>
+}
+
+const readOutput = (
 	stream: ReadableStream<Uint8Array> | null | undefined,
 	target?: { write(chunk: Uint8Array): unknown },
-) => {
-	if (!stream) return ""
+): OutputReader => {
+	if (!stream) {
+		return { output: Promise.resolve(""), cancel: () => Promise.resolve() }
+	}
 
 	const reader = stream.getReader()
-	const decoder = new TextDecoder()
-	let output = ""
-	while (true) {
-		const { done, value } = await reader.read()
-		if (done) break
-		target?.write(value)
-		output += decoder.decode(value, { stream: true })
+	return {
+		output: (async () => {
+			const decoder = new TextDecoder()
+			let output = ""
+			try {
+				while (true) {
+					const { done, value } = await reader.read()
+					if (done) break
+					target?.write(value)
+					output += decoder.decode(value, { stream: true })
+				}
+				return output + decoder.decode()
+			} finally {
+				reader.releaseLock()
+			}
+		})(),
+		cancel: () => reader.cancel(),
 	}
-	return output + decoder.decode()
 }
 
 /**
@@ -70,95 +86,139 @@ export const spawnProcess = (
 	args: readonly string[],
 	options?: SpawnOptions,
 ): Effect.Effect<ProcessResult, ProcessError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const startedAt = performance.now()
-			const proc = Bun.spawn([...args], {
-				cwd: options?.cwd ?? process.cwd(),
-				stdin: options?.stdin ?? "pipe",
-				stdout: options?.stdout === "inherit" ? "inherit" : "pipe",
-				stderr: options?.stderr === "inherit" ? "inherit" : "pipe",
-				env: options?.env ? { ...process.env, ...options.env } : process.env,
-				detached: options?.timeoutMs !== undefined,
-			})
-			// Start draining stdout/stderr immediately so verbose subprocesses
-			// cannot block on filled pipe buffers before they exit.
-			const stdoutPromise =
-				options?.stdout === "inherit"
-					? Promise.resolve("")
-					: readOutput(
-							proc.stdout,
-							options?.stdout === "tee" ? process.stdout : undefined,
-						)
-			const stderrPromise =
-				options?.stderr === "inherit"
-					? Promise.resolve("")
-					: readOutput(
-							proc.stderr,
-							options?.stderr === "tee" ? process.stderr : undefined,
-						)
-
-			let timedOut = false
-			let timer: ReturnType<typeof setTimeout> | undefined
-			const exited =
-				options?.timeoutMs === undefined
-					? proc.exited
-					: Promise.race([
-							proc.exited,
-							new Promise<number>((resolve) => {
-								timer = setTimeout(async () => {
-									timedOut = true
-									try {
-										process.kill(-proc.pid, "SIGTERM")
-									} catch {
-										proc.kill("SIGTERM")
-									}
-									const stopped = await Promise.race([
-										proc.exited.then(() => true),
-										Bun.sleep(250).then(() => false),
-									])
-									if (!stopped) {
-										try {
-											process.kill(-proc.pid, "SIGKILL")
-										} catch {
-											proc.kill("SIGKILL")
-										}
-									}
-									resolve(await proc.exited)
-								}, options.timeoutMs)
-							}),
-						])
-			const [exitCode, stdout, stderr] = await Promise.all([
-				exited,
-				stdoutPromise,
-				stderrPromise,
-			])
-			if (timer) clearTimeout(timer)
-			if (timedOut) {
-				throw new ProcessError({
-					command: args.join(" "),
-					exitCode:
-						typeof exitCode === "number" ? exitCode : (proc.exitCode ?? -1),
-					stderr: stderr.trim(),
-					timedOut: true,
-					timeoutMs: options?.timeoutMs,
-					elapsedMs: Math.round(performance.now() - startedAt),
+	Effect.acquireUseRelease(
+		Effect.try({
+			try: () => {
+				const detached = options?.timeoutMs !== undefined
+				const proc = Bun.spawn([...args], {
+					cwd: options?.cwd ?? process.cwd(),
+					stdin: options?.stdin ?? "pipe",
+					stdout: options?.stdout === "inherit" ? "inherit" : "pipe",
+					stderr: options?.stderr === "inherit" ? "inherit" : "pipe",
+					env: options?.env ? { ...process.env, ...options.env } : process.env,
+					detached,
 				})
-			}
+				// Start draining stdout/stderr immediately so verbose subprocesses
+				// cannot block on filled pipe buffers before they exit.
+				const stdout =
+					options?.stdout === "inherit"
+						? readOutput(undefined)
+						: readOutput(
+								proc.stdout,
+								options?.stdout === "tee" ? process.stdout : undefined,
+							)
+				const stderr =
+					options?.stderr === "inherit"
+						? readOutput(undefined)
+						: readOutput(
+								proc.stderr,
+								options?.stderr === "tee" ? process.stderr : undefined,
+							)
 
-			return {
-				stdout: stdout.trim(),
-				stderr: stderr.trim(),
-				exitCode:
-					typeof exitCode === "number" ? exitCode : (proc.exitCode ?? 0),
-			}
-		},
-		catch: (error) =>
-			error instanceof ProcessError
-				? error
-				: new ProcessError({
-						command: args.join(" "),
-						exitCode: -1,
-						stderr: error instanceof Error ? error.message : String(error),
-					}),
-	})
+				let termination: Promise<void> | undefined
+				const terminate = (): Promise<void> => {
+					if (proc.exitCode !== null) return Promise.resolve()
+					return (termination ??= (async () => {
+						const signal = (name: "SIGTERM" | "SIGKILL") => {
+							if (!detached) {
+								proc.kill(name)
+								return
+							}
+							try {
+								process.kill(-proc.pid, name)
+							} catch {
+								proc.kill(name)
+							}
+						}
+						signal("SIGTERM")
+						const stopped = await Promise.race([
+							proc.exited.then(() => true),
+							Bun.sleep(250).then(() => false),
+						])
+						if (!stopped) signal("SIGKILL")
+						await proc.exited
+					})())
+				}
+
+				return {
+					proc,
+					stdout,
+					stderr,
+					terminate,
+					startedAt: performance.now(),
+					state: {
+						timedOut: false,
+						timer: undefined as ReturnType<typeof setTimeout> | undefined,
+					},
+				}
+			},
+			catch: (error) =>
+				new ProcessError({
+					command: args.join(" "),
+					exitCode: -1,
+					stderr: error instanceof Error ? error.message : String(error),
+				}),
+		}),
+		({ proc, stdout, stderr, terminate, startedAt, state }) =>
+			Effect.tryPromise({
+				try: async () => {
+					const exited =
+						options?.timeoutMs === undefined
+							? proc.exited
+							: Promise.race([
+									proc.exited,
+									new Promise<number>((resolve) => {
+										state.timer = setTimeout(async () => {
+											state.timedOut = true
+											await terminate()
+											resolve(await proc.exited)
+										}, options.timeoutMs)
+									}),
+								])
+					const [exitCode, stdoutOutput, stderrOutput] = await Promise.all([
+						exited,
+						stdout.output,
+						stderr.output,
+					])
+					if (state.timer) clearTimeout(state.timer)
+					if (state.timedOut) {
+						throw new ProcessError({
+							command: args.join(" "),
+							exitCode:
+								typeof exitCode === "number" ? exitCode : (proc.exitCode ?? -1),
+							stderr: stderrOutput.trim(),
+							timedOut: true,
+							timeoutMs: options?.timeoutMs,
+							elapsedMs: Math.round(performance.now() - startedAt),
+						})
+					}
+
+					return {
+						stdout: stdoutOutput.trim(),
+						stderr: stderrOutput.trim(),
+						exitCode:
+							typeof exitCode === "number" ? exitCode : (proc.exitCode ?? 0),
+					}
+				},
+				catch: (error) =>
+					error instanceof ProcessError
+						? error
+						: new ProcessError({
+								command: args.join(" "),
+								exitCode: -1,
+								stderr: error instanceof Error ? error.message : String(error),
+							}),
+			}),
+		({ proc, stdout, stderr, terminate, state }) =>
+			Effect.promise(async () => {
+				if (state.timer) clearTimeout(state.timer)
+				const terminating = terminate()
+				await Promise.allSettled([stdout.cancel(), stderr.cancel()])
+				await Promise.allSettled([
+					terminating,
+					proc.exited,
+					stdout.output,
+					stderr.output,
+				])
+			}),
+	)

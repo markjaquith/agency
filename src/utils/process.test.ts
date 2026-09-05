@@ -1,6 +1,38 @@
 import { describe, expect, spyOn, test } from "bun:test"
-import { Effect } from "effect"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Effect, Fiber } from "effect"
 import { spawnProcess } from "./process"
+
+const waitFor = async <A>(attempt: () => Promise<A>): Promise<A> => {
+	const deadline = Date.now() + 2_000
+	while (true) {
+		try {
+			return await attempt()
+		} catch (error) {
+			if (Date.now() >= deadline) throw error
+			await Bun.sleep(10)
+		}
+	}
+}
+
+const isProcessRunning = (pid: number): boolean => {
+	try {
+		process.kill(pid, 0)
+		return true
+	} catch (error) {
+		if (
+			typeof error === "object" &&
+			error !== null &&
+			"code" in error &&
+			error.code === "ESRCH"
+		) {
+			return false
+		}
+		throw error
+	}
+}
 
 describe("spawnProcess", () => {
 	test("forwards and captures output in tee mode", async () => {
@@ -73,5 +105,28 @@ describe("spawnProcess", () => {
 			),
 		).rejects.toThrow("Process timed out")
 		expect(performance.now() - startedAt).toBeLessThan(1_000)
+	})
+
+	test("terminates the subprocess when interrupted", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "agency-process-"))
+		const pidPath = join(directory, "pid")
+		const script = [
+			`process.on("SIGTERM", () => {})`,
+			`await Bun.write(${JSON.stringify(pidPath)}, String(process.pid))`,
+			`setInterval(() => process.stdout.write("running\\n"), 10)`,
+		].join("\n")
+		const fiber = Effect.runFork(spawnProcess([process.execPath, "-e", script]))
+
+		try {
+			const pid = Number(await waitFor(() => readFile(pidPath, "utf8")))
+			expect(isProcessRunning(pid)).toBe(true)
+
+			await Effect.runPromise(Fiber.interrupt(fiber))
+
+			expect(isProcessRunning(pid)).toBe(false)
+		} finally {
+			await Effect.runPromise(Fiber.interrupt(fiber))
+			await rm(directory, { recursive: true, force: true })
+		}
 	})
 })
