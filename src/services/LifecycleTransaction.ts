@@ -284,7 +284,7 @@ export const runLifecycleTransaction = <R>({
 						Effect.gen(function* () {
 							const failure = Option.getOrUndefined(Cause.failureOption(cause))
 							if (failure instanceof LifecycleTransactionError)
-								return yield* Effect.failCause(cause)
+								return yield* failure
 							const rollbackErrors: unknown[] = []
 							for (const step of [...completed].reverse()) {
 								if (!step.rollback) continue
@@ -300,7 +300,7 @@ export const runLifecycleTransaction = <R>({
 								}
 							}
 							if (Cause.isInterruptedOnly(cause))
-								return yield* Effect.failCause(cause)
+								return yield* Effect.failCause(cause as Cause.Cause<never>)
 							const manualRecovery = completed
 								.filter(
 									(step) =>
