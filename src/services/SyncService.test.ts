@@ -613,6 +613,89 @@ process.stdout.write(${JSON.stringify(JSON.stringify(record))})
 		).toBe(false)
 	})
 
+	test("reports malformed successful GitHub responses", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "malformed-detail",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/example",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PullRequestService.pipe(
+				Effect.flatMap((service) =>
+					service.setUrl(
+						"malformed-detail",
+						undefined,
+						"https://github.com/example/agency/pull/42",
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "malformed-list",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "feat/malformed-list",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await Bun.write(join(root, "bin", "gh"), "#!/bin/sh\nprintf '{}\\n'\n")
+		await chmod(join(root, "bin", "gh"), 0o755)
+
+		const result = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, taskId: "malformed-detail" }),
+				),
+			),
+		)
+		expect(result.warnings).toContainEqual({
+			kind: "pr-provider-invalid-output",
+			target: "task:malformed-detail",
+			message: expect.stringContaining(
+				"GitHub CLI did not return a valid pull request",
+			),
+		})
+		expect(result.executions[0]?.pr).toMatchObject({
+			url: "https://github.com/example/agency/pull/42",
+			state: "open",
+		})
+
+		const listResult = await runTestEffect(
+			SyncService.pipe(
+				Effect.flatMap((service) =>
+					service.reconcile({ cwd: root, taskId: "malformed-list" }),
+				),
+			),
+		)
+		expect(listResult.warnings).toContainEqual({
+			kind: "pr-provider-invalid-output",
+			target: "task:malformed-list",
+			message: expect.stringContaining(
+				"GitHub CLI did not return a valid pull request list",
+			),
+		})
+	})
+
 	test("reconciles a uniquely discovered merged PR without materializing", async () => {
 		await runTestEffect(
 			TaskService.pipe(

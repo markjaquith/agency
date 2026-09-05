@@ -1,4 +1,4 @@
-import { Schema } from "@effect/schema"
+import { Schema, TreeFormatter } from "@effect/schema"
 import type { PullRequestRecord, WorkbaseConfig } from "./schemas"
 import { PullRequestRecord as PullRequestRecordSchema } from "./schemas"
 
@@ -155,9 +155,47 @@ export const recordFromGitHubUrl = (url: string): PullRequestRecord => {
 	}
 }
 
-export const recordFromGitHubJson = (value: Record<string, unknown>) => {
-	const url = typeof value.url === "string" ? value.url : ""
-	const record = recordFromGitHubUrl(url)
+const GitHubRepository = Schema.Struct({
+	nameWithOwner: Schema.String.pipe(Schema.minLength(1)),
+})
+
+const GitHubPullRequest = Schema.Struct({
+	number: Schema.Number,
+	state: Schema.Literal("OPEN", "CLOSED", "MERGED"),
+	title: Schema.optional(Schema.String),
+	isDraft: Schema.Boolean,
+	headRefName: Schema.String,
+	baseRefName: Schema.String,
+	headRepository: Schema.NullOr(GitHubRepository),
+	baseRepository: Schema.optional(Schema.NullOr(GitHubRepository)),
+	url: Schema.String,
+	mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
+	mergeCommit: Schema.optional(
+		Schema.NullOr(Schema.Struct({ oid: Schema.String })),
+	),
+	mergeable: Schema.Literal("MERGEABLE", "CONFLICTING", "UNKNOWN"),
+})
+
+const decodeGitHubPullRequest = Schema.decodeUnknownEither(GitHubPullRequest)
+const decodeGitHubPullRequests = Schema.decodeUnknownEither(
+	Schema.Array(GitHubPullRequest),
+)
+
+const invalidGitHubResponse = (
+	kind: "pull request" | "pull request list",
+	error: Parameters<typeof TreeFormatter.formatErrorSync>[0],
+) =>
+	new Error(
+		`GitHub CLI did not return a valid ${kind}: ${TreeFormatter.formatErrorSync(error)}`,
+	)
+
+const recordFromGitHubJson = (value: unknown): PullRequestRecord => {
+	const decoded = decodeGitHubPullRequest(value)
+	if (decoded._tag === "Left") {
+		throw invalidGitHubResponse("pull request", decoded.left)
+	}
+	const detail = decoded.right
+	const record = recordFromGitHubUrl(detail.url)
 	const repositoryName = (repository: unknown) => {
 		if (!repository || typeof repository !== "object") return undefined
 		const nameWithOwner = (repository as Record<string, unknown>).nameWithOwner
@@ -165,19 +203,17 @@ export const recordFromGitHubJson = (value: Record<string, unknown>) => {
 			? nameWithOwner
 			: undefined
 	}
-	const githubState = String(value.state ?? "OPEN").toLowerCase()
-	const merged = githubState === "merged" || value.mergedAt != null
-	const mergeable = String(value.mergeable ?? "UNKNOWN").toLowerCase()
+	const githubState = detail.state.toLowerCase()
+	const merged = githubState === "merged" || detail.mergedAt != null
+	const mergeable = detail.mergeable.toLowerCase()
 	return {
 		...record,
-		headRepository: repositoryName(value.headRepository),
-		headBranch:
-			typeof value.headRefName === "string" ? value.headRefName : undefined,
-		baseRepository: repositoryName(value.baseRepository) ?? record.repository,
-		baseBranch:
-			typeof value.baseRefName === "string" ? value.baseRefName : undefined,
+		headRepository: repositoryName(detail.headRepository),
+		headBranch: detail.headRefName,
+		baseRepository: repositoryName(detail.baseRepository) ?? record.repository,
+		baseBranch: detail.baseRefName,
 		state: merged ? "merged" : githubState === "closed" ? "closed" : "open",
-		draft: value.isDraft === true,
+		draft: detail.isDraft,
 		merged,
 		mergeable:
 			mergeable === "mergeable"
@@ -186,6 +222,32 @@ export const recordFromGitHubJson = (value: Record<string, unknown>) => {
 					? false
 					: null,
 	} satisfies PullRequestRecord
+}
+
+const parseJson = (
+	value: string,
+	kind: "pull request" | "pull request list",
+) => {
+	try {
+		return JSON.parse(value) as unknown
+	} catch {
+		throw new Error(`GitHub CLI did not return valid JSON for ${kind}`)
+	}
+}
+
+export const parseGitHubPullRequest = (value: string): PullRequestRecord =>
+	recordFromGitHubJson(parseJson(value, "pull request"))
+
+export const parseGitHubPullRequestList = (
+	value: string,
+): readonly PullRequestRecord[] => {
+	const decoded = decodeGitHubPullRequests(
+		parseJson(value, "pull request list"),
+	)
+	if (decoded._tag === "Left") {
+		throw invalidGitHubResponse("pull request list", decoded.left)
+	}
+	return decoded.right.map(recordFromGitHubJson)
 }
 
 export const normalizePullRequestRecord = (

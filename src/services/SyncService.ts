@@ -14,8 +14,9 @@ import {
 } from "../workbase/frontmatter"
 import {
 	normalizePullRequestRecord,
+	parseGitHubPullRequest,
+	parseGitHubPullRequestList,
 	parseOptionalPullRequestRecord,
-	recordFromGitHubJson,
 	resolveDeliveryCommand,
 } from "../workbase/delivery-command"
 import { FileSystemService } from "./FileSystemService"
@@ -135,14 +136,6 @@ const parseWorktrees = (output: string): RegisteredWorktree[] => {
 	return worktrees
 }
 
-const parseJson = <T>(value: string, fallback: T): T => {
-	try {
-		return JSON.parse(value) as T
-	} catch {
-		return fallback
-	}
-}
-
 const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
 
 const originRef = (ref: string) =>
@@ -172,17 +165,18 @@ interface PullRequestQuery {
 const mergedPullRequestFromGitHub = (
 	data: ExecutionData,
 	query: PullRequestQuery | undefined,
+	details: readonly PullRequestRecord[] | undefined,
 ) => {
-	if (!query?.result || query.result.exitCode !== 0) return null
+	if (!query?.result || query.result.exitCode !== 0 || !details) return null
 	const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
-	const details = existing
-		? [parseJson<Record<string, unknown>>(query.result.stdout, {})]
-		: parseJson<Record<string, unknown>[]>(query.result.stdout, []).filter(
+	const matches = existing
+		? details
+		: details.filter(
 				(item) =>
-					item.headRefName === data.branch && item.baseRefName === data.base,
+					item.headBranch === data.branch && item.baseBranch === data.base,
 			)
-	if (details.length !== 1) return null
-	const current = recordFromGitHubJson(details[0]!)
+	if (matches.length !== 1) return null
+	const current = matches[0]!
 	if (
 		current.merged !== true ||
 		current.headRepository?.toLowerCase() !==
@@ -493,6 +487,37 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						{ concurrency: 8 },
 					),
 				)
+				const githubResponses = new Map<
+					string,
+					| {
+							readonly ok: true
+							readonly details: readonly PullRequestRecord[]
+					  }
+					| { readonly ok: false; readonly message: string }
+				>()
+				if (!config.delivery) {
+					for (const record of queryRecords) {
+						const query = prQueries.get(record.key)
+						if (query?.result?.exitCode !== 0) continue
+						try {
+							githubResponses.set(record.key, {
+								ok: true,
+								details: record.data.pr
+									? [parseGitHubPullRequest(query.result.stdout)]
+									: parseGitHubPullRequestList(query.result.stdout),
+							})
+						} catch (cause) {
+							const message =
+								cause instanceof Error ? cause.message : String(cause)
+							githubResponses.set(record.key, { ok: false, message })
+							warnings.push({
+								kind: "pr-provider-invalid-output",
+								target: record.key,
+								message,
+							})
+						}
+					}
+				}
 				const reviewSourceQueries = new Map(
 					yield* Effect.forEach(
 						reviewRecords,
@@ -534,11 +559,13 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				}
 				const checkoutRecords = records.filter((record) => {
 					if (record.data.completion) return false
+					const githubResponse = githubResponses.get(record.key)
 					const merged = config.delivery
 						? null
 						: mergedPullRequestFromGitHub(
 								record.data,
 								prQueries.get(record.key),
+								githubResponse?.ok ? githubResponse.details : undefined,
 							)
 					return merged === null
 				})
@@ -590,9 +617,13 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					const codePath = join(dirname(record.path), "code")
 					const checkoutStates: CheckoutState[] = []
 					const query = prQueries.get(record.key)
+					const githubResponse = githubResponses.get(record.key)
+					const githubDetails = githubResponse?.ok
+						? githubResponse.details
+						: undefined
 					const remoteMergedPr = config.delivery
 						? null
-						: mergedPullRequestFromGitHub(data, query)
+						: mergedPullRequestFromGitHub(data, query, githubDetails)
 					const skipCheckoutReconciliation =
 						Boolean(data.completion) || remoteMergedPr !== null
 					let materialize = false
@@ -947,27 +978,25 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					} else if (existing) {
 						const viewed = query.result!
 						if (viewed.exitCode === 0) {
-							const detail = parseJson<Record<string, unknown>>(
-								viewed.stdout,
-								{},
-							)
-							current = recordFromGitHubJson(detail)
-							pr = { ...detail, ...current }
-							if (
-								current.headRepository?.toLowerCase() !==
-									remoteRepository.toLowerCase() ||
-								current.headBranch !== data.branch ||
-								current.baseRepository?.toLowerCase() !==
-									current.repository.toLowerCase() ||
-								current.baseBranch !== data.base
-							) {
-								prConflict = true
-								unresolved.push({
-									kind: "pr-repository-conflict",
-									target: record.key,
-									message: `Recorded PR head does not match '${remoteRepository}:${data.branch}' or base '${current.repository}:${data.base}'`,
-									action: "Correct the declaration or recorded PR URL",
-								})
+							if (githubDetails) {
+								current = githubDetails[0]!
+								pr = current
+								if (
+									current.headRepository?.toLowerCase() !==
+										remoteRepository.toLowerCase() ||
+									current.headBranch !== data.branch ||
+									current.baseRepository?.toLowerCase() !==
+										current.repository.toLowerCase() ||
+									current.baseBranch !== data.base
+								) {
+									prConflict = true
+									unresolved.push({
+										kind: "pr-repository-conflict",
+										target: record.key,
+										message: `Recorded PR head does not match '${remoteRepository}:${data.branch}' or base '${current.repository}:${data.base}'`,
+										action: "Correct the declaration or recorded PR URL",
+									})
+								}
 							}
 						} else {
 							pr = { url: existing.url, state: "unavailable" }
@@ -980,17 +1009,14 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					} else {
 						const listed = query.result!
 						if (listed.exitCode === 0) {
-							const matches = parseJson<Record<string, unknown>[]>(
-								listed.stdout,
-								[],
-							).filter(
+							const matches = (githubDetails ?? []).filter(
 								(item) =>
-									item.headRefName === data.branch &&
-									item.baseRefName === data.base,
+									item.headBranch === data.branch &&
+									item.baseBranch === data.base,
 							)
 							if (matches.length === 1) {
-								current = recordFromGitHubJson(matches[0]!)
-								pr = { ...matches[0], ...current }
+								current = matches[0]!
+								pr = current
 								if (
 									current.headRepository?.toLowerCase() !==
 										remoteRepository.toLowerCase() ||
