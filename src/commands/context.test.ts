@@ -394,6 +394,52 @@ status: done
 		expect(maxActiveGitCommands).toBeGreaterThanOrEqual(3)
 	})
 
+	test("does not load unrelated archived documents for an active target", async () => {
+		await write(
+			root,
+			"archive/tasks/old-task/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: old-task
+base: main
+pr: null
+status: done
+---
+
+# Old task
+`,
+		)
+		await write(
+			root,
+			"archive/tasks/old-task/phases/old-phase/PHASE.md",
+			`---
+repo: agency
+branch: old-phase
+base: main
+pr: null
+status: done
+---
+
+# Old phase
+`,
+		)
+
+		const archiveReads: string[] = []
+		const originalFile = Bun.file
+		Bun.file = mock((path: string) => {
+			if (path.includes(join(root, "archive", "tasks"))) archiveReads.push(path)
+			return originalFile(path)
+		}) as unknown as typeof Bun.file
+		try {
+			await readContext(root, "tasks/agent-contract/phases/context-command")
+		} finally {
+			Bun.file = originalFile
+		}
+
+		expect(archiveReads).toEqual([])
+	})
+
 	test("resolves a bare task ID and returns root discovery context", async () => {
 		const task = await readContext(root, "agent-contract")
 		expect(task.target).toMatchObject({
