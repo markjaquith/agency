@@ -42,6 +42,18 @@ export const WorkStatus = Schema.Literal(
 
 const IsoTimestamp = NonEmptyString.pipe(
 	Schema.pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
+	Schema.filter(
+		(value) => {
+			const timestamp = Date.parse(value)
+			return (
+				Number.isFinite(timestamp) &&
+				new Date(timestamp).toISOString() === value
+			)
+		},
+		{
+			message: () => "Expected a canonical ISO-8601 timestamp",
+		},
+	),
 )
 
 const GitCommit = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/))

@@ -414,6 +414,35 @@ test("rejects removed claim frontmatter", () => {
 	).toThrow()
 })
 
+test("rejects impossible and non-canonical timestamps", () => {
+	const task = {
+		ticketUrl: null,
+		repo: "agency",
+		branch: "task/example",
+		base: "main",
+		pr: null,
+		status: "done",
+		completion: {
+			mode: "non-pr",
+			completedAt: "2026-07-17T12:00:00.000Z",
+			summary: "Completed work",
+		},
+	}
+
+	for (const completedAt of [
+		"2026-99-99T99:99:99.000Z",
+		"2026-07-17T12:00:00Z",
+		"2026-02-29T13:00:00.000Z",
+	]) {
+		expect(() =>
+			Schema.decodeUnknownSync(TaskFrontmatter)({
+				...task,
+				completion: { ...task.completion, completedAt },
+			}),
+		).toThrow()
+	}
+})
+
 describe("workbase registry", () => {
 	test("accepts registered paths", () => {
 		expect(
