@@ -267,6 +267,7 @@ export const buildExecutionContract = (input: {
 	readonly checkoutPath?: string | null
 	readonly documentRevision: string
 	readonly dryRun: boolean
+	readonly allowWorkingDependencies?: boolean
 }) => {
 	const executionDirectory = dirname(input.phasePath ?? input.taskPath)
 	const key = digest({
@@ -308,7 +309,15 @@ export const buildExecutionContract = (input: {
 		commands: {
 			work: {
 				cwd: executionDirectory,
-				argv: ["agency", "work", ".", "--auto"],
+				argv: [
+					"agency",
+					"work",
+					".",
+					"--auto",
+					...(input.allowWorkingDependencies
+						? ["--allow-working-dependencies"]
+						: []),
+				],
 			},
 			context: {
 				cwd: executionDirectory,

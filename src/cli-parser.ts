@@ -845,6 +845,7 @@ const commands = {
 			opencode: { type: "boolean" },
 			claude: { type: "boolean" },
 			force: { type: "boolean" },
+			"allow-working-dependencies": { type: "boolean" },
 			evidence: { type: "string" },
 		},
 		command: {
@@ -865,12 +866,14 @@ const commands = {
 				"claude",
 				"force",
 				"evidence",
+				"allow-working-dependencies",
 			],
 			conflicts: [
 				["opencode", "claude"],
 				["agent", "opencode"],
 				["agent", "claude"],
 				["epic", "$positional"],
+				["force", "allow-working-dependencies"],
 			],
 		},
 	},
@@ -1615,6 +1618,16 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		if (preparing && parsed.values.phase && !parsed.values.task) {
 			throw usageError(
 				"Option '--phase' requires '--task' with work preparation.",
+				spec.usage,
+			)
+		}
+		if (
+			parsed.values["allow-working-dependencies"] &&
+			(parsed.values.epic ||
+				(!parsed.values.task && !commandPositionals[preparing ? 1 : 0]))
+		) {
+			throw usageError(
+				"Option '--allow-working-dependencies' requires an explicit execution-unit target (task ID, directory, or --task with optional --phase).",
 				spec.usage,
 			)
 		}

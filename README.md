@@ -1033,11 +1033,28 @@ work and reading context. It does not prescribe how callers present or execute
 prepared work.
 The evidence argument may be an evidence object, task-creation JSON, or a path to
 either. Use `--dry-run` to report planned fetch, branch, and worktree changes
-without applying them. Use `--force` to prepare work blocked by readiness, such
-as a follow-on phase whose dependency is still active; preparation still does
-not launch an agent or change lifecycle status. Validation reuse never skips
+without applying them. Validation reuse never skips
 readiness, repository, ownership, reference-drift, dirty-workspace, or worktree
 safety checks.
+
+Both `work` and `work prepare` accept `--allow-working-dependencies` with an
+explicit execution-unit target (task ID, directory, or `--task` with optional
+`--phase`). This narrowly admits an `open` unit whose blockers are exclusively
+dependencies with status `working`. Open, delegated, dropped, or missing
+dependencies and mixed validation/status blockers remain blocked; terminal
+targets cannot be reopened. Ready and normally resumable working units retain
+their existing behavior. Interactive target selection, orchestration targets,
+and combining this option with `--force` are rejected. Validation,
+repository/reference checks, dirty-worktree protections, and active worktree
+locks are unchanged, including in dry-run mode.
+
+Preparation never launches or changes status. Its `commands.work.argv` preserves
+the explicit opt-in, but validation evidence does not store it or authorize later
+calls: pass the flag again for each prepare/work invocation. Dependency changes
+invalidate evidence normally, and readiness and locks are checked again even
+when evidence is reused. Execution identity and evidence schemas are unchanged.
+The existing broader `--force` behavior, including lock overrides and reopening
+terminal work on launch, is unchanged for callers using it alone.
 
 The authoritative implementation locations for this contract are
 `src/commands/task.ts` (creation output),
