@@ -14,8 +14,8 @@ import {
 import type { PullRequestRecord } from "../workbase/schemas"
 import {
 	normalizePullRequestRecord,
+	parseGitHubPullRequestList,
 	parsePullRequestRecord,
-	recordFromGitHubJson,
 	recordFromGitHubUrl,
 	repositoryFromRemote,
 	resolveDeliveryCommand,
@@ -236,17 +236,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								})
 							}
 							const records = yield* Effect.try({
-								try: () => {
-									const parsed: unknown = JSON.parse(listed.stdout)
-									if (!Array.isArray(parsed)) {
-										throw new Error(
-											"GitHub CLI did not return a pull request list",
-										)
-									}
-									return parsed.map((value) =>
-										recordFromGitHubJson(value as Record<string, unknown>),
-									)
-								},
+								try: () => parseGitHubPullRequestList(listed.stdout),
 								catch: (cause) =>
 									new PullRequestError({
 										message:

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
+	parseGitHubPullRequest,
+	parseGitHubPullRequestList,
 	parsePullRequestRecord,
-	recordFromGitHubJson,
 	resolveDeliveryCommand,
 	resolveGitHubCreateCommand,
 	validateDelivery,
@@ -116,18 +117,24 @@ describe("delivery commands", () => {
 		const base = {
 			number: 17,
 			url: "https://github.com/example/agency/pull/17",
+			title: "Ship",
 			isDraft: false,
+			headRefName: "feat/example",
+			baseRefName: "main",
+			headRepository: { nameWithOwner: "fork/agency" },
+			mergedAt: null,
+			mergeCommit: null,
+			mergeable: "UNKNOWN",
 		}
 		expect(
-			recordFromGitHubJson({
-				...base,
-				state: "OPEN",
-				headRefName: "feat/example",
-				baseRefName: "main",
-				headRepository: { nameWithOwner: "fork/agency" },
-				baseRepository: { nameWithOwner: "example/agency" },
-				mergeable: "MERGEABLE",
-			}),
+			parseGitHubPullRequest(
+				JSON.stringify({
+					...base,
+					state: "OPEN",
+					baseRepository: { nameWithOwner: "example/agency" },
+					mergeable: "MERGEABLE",
+				}),
+			),
 		).toMatchObject({
 			state: "open",
 			merged: false,
@@ -138,19 +145,36 @@ describe("delivery commands", () => {
 			mergeable: true,
 		})
 		expect(
-			recordFromGitHubJson({
-				...base,
-				state: "OPEN",
-				mergeable: "CONFLICTING",
-			}),
+			parseGitHubPullRequest(
+				JSON.stringify({
+					...base,
+					state: "OPEN",
+					mergeable: "CONFLICTING",
+				}),
+			),
 		).toMatchObject({ state: "open", merged: false, mergeable: false })
 		expect(
-			recordFromGitHubJson({
-				...base,
-				state: "CLOSED",
-				mergedAt: "2026-07-21T00:00:00Z",
-				mergeable: "UNKNOWN",
-			}),
+			parseGitHubPullRequest(
+				JSON.stringify({
+					...base,
+					state: "CLOSED",
+					mergedAt: "2026-07-21T00:00:00Z",
+					mergeCommit: { oid: "abc" },
+					mergeable: "UNKNOWN",
+				}),
+			),
 		).toMatchObject({ state: "merged", merged: true, mergeable: null })
+	})
+
+	test("rejects malformed GitHub detail and list responses", () => {
+		expect(() => parseGitHubPullRequest("not-json")).toThrow(
+			"GitHub CLI did not return valid JSON for pull request",
+		)
+		expect(() => parseGitHubPullRequest("{}")).toThrow(
+			"GitHub CLI did not return a valid pull request",
+		)
+		expect(() => parseGitHubPullRequestList("{}")).toThrow(
+			"GitHub CLI did not return a valid pull request list",
+		)
 	})
 })
