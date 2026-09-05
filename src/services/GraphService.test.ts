@@ -230,6 +230,17 @@ describe("GraphService", () => {
 		expect(calls).toBe(0)
 	})
 
+	test("propagates directory discovery failures", async () => {
+		const root = await createTempDir()
+		roots.push(root)
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(root, "tasks", "not a directory")
+
+		await expect(getGraph(root)).rejects.toThrow(
+			`Failed to read directory: ${join(root, "tasks")}`,
+		)
+	})
+
 	test("never reports active or terminal execution units as ready", async () => {
 		const root = await createWorkbase()
 		roots.push(root)
