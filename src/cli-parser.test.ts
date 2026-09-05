@@ -362,6 +362,43 @@ describe("strict CLI parsing", () => {
 		}
 	})
 
+	test("limits the working-dependencies opt-in to explicit work targets", () => {
+		for (const args of [
+			["work", "example"],
+			["work", "."],
+			["work", "--task", "example", "--phase", "ship"],
+			["work", "prepare", "example", "--dry-run", "--json"],
+			["work", "prepare", "--task", "example", "--phase", "ship"],
+		]) {
+			expect(parseCli([...args, "--allow-working-dependencies"])).toMatchObject(
+				{
+					commandName: "work",
+					values: { "allow-working-dependencies": true },
+				},
+			)
+			expect(() =>
+				parseCli([...args, "--allow-working-dependencies", "--force"]),
+			).toThrow("cannot be combined")
+		}
+		for (const args of [
+			["work"],
+			["work", "prepare"],
+			["work", "--epic", "delivery"],
+		]) {
+			expect(() => parseCli([...args, "--allow-working-dependencies"])).toThrow(
+				"explicit execution-unit target",
+			)
+		}
+		for (const args of [
+			["worktree", "prepare", "example"],
+			["pr", "create", "example"],
+		]) {
+			expect(() =>
+				parseCli([...args, "--allow-working-dependencies"]),
+			).toThrow()
+		}
+	})
+
 	test("parses readiness selection and explicit guard overrides", () => {
 		expect(parseCli(["next", "--select", "--json"])).toMatchObject({
 			commandName: "next",

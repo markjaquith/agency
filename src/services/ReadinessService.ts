@@ -175,8 +175,16 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 				target: string,
 				cwd: string = process.cwd(),
 				override = false,
+				options: { readonly allowWorkingDependencies?: boolean } = {},
 			) =>
 				Effect.gen(function* () {
+					if (override && options.allowWorkingDependencies) {
+						return yield* Effect.fail(
+							new Error(
+								"Cannot combine --force with --allow-working-dependencies",
+							),
+						)
+					}
 					const graphs = yield* GraphService
 					const graph = yield* graphs.get({ cwd })
 					const node = graph.nodes.find((candidate) => candidate.id === target)
@@ -192,6 +200,18 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 						})
 					}
 					if (override) return
+					if (
+						options.allowWorkingDependencies &&
+						node.kind === "execution-unit" &&
+						node.status === "open" &&
+						!node.readiness.terminal &&
+						node.readiness.blockers.length > 0 &&
+						node.readiness.blockers.every(
+							(blocker) =>
+								blocker.kind === "dependency" && blocker.status === "working",
+						)
+					)
+						return
 					if (!node.readiness.ready && !isResumableWork(node)) {
 						const item = {
 							key: node.key,

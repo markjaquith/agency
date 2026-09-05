@@ -533,6 +533,7 @@ const commands: Record<string, Command> = {
 					auto: options.auto,
 					printCommand: options["print-command"],
 					force: options.force,
+					allowWorkingDependencies: options["allow-working-dependencies"],
 					inputAllowed: options.inputAllowed,
 					cwd: options.cwd,
 					taskId: options.task,

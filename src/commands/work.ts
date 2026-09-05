@@ -49,6 +49,7 @@ export interface WorkOptions extends BaseCommandOptions {
 	readonly printCommand?: boolean
 	readonly auto?: boolean
 	readonly force?: boolean
+	readonly allowWorkingDependencies?: boolean
 	readonly evidence?: string
 }
 
@@ -93,6 +94,22 @@ export const work = (
 	pickBase: PickWorkbase = pickWorkbase,
 ) =>
 	Effect.gen(function* () {
+		if (options.allowWorkingDependencies && options.force) {
+			return yield* Effect.fail(
+				new Error("Cannot combine --force with --allow-working-dependencies"),
+			)
+		}
+		if (
+			options.allowWorkingDependencies &&
+			!options.directory &&
+			!options.taskId
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"--allow-working-dependencies requires an explicit execution-unit target",
+				),
+			)
+		}
 		if (
 			(options.opencode && options.claude) ||
 			(options.agent && (options.opencode || options.claude))
@@ -201,6 +218,13 @@ export const work = (
 		}
 
 		if (!target) {
+			if (options.allowWorkingDependencies) {
+				return yield* Effect.fail(
+					new Error(
+						"--allow-working-dependencies requires an explicit execution-unit target",
+					),
+				)
+			}
 			if (!inputAllowed) {
 				return yield* Effect.fail(
 					new Error(
@@ -237,7 +261,24 @@ export const work = (
 			target = yield* pick(choices, config.chooserCommand)
 			if (!target) return
 		}
-		yield* readiness.guardWorkTarget(targetNodeId(target), root, options.force)
+		if (
+			options.allowWorkingDependencies &&
+			(target.kind === "epic" || (target.kind === "task" && target.multiPhase))
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"--allow-working-dependencies requires an execution-unit target",
+				),
+			)
+		}
+		yield* readiness.guardWorkTarget(
+			targetNodeId(target),
+			root,
+			options.force,
+			{
+				allowWorkingDependencies: options.allowWorkingDependencies,
+			},
+		)
 		const validationAlreadyPerformed = !options.force
 
 		const continuing =
@@ -427,6 +468,22 @@ export const work = (
 
 export const workPrepare = (options: WorkOptions = {}) =>
 	Effect.gen(function* () {
+		if (options.allowWorkingDependencies && options.force) {
+			return yield* Effect.fail(
+				new Error("Cannot combine --force with --allow-working-dependencies"),
+			)
+		}
+		if (
+			options.allowWorkingDependencies &&
+			!options.directory &&
+			!options.taskId
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"--allow-working-dependencies requires an explicit execution-unit target",
+				),
+			)
+		}
 		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
 		const tasks = yield* TaskService
@@ -538,7 +595,9 @@ export const workPrepare = (options: WorkOptions = {}) =>
 				})
 			}
 		}
-		yield* readiness.guardWorkTarget(target, root, options.force)
+		yield* readiness.guardWorkTarget(target, root, options.force, {
+			allowWorkingDependencies: options.allowWorkingDependencies,
+		})
 		const workspace = yield* worktrees.materialize(taskId, phaseId, root, {
 			...options,
 			dryRun: options.dryRun,
@@ -571,6 +630,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 				checkoutPath: workspace.writablePath ?? workspace.reviewPath,
 				documentRevision: document.revision,
 				dryRun: options.dryRun === true,
+				allowWorkingDependencies: options.allowWorkingDependencies,
 			}),
 		}
 		if (options.json) {
@@ -602,6 +662,13 @@ repository mapping remain unchanged. Dynamic readiness and workspace safety chec
 always run. With prepare, --force overrides readiness without launching or changing
 lifecycle status.
 
+For an explicit execution-unit target, --allow-working-dependencies admits open
+work blocked only by dependencies whose status is working. It does not override
+validation, lifecycle, or workspace safety checks and cannot be combined with
+--force or interactive target selection. Ready and resumable working targets keep
+their normal behavior. Preparation includes the opt-in in commands.work; validation
+evidence does not grant it to later calls.
+
 Options:
   --epic <id>          Work on an epic
   --task <id>          Work on a task
@@ -614,6 +681,7 @@ Options:
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset
   --force              Override readiness; launched terminal work is reopened
+  --allow-working-dependencies  Allow only working dependency blockers
   --evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
   --no-input           Never open an interactive selector
 

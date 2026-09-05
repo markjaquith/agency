@@ -95,7 +95,11 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const shownTasks: string[] = []
 	const progressUpdates: string[] = []
 	let integrationSyncs = 0
-	const guards: Array<{ target: string; override?: boolean }> = []
+	const guards: Array<{
+		target: string
+		override?: boolean
+		allowWorkingDependencies?: boolean
+	}> = []
 	const launches: Array<{
 		cli: string
 		args: readonly string[]
@@ -241,9 +245,20 @@ const createHarness = (options: HarnessOptions = {}) => {
 					],
 				),
 			),
-		guardWorkTarget: (target: string, _root: string, override?: boolean) => {
+		guardWorkTarget: (
+			target: string,
+			_root: string,
+			override?: boolean,
+			guardOptions?: { allowWorkingDependencies?: boolean },
+		) => {
 			if (options.guardError || override) events.push("guard")
-			guards.push({ target, override })
+			guards.push({
+				target,
+				override,
+				...(guardOptions?.allowWorkingDependencies
+					? { allowWorkingDependencies: true }
+					: {}),
+			})
 			return options.guardError && !override
 				? Effect.fail(options.guardError)
 				: Effect.void
@@ -674,6 +689,45 @@ describe("work command", () => {
 		})
 		expect(forced.launches).toEqual([])
 		expect(forced.statusUpdates).toEqual([])
+	})
+
+	test("forwards the narrow opt-in without force or skipping validation", async () => {
+		for (const preparing of [false, true]) {
+			const harness = createHarness()
+			await (preparing ? harness.runPrepare : harness.run)({
+				taskId: "example",
+				allowWorkingDependencies: true,
+				silent: true,
+			})
+			expect(harness.guards).toEqual([
+				{
+					target: "execution-unit:task/example",
+					override: undefined,
+					allowWorkingDependencies: true,
+				},
+			])
+			expect(harness.materializeOptions[0]?.force).not.toBe(true)
+			expect(harness.materializeOptions[0]?.validationAlreadyPerformed).toBe(
+				true,
+			)
+		}
+	})
+
+	test("rejects opt-in force combinations and implicit targets before side effects", async () => {
+		for (const preparing of [false, true]) {
+			for (const options of [{ taskId: "example", force: true }, {}]) {
+				const harness = createHarness()
+				await expect(
+					(preparing ? harness.runPrepare : harness.run)({
+						...options,
+						allowWorkingDependencies: true,
+					}),
+				).rejects.toThrow()
+				expect(harness.events).toEqual([])
+				expect(harness.integrationSyncs).toBe(0)
+				expect(harness.guards).toEqual([])
+			}
+		}
 	})
 
 	test("launches an epic agent from an epic directory", async () => {

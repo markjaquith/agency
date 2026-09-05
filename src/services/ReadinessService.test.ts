@@ -272,6 +272,89 @@ describe("ReadinessService", () => {
 		)
 	})
 
+	test("opts in only to open execution units blocked exclusively by working dependencies", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		const target = "execution-unit:phase/ship/verify"
+		const guard = (id = target) =>
+			service((readiness) =>
+				readiness.guardWorkTarget(id, root, false, {
+					allowWorkingDependencies: true,
+				}),
+			)
+		for (const status of ["open", "delegated", "dropped", "working", "done"]) {
+			await write(
+				root,
+				"tasks/ship/phases/implement/PHASE.md",
+				execution(status, "feat/implement"),
+			)
+			if (status === "working" || status === "done") await guard()
+			else
+				await expect(guard()).rejects.toThrow(`Phase dependency is ${status}`)
+		}
+		await write(
+			root,
+			"tasks/ship/phases/implement/PHASE.md",
+			execution("working", "feat/implement"),
+		)
+		await expect(
+			service((readiness) => readiness.guardWorkTarget(target, root)),
+		).rejects.toThrow("Phase dependency is working")
+		await expect(
+			service((readiness) => readiness.guard("pr", "ship", "verify", root)),
+		).rejects.toThrow("Phase dependency is working")
+		await expect(guard("phase:ship/verify")).rejects.toThrow(
+			"Phase dependency is working",
+		)
+		await expect(guard("execution-unit:task/missing")).rejects.toThrow(
+			"not found",
+		)
+		for (const status of ["done", "dropped", "delegated"]) {
+			await write(
+				root,
+				"tasks/ship/phases/verify/PHASE.md",
+				execution(status, "feat/verify"),
+			)
+			await expect(guard()).rejects.toThrow(`Phase status is ${status}`)
+		}
+		await write(
+			root,
+			"tasks/ship/phases/verify/PHASE.md",
+			execution("working", "feat/verify"),
+		)
+		await guard()
+		await write(
+			root,
+			"tasks/ship/phases/verify/PHASE.md",
+			execution("open", "feat/verify"),
+		)
+		const preparePath = join(root, "tasks/prepare/TASK.md")
+		const prepare = await Bun.file(preparePath).text()
+		await Bun.write(
+			preparePath,
+			prepare.replace("status: done", "status: open"),
+		)
+		await expect(guard()).rejects.toThrow("Parent task dependency is open")
+		await Bun.write(
+			preparePath,
+			prepare.replace("status: done", "status: working"),
+		)
+		await guard()
+		await write(
+			root,
+			"tasks/ship/phases/verify/PHASE.md",
+			execution("open", "feat/verify").replace("repo: agency", "repo: missing"),
+		)
+		await expect(guard()).rejects.toThrow("missing")
+		await expect(
+			service((readiness) =>
+				readiness.guardWorkTarget(target, root, true, {
+					allowWorkingDependencies: true,
+				}),
+			),
+		).rejects.toThrow("Cannot combine")
+	})
+
 	test("allows active PR targets but rejects terminal outcomes", async () => {
 		const root = await createWorkbase()
 		roots.push(root)

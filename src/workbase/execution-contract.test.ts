@@ -140,6 +140,25 @@ describe("execution contract", () => {
 			},
 		})
 		expect(applied.sourceLocations).toEqual(EXECUTION_SOURCE_LOCATIONS)
+		const optedIn = buildExecutionContract({
+			workbaseRoot: root,
+			target: "execution-unit:task/example",
+			taskPath,
+			checkoutPath,
+			documentRevision: "a".repeat(64),
+			dryRun: false,
+			allowWorkingDependencies: true,
+		})
+		expect(optedIn).toEqual({
+			...applied,
+			commands: {
+				...applied.commands,
+				work: {
+					...applied.commands.work,
+					argv: [...applied.commands.work.argv, "--allow-working-dependencies"],
+				},
+			},
+		})
 		expect(preview).toMatchObject({
 			mode: "preview",
 			workspace: { state: "planned" },
