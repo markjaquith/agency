@@ -26,6 +26,7 @@ import { validateAgents } from "../workbase/agent-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
 import { documentRevision } from "../workbase/document-revision"
+import { documentLoadConcurrency } from "../workbase/document-loading"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -65,8 +66,6 @@ interface DocumentRecord<T> {
 	readonly revision: string
 	readonly data: T
 }
-
-const validationConcurrency = 32
 
 interface ValidationDocuments {
 	readonly epics: readonly DocumentRecord<EpicData>[]
@@ -751,7 +750,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								return document ? { id, path, ...document } : null
 							}),
 						),
-						{ concurrency: validationConcurrency },
+						{ concurrency: documentLoadConcurrency },
 					)
 					for (const document of epicDocuments) {
 						if (document) epics.set(document.id, document)
@@ -793,7 +792,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												: null
 										}),
 									),
-									{ concurrency: validationConcurrency },
+									{ concurrency: documentLoadConcurrency },
 								)
 								return {
 									id,
@@ -802,7 +801,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								}
 							}),
 						),
-						{ concurrency: validationConcurrency },
+						{ concurrency: documentLoadConcurrency },
 					)
 					for (const documents of taskDocuments) {
 						if (documents.task) tasks.set(documents.id, documents.task)
