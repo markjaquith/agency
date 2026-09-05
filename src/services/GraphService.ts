@@ -22,6 +22,7 @@ import {
 import { parseFrontmatter } from "../workbase/frontmatter"
 import { normalizePullRequestRecord } from "../workbase/delivery-command"
 import { documentRevision } from "../workbase/document-revision"
+import { documentLoadConcurrency } from "../workbase/document-loading"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
@@ -201,7 +202,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 								)
 							}),
 						),
-						{ concurrency: "unbounded" },
+						{ concurrency: documentLoadConcurrency },
 					)
 					for (const document of epicDocuments) {
 						if (document) epics.set(document.id, document)
@@ -224,40 +225,37 @@ export class GraphService extends Effect.Service<GraphService>()(
 								const phaseIds = yield* directories(
 									join(root, "tasks", id, "phases"),
 								)
-								const taskPhases = yield* Effect.all(
-									phaseIds.map((phaseId) =>
-										Effect.gen(function* () {
-											const phasePath = join(
-												root,
-												"tasks",
-												id,
-												"phases",
-												phaseId,
-												"PHASE.md",
-											)
-											return yield* readDocument(
-												phaseId,
-												phasePath,
-												PhaseFrontmatter,
-											).pipe(
-												Effect.catchTag("FileNotFoundError", () =>
-													Effect.succeed(null),
-												),
-											)
-										}),
-									),
-									{ concurrency: "unbounded" },
-								)
-								return { id, task, phases: taskPhases }
+								return { id, task, phaseIds }
 							}),
 						),
-						{ concurrency: "unbounded" },
+						{ concurrency: documentLoadConcurrency },
+					)
+					const phaseDocuments = yield* Effect.all(
+						taskDocuments.flatMap(({ id, phaseIds }) =>
+							phaseIds.map((phaseId) => {
+								const phasePath = join(
+									root,
+									"tasks",
+									id,
+									"phases",
+									phaseId,
+									"PHASE.md",
+								)
+								return readDocument(phaseId, phasePath, PhaseFrontmatter).pipe(
+									Effect.catchTag("FileNotFoundError", () =>
+										Effect.succeed(null),
+									),
+									Effect.map((document) => ({ taskId: id, document })),
+								)
+							}),
+						),
+						{ concurrency: documentLoadConcurrency },
 					)
 					for (const documents of taskDocuments) {
 						if (documents.task) tasks.set(documents.id, documents.task)
-						for (const phase of documents.phases) {
-							if (phase) phases.set(`${documents.id}/${phase.id}`, phase)
-						}
+					}
+					for (const { taskId, document } of phaseDocuments) {
+						if (document) phases.set(`${taskId}/${document.id}`, document)
 					}
 
 					const repositoryRecords = new Map<string, RepositoryRecord>()

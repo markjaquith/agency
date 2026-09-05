@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { mkdir, readFile as nodeReadFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { Effect } from "effect"
 import {
 	captureLogs,
 	cleanupTempDir,
 	createTempDir,
 	runTestEffect,
+	trackDocumentReadConcurrency,
 } from "../test-utils"
+import { documentLoadConcurrency } from "../workbase/document-loading"
+import { ContextService } from "../services/ContextService"
+import { FileSystemService } from "../services/FileSystemService"
 import { context } from "./context"
 
 const write = async (root: string, path: string, content: string) => {
@@ -155,6 +160,33 @@ Phase prose.
 			join(code, "docs"),
 			"main",
 		])
+	})
+
+	test("bounds document reads across nested task and phase traversal", async () => {
+		await Promise.all(
+			Array.from({ length: documentLoadConcurrency + 8 }, (_, index) =>
+				write(
+					root,
+					`tasks/agent-contract/phases/extra-${index}/PHASE.md`,
+					`---\nrepo: agency\nbranch: extra-${index}\nbase: main\npr: null\nstatus: open\n---\n`,
+				),
+			),
+		)
+		const fs = await Effect.runPromise(
+			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+		)
+		const tracked = trackDocumentReadConcurrency(fs)
+
+		await runTestEffect(
+			ContextService.pipe(
+				Effect.flatMap((service) =>
+					service.get({ cwd: root, target: "foundations" }),
+				),
+				Effect.provideService(FileSystemService, tracked.fs),
+			),
+		)
+
+		expect(tracked.maximum()).toBe(documentLoadConcurrency)
 	})
 
 	afterEach(async () => {
