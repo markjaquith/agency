@@ -23,6 +23,7 @@ import { archivedPhaseDirectory } from "../workbase/archive"
 import {
 	documentWriteStep,
 	runLifecycleTransaction,
+	transactionEffect,
 	type TransactionStep,
 } from "./LifecycleTransaction"
 import { withWorktreeLocks } from "./WorktreeLock"
@@ -295,7 +296,7 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							}
 							steps.push({
 								label: `move and repair code for ${taskId}/${firstPhaseId}`,
-								preflight: async () => {
+								preflight: transactionEffect(async () => {
 									for (const entry of await readdir(oldCodePath)) {
 										if (!checkoutAliases.includes(entry))
 											throw new Error(
@@ -339,8 +340,8 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 												`Cannot convert task '${taskId}'; checkout '${alias}' is not registered as a Git worktree`,
 											)
 									}
-								},
-								apply: async () => {
+								}),
+								apply: transactionEffect(async () => {
 									await mkdir(firstDirectory, { recursive: true })
 									await rename(oldCodePath, firstCodePath)
 									try {
@@ -351,12 +352,12 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 										await rm(firstDirectory, { recursive: true, force: true })
 										throw cause
 									}
-								},
-								rollback: async () => {
+								}),
+								rollback: transactionEffect(async () => {
 									await rename(firstCodePath, oldCodePath)
 									await repair(oldCodePath)
 									await rm(firstDirectory, { recursive: true, force: true })
-								},
+								}),
 								manualRecovery: `Move ${firstCodePath} back to ${oldCodePath} and run git worktree repair`,
 							})
 						}

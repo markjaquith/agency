@@ -33,6 +33,7 @@ import {
 	documentWriteStep,
 	pathMustNotExistStep,
 	runLifecycleTransaction,
+	transactionEffect,
 	type TransactionStep,
 } from "./LifecycleTransaction"
 
@@ -127,7 +128,7 @@ const branchAvailableStep = (
 	destinationId: string,
 ): TransactionStep => ({
 	label: `verify branch ${repo}:${branch} is available`,
-	preflight: async () => {
+	preflight: transactionEffect(async () => {
 		const taskEntries = await readdir(join(root, "tasks"), {
 			withFileTypes: true,
 		}).catch(() => [])
@@ -170,8 +171,8 @@ const branchAvailableStep = (
 				}
 			}
 		}
-	},
-	apply: async () => {},
+	}),
+	apply: Effect.void,
 })
 
 const reviewPinRef = (taskId: string) =>
@@ -199,7 +200,7 @@ const reviewPinStep = (
 	}
 	return {
 		label: `retain review pin for ${taskId}`,
-		apply: () =>
+		apply: transactionEffect(() =>
 			run([
 				"git",
 				"-C",
@@ -209,7 +210,8 @@ const reviewPinStep = (
 				review.commit,
 				"0".repeat(40),
 			]),
-		rollback: () =>
+		),
+		rollback: transactionEffect(() =>
 			run([
 				"git",
 				"-C",
@@ -219,6 +221,7 @@ const reviewPinStep = (
 				ref,
 				review.commit,
 			]),
+		),
 		manualRecovery: `Delete ${ref} from repository '${review.repo}'`,
 	}
 }
@@ -485,22 +488,21 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 						postWriteSteps: [
 							{
 								label: "validate resulting workbase",
-								apply: async () => {
-									const report = await Effect.runPromise(
-										workbase
-											.validate(root)
-											.pipe(
-												Effect.provideService(FileSystemService, fs),
-												Effect.provideService(WorkbaseService, workbase),
-											),
-									)
-									if (!report.valid) {
-										throw new Error(
-											`Handoff would create an invalid workbase: ${report.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`,
-										)
-									}
-									committedValidation = report
-								},
+								apply: workbase.validate(root).pipe(
+									Effect.provideService(FileSystemService, fs),
+									Effect.provideService(WorkbaseService, workbase),
+									Effect.flatMap((report) => {
+										if (!report.valid) {
+											return Effect.fail(
+												new Error(
+													`Handoff would create an invalid workbase: ${report.issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`,
+												),
+											)
+										}
+										committedValidation = report
+										return Effect.void
+									}),
+								),
 							},
 						],
 					},
