@@ -207,10 +207,11 @@ recursively launch. External session state is never part of worker identity. If
 the prompt and context disagree, stop and ask the user rather than launching.
 
 For OpenCode, Agency's managed plugin validates the generated marker against
-`agency context`, binds that identity to the OpenCode session, injects an
-active-worker system instruction, and supplies Agency identity to that session's
-shell environment. This avoids relying on the environment of OpenCode's
-long-lived server process.
+`agency context`, binds that identity to the OpenCode session, and injects an
+active-worker system instruction. The V1 integration also supplies Agency
+identity to that session's shell environment. OpenCode V2's shell hook does not
+identify the invoking session, so the plugin does not leak one session's identity
+into another and instead retains the validated prompt fallback.
 
 ## Closeout
 
@@ -238,9 +239,11 @@ a refinement loop, or pausing or handing off completed implementation work):
 
 `agency integration status` reports `managed`, `drifted`, `customized`, or
 `missing` generated files. Agency keeps these instructions in
-`.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
+`.agency/AGENTS.md`, and its managed OpenCode integration loads them automatically.
 It also installs a managed server plugin that exposes skills from the
-authoritative writable checkout and an explicitly registered TUI companion
+authoritative writable checkout. In OpenCode V2 it injects these managed
+instructions through a session context hook because configured instruction paths
+are not currently loaded. The V1 integration also registers a TUI companion
 providing `/agency-debug` without submitting an LLM prompt.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
@@ -253,7 +256,7 @@ OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
 `agency context`. OpenCode remains rooted in the task or epic directory so the
 workbase instructions and config compose normally. The managed plugin resolves
-the writable checkout from launch context or `agency context`, then adds its
-supported skill directories through `skills.paths`; this does not make other
-checkout-local OpenCode configuration authoritative. Agents must follow the
-authority reported by `agency context`.
+the writable checkout from launch context or `agency context`, then exposes its
+supported skill directories through the applicable OpenCode plugin API; this
+does not make other checkout-local OpenCode configuration authoritative. Agents
+must follow the authority reported by `agency context`.
