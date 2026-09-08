@@ -16,6 +16,7 @@ import {
 import type { RepositoryReference } from "../workbase/schemas"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import { createProgress } from "../utils/progress"
 import { withWorktreeLocks } from "./WorktreeLock"
 import { VersionControlService } from "./VersionControlService"
 import type {
@@ -257,7 +258,12 @@ const runPostCheckoutHook = (options: {
 const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
 
 const originRef = (ref: string) =>
-	ref.replace(/^refs\/remotes\/origin\//, "").replace(/^origin\//, "")
+	ref
+		.replace(/^refs\/remotes\/origin\//, "")
+		.replace(/^origin\//, "")
+		.replace(/^refs\/heads\//, "")
+
+const gitFetchTimeoutMs = 4 * 60 * 1000
 
 interface MaterializeOptions extends BaseCommandOptions {
 	readonly force?: boolean
@@ -882,6 +888,9 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
 					const { verboseLog } = createLoggers(options)
+					const progress = createProgress({
+						silent: options.silent || options.json,
+					})
 					const forwardCommandOutput =
 						options.verbose === true && !options.silent && !options.json
 					const { root, config } = yield* workbase.loadConfig(startPath)
@@ -1046,7 +1055,10 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												"origin",
 												originRef(executionBase),
 											],
-											{ captureOutput: true },
+											{
+												captureOutput: true,
+												timeoutMs: gitFetchTimeoutMs,
+											},
 										)
 										if (
 											remoteBase.exitCode !== 0 ||
@@ -1102,7 +1114,10 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											"origin",
 											originRef(checkout.ref),
 										],
-										{ captureOutput: true },
+										{
+											captureOutput: true,
+											timeoutMs: gitFetchTimeoutMs,
+										},
 									)
 									if (remote.exitCode === 0 && remote.stdout.trim())
 										commit = remote.stdout.trim().split(/\s+/)[0]
@@ -1165,7 +1180,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									})
 								}
 
-								const fetchOrigin = (ref?: string) =>
+								const fetchOrigin = (ref: string) =>
 									Effect.gen(function* () {
 										const remote = yield* fs.runCommand(
 											[
@@ -1185,7 +1200,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											repositoryPath,
 											"fetch",
 											"origin",
-											...(ref ? [ref] : []),
+											ref,
 										]
 										if (options.dryRun) {
 											operations.push({
@@ -1197,14 +1212,19 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											return false
 										}
 
+										const status = `Fetching '${ref}' for '${alias}'`
+										progress.start(`${status}...`)
 										const fetch = yield* fs.runCommand(command, {
 											captureOutput: true,
+											timeoutMs: gitFetchTimeoutMs,
 										})
 										if (fetch.exitCode !== 0) {
+											progress.fail(`${status} failed`)
 											return yield* new WorktreeError({
 												message: `Failed to fetch '${alias}': ${fetch.stderr}`,
 											})
 										}
+										progress.succeed(`${status} complete`)
 										operations.push({
 											action: "fetch",
 											repo: alias,
@@ -1321,7 +1341,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											message: `Worktree registry contains a missing checkout at ${checkoutPath}`,
 										})
 									}
-									yield* fetchOrigin()
+									yield* fetchOrigin(originRef(executionBase))
 
 									let args: string[]
 									let env: Record<string, string> | undefined

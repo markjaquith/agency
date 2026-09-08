@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { mkdtemp, readdir, rm, utimes } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -163,6 +163,29 @@ describe("withWorktreeLocks", () => {
 				),
 			),
 		).resolves.toBe("reacquired")
+	})
+
+	test("releases locks when the protected operation is interrupted", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		let entered!: () => void
+		const enteredPromise = new Promise<void>((resolve) => {
+			entered = resolve
+		})
+		const fiber = Effect.runFork(
+			withWorktreeLocks(
+				root,
+				[{ taskId: "interrupted" }],
+				Effect.sync(entered).pipe(Effect.zipRight(Effect.never)),
+			),
+		)
+		await enteredPromise
+
+		await Effect.runPromise(Fiber.interrupt(fiber))
+
+		expect(
+			(await readdir(root)).filter((path) => path.endsWith(".lock")),
+		).toEqual([])
 	})
 
 	test("deduplicates targets while keeping task and phase locks distinct", async () => {
