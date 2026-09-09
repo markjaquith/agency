@@ -1185,6 +1185,11 @@ status: open
 				join(workbaseRoot, "epics/delivery/EPIC.md"),
 				join(workbaseRoot, "tasks/sibling/TASK.md"),
 			]
+			const opencodeVersion = Bun.spawnSync(["opencode", "--version"])
+			expect(opencodeVersion.exitCode).toBe(0)
+			const isOpenCodeV2 = opencodeVersion.stdout
+				.toString()
+				.startsWith("opencode2 ")
 			for (const document of documents) {
 				expect(await Bun.file(document).exists()).toBe(true)
 			}
@@ -1259,6 +1264,53 @@ status: open
 					OPENCODE_CONFIG_CONTENT: JSON.stringify({
 						model: "opencode/big-pickle",
 					}),
+				}
+				if (isOpenCodeV2) {
+					const locationQuery = `location[directory]=${encodeURIComponent(contract.cwd)}`
+					const activation = Bun.spawnSync(
+						[
+							"opencode",
+							"api",
+							"post",
+							`/api/plugin/await-activation?${locationQuery}`,
+						],
+						{ cwd: contract.cwd, env: environment },
+					)
+					expect(activation.exitCode, activation.stderr.toString()).toBe(0)
+					const api = (resource: string) => {
+						const result = Bun.spawnSync(
+							["opencode", "api", "get", `/api/${resource}?${locationQuery}`],
+							{ cwd: contract.cwd, env: environment },
+						)
+						expect(result.exitCode, result.stderr.toString()).toBe(0)
+						return JSON.parse(result.stdout.toString()).data
+					}
+					expect(api("plugin")).toContainEqual(
+						expect.objectContaining({
+							id: "agency",
+							state: { status: "active" },
+						}),
+					)
+					expect(api("reference")).toContainEqual(
+						expect.objectContaining({
+							name: "workbase",
+							path: workbaseRoot,
+						}),
+					)
+					const skills = api("skill")
+					if (launch.skillPath) {
+						expect(skills).toContainEqual(
+							expect.objectContaining({
+								id: "repository-skill",
+								content: expect.stringContaining("Repository skill content."),
+							}),
+						)
+					} else {
+						expect(skills).not.toContainEqual(
+							expect.objectContaining({ id: "repository-skill" }),
+						)
+					}
+					continue
 				}
 				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
 					cwd: contract.cwd,
@@ -1374,6 +1426,43 @@ status: open
 				join(workbaseRoot, "epics/delivery"),
 			]
 			for (const cwd of directDirectories) {
+				if (isOpenCodeV2) {
+					const api = (resource: string) => {
+						const result = Bun.spawnSync(
+							[
+								"opencode",
+								"api",
+								"get",
+								`/api/${resource}?location[directory]=${encodeURIComponent(cwd)}`,
+							],
+							{ cwd, env: directEnvironment },
+						)
+						expect(result.exitCode, result.stderr.toString()).toBe(0)
+						return JSON.parse(result.stdout.toString()).data
+					}
+					expect(api("plugin")).toContainEqual(
+						expect.objectContaining({
+							id: "agency",
+							state: { status: "active" },
+						}),
+					)
+					expect(api("reference")).toContainEqual(
+						expect.objectContaining({ name: "workbase", path: workbaseRoot }),
+					)
+					const shouldHaveSkill =
+						cwd === directDirectories[0] || cwd === directDirectories[2]
+					const repositorySkill = api("skill").find(
+						(skill: any) => skill.id === "repository-skill",
+					)
+					if (shouldHaveSkill) {
+						expect(repositorySkill).toMatchObject({
+							content: expect.stringContaining("Repository skill content."),
+						})
+					} else {
+						expect(repositorySkill).toBeUndefined()
+					}
+					continue
+				}
 				const probe = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
 					cwd,
 					env: directEnvironment,
@@ -1425,53 +1514,55 @@ status: open
 					)
 				}
 			}
-			const denied = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
-				cwd: directDirectories[0],
-				env: {
-					...directEnvironment,
-					OPENCODE_CONFIG_CONTENT: JSON.stringify({
-						model: "opencode/big-pickle",
-						permission: { external_directory: { "*": "deny" } },
-					}),
-				},
-			})
-			expect(denied.exitCode).toBe(0)
-			const deniedRules = JSON.parse(denied.stdout.toString()).permission
-			const managedRule = deniedRules.findIndex(
-				(rule: any) =>
-					rule.permission === "external_directory" &&
-					rule.pattern === join(workbaseRoot, "*") &&
-					rule.action === "allow",
-			)
-			const userRule = deniedRules.findLastIndex(
-				(rule: any) =>
-					rule.permission === "external_directory" &&
-					rule.pattern === "*" &&
-					rule.action === "deny",
-			)
-			expect(managedRule).toBeGreaterThanOrEqual(0)
-			expect(userRule).toBeGreaterThan(managedRule)
-			for (const cwd of [
-				join(workbaseRoot, "tasks/example"),
-				join(workbaseRoot, "tasks/pipeline/phases/build"),
-			]) {
-				const manualSkill = Bun.spawnSync(
-					[
-						"opencode",
-						"debug",
-						"agent",
-						"build",
-						"--tool",
-						"skill",
-						"--params",
-						JSON.stringify({ name: "repository-skill" }),
-					],
-					{ cwd, env: directEnvironment },
+			if (!isOpenCodeV2) {
+				const denied = Bun.spawnSync(["opencode", "debug", "agent", "build"], {
+					cwd: directDirectories[0],
+					env: {
+						...directEnvironment,
+						OPENCODE_CONFIG_CONTENT: JSON.stringify({
+							model: "opencode/big-pickle",
+							permission: { external_directory: { "*": "deny" } },
+						}),
+					},
+				})
+				expect(denied.exitCode).toBe(0)
+				const deniedRules = JSON.parse(denied.stdout.toString()).permission
+				const managedRule = deniedRules.findIndex(
+					(rule: any) =>
+						rule.permission === "external_directory" &&
+						rule.pattern === join(workbaseRoot, "*") &&
+						rule.action === "allow",
 				)
-				expect(manualSkill.exitCode, manualSkill.stderr.toString()).toBe(0)
-				expect(
-					JSON.parse(manualSkill.stdout.toString()).result.output,
-				).toContain("Repository skill content.")
+				const userRule = deniedRules.findLastIndex(
+					(rule: any) =>
+						rule.permission === "external_directory" &&
+						rule.pattern === "*" &&
+						rule.action === "deny",
+				)
+				expect(managedRule).toBeGreaterThanOrEqual(0)
+				expect(userRule).toBeGreaterThan(managedRule)
+				for (const cwd of [
+					join(workbaseRoot, "tasks/example"),
+					join(workbaseRoot, "tasks/pipeline/phases/build"),
+				]) {
+					const manualSkill = Bun.spawnSync(
+						[
+							"opencode",
+							"debug",
+							"agent",
+							"build",
+							"--tool",
+							"skill",
+							"--params",
+							JSON.stringify({ name: "repository-skill" }),
+						],
+						{ cwd, env: directEnvironment },
+					)
+					expect(manualSkill.exitCode, manualSkill.stderr.toString()).toBe(0)
+					expect(
+						JSON.parse(manualSkill.stdout.toString()).result.output,
+					).toContain("Repository skill content.")
+				}
 			}
 
 			parseJson(

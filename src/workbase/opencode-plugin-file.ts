@@ -6,10 +6,21 @@ const managedHeaderPattern =
 const checksum = (content: string) =>
 	createHash("sha256").update(content).digest("hex")
 
-const body = `import { existsSync, readFileSync } from "node:fs"
-import { dirname, join, resolve, sep } from "node:path"
+const body = `import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { basename, dirname, extname, join, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Plugin, PluginModule } from "@opencode-ai/plugin/v1"
+type V1Plugin = (input: { directory: string }) => Promise<Record<string, any>>
+type V2PluginContext = {
+  location: { directory: string }
+  reference: { transform(callback: (editor: any) => void): Promise<unknown> }
+  skill: { transform(callback: (editor: any) => void): Promise<unknown> }
+  permission: {
+    hook(name: "evaluate", callback: (event: any) => void): Promise<unknown>
+  }
+  session: {
+    hook(name: string, callback: (event: any) => void): Promise<unknown>
+  }
+}
 
 const workerLaunchPattern = /^Agency worker launch target: ([^.\\s]+)\\./
 
@@ -19,20 +30,6 @@ type AgencyContext = {
   target?: string
   task?: string
   phase?: string
-}
-
-type V2PluginContext = {
-  reference: {
-    transform(callback: (references: {
-      list(): readonly (readonly [string, unknown])[]
-      add(name: string, source: { type: "local"; path: string; description: string }): void
-    }) => void): Promise<unknown>
-  }
-  skill: {
-    transform(callback: (skills: {
-      source(source: { type: "directory"; path: string }): void
-    }) => void): Promise<unknown>
-  }
 }
 
 const contextTarget = (result: Record<string, any>): string | undefined => {
@@ -93,6 +90,54 @@ const checkoutSkillPaths = (checkout: string | undefined) => checkout
     ].filter(existsSync)
   : []
 
+const skillFiles = (source: string) => {
+  const files: string[] = []
+  const visit = (directory: string, root = false) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) visit(path)
+      else if (
+        entry.isFile() &&
+        (entry.name === "SKILL.md" || (root && extname(entry.name) === ".md"))
+      ) files.push(path)
+    }
+  }
+  visit(source, true)
+  return files
+}
+
+const unquote = (value: string) => {
+  const trimmed = value.trim()
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) return trimmed.slice(1, -1)
+  return trimmed
+}
+
+const skillInfo = (location: string) => {
+  const raw = readFileSync(location, "utf8")
+  const match = raw.match(/^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/)
+  const frontmatter = match?.[1] ?? ""
+  const scalar = (name: string) => {
+    const value = frontmatter.match(new RegExp(
+      "^" + name + "[ \\t]*:[ \\t]*(.+)$", "m",
+    ))?.[1]
+    return value ? unquote(value) : undefined
+  }
+  const id = basename(location) === "SKILL.md"
+    ? basename(dirname(location))
+    : basename(location, extname(location))
+  return {
+    id,
+    name: scalar("name") ?? id,
+    description: scalar("description"),
+    location,
+    content: match ? raw.slice(match[0].length) : raw,
+  }
+}
+
 const agencyContext = async (
   directory: string,
   useEnvironmentTarget = true,
@@ -133,11 +178,11 @@ const agencyContext = async (
   }
 }
 
-const plugin: Plugin = async ({ directory }) => {
+const plugin: V1Plugin = async ({ directory }) => {
   const workerSessions = new Map<string, AgencyContext>()
 
   return {
-    config: async (config) => {
+    config: async (config: any) => {
       const context = await agencyContext(directory).catch(() => undefined)
       const root = process.env.AGENCY_WORKBASE ?? context?.root ?? discoverWorkbase(directory)
       const checkout = process.env.AGENCY_WRITABLE_CHECKOUT ?? context?.checkout ?? discoverCheckout(directory, root)
@@ -171,14 +216,17 @@ const plugin: Plugin = async ({ directory }) => {
       config.skills ??= {}
       config.skills.paths = [...new Set([...(config.skills.paths ?? []), ...paths])]
     },
-    "chat.message": async ({ sessionID }, output) => {
+    "chat.message": async ({ sessionID }: { sessionID: string }, output: any) => {
       const launchTarget = workerLaunchTarget(output.parts)
       if (!launchTarget) return
       const context = await agencyContext(directory, false).catch(() => undefined)
       if (context?.target !== launchTarget) return
       workerSessions.set(sessionID, context)
     },
-    "experimental.chat.system.transform": async ({ sessionID }, output) => {
+    "experimental.chat.system.transform": async (
+      { sessionID }: { sessionID?: string },
+      output: any,
+    ) => {
       if (!sessionID) return
       const context = workerSessions.get(sessionID)
       if (!context?.target) return
@@ -191,7 +239,7 @@ const plugin: Plugin = async ({ directory }) => {
         ].filter(Boolean).join(" "),
       )
     },
-    "shell.env": async ({ sessionID }, output) => {
+    "shell.env": async ({ sessionID }: { sessionID?: string }, output: any) => {
       if (!sessionID) return
       const context = workerSessions.get(sessionID)
       if (!context?.target) return
@@ -209,9 +257,17 @@ const plugin: Plugin = async ({ directory }) => {
 export const AgencyPlugin = plugin
 
 const setup = async (context: V2PluginContext) => {
-  const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..")
+  const directory = context.location.directory
+  const agency = await agencyContext(directory).catch(() => undefined)
+  const root = agency?.root ?? resolve(dirname(fileURLToPath(import.meta.url)), "../..")
+  const instructionsPath = join(root, ".agency", "AGENTS.md")
+  const instructions = existsSync(instructionsPath)
+    ? readFileSync(instructionsPath, "utf8")
+    : undefined
   await context.reference.transform((references) => {
-    if (references.list().some(([name]) => name === "workbase")) return
+    if (
+      references.list().some(([name]: [string, unknown]) => name === "workbase")
+    ) return
     references.add("workbase", {
       type: "local",
       path: root,
@@ -219,10 +275,49 @@ const setup = async (context: V2PluginContext) => {
     })
   })
 
-  const paths = checkoutSkillPaths(process.env.AGENCY_WRITABLE_CHECKOUT)
-  if (paths.length === 0) return
+  const paths = checkoutSkillPaths(
+    process.env.AGENCY_WRITABLE_CHECKOUT ??
+      agency?.checkout ??
+      discoverCheckout(directory, root),
+  )
   await context.skill.transform((skills) => {
-    for (const path of paths) skills.source({ type: "directory", path })
+    for (const path of paths) {
+      for (const location of skillFiles(path)) {
+        skills.add(skillInfo(location) as unknown as Parameters<typeof skills.add>[0])
+      }
+    }
+  })
+
+  const workerSessions = new Map<string, AgencyContext>()
+  await context.permission.hook("evaluate", (event) => {
+    if (
+      event.action === "external_directory" &&
+      event.resources.every((resource: string) => {
+        const path = resolve(resource)
+        return path === root || path.startsWith(root + sep)
+      })
+    ) event.effect = "allow"
+  })
+  await context.session.hook("prompt", async (event) => {
+    const launchTarget = event.prompt.text.match(workerLaunchPattern)?.[1]
+    if (!launchTarget) return
+    const current = await agencyContext(directory, false).catch(() => undefined)
+    if (!current || current.target !== launchTarget) return
+    workerSessions.set(event.sessionID, current)
+  })
+  await context.session.hook("context", (event) => {
+    if (instructions) event.system.push({ type: "text", text: instructions })
+    const current = workerSessions.get(event.sessionID)
+    if (!current?.target) return
+    event.system.push({
+      type: "text",
+      text: [
+        \`Agency verified this OpenCode session as the active worker for \${current.target}. Perform the assigned work directly. Do not invoke agency work for this target or launch a replacement worker.\`,
+        current.checkout
+          ? \`OpenCode remains rooted in the task or phase directory for Agency instructions and context. Treat \${current.checkout} as the default implementation directory: use it for source reads, edits, repository status, builds, tests, formatting, and other repository-local commands. Set each tool's working directory to that checkout when supported; otherwise use absolute paths. Run Agency lifecycle and context commands from the task or phase directory. Any reference checkouts reported by Agency context are read-only.\`
+          : undefined,
+      ].filter(Boolean).join(" "),
+    })
   })
 }
 
@@ -230,7 +325,7 @@ export default {
   id: "agency",
   setup,
   server: plugin,
-} satisfies PluginModule & { setup: (context: V2PluginContext) => Promise<void> }
+}
 `
 
 const renderManagedWorkbaseOpencodePlugin = (content: string) =>

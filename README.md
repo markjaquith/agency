@@ -364,16 +364,22 @@ before acting; a matching worker performs the task directly and must not invoke
 generated prompts when their document paths, current directory, and active valid
 context all agree. External session state is not part of this identity contract.
 The managed OpenCode plugin validates the marker against Agency context, binds it
-to the receiving OpenCode session, injects an explicit active-worker system
-instruction, and restores Agency identity for that session's shell environment.
-This session bridge is necessary because an OpenCode client can attach to a
-long-lived server process that did not inherit the client's launch environment.
+to the receiving OpenCode session, and injects an explicit active-worker system
+instruction. Its V1 integration also restores Agency identity for that session's
+shell environment. OpenCode V2's shell hook is location-scoped and does not
+identify the invoking session, so Agency deliberately avoids leaking one
+session's worker identity into another; the validated marker and injected system
+instruction remain the V2 fallback when the long-lived server did not inherit
+the client's launch environment.
 The `opencode2` and `opencode` agents remain rooted in their task or epic
 working directory so the workbase `AGENTS.md` and managed OpenCode config are
 discovered normally.
 Agency's managed OpenCode plugin grants the active workbase external-directory
-access and adds existing checkout-local `.claude/skills`, `.agents/skills`, and
-`.opencode/{skill,skills}` directories to `skills.paths`. The global Pi
+access and exposes existing checkout-local `.claude/skills`, `.agents/skills`,
+and `.opencode/{skill,skills}` definitions. V1 adds those source directories to
+`skills.paths`; V2 registers their discovered skill definitions through the
+plugin API and injects the managed Agency instructions through a session context
+hook. The global Pi
 extension provides equivalent whole-workbase context and additionally discovers
 checkout-local `.pi/skills` through Pi's `resources_discover` lifecycle.
 `agency work` supplies the checkout directly; plain OpenCode and Pi launches
