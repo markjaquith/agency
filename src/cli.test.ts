@@ -1056,6 +1056,10 @@ status: open
 				join(source, ".claude/skills/repository-skill/SKILL.md"),
 				"---\nname: repository-skill\ndescription: Repository discovery test.\n---\n\nRepository skill content.\n",
 			)
+			await Bun.write(
+				join(source, ".claude/skills/EVALS.md"),
+				"Evaluate the repository without frontmatter.\n",
+			)
 			for (const args of [
 				["config", "user.email", "test@example.com"],
 				["config", "user.name", "Test"],
@@ -1305,6 +1309,14 @@ status: open
 								content: expect.stringContaining("Repository skill content."),
 							}),
 						)
+						const minimalSkill = skills.find(
+							(skill: any) => skill.id === "EVALS",
+						)
+						expect(minimalSkill).toMatchObject({
+							name: "EVALS",
+							content: "Evaluate the repository without frontmatter.\n",
+						})
+						expect(minimalSkill.description).toBeUndefined()
 					} else {
 						expect(skills).not.toContainEqual(
 							expect.objectContaining({ id: "repository-skill" }),
@@ -1451,13 +1463,22 @@ status: open
 					)
 					const shouldHaveSkill =
 						cwd === directDirectories[0] || cwd === directDirectories[2]
-					const repositorySkill = api("skill").find(
+					const skills = api("skill")
+					const repositorySkill = skills.find(
 						(skill: any) => skill.id === "repository-skill",
 					)
 					if (shouldHaveSkill) {
 						expect(repositorySkill).toMatchObject({
 							content: expect.stringContaining("Repository skill content."),
 						})
+						const minimalSkill = skills.find(
+							(skill: any) => skill.id === "EVALS",
+						)
+						expect(minimalSkill).toMatchObject({
+							name: "EVALS",
+							content: "Evaluate the repository without frontmatter.\n",
+						})
+						expect(minimalSkill.description).toBeUndefined()
 					} else {
 						expect(repositorySkill).toBeUndefined()
 					}

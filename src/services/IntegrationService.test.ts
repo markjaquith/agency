@@ -510,14 +510,20 @@ describe("IntegrationService", () => {
 			phase: "build",
 		}))
 
-	test("registers the workbase reference through the OpenCode V2 API", async () => {
+	test("registers V2 references and skills with normalized metadata", async () => {
 		const path = join(root, ".opencode/plugins/agency-repository-skills.ts")
 		const checkout = join(root, "code/agency")
 		const skillPath = join(checkout, ".agents/skills/release/SKILL.md")
+		const minimalSkillPath = join(checkout, ".agents/skills/EVALS.md")
 		await write(
 			root,
 			"code/agency/.agents/skills/release/SKILL.md",
 			'---\nname: Release\ndescription: "Prepare a release"\n---\n\nShip it.\n',
+		)
+		await write(
+			root,
+			"code/agency/.agents/skills/EVALS.md",
+			"Evaluate the repository without frontmatter.\n",
 		)
 		await write(
 			root,
@@ -557,7 +563,15 @@ describe("IntegrationService", () => {
 				skill: {
 					transform: async (callback: (skills: any) => void) =>
 						callback({
-							add: (skill: Record<string, unknown>) => skills.push(skill),
+							add: (skill: Record<string, unknown>) => {
+								if (
+									"description" in skill &&
+									typeof skill.description !== "string"
+								) {
+									throw new Error("Skill description must be a string")
+								}
+								skills.push(skill)
+							},
 						}),
 				},
 				session: { hook: async () => {} },
@@ -578,15 +592,24 @@ describe("IntegrationService", () => {
 					"Complete Agency workbase context; write authority still comes only from agency context",
 			},
 		})
-		expect(skills).toEqual([
-			{
-				id: "release",
-				name: "Release",
-				description: "Prepare a release",
-				location: skillPath,
-				content: "\nShip it.\n",
-			},
-		])
+		expect(skills).toEqual(
+			expect.arrayContaining([
+				{
+					id: "EVALS",
+					name: "EVALS",
+					location: minimalSkillPath,
+					content: "Evaluate the repository without frontmatter.\n",
+				},
+				{
+					id: "release",
+					name: "Release",
+					description: "Prepare a release",
+					location: skillPath,
+					content: "\nShip it.\n",
+				},
+			]),
+		)
+		expect(skills).toHaveLength(2)
 	})
 
 	test("registers a TUI-only /agency-debug diagnostic", async () => {
