@@ -318,11 +318,16 @@ set `agent` in `$XDG_CONFIG_HOME/agency/agency.json` (or
 The selection precedence is `--agent` (including the legacy `--opencode` and
 `--claude` aliases), then `AGENCY_AGENT`, then `agent`, then automatic
 detection. Supported global values are `opencode2`, `opencode`, `pi`, and
-`claude`; an unavailable configured agent fails rather than falling back. A launch
-is fresh unless `AGENCY_SESSION_ID` is already set; resumed launches use the agent's
-`resumeCommand` when configured. The built-in presets use `--continue` only for
-resumed launches. By default Agency opens the agent without a prompt. `--auto`
-uses its autonomous command and sends the generated task, phase, or epic prompt.
+`claude`; an unavailable configured agent fails rather than falling back. A
+launch is fresh unless `AGENCY_SESSION_ID` is already set; resumed launches use
+the agent's `resumeCommand` when configured. The built-in presets use
+`--continue` only for resumed launches, except autonomous OpenCode V2 launches,
+which open a fresh TUI session so the generated continuation prompt cannot be
+routed to an unrelated prior session. By default Agency opens the agent without
+a prompt. `--auto` uses its autonomous command and sends the generated task,
+phase, or epic prompt. OpenCode V2 receives a launch-only environment marker;
+Agency's managed TUI companion waits for the populated composer and dispatches
+its native submit command once.
 
 Custom agents are direct argv commands, never shell snippets:
 
@@ -352,6 +357,9 @@ Every agent receives the same `AGENCY_AGENT`, `AGENCY_SESSION_ID`,
 `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
+Autonomous OpenCode V2 launches additionally receive
+`AGENCY_TUI_AUTOSUBMIT=1`; the client-side managed TUI companion consumes it,
+and manual and non-V2 launches do not receive it.
 Execution-unit agents also receive `AGENCY_WRITABLE_CHECKOUT` with the
 authoritative writable checkout path.
 `AGENCY_PROMPT` is empty unless `--auto` is set.

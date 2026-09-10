@@ -23,6 +23,12 @@ import {
 	canUpdateManagedWorkbaseOpencodeTuiPlugin,
 	managedWorkbaseOpencodeTuiPlugin,
 } from "../workbase/opencode-tui-plugin-file"
+import {
+	canUpdateManagedWorkbaseOpencodeV2TuiFile,
+	managedWorkbaseOpencodeV2TuiIndex,
+	managedWorkbaseOpencodeV2TuiPackage,
+	managedWorkbaseOpencodeV2TuiPlugin,
+} from "../workbase/opencode-v2-tui-plugin-file"
 
 const managedHeaderPattern =
 	/^\/\/ agency-managed: sha256=([a-f0-9]{64})\r?\n\r?\n/
@@ -46,6 +52,7 @@ interface IntegrationFileStatus {
 		| "opencode-plugin"
 		| "opencode-tui"
 		| "opencode-tui-plugin"
+		| "opencode-v2-tui-plugin"
 	readonly path: string
 	readonly state: IntegrationFileState
 	readonly diagnostic: string
@@ -144,6 +151,25 @@ const describe = (
 							"Run 'agency integration sync' to install /agency-debug.",
 					}
 	}
+	if (name === "opencode-v2-tui-plugin") {
+		return state === "managed"
+			? {
+					diagnostic: "Agency's managed OpenCode V2 TUI companion is current.",
+					remediation: null,
+				}
+			: state === "customized"
+				? {
+						diagnostic:
+							"A user-owned OpenCode V2 TUI companion is present and was preserved.",
+						remediation: null,
+					}
+				: {
+						diagnostic:
+							"The managed OpenCode V2 TUI companion needs synchronization.",
+						remediation:
+							"Run 'agency integration sync' to install V2 autonomous prompt submission.",
+					}
+	}
 	return state === "missing" || state === "drifted"
 		? {
 				diagnostic: "Managed workbase instructions need synchronization.",
@@ -202,6 +228,10 @@ const inspect = (root: string) =>
 			"agency-repository-skills.ts",
 		)
 		const tuiPluginPath = join(opencodeDirectory, "tui", "agency-debug.ts")
+		const v2TuiDirectory = join(opencodeDirectory, "plugins", "agency-tui")
+		const v2TuiPackagePath = join(v2TuiDirectory, "package.json")
+		const v2TuiIndexPath = join(v2TuiDirectory, "index.ts")
+		const v2TuiPluginPath = join(v2TuiDirectory, "tui.ts")
 		const [
 			agents,
 			opencode,
@@ -211,6 +241,9 @@ const inspect = (root: string) =>
 			tui,
 			tuiJson,
 			tuiPlugin,
+			v2TuiPackage,
+			v2TuiIndex,
+			v2TuiPlugin,
 		] = yield* Effect.all(
 			[
 				fs.inspectFile(agentsPath),
@@ -221,6 +254,9 @@ const inspect = (root: string) =>
 				fs.inspectFile(tuiPath),
 				fs.inspectFile(tuiJsonPath),
 				fs.inspectFile(tuiPluginPath),
+				fs.inspectFile(v2TuiPackagePath),
+				fs.inspectFile(v2TuiIndexPath),
+				fs.inspectFile(v2TuiPluginPath),
 			] as const,
 			{ concurrency: 8 },
 		)
@@ -316,6 +352,30 @@ const inspect = (root: string) =>
 		} else {
 			files.push(fileStatus("opencode-tui-plugin", tuiPluginPath, "missing"))
 		}
+
+		const v2TuiFiles = [
+			[v2TuiPackage, managedWorkbaseOpencodeV2TuiPackage],
+			[v2TuiIndex, managedWorkbaseOpencodeV2TuiIndex],
+			[v2TuiPlugin, managedWorkbaseOpencodeV2TuiPlugin],
+		] as const
+		const v2TuiStates = v2TuiFiles.map(([file, managed]) => {
+			if (file.kind === "missing") return "missing" as const
+			if (file.kind !== "file") return "customized" as const
+			if (file.content === managed) return "managed" as const
+			return canUpdateManagedWorkbaseOpencodeV2TuiFile(file.content)
+				? ("drifted" as const)
+				: ("customized" as const)
+		})
+		const v2TuiState = v2TuiStates.every((state) => state === "missing")
+			? "missing"
+			: v2TuiStates.every((state) => state === "managed")
+				? "managed"
+				: v2TuiStates.some((state) => state === "customized")
+					? "customized"
+					: "drifted"
+		files.push(
+			fileStatus("opencode-v2-tui-plugin", v2TuiPluginPath, v2TuiState),
+		)
 
 		return { files, legacyPlugin }
 	})
@@ -428,6 +488,21 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 								yield* fs.writeFile(
 									status.path,
 									managedWorkbaseOpencodeTuiPlugin,
+								)
+							} else if (status.name === "opencode-v2-tui-plugin") {
+								const directory = dirname(status.path)
+								yield* fs.createDirectory(directory)
+								yield* fs.writeFile(
+									join(directory, "package.json"),
+									managedWorkbaseOpencodeV2TuiPackage,
+								)
+								yield* fs.writeFile(
+									join(directory, "index.ts"),
+									managedWorkbaseOpencodeV2TuiIndex,
+								)
+								yield* fs.writeFile(
+									status.path,
+									managedWorkbaseOpencodeV2TuiPlugin,
 								)
 							}
 						}
