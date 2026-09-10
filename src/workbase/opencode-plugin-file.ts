@@ -129,10 +129,11 @@ const skillInfo = (location: string) => {
   const id = basename(location) === "SKILL.md"
     ? basename(dirname(location))
     : basename(location, extname(location))
+  const description = scalar("description")
   return {
     id,
     name: scalar("name") ?? id,
-    description: scalar("description"),
+    ...(description === undefined ? {} : { description }),
     location,
     content: match ? raw.slice(match[0].length) : raw,
   }
