@@ -16,6 +16,11 @@ import {
 	canUpdateManagedWorkbaseOpencodeTuiPlugin,
 	managedWorkbaseOpencodeTuiPlugin,
 } from "../workbase/opencode-tui-plugin-file"
+import {
+	managedWorkbaseOpencodeV2TuiIndex,
+	managedWorkbaseOpencodeV2TuiPackage,
+	managedWorkbaseOpencodeV2TuiPlugin,
+} from "../workbase/opencode-v2-tui-plugin-file"
 import { IntegrationService } from "./IntegrationService"
 import { FileSystemService } from "./FileSystemService"
 
@@ -66,6 +71,7 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
+			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
@@ -82,7 +88,23 @@ describe("IntegrationService", () => {
 			".opencode/tui/agency-debug.ts",
 			managedWorkbaseOpencodeTuiPlugin,
 		)
+		await write(
+			root,
+			".opencode/plugins/agency-tui/package.json",
+			managedWorkbaseOpencodeV2TuiPackage,
+		)
+		await write(
+			root,
+			".opencode/plugins/agency-tui/index.ts",
+			managedWorkbaseOpencodeV2TuiIndex,
+		)
+		await write(
+			root,
+			".opencode/plugins/agency-tui/tui.ts",
+			managedWorkbaseOpencodeV2TuiPlugin,
+		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
+			"managed",
 			"managed",
 			"managed",
 			"managed",
@@ -111,8 +133,8 @@ describe("IntegrationService", () => {
 			),
 		)
 
-		expect(inspected.size).toBe(8)
-		expect([...inspected.values()]).toEqual(Array(8).fill(1))
+		expect(inspected.size).toBe(11)
+		expect([...inspected.values()]).toEqual(Array(11).fill(1))
 	})
 
 	test("inspects integration and legacy paths once per synchronized call", async () => {
@@ -135,8 +157,8 @@ describe("IntegrationService", () => {
 			),
 		)
 
-		expect(inspected.size).toBe(11)
-		expect([...inspected.values()]).toEqual(Array(11).fill(1))
+		expect(inspected.size).toBe(14)
+		expect([...inspected.values()]).toEqual(Array(14).fill(1))
 	})
 
 	test("reports customized and checksum-safe drifted files", async () => {
@@ -150,6 +172,7 @@ describe("IntegrationService", () => {
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
 			"customized",
 			"drifted",
+			"missing",
 			"missing",
 			"missing",
 			"missing",
@@ -600,6 +623,86 @@ describe("IntegrationService", () => {
 		).toBe(true)
 	})
 
+	test("submits an autonomous V2 launch once after the TUI is ready", async () => {
+		const path = join(root, ".opencode/plugins/agency-tui/tui.ts")
+		await write(
+			root,
+			".opencode/plugins/agency-tui/tui.ts",
+			managedWorkbaseOpencodeV2TuiPlugin,
+		)
+		const module = await import(`${pathToFileURL(path).href}?autosubmit`)
+		const previousMarker = process.env.AGENCY_TUI_AUTOSUBMIT
+		const previousPrompt = process.env.AGENCY_PROMPT
+		let focused = false
+		let commands: { name: string }[] = []
+		const dispatched: string[] = []
+		const toasts: { variant: string; message: string }[] = []
+		const api = {
+			keymap: {
+				dispatch: (name: string) => dispatched.push(name),
+				commands: () => commands.map(({ name: id }) => ({ id })),
+			},
+			renderer: {
+				get currentFocusedEditor() {
+					return focused ? {} : undefined
+				},
+			},
+			ui: {
+				router: { current: () => ({ type: "home" }) },
+				toast: {
+					show: (input: { variant: string; message: string }) =>
+						toasts.push(input),
+				},
+			},
+		}
+
+		try {
+			delete process.env.AGENCY_TUI_AUTOSUBMIT
+			process.env.AGENCY_PROMPT = "Start the task."
+			module.createAgencyAutosubmit({ timeoutMs: 100, retryMs: 1 })(api)
+			await Bun.sleep(2)
+			expect(dispatched).toEqual([])
+
+			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			const start = module.createAgencyAutosubmit({
+				timeoutMs: 100,
+				retryMs: 1,
+			})
+			start(api)
+			start(api)
+			await Bun.sleep(5)
+			expect(dispatched).toEqual([])
+
+			focused = true
+			commands = [{ name: "prompt.submit" }]
+			await Bun.sleep(10)
+
+			expect(dispatched).toEqual(["prompt.submit"])
+			expect(toasts).toEqual([])
+			expect(process.env.AGENCY_TUI_AUTOSUBMIT).toBeUndefined()
+			module.createAgencyAutosubmit({ timeoutMs: 0 })(api)
+			expect(dispatched).toEqual(["prompt.submit"])
+
+			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			focused = false
+			commands = []
+			module.createAgencyAutosubmit({ timeoutMs: 0, retryMs: 1 })(api)
+			expect(dispatched).toEqual(["prompt.submit"])
+			expect(toasts).toEqual([
+				expect.objectContaining({
+					variant: "error",
+					message: expect.stringContaining("could not be submitted"),
+				}),
+			])
+			expect(process.env.AGENCY_PROMPT).toBe("Start the task.")
+		} finally {
+			if (previousMarker === undefined) delete process.env.AGENCY_TUI_AUTOSUBMIT
+			else process.env.AGENCY_TUI_AUTOSUBMIT = previousMarker
+			if (previousPrompt === undefined) delete process.env.AGENCY_PROMPT
+			else process.env.AGENCY_PROMPT = previousPrompt
+		}
+	})
+
 	test("generates context-first safety and execution closeout guidance", () => {
 		const body = managedBody(managedWorkbaseAgents)
 
@@ -814,6 +917,7 @@ describe("IntegrationService", () => {
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
+			{ name: "opencode-v2-tui-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
@@ -838,6 +942,19 @@ describe("IntegrationService", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
 		).toBe(managedWorkbaseOpencodeTuiPlugin)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/package.json"),
+			).text(),
+		).toBe(managedWorkbaseOpencodeV2TuiPackage)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/index.ts"),
+			).text(),
+		).toBe(managedWorkbaseOpencodeV2TuiIndex)
+		expect(
+			await Bun.file(join(root, ".opencode/plugins/agency-tui/tui.ts")).text(),
+		).toBe(managedWorkbaseOpencodeV2TuiPlugin)
 
 		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
@@ -981,6 +1098,27 @@ describe("IntegrationService", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
 		).toBe(customPlugin)
+	})
+
+	test("preserves a customized OpenCode V2 TUI companion", async () => {
+		const custom = "export default { id: 'custom.tui', setup() {} }\n"
+		await write(root, ".opencode/plugins/agency-tui/tui.ts", custom)
+
+		const result = await sync(root)
+
+		expect(result.files.at(-1)).toMatchObject({
+			name: "opencode-v2-tui-plugin",
+			state: "customized",
+			changed: false,
+		})
+		expect(
+			await Bun.file(join(root, ".opencode/plugins/agency-tui/tui.ts")).text(),
+		).toBe(custom)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/package.json"),
+			).exists(),
+		).toBe(false)
 	})
 
 	test("removes a checksum-valid legacy command and preserves a customized file", async () => {

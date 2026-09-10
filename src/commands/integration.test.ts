@@ -51,6 +51,11 @@ describe("integration command", () => {
 					state: "missing",
 					remediation: expect.stringContaining("integration sync"),
 				},
+				{
+					name: "opencode-v2-tui-plugin",
+					state: "missing",
+					remediation: expect.stringContaining("integration sync"),
+				},
 			],
 		})
 	})
@@ -99,7 +104,12 @@ OpenCode TUI config: missing
 OpenCode /agency-debug: missing
   Path: .opencode/tui/agency-debug.ts
   The managed OpenCode TUI diagnostic companion needs synchronization.
-  Action: Run 'agency integration sync' to install /agency-debug.`)
+  Action: Run 'agency integration sync' to install /agency-debug.
+
+OpenCode V2 TUI companion: missing
+  Path: .opencode/plugins/agency-tui/tui.ts
+  The managed OpenCode V2 TUI companion needs synchronization.
+  Action: Run 'agency integration sync' to install V2 autonomous prompt submission.`)
 	})
 
 	test("explicitly synchronizes integration files", async () => {
@@ -113,6 +123,7 @@ OpenCode /agency-debug: missing
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
+			{ name: "opencode-v2-tui-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).exists()).toBe(false)
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(true)
@@ -132,6 +143,11 @@ OpenCode /agency-debug: missing
 		)
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).exists(),
+		).toBe(true)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/tui.ts"),
+			).exists(),
 		).toBe(true)
 	})
 
@@ -160,6 +176,10 @@ OpenCode TUI config: synced
 
 OpenCode /agency-debug: synced
   Path: .opencode/tui/agency-debug.ts
-  Agency's managed OpenCode TUI diagnostic companion is current.`)
+  Agency's managed OpenCode TUI diagnostic companion is current.
+
+OpenCode V2 TUI companion: synced
+  Path: .opencode/plugins/agency-tui/tui.ts
+  Agency's managed OpenCode V2 TUI companion is current.`)
 	})
 })

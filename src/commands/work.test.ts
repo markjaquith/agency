@@ -1102,6 +1102,32 @@ describe("work command", () => {
 		})
 	})
 
+	test("marks V2 autonomous prompts for TUI submission", async () => {
+		const harness = createHarness()
+
+		await harness.run({ taskId: "example", auto: true })
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode2",
+			"--prompt",
+			"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(harness.launchEnvironments[0]?.AGENCY_TUI_AUTOSUBMIT).toBe("1")
+	})
+
+	test("continues V2 autonomous work in a fresh TUI session", async () => {
+		const harness = createHarness({ taskStatus: "working" })
+
+		await harness.run({ taskId: "example", auto: true })
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode2",
+			"--prompt",
+			"Agency worker launch target: execution-unit:task/example. Continue the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(harness.launchEnvironments[0]?.AGENCY_TUI_AUTOSUBMIT).toBe("1")
+	})
+
 	test("automatically falls back from opencode2 to opencode", async () => {
 		const harness = createHarness({ available: { opencode2: false } })
 

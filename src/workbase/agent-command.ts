@@ -35,7 +35,7 @@ const BUILTIN_AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		command: ["opencode2"],
 		autoCommand: ["opencode2", "--prompt", "{prompt}"],
 		resumeCommand: ["opencode2", "--continue"],
-		autoResumeCommand: ["opencode2", "--continue", "--prompt", "{prompt}"],
+		autoResumeCommand: ["opencode2", "--prompt", "{prompt}"],
 	},
 	opencode: {
 		command: ["opencode"],
@@ -130,6 +130,9 @@ export const agentEnvironment = (
 	AGENCY_TASK_ID: variables.task,
 	AGENCY_PHASE_ID: variables.phase,
 	AGENCY_PROMPT: variables.prompt,
+	...(agent === "opencode2" && variables.prompt
+		? { AGENCY_TUI_AUTOSUBMIT: "1" }
+		: {}),
 })
 
 const SECRET_NAME =
