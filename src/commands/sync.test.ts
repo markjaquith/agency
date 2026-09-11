@@ -3,6 +3,8 @@ import { Effect } from "effect"
 import { chmod, mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { TaskService } from "../services/TaskService"
+import { EpicService } from "../services/EpicService"
+import { PhaseService } from "../services/PhaseService"
 import {
 	captureLogs,
 	cleanupTempDir,
@@ -114,6 +116,150 @@ describe("sync command", () => {
 		).toBe(true)
 		expect(
 			await Bun.file(join(root, "tasks/second/code/agency/README.md")).exists(),
+		).toBe(false)
+	})
+
+	test("resolves a task path", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				sync({
+					cwd: root,
+					taskId: join(root, "tasks/example/TASK.md"),
+					json: true,
+				}),
+			),
+		)
+
+		expect(
+			JSON.parse(logs[0]!).executions.map((execution: any) => execution.target),
+		).toEqual(["task:example"])
+	})
+
+	test("preserves a task selector that also names an existing path", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "tasks",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/tasks",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(sync({ cwd: root, taskId: "tasks", json: true })),
+		)
+
+		expect(
+			JSON.parse(logs[0]!).executions.map((execution: any) => execution.target),
+		).toEqual(["task:tasks"])
+	})
+
+	test("resolves a phase path", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "multi",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/multi",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			PhaseService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							taskId: "multi",
+							id: "release",
+							firstPhase: "build",
+							repo: "agency",
+							branch: "task/multi-release",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				sync({
+					cwd: root,
+					taskId: join(root, "tasks/multi/phases/release"),
+					json: true,
+				}),
+			),
+		)
+
+		expect(
+			JSON.parse(logs[0]!).executions.map((execution: any) => execution.target),
+		).toEqual(["phase:multi/release"])
+	})
+
+	test("resolves an epic path", async () => {
+		await runTestEffect(
+			EpicService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						"delivery",
+						"https://example.com/epic",
+						[{ repo: "agency", ref: "main" }],
+						root,
+					),
+				),
+			),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "delivery-task",
+							ticketUrl: null,
+							epic: "delivery",
+							repo: "agency",
+							branch: "task/delivery",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				sync({
+					cwd: root,
+					taskId: join(root, "epics/delivery"),
+					json: true,
+				}),
+			),
+		)
+
+		expect(
+			JSON.parse(logs[0]!).executions.map((execution: any) => execution.target),
+		).toEqual(["task:delivery-task"])
+		expect(
+			await Bun.file(
+				join(root, "tasks/example/code/agency/README.md"),
+			).exists(),
 		).toBe(false)
 	})
 

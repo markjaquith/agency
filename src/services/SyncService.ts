@@ -1,5 +1,5 @@
 import { Data, Effect, Either } from "effect"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import type {
 	ClaimRecord,
 	PhaseFrontmatter,
@@ -218,7 +218,17 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const claims = yield* ClaimService
 				const repositories = yield* RepositoryService
 				const versionControl = yield* VersionControlService
-				const { root, config } = yield* workbase.loadConfig(options.cwd)
+				const cwd = resolve(options.cwd ?? process.cwd())
+				const candidate = options.taskId
+					? resolve(cwd, options.taskId)
+					: undefined
+				const candidateExists =
+					candidate !== undefined && !options.phaseId
+						? yield* fs.exists(candidate)
+						: false
+				const { root, config } = yield* workbase.loadConfig(
+					candidateExists ? candidate : cwd,
+				)
 				const backend = yield* versionControl.forWorkbase(root)
 				const validation = yield* workbase.validate(root, {
 					includeDocuments: true,
@@ -236,20 +246,49 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					})
 				}
 				const documents = validation.documents!
-				const allTaskRecords = documents.tasks
-				const taskRecords = options.taskId
-					? allTaskRecords.filter((task) => task.id === options.taskId)
-					: allTaskRecords
-				if (options.taskId && taskRecords.length === 0) {
+				let taskId = options.taskId
+				let phaseId = options.phaseId
+				let epicId: string | undefined
+				const existingTaskSelector =
+					options.taskId !== undefined &&
+					documents.tasks.some((task) => task.id === options.taskId)
+				if (candidateExists && candidate && !existingTaskSelector) {
+					const canonicalPath = yield* fs.realPath(candidate)
+					const canonicalRoot = yield* fs.realPath(root)
+					const parts = relative(canonicalRoot, canonicalPath).split(sep)
+					if (parts[0] === "epics" && parts[1]) {
+						epicId = parts[1]
+						taskId = undefined
+					} else if (parts[0] === "tasks" && parts[1]) {
+						taskId = parts[1]
+						phaseId = parts[2] === "phases" && parts[3] ? parts[3] : undefined
+					} else {
+						return yield* new SyncError({
+							message: `Sync path does not identify an active task, phase, or epic: ${canonicalPath}`,
+						})
+					}
+				}
+				if (epicId && !documents.epics.some((epic) => epic.id === epicId)) {
 					return yield* new SyncError({
-						message: `Task '${options.taskId}' does not exist`,
+						message: `Epic '${epicId}' does not exist`,
+					})
+				}
+				const allTaskRecords = documents.tasks
+				const taskRecords = taskId
+					? allTaskRecords.filter((task) => task.id === taskId)
+					: epicId
+						? allTaskRecords.filter((task) => task.data.epic === epicId)
+						: allTaskRecords
+				if (taskId && taskRecords.length === 0) {
+					return yield* new SyncError({
+						message: `Task '${taskId}' does not exist`,
 					})
 				}
 				const records: ExecutionRecord[] = []
 				for (const task of taskRecords) {
 					if ("phases" in task.data) {
 						for (const phase of documents.phasesByTask.get(task.id) ?? []) {
-							if (options.phaseId && phase.id !== options.phaseId) continue
+							if (phaseId && phase.id !== phaseId) continue
 							records.push({
 								key: `phase:${task.id}/${phase.id}`,
 								taskId: task.id,
@@ -259,7 +298,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								data: phase.data,
 							})
 						}
-					} else if (!options.phaseId && !("review" in task.data)) {
+					} else if (!phaseId && !("review" in task.data)) {
 						records.push({
 							key: `task:${task.id}`,
 							taskId: task.id,
@@ -269,12 +308,12 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 				}
-				const reviewRecords = options.phaseId
+				const reviewRecords = phaseId
 					? []
 					: taskRecords.filter((task) => "review" in task.data)
-				if (options.phaseId && records.length === 0) {
+				if (phaseId && records.length === 0) {
 					return yield* new SyncError({
-						message: `Phase '${options.taskId}/${options.phaseId}' does not exist`,
+						message: `Phase '${taskId}/${phaseId}' does not exist`,
 					})
 				}
 				const repositoryAliases = new Set<string>()
@@ -287,10 +326,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					if ("review" in task.data)
 						repositoryAliases.add(task.data.review.repo)
 				}
+				if (epicId) {
+					const epic = documents.epics.find((record) => record.id === epicId)!
+					for (const reference of epic.data.repos)
+						repositoryAliases.add(reference.repo)
+				}
 				const repositorySetup = yield* repositories.setup({
 					cwd: root,
 					apply: options.apply === true,
-					...(options.taskId ? { aliases: [...repositoryAliases] } : {}),
+					...(taskId || epicId ? { aliases: [...repositoryAliases] } : {}),
 				})
 				options.onProgress?.({
 					stage: "repositories",
