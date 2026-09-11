@@ -744,7 +744,7 @@ describe("IntegrationService", () => {
 		).toBe(true)
 	})
 
-	test("submits an autonomous V2 launch once after the TUI is ready", async () => {
+	test("distinguishes native V2 prompt submission from companion recovery", async () => {
 		const path = join(root, ".opencode/plugins/agency-tui/tui.ts")
 		await write(
 			root,
@@ -754,22 +754,51 @@ describe("IntegrationService", () => {
 		const module = await import(`${pathToFileURL(path).href}?autosubmit`)
 		const previousMarker = process.env.AGENCY_TUI_AUTOSUBMIT
 		const previousPrompt = process.env.AGENCY_PROMPT
-		let focused = false
-		let commands: { name: string }[] = []
+		let route: { type: string; sessionID?: string } = {
+			type: "session",
+			sessionID: "native",
+		}
+		let messages: Record<string, any[]> = {
+			native: [
+				{
+					type: "user",
+					text: "Start the task.",
+				},
+			],
+		}
+		let commands: { name: string }[] = [{ name: "prompt.submit" }]
 		const dispatched: string[] = []
 		const toasts: { variant: string; message: string }[] = []
+		const observations: {
+			event: string
+			detail?: string
+			dispatches: number
+		}[] = []
 		const api = {
 			keymap: {
-				dispatch: (name: string) => dispatched.push(name),
+				dispatch: (name: string) => {
+					dispatched.push(name)
+					if (dispatched.length < 2) return
+					route = { type: "session", sessionID: "companion" }
+					messages.companion = [
+						{
+							info: { role: "user" },
+							parts: [{ type: "text", text: "Start the task." }],
+						},
+					]
+				},
 				commands: () => commands.map(({ name: id }) => ({ id })),
 			},
-			renderer: {
-				get currentFocusedEditor() {
-					return focused ? {} : undefined
+			data: {
+				session: {
+					message: {
+						sync: async () => {},
+						list: (sessionID: string) => messages[sessionID],
+					},
 				},
 			},
 			ui: {
-				router: { current: () => ({ type: "home" }) },
+				router: { current: () => route },
 				toast: {
 					show: (input: { variant: string; message: string }) =>
 						toasts.push(input),
@@ -785,36 +814,58 @@ describe("IntegrationService", () => {
 			expect(dispatched).toEqual([])
 
 			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
-			const start = module.createAgencyAutosubmit({
+			module.createAgencyAutosubmit({
 				timeoutMs: 100,
 				retryMs: 1,
-			})
-			start(api)
-			start(api)
+				observe: (observation: any) => observations.push(observation),
+			})(api)
 			await Bun.sleep(5)
 			expect(dispatched).toEqual([])
-
-			focused = true
-			commands = [{ name: "prompt.submit" }]
-			await Bun.sleep(10)
-
-			expect(dispatched).toEqual(["prompt.submit"])
+			expect(observations.at(-1)).toMatchObject({
+				event: "submitted",
+				detail: "native OpenCode submission observed",
+				dispatches: 0,
+			})
 			expect(toasts).toEqual([])
 			expect(process.env.AGENCY_TUI_AUTOSUBMIT).toBeUndefined()
-			module.createAgencyAutosubmit({ timeoutMs: 0 })(api)
-			expect(dispatched).toEqual(["prompt.submit"])
 
 			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
-			focused = false
+			route = { type: "home" }
+			messages = {}
+			module.createAgencyAutosubmit({
+				timeoutMs: 100,
+				retryMs: 1,
+				observe: (observation: any) => observations.push(observation),
+			})(api)
+			await Bun.sleep(10)
+			expect(dispatched).toEqual(["prompt.submit", "prompt.submit"])
+			expect(observations.at(-1)).toMatchObject({
+				event: "submitted",
+				detail: "submitted message observed after companion dispatch",
+				dispatches: 2,
+			})
+			expect(toasts).toEqual([])
+
+			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			route = { type: "plugin" }
 			commands = []
-			module.createAgencyAutosubmit({ timeoutMs: 0, retryMs: 1 })(api)
-			expect(dispatched).toEqual(["prompt.submit"])
+			module.createAgencyAutosubmit({
+				timeoutMs: 0,
+				retryMs: 1,
+				observe: (observation: any) => observations.push(observation),
+			})(api)
+			await Bun.sleep(2)
+			expect(observations.at(-1)).toMatchObject({
+				event: "timeout",
+				detail: "route=plugin, dispatches=0",
+			})
 			expect(toasts).toEqual([
 				expect.objectContaining({
 					variant: "error",
-					message: expect.stringContaining("could not be submitted"),
+					message: expect.stringContaining("Press Enter"),
 				}),
 			])
+			expect(process.env.AGENCY_TUI_AUTOSUBMIT).toBeUndefined()
 			expect(process.env.AGENCY_PROMPT).toBe("Start the task.")
 		} finally {
 			if (previousMarker === undefined) delete process.env.AGENCY_TUI_AUTOSUBMIT

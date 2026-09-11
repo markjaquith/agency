@@ -326,8 +326,10 @@ which open a fresh TUI session so the generated continuation prompt cannot be
 routed to an unrelated prior session. By default Agency opens the agent without
 a prompt. `--auto` uses its autonomous command and sends the generated task,
 phase, or epic prompt. OpenCode V2 receives a launch-only environment marker;
-Agency's managed TUI companion waits for the populated composer and dispatches
-its native submit command once.
+Agency's managed TUI companion retries the native submit command until the exact
+prompt appears as a persisted user message. It records whether OpenCode submitted
+the prompt natively or submission followed a companion dispatch, and shows a
+bounded error with a manual recovery instruction when delivery is not observed.
 
 Custom agents are direct argv commands, never shell snippets:
 
