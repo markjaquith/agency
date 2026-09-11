@@ -769,11 +769,32 @@ describe("IntegrationService", () => {
 		let commands: { name: string }[] = [{ name: "prompt.submit" }]
 		const dispatched: string[] = []
 		const toasts: { variant: string; message: string }[] = []
-		const observations: {
+		type Observation = {
 			event: string
 			detail?: string
 			dispatches: number
+		}
+		const observations: Observation[] = []
+		const waiters: {
+			predicate: (observation: Observation) => boolean
+			resolve: (observation: Observation) => void
 		}[] = []
+		const observe = (observation: Observation) => {
+			observations.push(observation)
+			for (let index = waiters.length - 1; index >= 0; index -= 1) {
+				const waiter = waiters[index]
+				if (!waiter?.predicate(observation)) continue
+				waiters.splice(index, 1)
+				waiter.resolve(observation)
+			}
+		}
+		const waitFor = (predicate: (observation: Observation) => boolean) => {
+			const existing = observations.find(predicate)
+			if (existing) return Promise.resolve(existing)
+			return new Promise<Observation>((resolve) => {
+				waiters.push({ predicate, resolve })
+			})
+		}
 		const api = {
 			keymap: {
 				dispatch: (name: string) => {
@@ -810,18 +831,21 @@ describe("IntegrationService", () => {
 			delete process.env.AGENCY_TUI_AUTOSUBMIT
 			process.env.AGENCY_PROMPT = "Start the task."
 			module.createAgencyAutosubmit({ timeoutMs: 100, retryMs: 1 })(api)
-			await Bun.sleep(2)
 			expect(dispatched).toEqual([])
 
 			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			const nativeSubmitted = waitFor(
+				(observation) =>
+					observation.event === "submitted" &&
+					observation.detail === "native OpenCode submission observed",
+			)
 			module.createAgencyAutosubmit({
 				timeoutMs: 100,
 				retryMs: 1,
-				observe: (observation: any) => observations.push(observation),
+				observe,
 			})(api)
-			await Bun.sleep(5)
 			expect(dispatched).toEqual([])
-			expect(observations.at(-1)).toMatchObject({
+			expect(await nativeSubmitted).toMatchObject({
 				event: "submitted",
 				detail: "native OpenCode submission observed",
 				dispatches: 0,
@@ -832,14 +856,20 @@ describe("IntegrationService", () => {
 			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
 			route = { type: "home" }
 			messages = {}
+			const companionSubmitted = waitFor(
+				(observation) =>
+					observation.event === "submitted" &&
+					observation.detail ===
+						"submitted message observed after companion dispatch",
+			)
 			module.createAgencyAutosubmit({
 				timeoutMs: 100,
 				retryMs: 1,
-				observe: (observation: any) => observations.push(observation),
+				observe,
 			})(api)
-			await Bun.sleep(10)
+			const companionObservation = await companionSubmitted
 			expect(dispatched).toEqual(["prompt.submit", "prompt.submit"])
-			expect(observations.at(-1)).toMatchObject({
+			expect(companionObservation).toMatchObject({
 				event: "submitted",
 				detail: "submitted message observed after companion dispatch",
 				dispatches: 2,
@@ -849,13 +879,13 @@ describe("IntegrationService", () => {
 			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
 			route = { type: "plugin" }
 			commands = []
+			const timedOut = waitFor((observation) => observation.event === "timeout")
 			module.createAgencyAutosubmit({
 				timeoutMs: 0,
 				retryMs: 1,
-				observe: (observation: any) => observations.push(observation),
+				observe,
 			})(api)
-			await Bun.sleep(2)
-			expect(observations.at(-1)).toMatchObject({
+			expect(await timedOut).toMatchObject({
 				event: "timeout",
 				detail: "route=plugin, dispatches=0",
 			})
