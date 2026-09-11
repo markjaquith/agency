@@ -665,14 +665,14 @@ const commands = {
 		},
 	},
 	sync: {
-		usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
+		usage: "agency sync [<task-id|path> [phase-id]] [--dry-run] [--json]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
 			"dry-run": { type: "boolean" },
 		},
 		command: {
-			usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
+			usage: "agency sync [<task-id|path> [phase-id]] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: ["dry-run", "json", "task", "phase"],
