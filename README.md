@@ -331,6 +331,14 @@ prompt appears as a persisted user message. It records whether OpenCode submitte
 the prompt natively or submission followed a companion dispatch, and shows a
 bounded error with a manual recovery instruction when delivery is not observed.
 
+For built-in OpenCode V2 launches, Agency submits through the selected CLI's
+authenticated session API, then opens the TUI with `--session` and an empty
+composer. V2's native `--prompt` only fills the composer. Agency sets session
+environment before submission and passes that same environment into the TUI;
+reconnecting the TUI does not replay the prompt. V1 keeps its native launch path.
+See [OpenCode auto-start](docs/opencode-auto-start.md) for details and real
+startup verification.
+
 Custom agents are direct argv commands, never shell snippets:
 
 ```json
@@ -397,8 +405,10 @@ resolve a materialized execution-unit
 checkout through `agency context`. A multi-phase
 task root has no single checkout, so launch from its phase directory when using
 plain OpenCode or Pi. Other checkout-local configuration is not composed.
-`--print-command` prints the exact cwd and argv plus non-secret environment keys
-without launching the agent.
+`--print-command` prints the cwd, command template, and non-secret environment
+keys without launching the agent. Built-in OpenCode auto launches also report a
+`startup` note: V2 resolves the final `--session` argv during actual startup, so
+print-only mode creates neither a session nor a prompt.
 
 ### Custom Chooser Command
 
