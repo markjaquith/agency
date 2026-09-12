@@ -70,7 +70,7 @@ const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
 				: workStatusStyle[node.status]
 			const segments = [
 				{
-					text: `${workKindStyle[node.kind].icon} `,
+					text: `${workKindStyle[node.kind].icon}  `,
 					color: workKindStyle[node.kind].color,
 				},
 				{
@@ -78,7 +78,7 @@ const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
 					color: macchiato.text,
 				},
 				{
-					text: `  ${state.icon} ${(blocked ? "blocked" : node.status).padEnd(9)}`,
+					text: `  ${state.icon}  ${(blocked ? "blocked" : node.status).padEnd(9)}`,
 					color: state.color,
 				},
 				...(parent
@@ -87,7 +87,7 @@ const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
 				...(node.repositories.length
 					? [
 							{
-								text: `   ${node.repositories.join(", ")}`,
+								text: `    ${node.repositories.join(", ")}`,
 								color: macchiato.overlay1,
 							},
 						]
@@ -274,10 +274,10 @@ export const act = (
 				"Your mission:",
 				actionGroups.map(({ id, label, icon, color }) => ({
 					key: id,
-					label: `${icon} ${label}`,
+					label: `${icon}  ${label}`,
 					plainLabel: label,
 					value: id,
-					segments: [{ text: `${icon} `, color }, { text: label }],
+					segments: [{ text: `${icon}  `, color }, { text: label }],
 				})),
 			)
 			if (goal === "browse") {

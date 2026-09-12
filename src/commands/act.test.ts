@@ -240,11 +240,11 @@ describe("act command", () => {
 			/[╭│├╰─]/,
 		)
 		expect(choices[0]?.segments?.[0]).toEqual({
-			text: "󰗡 ",
+			text: "󰗡  ",
 			color: macchiato.sapphire,
 		})
 		expect(choices[1]?.segments?.[0]).toEqual({
-			text: "󰔚 ",
+			text: "󰔚  ",
 			color: macchiato.yellow,
 		})
 		expect(choices[1]?.segments).toContainEqual({
@@ -255,8 +255,8 @@ describe("act command", () => {
 			text: "  in multi",
 			color: macchiato.subtext0,
 		})
-		expect(choices[1]?.label).toContain("󰄱 open")
-		expect(choices[1]?.label).toContain(" agency")
+		expect(choices[1]?.label).toContain("󰄱  open")
+		expect(choices[1]?.label).toContain("  agency")
 		expect(choices[1]?.plainLabel).toContain("phase multi/build")
 	})
 

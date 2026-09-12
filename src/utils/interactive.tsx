@@ -360,12 +360,12 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		>
 			{brandHeight() > 0 && (
 				<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
-					 Agency
+					{"  Agency"}
 				</text>
 			)}
 			<box height={brandHeight()} flexShrink={0} />
 			<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
-				 {props.prompt}
+				{`  ${props.prompt}`}
 			</text>
 			<box flexDirection="row" width="100%" height={1} flexShrink={0}>
 				<textarea
