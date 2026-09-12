@@ -82,6 +82,8 @@ const kinds: Record<
 	phase: { icon: "󰔚", color: macchiato.yellow },
 }
 
+export { statuses as workStatusStyle, kinds as workKindStyle }
+
 const hexToAnsi = (color: string) => {
 	const value = color.slice(1)
 	return [0, 2, 4]

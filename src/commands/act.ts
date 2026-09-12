@@ -2,13 +2,14 @@ import { Schema } from "@effect/schema"
 import { Effect } from "effect"
 import { isAbsolute, relative, resolve, sep } from "node:path"
 import { ActDiscovery } from "../act-schema"
-import type { GraphEdge } from "../graph-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import type { BaseCommandOptions } from "../utils/command"
 import type { Choice } from "../utils/chooser"
 import { createLoggers } from "../utils/effect"
+import { macchiato } from "../utils/theme"
+import { workKindStyle, workStatusStyle } from "../workbase/work-target"
 import {
 	actionGroups,
 	actActions,
@@ -37,33 +38,72 @@ interface ActOptions extends BaseCommandOptions {
 	readonly phaseId?: string
 }
 
-const entityChoices = (
-	nodes: readonly ActEntity[],
-	edges: readonly GraphEdge[],
-): Choice<string>[] => {
-	const byId = new Map(nodes.map((node) => [node.id, node]))
-	const children = new Map<string, ActEntity[]>()
-	const owned = new Set<string>()
-	for (const edge of edges) {
-		const child = byId.get(edge.to)
-		if (edge.kind !== "owns" || !byId.has(edge.from) || !child) continue
-		children.set(edge.from, [...(children.get(edge.from) ?? []), child])
-		owned.add(child.id)
-	}
-	const choices: Choice<string>[] = []
-	const append = (node: ActEntity, depth: number) => {
-		const description =
-			"description" in node.data ? node.data.description : undefined
-		choices.push({
-			key: node.id,
-			value: node.id,
-			depth,
-			label: `[${node.status}] ${node.kind} ${node.key}${description ? ` - ${description}` : ""}`,
+const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
+	const name = (node: ActEntity) =>
+		node.kind === "phase"
+			? node.key.slice(node.key.lastIndexOf("/") + 1)
+			: node.key
+	const nameWidth = Math.min(
+		32,
+		Math.max(0, ...nodes.map((node) => name(node).length)),
+	)
+	const shorten = (text: string, width: number) =>
+		text.length > width ? `${text.slice(0, width - 1)}…` : text
+	return nodes
+		.toSorted((a, b) => a.key.localeCompare(b.key))
+		.map((node) => {
+			const description = (
+				"description" in node.data ? node.data.description : ""
+			)
+				?.replace(/\s+/g, " ")
+				.trim()
+			const parent =
+				node.kind === "phase"
+					? node.key.slice(0, node.key.lastIndexOf("/"))
+					: undefined
+			const blocked = node.readiness.blockers.some(
+				(blocker) =>
+					blocker.kind === "dependency" || blocker.kind === "validation",
+			)
+			const state = blocked
+				? { icon: "󰀦", color: macchiato.yellow }
+				: workStatusStyle[node.status]
+			const segments = [
+				{
+					text: `${workKindStyle[node.kind].icon} `,
+					color: workKindStyle[node.kind].color,
+				},
+				{
+					text: shorten(name(node), nameWidth).padEnd(nameWidth),
+					color: macchiato.text,
+				},
+				{
+					text: `  ${state.icon} ${(blocked ? "blocked" : node.status).padEnd(9)}`,
+					color: state.color,
+				},
+				...(parent
+					? [{ text: `  in ${shorten(parent, 24)}`, color: macchiato.subtext0 }]
+					: []),
+				...(node.repositories.length
+					? [
+							{
+								text: `   ${node.repositories.join(", ")}`,
+								color: macchiato.overlay1,
+							},
+						]
+					: []),
+				...(description
+					? [{ text: `  — ${description}`, color: macchiato.overlay0 }]
+					: []),
+			]
+			return {
+				key: node.id,
+				value: node.id,
+				segments,
+				label: segments.map((segment) => segment.text).join(""),
+				plainLabel: `[${node.status}] ${node.kind} ${node.key}${blocked ? " blocked" : ""} ${node.repositories.join(" ")}${description ? ` — ${description}` : ""}`,
+			}
 		})
-		for (const child of children.get(node.id) ?? []) append(child, depth + 1)
-	}
-	for (const node of nodes) if (!owned.has(node.id)) append(node, 0)
-	return choices
 }
 
 const pathEntityKey = (root: string, path: string) => {
@@ -239,10 +279,7 @@ export const act = (
 					return yield* Effect.fail(
 						new Error("No work items yet; choose Create a task first"),
 					)
-				selectedKey = yield* select(
-					"Choose an item",
-					entityChoices(nodes, graph.edges),
-				)
+				selectedKey = yield* select("Choose an item", entityChoices(nodes))
 			} else {
 				const group = actionGroups.find((group) => group.id === goal)!
 				const all = [...globals, ...Array.from(catalog.values()).flat()]
@@ -276,10 +313,7 @@ export const act = (
 						`No eligible items for '${actionId}'; use agency act --action ${actionId} --json for blocked reasons`,
 					),
 				)
-			selectedKey = yield* select(
-				"Choose an item",
-				entityChoices(eligible, graph.edges),
-			)
+			selectedKey = yield* select("Choose an item", entityChoices(eligible))
 		}
 		const selected = nodes.find((node) => node.id === selectedKey)
 		const actions = selected ? catalog.get(selected.id)! : globals

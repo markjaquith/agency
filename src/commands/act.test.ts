@@ -15,6 +15,7 @@ import { act, type ActInteraction } from "./act"
 import { parseCli } from "../cli-parser"
 import { FileSystemService } from "../services/FileSystemService"
 import { SyncService } from "../services/SyncService"
+import { macchiato } from "../utils/theme"
 
 const scriptedInteraction = (
 	selections: readonly (string | null)[],
@@ -199,7 +200,7 @@ describe("act command", () => {
 		expect(prompts).toEqual(["Act on phase multi/build"])
 	})
 
-	test("Browse preserves parent and phase hierarchy", async () => {
+	test("Browse shows flat colored rows with prominent names and secondary parent context", async () => {
 		await runTestEffect(
 			task({
 				subcommand: "create",
@@ -230,14 +231,33 @@ describe("act command", () => {
 			),
 		)
 
-		expect(
-			choices
-				.filter((choice) => choice.depth !== undefined)
-				.map((choice) => [choice.value, choice.depth]),
-		).toEqual([
-			["task:multi", 0],
-			["phase:multi/build", 1],
+		expect(choices.map((choice) => choice.value)).toEqual([
+			"task:multi",
+			"phase:multi/build",
 		])
+		expect(choices.every((choice) => choice.depth === undefined)).toBe(true)
+		expect(choices.map((choice) => choice.label).join("\n")).not.toMatch(
+			/[╭│├╰─]/,
+		)
+		expect(choices[0]?.segments?.[0]).toEqual({
+			text: "󰗡 ",
+			color: macchiato.sapphire,
+		})
+		expect(choices[1]?.segments?.[0]).toEqual({
+			text: "󰔚 ",
+			color: macchiato.yellow,
+		})
+		expect(choices[1]?.segments).toContainEqual({
+			text: "build",
+			color: macchiato.text,
+		})
+		expect(choices[1]?.segments).toContainEqual({
+			text: "  in multi",
+			color: macchiato.subtext0,
+		})
+		expect(choices[1]?.label).toContain("󰄱 open")
+		expect(choices[1]?.label).toContain(" agency")
+		expect(choices[1]?.plainLabel).toContain("phase multi/build")
 	})
 
 	test("returns structured actions and argv for agents", async () => {

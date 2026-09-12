@@ -539,6 +539,10 @@ selects the sole repository automatically, and suggests IDs, base branches, and
 phase branches. Suggestions remain editable; choosing a base never adds a
 completion dependency.
 
+The item picker uses flat, aligned rows with colored Nerd Font type/status icons,
+prominent names, and quieter parent-task, repository, and description details.
+Filtering matches full IDs and metadata even when a displayed name is shortened.
+
 | Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | Add a repository                     | Add from a remote, or link an existing local repository                                           | `repo-add`, `repo-link`               |
