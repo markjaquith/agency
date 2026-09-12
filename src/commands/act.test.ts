@@ -936,18 +936,23 @@ describe("act command", () => {
 			),
 		)
 		expect(offered.map((choice) => choice.value)).toEqual([
-			"repository",
 			"create",
-			"split",
 			"work",
-			"handoff",
 			"review",
-			"close",
-			"pull-request",
-			"archive",
+			"split",
+			"handoff",
 			"current-work",
 			"browse",
+			"pull-request",
+			"close",
+			"archive",
+			"repository",
 		])
+		expect(
+			offered.every(
+				(choice) => choice.segments?.[0]?.color && choice.plainLabel,
+			),
+		).toBe(true)
 		expect(offered.some((choice) => choice.label.includes("example"))).toBe(
 			false,
 		)

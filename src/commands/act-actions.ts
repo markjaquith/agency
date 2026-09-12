@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import type { GraphNode } from "../graph-schema"
 import type { BaseCommandOptions } from "../utils/command"
+import { macchiato } from "../utils/theme"
 import type { ActionPrompts } from "./act-prompts"
 import { archive } from "./archive"
 import { repo } from "./repo"
@@ -83,39 +84,82 @@ const taskTarget = (node: ActEntity) =>
 
 export const actionGroups = [
 	{
-		id: "repository",
-		label: "Add a repository",
-		actions: ["repo-add", "repo-link"],
-	},
-	{
 		id: "create",
 		label: "Create a task",
+		icon: "󰐕",
+		color: macchiato.green,
 		actions: ["task-create", "investigation-create"],
 	},
-	{ id: "split", label: "Split a task / add a phase", actions: ["split"] },
-	{ id: "work", label: "Work on a task or phase", actions: ["work"] },
 	{
-		id: "handoff",
-		label: "Turn investigation into implementation",
-		actions: ["handoff"],
+		id: "work",
+		label: "Work on a task or phase",
+		icon: "",
+		color: macchiato.blue,
+		actions: ["work"],
 	},
 	{
 		id: "review",
 		label: "Review someone else's work",
+		icon: "󰍉",
+		color: macchiato.sapphire,
 		actions: ["review", "review-ref"],
 	},
 	{
-		id: "close",
-		label: "Close or reopen work",
-		actions: ["complete", "drop", "sync", "reopen"],
+		id: "split",
+		label: "Split a task / add a phase",
+		icon: "",
+		color: macchiato.mauve,
+		actions: ["split"],
+	},
+	{
+		id: "handoff",
+		label: "Turn investigation into implementation",
+		icon: "",
+		color: macchiato.yellow,
+		actions: ["handoff"],
+	},
+	{
+		id: "current-work",
+		label: "See current work",
+		icon: "",
+		color: macchiato.blue,
+		actions: ["current-work"],
+	},
+	{
+		id: "browse",
+		label: "Browse items",
+		icon: "",
+		color: macchiato.yellow,
+		actions: [],
 	},
 	{
 		id: "pull-request",
 		label: "Update pull-request status",
+		icon: "",
+		color: macchiato.sapphire,
 		actions: ["sync", "pr", "pr-ready", "pr-close"],
 	},
-	{ id: "archive", label: "Archive finished work", actions: ["archive"] },
-	{ id: "current-work", label: "See current work", actions: ["current-work"] },
+	{
+		id: "close",
+		label: "Close or reopen work",
+		icon: "󰄬",
+		color: macchiato.green,
+		actions: ["complete", "drop", "sync", "reopen"],
+	},
+	{
+		id: "archive",
+		label: "Archive finished work",
+		icon: "",
+		color: macchiato.overlay1,
+		actions: ["archive"],
+	},
+	{
+		id: "repository",
+		label: "Add a repository",
+		icon: "",
+		color: macchiato.overlay1,
+		actions: ["repo-add", "repo-link"],
+	},
 ] as const
 
 export const actActions = (

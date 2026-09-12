@@ -270,10 +270,16 @@ export const act = (
 				return answer
 			})
 		if (!selectedKey && !actionId) {
-			const goal = yield* select("Your mission:", [
-				...actionGroups.map(({ id, label }) => ({ key: id, label, value: id })),
-				{ key: "browse", label: "Browse items", value: "browse" },
-			])
+			const goal = yield* select(
+				"Your mission:",
+				actionGroups.map(({ id, label, icon, color }) => ({
+					key: id,
+					label: `${icon} ${label}`,
+					plainLabel: label,
+					value: id,
+					segments: [{ text: `${icon} `, color }, { text: label }],
+				})),
+			)
 			if (goal === "browse") {
 				if (!nodes.length)
 					return yield* Effect.fail(

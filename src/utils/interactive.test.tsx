@@ -113,9 +113,11 @@ describe("OpenTUI interaction", () => {
 			let frame = setup.captureCharFrame()
 			const rows = frame.split("\n")
 			expect(rows[0]?.trim()).toBe(" Agency")
-			expect(rows[1]?.trim()).toBe(" Work on")
-			expect(rows[2]?.trim()).toBe("filter")
-			expect(rows[3]?.trim()).toBe("")
+			expect(rows[1]?.trim()).toBe("")
+			expect(rows[2]?.trim()).toBe(" Work on")
+			expect(rows[3]?.trim()).toBe("filter")
+			expect(rows[4]?.trim()).toBe("")
+			expect(frame).not.toContain("enter select")
 			for (let index = 0; index < 3; index++) {
 				expect(frame).toContain(`choice-${index}`)
 			}

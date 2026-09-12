@@ -164,7 +164,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 				}}
 			/>
 			<text fg={macchiato.overlay1} wrapMode="none">
-				enter submit | esc cancel | ctrl-y yank
+				enter submit | esc cancel
 			</text>
 		</box>
 	)
@@ -335,7 +335,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	const gapHeight = () => (dimensions().height > 5 ? 1 : 0)
 	const visible = () => {
 		const visibleCount = Math.max(
-			dimensions().height - 3 - brandHeight() - gapHeight(),
+			dimensions().height - 2 - 2 * brandHeight() - gapHeight(),
 			1,
 		)
 		const start = Math.min(
@@ -363,6 +363,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					 Agency
 				</text>
 			)}
+			<box height={brandHeight()} flexShrink={0} />
 			<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
 				 {props.prompt}
 			</text>
@@ -436,9 +437,6 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					)}
 				</For>
 			</box>
-			<text fg={macchiato.overlay1} wrapMode="none">
-				enter select | esc clear/cancel | arrows/ctrl-n/p | ctrl-y yank
-			</text>
 		</box>
 	)
 }
