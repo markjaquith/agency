@@ -50,6 +50,7 @@ const taskDirectory = "/workbase/tasks/example"
 const phaseDirectory = `${taskDirectory}/phases/implementation`
 
 interface HarnessOptions {
+	readonly openCodeV2?: boolean
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
 	readonly available?: Readonly<Record<string, boolean>>
@@ -304,6 +305,25 @@ const createHarness = (options: HarnessOptions = {}) => {
 			Effect.succeed(options.existingPaths?.includes(path) ?? false),
 		realPath: (path: string) => Effect.succeed(path),
 		runCommand: (args: readonly string[]) => {
+			if (args[1] === "--version")
+				return Effect.succeed({
+					exitCode: 0,
+					stdout: options.openCodeV2 ? "opencode v2.0.1" : "1.18.29",
+					stderr: "",
+				})
+			if (args[1] === "api") {
+				events.push(`api:${args[2]}`)
+				const body = args[5] ? JSON.parse(args[5]) : {}
+				const data =
+					args[3] === "/api/session"
+						? { id: "ses_work", location: body.location }
+						: { id: body.id, sessionID: "ses_work", type: "user" }
+				return Effect.succeed({
+					exitCode: 0,
+					stdout: args[2] === "put" ? "" : JSON.stringify({ data }),
+					stderr: "",
+				})
+			}
 			const cli = args[1]!
 			events.push(`probe:${cli}`)
 			probes.push(cli)
@@ -1049,6 +1069,24 @@ describe("work command", () => {
 		})
 
 		expect(harness.launches[0]?.cwd).toBe(phaseDirectory)
+	})
+
+	test("submits V2 startup before launching the exact session without a prompt", async () => {
+		const harness = createHarness({ openCodeV2: true })
+		await harness.run({ taskId: "example", opencode: true, auto: true })
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode",
+			"--session",
+			"ses_work",
+		])
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"api:post",
+			"api:put",
+			"api:post",
+			"launch:opencode",
+		])
 	})
 
 	test("sends the generated prompt only with --auto", async () => {
