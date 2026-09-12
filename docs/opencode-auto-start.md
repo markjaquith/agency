@@ -104,6 +104,8 @@ keyboard bytes and requires:
 It closes only its own PTY and Git daemon. The fixture, `messages.json`, and
 `evidence.json` remain at the printed temporary path for inspection.
 `AGENCY_SMOKE_TMPDIR` overrides the fixture parent.
+Set `AGENCY_SMOKE_EXECUTABLE=/absolute/path/to/agency` to exercise an installed
+CLI instead of the development checkout; evidence records the resolved executable.
 
 For a visible Herdr check, open an unfocused tab, run the wrapper command above,
 and inspect both the screen and `/api/session/{id}/message`. Require one user

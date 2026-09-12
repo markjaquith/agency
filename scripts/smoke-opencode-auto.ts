@@ -5,6 +5,8 @@ import { join, resolve } from "node:path"
 import { tmpdir } from "node:os"
 
 const checkout = resolve(import.meta.dir, "..")
+const agencyExecutable =
+	process.env.AGENCY_SMOKE_EXECUTABLE ?? join(checkout, "cli.ts")
 const temporary = process.env.AGENCY_SMOKE_TMPDIR ?? join(tmpdir(), "opencode")
 await mkdir(temporary, { recursive: true })
 const root = await realpath(
@@ -24,8 +26,7 @@ const run = async (args: string[], cwd = root) => {
 		throw new Error(`${args.slice(0, 3).join(" ")}: ${stderr || stdout}`)
 	return stdout
 }
-const agency = (...args: string[]) =>
-	run(["bun", join(checkout, "cli.ts"), ...args])
+const agency = (...args: string[]) => run(["bun", agencyExecutable, ...args])
 const completed = (messages: any[]) =>
 	messages.some(
 		(message) =>
@@ -112,7 +113,7 @@ try {
 	await run(
 		[
 			"bun",
-			join(checkout, "cli.ts"),
+			agencyExecutable,
 			"repo",
 			"add",
 			"smoke",
@@ -124,7 +125,7 @@ try {
 	await run(
 		[
 			"bun",
-			join(checkout, "cli.ts"),
+			agencyExecutable,
 			"task",
 			"create",
 			"startup",
@@ -143,7 +144,7 @@ try {
 	await mkdir(bin)
 	await Bun.write(
 		join(bin, "agency"),
-		`#!/bin/sh\nexec bun '${join(checkout, "cli.ts")}' "$@"\n`,
+		`#!/bin/sh\nexec bun '${agencyExecutable}' "$@"\n`,
 	)
 	await chmod(join(bin, "agency"), 0o755)
 	env.PATH = `${bin}:${env.PATH}`
@@ -204,6 +205,7 @@ try {
 	)
 		throw new Error("Smoke worker changed its checkout")
 	const evidence = {
+		agencyExecutable: await realpath(agencyExecutable),
 		root,
 		sessionID,
 		terminalID,
