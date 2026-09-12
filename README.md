@@ -543,6 +543,13 @@ The item picker uses flat, aligned rows with colored Nerd Font type/status icons
 prominent names, and quieter parent-task, repository, and description details.
 Filtering matches full IDs and metadata even when a displayed name is shortened.
 
+The built-in guided flow keeps one full-screen session across menus, text inputs,
+and execution. On finish it restores the shell and leaves a compact recap of
+completed actions, affected items, and commands. Dry runs are labeled as previews;
+completed steps remain in the recap if a later step is cancelled or fails. Work
+handoffs restore the terminal before starting the interactive worker. A configured
+external chooser continues to use that chooser instead of the built-in session.
+
 | Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
 | Add a repository                     | Add from a remote, or link an existing local repository                                           | `repo-add`, `repo-link`               |

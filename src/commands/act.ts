@@ -21,6 +21,7 @@ import {
 	ActCancelled,
 	actionPrompts,
 	defaultInteraction,
+	openActSession,
 	type ActInteraction,
 } from "./act-prompts"
 import { work as startWork, type StartWork } from "./work"
@@ -160,19 +161,43 @@ export const act = (
 			(node): node is ActEntity =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
 		)
+		const recap: string[] = []
+		const session =
+			!options.json &&
+			interaction === defaultInteraction &&
+			!config.chooserCommand &&
+			process.stdin.isTTY &&
+			process.stdout.isTTY
+				? yield* Effect.acquireRelease(openActSession(), (session) =>
+						session.close().pipe(
+							Effect.tap(() =>
+								Effect.sync(() => {
+									if (recap.length)
+										log(
+											`\n  Agency\n\n${recap.map((line) => `  ${line}`).join("\n")}\n`,
+										)
+								}),
+							),
+						),
+					)
+				: undefined
+		const ui = session?.interaction ?? interaction
 		const nativeOptions = {
 			cwd: root,
 			auto: options.auto,
 			draft: options.draft,
 			inputAllowed: options.inputAllowed,
-			silent: options.silent,
+			silent: session ? true : options.silent,
 			verbose: options.verbose,
 		}
-		const globals = actActions(graph.nodes, nativeOptions, work)
+		const runWork: StartWork = session
+			? (args) => work({ ...args, silent: options.silent })
+			: work
+		const globals = actActions(graph.nodes, nativeOptions, runWork)
 		const catalog = new Map(
 			nodes.map((node) => [
 				node.id,
-				actActions(graph.nodes, nativeOptions, work, node),
+				actActions(graph.nodes, nativeOptions, runWork, node),
 			]),
 		)
 		let selectedKey = options.epicId
@@ -261,11 +286,7 @@ export const act = (
 		}
 		const select = <T>(prompt: string, choices: readonly Choice<T>[]) =>
 			Effect.gen(function* () {
-				const answer = yield* interaction.select(
-					prompt,
-					choices,
-					config.chooserCommand,
-				)
+				const answer = yield* ui.select(prompt, choices, config.chooserCommand)
 				if (answer === null) return yield* Effect.fail(new ActCancelled())
 				return answer
 			})
@@ -336,7 +357,7 @@ export const act = (
 				),
 			)
 		const prompts = actionPrompts(
-			interaction,
+			ui,
 			graph.nodes
 				.filter((node) => node.kind === "repository")
 				.map((node) => node.key),
@@ -366,10 +387,46 @@ export const act = (
 		}
 		if (options.dryRun) {
 			for (const command of [plan.command, ...(plan.followUpCommands ?? [])])
-				log(shellCommand(command))
+				if (session) recap.push(`  Preview: ${shellCommand(command)}`)
+				else log(shellCommand(command))
 			return
 		}
-		yield* plan.run
+		session?.show(`󰔟  ${action.label}…`)
+		// An interactive worker must receive a restored terminal.
+		if (action.id === "work" && session) yield* session.close()
+		yield* (
+			session && action.id !== "work"
+				? Effect.raceFirst(plan.run, session.cancelled)
+				: plan.run
+		).pipe(
+			Effect.tapError((error) =>
+				Effect.sync(() => {
+					if (session)
+						recap.push(
+							`󰅖  ${action.label} ${error instanceof ActCancelled ? "interrupted; check item state before retrying" : "failed"}${selected ? ` — ${selected.key}` : ""}`,
+						)
+				}),
+			),
+		)
+		if (session) {
+			recap.push(`󰄬  ${action.label}${selected ? ` — ${selected.key}` : ""}`)
+			if (plan.next)
+				recap.push(
+					`Item: ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`,
+				)
+			recap.push(`Command: ${shellCommand(plan.command)}`)
+			if (action.id === "current-work") {
+				const current = nodes.filter((node) => node.status === "working")
+				recap.push(
+					...(current.length
+						? current.map(
+								(node) =>
+									`${node.kind} ${node.key} · ${node.repositories.join(", ")}${"description" in node.data && node.data.description ? ` — ${node.data.description}` : ""}`,
+							)
+						: ["No work is currently working."]),
+				)
+			}
+		}
 		if (plan.next) {
 			const next = yield* select("Created. What next?", [
 				{
@@ -379,12 +436,17 @@ export const act = (
 				},
 				{ key: "work", label: "Work on the new item now", value: "work" },
 			])
-			if (next === "work") yield* work({ ...nativeOptions, ...plan.next })
+			if (next === "work") {
+				if (session) yield* session.close()
+				yield* work({ ...nativeOptions, silent: options.silent, ...plan.next })
+				if (session) recap.push("󰄬  Work handoff completed")
+			} else if (session) recap.push("Kept for later — work was not started.")
 		}
 	}).pipe(
 		Effect.catchAll((error) =>
 			error instanceof ActCancelled ? Effect.void : Effect.fail(error),
 		),
+		Effect.scoped,
 	)
 
 export const help = `

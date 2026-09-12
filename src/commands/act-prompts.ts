@@ -34,6 +34,52 @@ export const defaultInteraction: ActInteraction = {
 	select: choose,
 	text: readText,
 }
+
+export const openActSession = () =>
+	Effect.tryPromise({
+		try: async () => {
+			const { loadInteractive } = await import("../utils/interactive-loader")
+			let cancel!: () => void
+			const cancellation = new Promise<void>((resolve) => {
+				cancel = resolve
+			})
+			const session = await (
+				await loadInteractive()
+			).createInteractiveSession(cancel)
+			const attempt = <T>(run: () => Promise<T>) =>
+				Effect.tryPromise({
+					try: run,
+					catch: (cause) => new Error("Interactive session failed", { cause }),
+				})
+			const interaction: ActInteraction = {
+				text: (prompt) => attempt(() => session.text(prompt)),
+				select: (prompt, choices) =>
+					attempt(async () => {
+						const key = await session.select(
+							prompt,
+							choices.map((choice) => ({
+								...choice,
+								label: choice.plainLabel ?? choice.label,
+							})),
+						)
+						if (key === null) return null
+						const choice = choices.find((choice) => choice.key === key)
+						if (!choice) throw new Error("Invalid interactive selection")
+						return choice.value
+					}),
+			}
+			return {
+				cancelled: Effect.promise(() => cancellation).pipe(
+					Effect.flatMap(() => Effect.fail(new ActCancelled())),
+				),
+				interaction,
+				show: session.show,
+				close: () => Effect.promise(session.close),
+			}
+		},
+		catch: (cause) =>
+			new Error("Failed to open interactive session", { cause }),
+	})
 const slug = (text: string) =>
 	text
 		.toLowerCase()

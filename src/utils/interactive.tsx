@@ -13,7 +13,7 @@ import {
 	useTerminalDimensions,
 	type JSX,
 } from "@opentui/solid"
-import { createMemo, createSignal, For } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import type { ChoiceSegment } from "./chooser"
 import { macchiato } from "./theme"
 
@@ -45,6 +45,7 @@ export const interactiveSelectRendererConfig = {
 interface PromptProps<T> {
 	readonly prompt: string
 	readonly onDone: (value: T | null) => void
+	readonly fullScreen?: boolean
 }
 
 const isCancel = (key: { name: string; ctrl: boolean }) =>
@@ -142,7 +143,15 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			height="100%"
 			backgroundColor={macchiato.base}
 		>
-			<text fg={macchiato.blue}>{props.prompt}</text>
+			{props.fullScreen && (
+				<>
+					<text fg={macchiato.blue}>{"  Agency"}</text>
+					<box height={1} flexShrink={0} />
+				</>
+			)}
+			<text fg={macchiato.blue}>
+				{props.fullScreen ? `  ${props.prompt}` : props.prompt}
+			</text>
 			<textarea
 				focused
 				height={2}
@@ -163,9 +172,11 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 					})
 				}}
 			/>
-			<text fg={macchiato.overlay1} wrapMode="none">
-				enter submit | esc cancel
-			</text>
+			<Show when={!props.fullScreen}>
+				<text fg={macchiato.overlay1} wrapMode="none">
+					enter submit | esc cancel
+				</text>
+			</Show>
 		</box>
 	)
 }
@@ -449,6 +460,117 @@ const shutdown = async (renderer: CliRenderer) => {
 	if (renderer.screenMode === "split-footer")
 		renderer.screenMode = "main-screen"
 	if (!renderer.isDestroyed) renderer.destroy()
+}
+
+type SessionView =
+	| {
+			kind: "select"
+			prompt: string
+			choices: readonly InteractiveChoice[]
+			finish: (value: string | null) => void
+	  }
+	| { kind: "text"; prompt: string; finish: (value: string | null) => void }
+	| { kind: "progress"; prompt: string }
+
+/** One terminal owner for a complete guided flow, rather than one per prompt. */
+export const createInteractiveSession = async (
+	onCancel: () => void = () => {},
+) => {
+	const [view, setView] = createSignal<SessionView>({
+		kind: "progress",
+		prompt: "Preparing…",
+	})
+	let pending: ((value: string | null) => void) | undefined
+	let closed = false
+	let cancelled = false
+	const Progress = (props: { prompt: string }) => {
+		useKeyboard((key) => {
+			if (!isCancel(key)) return
+			key.preventDefault()
+			key.stopPropagation()
+			cancelled = true
+			onCancel()
+		})
+		return (
+			<box
+				flexDirection="column"
+				width="100%"
+				height="100%"
+				backgroundColor={macchiato.base}
+			>
+				<text fg={macchiato.blue}>{"  Agency"}</text>
+				<box height={1} />
+				<text fg={macchiato.text}>{props.prompt}</text>
+			</box>
+		)
+	}
+	const renderer = await createCliRenderer({
+		...interactiveSelectRendererConfig,
+		onDestroy: () => {
+			closed = true
+			pending?.(null)
+		},
+	})
+	try {
+		await render(
+			() => (
+				<Show when={view()} keyed>
+					{(current) =>
+						current.kind === "select" ? (
+							<InteractiveSelectPrompt
+								prompt={current.prompt}
+								choices={current.choices}
+								onDone={current.finish}
+							/>
+						) : current.kind === "text" ? (
+							<InteractiveTextPrompt
+								fullScreen
+								prompt={current.prompt}
+								onDone={current.finish}
+							/>
+						) : (
+							<Progress prompt={current.prompt} />
+						)
+					}
+				</Show>
+			),
+			renderer,
+		)
+	} catch (error) {
+		await shutdown(renderer)
+		throw error
+	}
+	const ask = (prompt: string, choices?: readonly InteractiveChoice[]) => {
+		if (closed || cancelled) return Promise.resolve(null)
+		return new Promise<string | null>((resolve) => {
+			pending = (value) => {
+				pending = undefined
+				setView({ kind: "progress", prompt: "Preparing next step…" })
+				resolve(value)
+			}
+			setView(
+				choices
+					? { kind: "select", prompt, choices, finish: pending }
+					: { kind: "text", prompt, finish: pending },
+			)
+			renderer.requestRender()
+		})
+	}
+	return {
+		text: (prompt: string) => ask(prompt),
+		select: (prompt: string, choices: readonly InteractiveChoice[]) =>
+			ask(prompt, choices),
+		show: (prompt: string) => {
+			setView({ kind: "progress", prompt })
+			renderer.requestRender()
+		},
+		close: async () => {
+			if (closed) return
+			closed = true
+			pending?.(null)
+			await shutdown(renderer)
+		},
+	}
 }
 
 async function runInteractive<T>(
