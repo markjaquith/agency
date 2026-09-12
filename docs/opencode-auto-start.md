@@ -35,47 +35,6 @@ V1 retains its native `--prompt` path. Custom runner definitions remain responsi
 for their own submission behavior. This implementation was exercised against
 installed OpenCode V2.0.1; V1 compatibility has focused command regression coverage.
 
-## Opt-in wrapper for direct launches
-
-The package also installs `agency-opencode`. It delegates unchanged to native
-OpenCode unless both the environment trigger and a `--prompt` argument are present:
-
-```sh
-AGENCY_OPENCODE_AUTO_SUBMIT=1 agency-opencode --prompt "2+2"
-```
-
-For a development checkout, use:
-
-```sh
-AGENCY_OPENCODE_AUTO_SUBMIT=1 bun /absolute/agency/opencode-auto.ts --prompt "2+2"
-```
-
-To keep the literal `opencode --prompt` command in a shell, define an explicit
-wrapper. Resolve the native executable before defining the function:
-
-```sh
-export AGENCY_OPENCODE_EXECUTABLE="$(command -v opencode)"
-opencode() { agency-opencode "$@"; }
-AGENCY_OPENCODE_AUTO_SUBMIT=1 opencode --prompt "2+2"
-```
-
-This is a delivered wrapper mechanism, not a modification of the installed
-OpenCode binary. A PATH shim named `opencode` must likewise set
-`AGENCY_OPENCODE_EXECUTABLE` to the absolute native executable to avoid recursion.
-
-The auto-submit path supports a directory argument, `--session`/`-s`,
-`--continue`/`-c`, `--server`, `--auto`, `--log-level`, and `--print-logs`.
-Use separate option values (for example `--prompt "2+2"`). The wrapper also accepts
-`--agent` and `--model`/`-m` (`provider/model#variant`), applying them to the selected
-session before submission. Without those overrides, a resumed session retains its
-agent/model; a new session uses server-configured defaults. It does not infer the
-TUI's recently selected model from private client storage.
-
-`--standalone` is rejected for auto-submission because separate private API and
-TUI processes cannot share the session. Use a shared service or `--server URL`.
-Unsupported auto-submit arguments fail before creating or submitting a session.
-Without the trigger, normal native argument handling applies.
-
 ## Verification
 
 Focused regressions:
@@ -106,8 +65,3 @@ It closes only its own PTY and Git daemon. The fixture, `messages.json`, and
 `AGENCY_SMOKE_TMPDIR` overrides the fixture parent.
 Set `AGENCY_SMOKE_EXECUTABLE=/absolute/path/to/agency` to exercise an installed
 CLI instead of the development checkout; evidence records the resolved executable.
-
-For a visible Herdr check, open an unfocused tab, run the wrapper command above,
-and inspect both the screen and `/api/session/{id}/message`. Require one user
-message `2+2` and a completed assistant text `4`, with an empty composer. Do not
-press Enter in the composer or send another prompt to complete the test.

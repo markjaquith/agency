@@ -329,8 +329,8 @@ authenticated session API, then opens the TUI with `--session` and an empty
 composer. V2's native `--prompt` only fills the composer. Agency sets session
 environment before submission and passes that same environment into the TUI;
 reconnecting the TUI does not replay the prompt. V1 keeps its native launch path.
-See [OpenCode auto-start](docs/opencode-auto-start.md) for the opt-in
-`agency-opencode` wrapper and real startup verification.
+See [OpenCode auto-start](docs/opencode-auto-start.md) for details and real
+startup verification.
 
 Custom agents are direct argv commands, never shell snippets:
 

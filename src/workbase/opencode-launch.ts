@@ -1,7 +1,6 @@
 import { Schema } from "@effect/schema"
 import { Effect } from "effect"
 import { randomUUID } from "node:crypto"
-import { resolve } from "node:path"
 import { FileSystemService } from "../services/FileSystemService"
 
 const Session = Schema.Struct({
@@ -20,7 +19,8 @@ const Admitted = Schema.Struct({
 
 // V2's TUI --prompt only seeds the composer. Submit through the same CLI's
 // authenticated service connection, then attach without a prompt. Reloading or
-// reconnecting the TUI cannot replay the launch input.
+// reconnecting the TUI cannot replay the launch input. Only built-in Agency
+// auto-command templates call this helper: [cli, [--continue], --prompt, text].
 export const prepareOpenCodeLaunch = (
 	argv: readonly string[],
 	cwd: string,
@@ -63,87 +63,15 @@ export const prepareOpenCodeLaunch = (
 				new Error(`Unsupported OpenCode version for auto-start: ${version}`),
 			)
 		}
-		if (argv.includes("--standalone")) {
-			return yield* Effect.fail(
-				new Error(
-					"OpenCode auto-submit requires a shared service or --server; --standalone cannot share the API-created session with the TUI",
-				),
-			)
-		}
-		const values = new Map<string, string>()
-		const attach: string[] = [cli]
-		let directory: string | undefined
-		for (let i = 1; i < argv.length; i++) {
-			const arg = argv[i]!
-			if (
-				[
-					"--prompt",
-					"--session",
-					"-s",
-					"--agent",
-					"--model",
-					"-m",
-					"--server",
-				].includes(arg)
-			) {
-				const value = argv[++i]
-				if (!value)
-					return yield* Effect.fail(new Error(`Missing value for ${arg}`))
-				values.set(
-					arg === "-s" ? "--session" : arg === "-m" ? "--model" : arg,
-					value,
-				)
-				if (arg === "--server") attach.push(arg, value)
-			} else if (arg === "--log-level") {
-				const value = argv[++i]
-				if (!value)
-					return yield* Effect.fail(new Error(`Missing value for ${arg}`))
-				attach.push(arg, value)
-			} else if (["--auto", "--print-logs"].includes(arg)) {
-				attach.push(arg)
-			} else if (arg !== "--continue" && arg !== "-c") {
-				if (arg.startsWith("-") || directory)
-					return yield* Effect.fail(
-						new Error(`Unsupported OpenCode auto-submit argument: ${arg}`),
-					)
-				directory = arg
-			}
-		}
-		if (directory) {
-			cwd = yield* fs.realPath(resolve(cwd, directory))
-			attach.push(cwd)
-		}
-		const prompt = values.get("--prompt")
-		if (!prompt?.trim())
-			return yield* Effect.fail(
-				new Error("OpenCode auto-submit requires a nonempty --prompt"),
-			)
-		const modelArgument = values.get("--model")
-		const modelMatch = modelArgument?.match(/^([^/]+)\/([^#]+)(?:#(.+))?$/)
-		if (modelArgument && !modelMatch)
-			return yield* Effect.fail(
-				new Error("OpenCode model must be provider/model#variant"),
-			)
-		const server = values.get("--server")
 		const api = (method: string, path: string, body?: unknown) =>
 			run([
 				"api",
-				...(server ? ["--server", server] : []),
 				method,
 				path,
 				...(body === undefined ? [] : ["--data", JSON.stringify(body)]),
 			])
 		let session: typeof Session.Type | undefined
-		const requestedSession = values.get("--session")
-		if (requestedSession) {
-			const existing = yield* Schema.decodeUnknown(Schema.parseJson(Created))(
-				yield* api(
-					"get",
-					`/api/session/${encodeURIComponent(requestedSession)}`,
-				),
-			)
-			session = existing.data
-		} else if (argv.includes("--continue") || argv.includes("-c")) {
+		if (argv.includes("--continue")) {
 			const query = new URLSearchParams({
 				directory: cwd,
 				parentID: "null",
@@ -168,17 +96,6 @@ export const prepareOpenCodeLaunch = (
 				),
 			)
 		}
-		const agent = values.get("--agent")
-		if (agent) yield* api("post", `/api/session/${session.id}/agent`, { agent })
-		if (modelMatch) {
-			yield* api("post", `/api/session/${session.id}/model`, {
-				model: {
-					providerID: modelMatch[1],
-					id: modelMatch[2],
-					...(modelMatch[3] ? { variant: modelMatch[3] } : {}),
-				},
-			})
-		}
 		// API client environment is not session environment on the shared server.
 		// Replace it before admission so the first shell/tool sees the caller's
 		// Agency identity and (for a real Herdr launch) the correct pane identity.
@@ -192,7 +109,7 @@ export const prepareOpenCodeLaunch = (
 		const submitted = yield* Schema.decodeUnknown(Schema.parseJson(Admitted))(
 			yield* api("post", `/api/session/${session.id}/prompt`, {
 				id,
-				text: prompt,
+				text: argv.at(-1)!,
 				resume: true,
 			}),
 		)
@@ -203,5 +120,5 @@ export const prepareOpenCodeLaunch = (
 				),
 			)
 		}
-		return [...attach, "--session", session.id]
+		return [cli, "--session", session.id]
 	})

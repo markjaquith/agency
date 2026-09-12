@@ -12,7 +12,6 @@ const harness = (
 		existing?: boolean
 		fail?: boolean
 		wrongDirectory?: boolean
-		extra?: string[]
 		alias?: boolean
 		failEnvironment?: boolean
 	} = {},
@@ -27,7 +26,6 @@ const harness = (
 			expect(settings.cwd).toBe(cwd)
 			expect(settings.env.AGENCY_PROMPT).toBe("generated prompt")
 			calls.push(argv)
-			if (argv[2] === "--server") argv = [argv[0]!, argv[1]!, ...argv.slice(4)]
 			let output: unknown
 			if (argv[1] === "--version")
 				return Effect.succeed({
@@ -36,11 +34,9 @@ const harness = (
 					stderr: "",
 				})
 			if (argv[2] === "get") {
-				if (argv[3]?.includes("?")) {
-					expect(argv[3]).toContain("directory=%2Fworkbase%2Ftasks%2Fsmoke")
-					expect(argv[3]).toContain("parentID=null")
-					output = { data: options.existing ? [session] : [] }
-				} else output = { data: session }
+				expect(argv[3]).toContain("directory=%2Fworkbase%2Ftasks%2Fsmoke")
+				expect(argv[3]).toContain("parentID=null")
+				output = { data: options.existing ? [session] : [] }
 			} else if (argv[3] === "/api/session") {
 				output = {
 					data: options.wrongDirectory
@@ -57,8 +53,6 @@ const harness = (
 						stdout: "",
 						stderr: "environment failed",
 					})
-				return Effect.succeed({ exitCode: 0, stdout: "", stderr: "" })
-			} else if (argv[3]?.endsWith("/model") || argv[3]?.endsWith("/agent")) {
 				return Effect.succeed({ exitCode: 0, stdout: "", stderr: "" })
 			} else {
 				const body = JSON.parse(argv[5]!)
@@ -89,7 +83,6 @@ const harness = (
 						...(options.resume ? ["--continue"] : []),
 						"--prompt",
 						"generated prompt",
-						...(options.extra ?? []),
 					],
 					options.alias ? "/alias" : cwd,
 					{ AGENCY_PROMPT: "generated prompt" },
@@ -115,59 +108,10 @@ describe("OpenCode auto-start", () => {
 		const create = h.calls.find((call) => call[3] === "/api/session")!
 		expect(JSON.parse(create[5]!).location.directory).toBe(cwd)
 	})
-	test("preserves explicit session, server, model, agent, and TUI options", async () => {
-		const h = harness({
-			extra: [
-				"--session",
-				session.id,
-				"--server",
-				"http://localhost:9876",
-				"--model",
-				"provider/model#high",
-				"--agent",
-				"plan",
-				"--auto",
-				"--log-level",
-				"debug",
-			],
-		})
-		expect(await h.run()).toEqual([
-			"opencode",
-			"--server",
-			"http://localhost:9876",
-			"--auto",
-			"--log-level",
-			"debug",
-			"--session",
-			session.id,
-		])
-		const api = h.calls.filter((call) => call[1] === "api")
-		expect(
-			api.every(
-				(call) => call[2] === "--server" && call[3] === "http://localhost:9876",
-			),
-		).toBe(true)
-		expect(
-			JSON.parse(api.find((call) => call[5]?.endsWith("/agent"))![7]!),
-		).toEqual({ agent: "plan" })
-		expect(
-			JSON.parse(api.find((call) => call[5]?.endsWith("/model"))![7]!),
-		).toEqual({
-			model: { providerID: "provider", id: "model", variant: "high" },
-		})
-		expect(
-			api.some((call) => call[4] === "post" && call[5] === "/api/session"),
-		).toBe(false)
-	})
 	test("does not admit a prompt when setting session environment fails", async () => {
 		const h = harness({ failEnvironment: true })
 		await expect(h.run()).rejects.toThrow("environment failed")
 		expect(h.calls.some((call) => call[3]?.endsWith("/prompt"))).toBe(false)
-	})
-	test("rejects unsupported private-service launches before creating a session", async () => {
-		const h = harness({ extra: ["--standalone"] })
-		await expect(h.run()).rejects.toThrow("--standalone")
-		expect(h.calls).toHaveLength(1)
 	})
 	test("continues the newest root session in the exact launch directory", async () => {
 		const h = harness({ resume: true, existing: true })
