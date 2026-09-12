@@ -396,9 +396,7 @@ describe("act command", () => {
 								choices.find(
 									(choice) =>
 										choice.value ===
-										(prompt === "What would you like to do?"
-											? "browse"
-											: "task:example"),
+										(prompt === "Your mission:" ? "browse" : "task:example"),
 								)?.value ?? null,
 							)
 						},

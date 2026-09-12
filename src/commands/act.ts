@@ -230,7 +230,7 @@ export const act = (
 				return answer
 			})
 		if (!selectedKey && !actionId) {
-			const goal = yield* select("What would you like to do?", [
+			const goal = yield* select("Your mission:", [
 				...actionGroups.map(({ id, label }) => ({ key: id, label, value: id })),
 				{ key: "browse", label: "Browse items", value: "browse" },
 			])

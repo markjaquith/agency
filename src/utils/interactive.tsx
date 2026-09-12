@@ -331,9 +331,13 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		if (choice) props.onDone(choice.key)
 	})
 
-	const gapHeight = () => (dimensions().height > 4 ? 1 : 0)
+	const brandHeight = () => (dimensions().height > 4 ? 1 : 0)
+	const gapHeight = () => (dimensions().height > 5 ? 1 : 0)
 	const visible = () => {
-		const visibleCount = Math.max(dimensions().height - 3 - gapHeight(), 1)
+		const visibleCount = Math.max(
+			dimensions().height - 3 - brandHeight() - gapHeight(),
+			1,
+		)
 		const start = Math.min(
 			Math.max(selected() - Math.floor(visibleCount / 2), 0),
 			Math.max(choices().length - visibleCount, 0),
@@ -354,11 +358,15 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			height="100%"
 			backgroundColor={macchiato.base}
 		>
+			{brandHeight() > 0 && (
+				<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
+					 Agency
+				</text>
+			)}
 			<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
-				{props.prompt}
+				 {props.prompt}
 			</text>
 			<box flexDirection="row" width="100%" height={1} flexShrink={0}>
-				<text fg={macchiato.blue}>{"> "}</text>
 				<textarea
 					focused
 					flexGrow={1}
