@@ -179,6 +179,7 @@ const commands: Record<string, Command> = {
 			if (options.help) return console.log(actHelp)
 			await runCommand(
 				act({
+					action: options.action,
 					directory: args[0],
 					auto: options.auto,
 					draft: options.draft,

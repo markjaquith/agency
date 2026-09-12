@@ -532,23 +532,69 @@ agency validate
 
 ### Interactive Actions
 
-`agency act` opens a filterable work-item chooser followed by an action palette
-derived from the selected item's current state and readiness. It offers only
-actions that can use existing lifecycle semantics, such as working, creating a
-pull request, dropping, reopening, or archiving. Cancelling either chooser makes
-no changes, and the command refreshes the graph before dispatch so a stale
-selection cannot act on changed work.
+`agency act` is the scenario-first front door. Choose what you want to do, then
+an eligible item, or select an item first to see its available actions. Creation
+works even in an empty workbase. The guided flow collects required inputs,
+selects the sole repository automatically, and suggests IDs, base branches, and
+phase branches. Suggestions remain editable; choosing a base never adds a
+completion dependency.
 
-Use an existing directory, a positional task ID, `--epic <id>`, `--task <id>`,
-or `--task <id> --phase <id>` to skip work-item selection. For example,
-`agency act .` selects the current task or phase. `--dry-run` still prompts for
-an action but prints the exact Agency command instead of executing it. `--json`
-never prompts or executes; it returns matching targets, status and readiness
-details, document revisions, and each available action's command argv. With no
-selector, JSON includes every active work item.
+| Goal                                 | Choose in `act`                                                                          | Discovery/action ID                  |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------ |
+| Add a repository                     | Add from a remote, or link an existing local repository                                  | `repo-add`, `repo-link`              |
+| Create a task                        | Create a task; describe the outcome and choose its purpose                               | `task-create`                        |
+| Split work                           | Add a phase / split this task; name the existing work's first phase                      | `split`                              |
+| Work on a task or phase              | Work on this item                                                                        | `work`                               |
+| Move from investigation to execution | Create implementation follow-up                                                          | `handoff`                            |
+| Review someone else's work           | Review a PR, or a remote branch/commit                                                   | `review`, `review-ref`               |
+| Close finished work                  | Complete without a PR, drop abandoned work, or refresh a merged PR                       | `complete`, `drop`, `sync`           |
+| Update PR status                     | Refresh Agency state from the provider, create a PR, mark a GitHub PR ready, or close it | `sync`, `pr`, `pr-ready`, `pr-close` |
+| Archive terminal work                | Archive                                                                                  | `archive`                            |
+| See current work                     | See current work                                                                         | `current-work`                       |
 
-`--auto` is included in generated or executed work commands, and `--draft` is
-included in generated or executed pull request commands.
+After creating a task, phase, review, or implementation follow-up, choose **Work
+on the new item now** or **Finish**. Only choosing Work prepares checkouts and
+launches the configured runner; creation alone leaves the item for later.
+Investigation handoff creates a distinct implementation item with source and
+revision provenance. Completing a non-PR outcome requires a durable summary.
+PR-backed completion comes from provider reconciliation after merge.
+
+**Refresh Agency state** reads the provider and reconciles local records. The
+explicit **GitHub PR ready/close** actions mutate the recorded GitHub URL, then
+refresh Agency state. They are offered only for recorded GitHub PR URLs; actual
+provider state and authorization are checked by the underlying command. Native
+provider-aware PR creation remains available. Existing lifecycle services own
+validation, preparation, revision guards, and archive protections.
+
+Use an existing directory, a positional task ID, `--epic <id>`, `--task <id>`, or
+`--task <id> --phase <id>` for item-first selection. Use `--action <id>` to start
+at a specific scenario. `--dry-run` collects inputs and prints exact commands,
+including automatic bookkeeping commands, without executing or offering Work.
+Cancelling before dispatch makes no changes; cancelling after creation leaves
+the newly created item. The graph is refreshed before item actions are dispatched.
+
+```bash
+agency act .
+agency act --action task-create --dry-run
+agency act --task investigate --action handoff --json
+```
+
+For agents, `--json` never prompts or executes. Its compact, runtime-validated
+result includes workbase actions and repository aliases, current working items,
+and matching targets with readiness, document revisions, available `actions`,
+and `blockedActions` with reasons. `--action` filters discovery to one scenario.
+`command` is exact argv only when no inputs are missing and the action is
+available. Otherwise `commandTemplate` contains `<input-id>` placeholders;
+`inputs` describes required/optional values, choices, defaults, and suggestions.
+Omit the flag/value pair for an unfilled optional input or its `omitWhen` value
+(for example, standard tasks omit `--purpose`). Run commands from the
+returned workbase root. `followUpCommands` are automatic bookkeeping;
+`nextActions` require a separate explicit choice and are never implied by
+creation. Re-discover after mutations rather than reusing old revisions.
+
+`--auto` applies to Work, including the post-creation choice. `--draft` applies
+to PR creation. Discovery is based on local state and does not fetch GitHub or
+promise that remote operations or checkout preparation will succeed.
 
 ### Target Context
 
