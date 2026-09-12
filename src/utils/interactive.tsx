@@ -331,8 +331,9 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		if (choice) props.onDone(choice.key)
 	})
 
+	const gapHeight = () => (dimensions().height > 4 ? 1 : 0)
 	const visible = () => {
-		const visibleCount = Math.max(dimensions().height - 3, 1)
+		const visibleCount = Math.max(dimensions().height - 3 - gapHeight(), 1)
 		const start = Math.min(
 			Math.max(selected() - Math.floor(visibleCount / 2), 0),
 			Math.max(choices().length - visibleCount, 0),
@@ -353,17 +354,17 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			height="100%"
 			backgroundColor={macchiato.base}
 		>
-			<box flexDirection="row" width="100%">
-				<text fg={macchiato.blue} flexShrink={1} wrapMode="none">
-					{props.prompt}
-				</text>
-				<text fg={macchiato.blue}>{" > "}</text>
+			<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
+				{props.prompt}
+			</text>
+			<box flexDirection="row" width="100%" height={1} flexShrink={0}>
+				<text fg={macchiato.blue}>{"> "}</text>
 				<textarea
 					focused
 					flexGrow={1}
 					minWidth={8}
-					height={2}
-					wrapMode="word"
+					height={1}
+					wrapMode="none"
 					placeholder="filter"
 					placeholderColor={macchiato.overlay0}
 					backgroundColor={macchiato.mantle}
@@ -384,6 +385,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					}}
 				/>
 			</box>
+			<box height={gapHeight()} flexShrink={0} />
 			<box flexDirection="column" flexGrow={1}>
 				<For
 					each={visible()}

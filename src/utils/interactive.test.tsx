@@ -111,10 +111,14 @@ describe("OpenTUI interaction", () => {
 			await Bun.sleep(0)
 
 			let frame = setup.captureCharFrame()
-			for (let index = 0; index < 5; index++) {
+			const rows = frame.split("\n")
+			expect(rows[0]?.trim()).toBe("Work on")
+			expect(rows[1]?.trim()).toBe("> filter")
+			expect(rows[2]?.trim()).toBe("")
+			for (let index = 0; index < 4; index++) {
 				expect(frame).toContain(`choice-${index}`)
 			}
-			expect(frame).not.toContain("choice-5")
+			expect(frame).not.toContain("choice-4")
 
 			for (let index = 0; index < 7; index++) {
 				setup.mockInput.pressArrow("down")
@@ -123,13 +127,13 @@ describe("OpenTUI interaction", () => {
 			frame = setup.captureCharFrame()
 			expect(frame).toContain("choice-5")
 			expect(frame).toContain("▌ choice-7")
-			expect(frame).toContain("choice-9")
+			expect(frame).toContain("choice-8")
 
 			setup.resize(40, 5)
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).not.toContain("choice-5")
-			expect(frame).toContain("choice-6")
+			expect(frame).not.toContain("choice-6")
 			expect(frame).toContain("▌ choice-7")
 			expect(frame).not.toContain("choice-8")
 			expect(frame).not.toContain("choice-9")
@@ -194,7 +198,7 @@ describe("OpenTUI interaction", () => {
 					onDone={() => undefined}
 				/>
 			),
-			{ width: 40, height: 5 },
+			{ width: 40, height: 6 },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -220,7 +224,7 @@ describe("OpenTUI interaction", () => {
 
 			setup.mockInput.pressKey("u", { ctrl: true })
 			await setup.flush()
-			setup.resize(32, 5)
+			setup.resize(32, 6)
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).toContain("▌ ╭─ epic delivery")
@@ -242,7 +246,7 @@ describe("OpenTUI interaction", () => {
 					onDone={() => undefined}
 				/>
 			),
-			{ width: 40, height: 5 },
+			{ width: 40, height: 6 },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -342,7 +346,7 @@ describe("OpenTUI interaction", () => {
 					}}
 				/>
 			),
-			{ width: 40, height: 5, kittyKeyboard: true },
+			{ width: 40, height: 6, kittyKeyboard: true },
 		)
 		try {
 			await setup.renderer.setupTerminal()
