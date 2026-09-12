@@ -532,25 +532,25 @@ agency validate
 
 ### Interactive Actions
 
-`agency act` is the scenario-first front door. Choose what you want to do, then
-an eligible item, or select an item first to see its available actions. Creation
+`agency act` starts with ten goals and **Browse items**. Choose a goal and then
+an eligible item, or browse existing items first to see their available actions. Creation
 works even in an empty workbase. The guided flow collects required inputs,
 selects the sole repository automatically, and suggests IDs, base branches, and
 phase branches. Suggestions remain editable; choosing a base never adds a
 completion dependency.
 
-| Goal                                 | Choose in `act`                                                                          | Discovery/action ID                  |
-| ------------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------------ |
-| Add a repository                     | Add from a remote, or link an existing local repository                                  | `repo-add`, `repo-link`              |
-| Create a task                        | Create a task; describe the outcome and choose its purpose                               | `task-create`                        |
-| Split work                           | Add a phase / split this task; name the existing work's first phase                      | `split`                              |
-| Work on a task or phase              | Work on this item                                                                        | `work`                               |
-| Move from investigation to execution | Create implementation follow-up                                                          | `handoff`                            |
-| Review someone else's work           | Review a PR, or a remote branch/commit                                                   | `review`, `review-ref`               |
-| Close finished work                  | Complete without a PR, drop abandoned work, or refresh a merged PR                       | `complete`, `drop`, `sync`           |
-| Update PR status                     | Refresh Agency state from the provider, create a PR, mark a GitHub PR ready, or close it | `sync`, `pr`, `pr-ready`, `pr-close` |
-| Archive terminal work                | Archive                                                                                  | `archive`                            |
-| See current work                     | See current work                                                                         | `current-work`                       |
+| Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Add a repository                     | Add from a remote, or link an existing local repository                                           | `repo-add`, `repo-link`               |
+| Create a task                        | Create a task → standard task or investigation; describe the outcome                              | `task-create`, `investigation-create` |
+| Split work                           | Add a phase / split this task; name the existing work's first phase                               | `split`                               |
+| Work on a task or phase              | Work on this item                                                                                 | `work`                                |
+| Move from investigation to execution | Create implementation follow-up                                                                   | `handoff`                             |
+| Review someone else's work           | Review a PR, or a remote branch/commit                                                            | `review`, `review-ref`                |
+| Close finished work                  | Close or reopen work → complete without a PR, drop abandoned work, refresh a merged PR, or reopen | `complete`, `drop`, `sync`, `reopen`  |
+| Update PR status                     | Refresh Agency state from the provider, create a PR, mark a GitHub PR ready, or close it          | `sync`, `pr`, `pr-ready`, `pr-close`  |
+| Archive terminal work                | Archive                                                                                           | `archive`                             |
+| See current work                     | See current work                                                                                  | `current-work`                        |
 
 After creating a task, phase, review, or implementation follow-up, choose **Work
 on the new item now** or **Finish**. Only choosing Work prepares checkouts and
@@ -584,10 +584,13 @@ result includes workbase actions and repository aliases, current working items,
 and matching targets with readiness, document revisions, available `actions`,
 and `blockedActions` with reasons. `--action` filters discovery to one scenario.
 `command` is exact argv only when no inputs are missing and the action is
-available. Otherwise `commandTemplate` contains `<input-id>` placeholders;
-`inputs` describes required/optional values, choices, defaults, and suggestions.
-Omit the flag/value pair for an unfilled optional input or its `omitWhen` value
-(for example, standard tasks omit `--purpose`). Run commands from the
+available. Otherwise substitute the required `inputs` into `commandTemplate`'s
+`<input-id>` placeholders. The resulting argv is ready to run: standard task
+creation has no `--purpose` flag, and investigation creation includes a fixed
+`--purpose investigation`. Optional inputs are excluded from the template;
+append their native `option` and value only when wanted (for example,
+`--depends-on <phase-id>`). Human prompting and suggestions are not part of the
+machine protocol. Run commands from the
 returned workbase root. `followUpCommands` are automatic bookkeeping;
 `nextActions` require a separate explicit choice and are never implied by
 creation. Re-discover after mutations rather than reusing old revisions.

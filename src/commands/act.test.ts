@@ -94,14 +94,17 @@ describe("act command", () => {
 			runTestEffect(
 				act(
 					{ cwd: root, inputAllowed: true },
-					scriptedInteraction(["task:example", "drop"], (_prompt, choices) => {
-						offered.push(choices.map((choice) => String(choice.value)))
-					}),
+					scriptedInteraction(
+						["browse", "task:example", "drop"],
+						(_prompt, choices) => {
+							offered.push(choices.map((choice) => String(choice.value)))
+						},
+					),
 				),
 			),
 		)
 
-		expect(offered[1]).toEqual([
+		expect(offered[2]).toEqual([
 			"work",
 			"pr",
 			"drop",
@@ -196,7 +199,7 @@ describe("act command", () => {
 		expect(prompts).toEqual(["Act on phase multi/build"])
 	})
 
-	test("orders owned items hierarchically and omits items without actions", async () => {
+	test("Browse preserves parent and phase hierarchy", async () => {
 		await runTestEffect(
 			task({
 				subcommand: "create",
@@ -221,7 +224,7 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true },
-				scriptedInteraction([null], (_prompt, offered) => {
+				scriptedInteraction(["browse", null], (_prompt, offered) => {
 					choices = offered
 				}),
 			),
@@ -299,11 +302,14 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true },
-				scriptedInteraction(["task:example", null], (prompt, choices) => {
-					if (prompt.startsWith("Act on task")) {
-						actions = choices.map((choice) => String(choice.value))
-					}
-				}),
+				scriptedInteraction(
+					["browse", "task:example", null],
+					(prompt, choices) => {
+						if (prompt.startsWith("Act on task")) {
+							actions = choices.map((choice) => String(choice.value))
+						}
+					},
+				),
 			),
 		)
 
@@ -337,7 +343,7 @@ describe("act command", () => {
 			act(
 				{ cwd: root, inputAllowed: true, silent: true },
 				scriptedInteraction(
-					["phase:multi/build", "drop"],
+					["browse", "phase:multi/build", "drop"],
 					(prompt, choices) => {
 						if (prompt.startsWith("Act on phase")) {
 							actions = choices.map((choice) => String(choice.value))
@@ -360,7 +366,7 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true, auto: true },
-				scriptedInteraction(["task:example", "work"]),
+				scriptedInteraction(["browse", "task:example", "work"]),
 				((options) => {
 					workCalls.push(options)
 					return Effect.void
@@ -387,8 +393,13 @@ describe("act command", () => {
 								return Effect.fail(new Error("stop before external PR command"))
 							}
 							return Effect.succeed(
-								choices.find((choice) => choice.value === "task:example")
-									?.value ?? null,
+								choices.find(
+									(choice) =>
+										choice.value ===
+										(prompt === "What would you like to do?"
+											? "browse"
+											: "task:example"),
+								)?.value ?? null,
 							)
 						},
 					},
@@ -405,6 +416,11 @@ describe("act command", () => {
 			select: (_prompt, choices) => {
 				selection++
 				if (selection === 1) {
+					return Effect.succeed(
+						choices.find((choice) => choice.value === "browse")?.value ?? null,
+					)
+				}
+				if (selection === 2) {
 					return Effect.succeed(
 						choices.find((choice) => choice.value === "task:example")?.value ??
 							null,
@@ -436,7 +452,7 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true },
-				scriptedInteraction(["action:work", "task:example"]),
+				scriptedInteraction(["work", "task:example"]),
 				(() => {
 					calls++
 					return Effect.void
@@ -446,14 +462,14 @@ describe("act command", () => {
 		expect(calls).toBe(1)
 	})
 
-	test("creates a task through guided input, including repository and purpose choices", async () => {
+	test("creates an investigation through guided input", async () => {
 		const text = ["A useful outcome", "guided", ""]
 		const logs = await captureLogs(() =>
 			runTestEffect(
 				act(
-					{ cwd: root, action: "task-create", inputAllowed: true },
+					{ cwd: root, action: "investigation-create", inputAllowed: true },
 					{
-						...scriptedInteraction(["investigation", "finish"]),
+						...scriptedInteraction(["finish"]),
 						text: () => Effect.succeed(text.shift() ?? null),
 					},
 				),
@@ -758,9 +774,7 @@ describe("act command", () => {
 			act(
 				{ cwd: root, action: "task-create", inputAllowed: true, silent: true },
 				{
-					...scriptedInteraction(["standard", "work"], (prompt) =>
-						prompts.push(prompt),
-					),
+					...scriptedInteraction(["work"], (prompt) => prompts.push(prompt)),
 					text: (prompt) => {
 						prompts.push(prompt)
 						return Effect.succeed(values.shift() ?? null)
@@ -879,19 +893,99 @@ describe("act command", () => {
 			),
 		)
 		expect(workCalls).toEqual([
-			{
+			expect.objectContaining({
 				taskId: "research-implementation",
 				cwd: root,
-				auto: undefined,
-				inputAllowed: true,
-				silent: true,
-				verbose: undefined,
-			},
+			}),
 		])
+		for (const key of ["directory", "phaseId", "epicId"])
+			expect(workCalls[0]).not.toHaveProperty(key)
 		const content = await Bun.file(
 			join(root, "tasks/research-implementation/TASK.md"),
 		).text()
 		expect(content).toContain("phaseId: findings")
+	})
+
+	test("the front menu contains goals and Browse, independent of the item count", async () => {
+		await createTask("example")
+		let offered: readonly Choice<unknown>[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true },
+				scriptedInteraction([null], (_prompt, choices) => {
+					offered = choices
+				}),
+			),
+		)
+		expect(offered.map((choice) => choice.value)).toEqual([
+			"repository",
+			"create",
+			"split",
+			"work",
+			"handoff",
+			"review",
+			"close",
+			"pull-request",
+			"archive",
+			"current-work",
+			"browse",
+		])
+		expect(offered.some((choice) => choice.label.includes("example"))).toBe(
+			false,
+		)
+	})
+
+	test("standard and investigation discovery templates run by substituting required inputs only", async () => {
+		for (const action of ["task-create", "investigation-create"]) {
+			const logs = await captureLogs(() =>
+				runTestEffect(act({ cwd: root, action, json: true })),
+			)
+			const descriptor = JSON.parse(logs[0]!).workbase.actions[0]
+			const values: Record<string, string> = {
+				id: action,
+				repo: "agency",
+				base: "main",
+				description: "Machine-created outcome",
+			}
+			const argv = descriptor.commandTemplate.map(
+				(argument: string) => values[argument.slice(1, -1)] ?? argument,
+			)
+			expect(
+				descriptor.inputs.every(
+					(input: { required: boolean }) => input.required,
+				),
+			).toBe(true)
+			expect(argv.includes("--purpose")).toBe(action === "investigation-create")
+			expect(() => parseCli(argv.slice(1))).not.toThrow()
+			const result = Bun.spawnSync(
+				[
+					process.execPath,
+					join(import.meta.dir, "../../cli.ts"),
+					...argv.slice(1),
+					"--json",
+				],
+				{ cwd: root, stdout: "pipe", stderr: "pipe" },
+			)
+			expect(result.exitCode).toBe(0)
+			expect(await readTaskStatus(action)).toBe("open")
+		}
+	})
+
+	test("optional ordering is separate from the executable split template", async () => {
+		await createTask("example")
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act({ cwd: root, taskId: "example", action: "split", json: true }),
+			),
+		)
+		const descriptor = JSON.parse(logs[0]!).targets[0].actions[0]
+		expect(descriptor.commandTemplate).not.toContain("--depends-on")
+		expect(descriptor.inputs).toContainEqual({
+			id: "dependsOn",
+			label: "Completion dependency",
+			required: false,
+			option: "--depends-on",
+		})
 	})
 
 	const createTask = (id: string) =>
