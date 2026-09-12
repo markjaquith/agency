@@ -317,7 +317,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				const data =
 					args[3] === "/api/session"
 						? { id: "ses_work", location: body.location }
-						: { id: body.id, sessionID: "ses_work", type: "user" }
+						: { id: "msg_server", sessionID: "ses_work", type: "user" }
 				return Effect.succeed({
 					exitCode: 0,
 					stdout: args[2] === "put" ? "" : JSON.stringify({ data }),

@@ -58,13 +58,16 @@ const harness = (
 				const body = JSON.parse(argv[5]!)
 				expect(body.text).toBe("generated prompt")
 				expect(body.resume).toBe(true)
+				expect(body).not.toHaveProperty("id")
 				if (options.fail)
 					return Effect.succeed({
 						exitCode: 1,
 						stdout: "",
 						stderr: "admission failed",
 					})
-				output = { data: { id: body.id, sessionID: session.id, type: "user" } }
+				output = {
+					data: { id: "msg_server", sessionID: session.id, type: "user" },
+				}
 			}
 			return Effect.succeed({
 				exitCode: 0,

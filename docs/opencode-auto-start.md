@@ -16,7 +16,7 @@ For the built-in `opencode` and `opencode2` presets, Agency:
    root session in that exact directory for a continued launch.
 3. Sets session environment through `PUT /api/session/{id}/environment` before
    admitting input. This is necessary when the service is already running.
-4. Admits one generated prompt with a unique message ID and `resume: true`.
+4. Admits one generated prompt with `resume: true`, letting OpenCode assign its ID.
 5. Replaces the launcher with `opencode --session ID`, without a composer prompt.
 
 All API calls use `opencode api`, retaining that executable's service discovery

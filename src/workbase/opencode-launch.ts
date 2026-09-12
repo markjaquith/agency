@@ -1,6 +1,5 @@
 import { Schema } from "@effect/schema"
 import { Effect } from "effect"
-import { randomUUID } from "node:crypto"
 import { FileSystemService } from "../services/FileSystemService"
 
 const Session = Schema.Struct({
@@ -11,7 +10,6 @@ const Created = Schema.Struct({ data: Session })
 const Listed = Schema.Struct({ data: Schema.Array(Session) })
 const Admitted = Schema.Struct({
 	data: Schema.Struct({
-		id: Schema.String,
 		sessionID: Schema.String,
 		type: Schema.Literal("user"),
 	}),
@@ -105,15 +103,13 @@ export const prepareOpenCodeLaunch = (
 			),
 		)
 		yield* api("put", `/api/session/${session.id}/environment`, { variables })
-		const id = `msg_${randomUUID().replaceAll("-", "")}`
 		const submitted = yield* Schema.decodeUnknown(Schema.parseJson(Admitted))(
 			yield* api("post", `/api/session/${session.id}/prompt`, {
-				id,
 				text: argv.at(-1)!,
 				resume: true,
 			}),
 		)
-		if (submitted.data.id !== id || submitted.data.sessionID !== session.id) {
+		if (submitted.data.sessionID !== session.id) {
 			return yield* Effect.fail(
 				new Error(
 					`OpenCode did not confirm the launch prompt for ${session.id}`,
