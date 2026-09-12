@@ -85,7 +85,11 @@ const slug = (text: string) =>
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-|-$/g, "")
+		.split("-")
+		.slice(0, 5)
+		.join("-")
 		.slice(0, 60)
+		.replace(/-$/, "")
 
 export const actionPrompts = (
 	interaction: ActInteraction,

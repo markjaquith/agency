@@ -784,8 +784,12 @@ describe("act command", () => {
 	})
 
 	test("suggests safe IDs, skips the only repository, and works only after explicit selection", async () => {
-		await createTask("new-outcome")
-		const values = ["New outcome", "", ""]
+		await createTask("make-task-id-suggestions-shorter")
+		const values = [
+			"Make task ID suggestions shorter than this entire sentence",
+			"",
+			"",
+		]
 		const prompts: string[] = []
 		const workCalls: unknown[] = []
 		await runTestEffect(
@@ -804,12 +808,19 @@ describe("act command", () => {
 				}) as Parameters<typeof act>[2],
 			),
 		)
-		expect(prompts).toContain("New task ID [new-outcome-2]: ")
+		expect(prompts).toContain(
+			"New task ID [make-task-id-suggestions-shorter-2]: ",
+		)
 		expect(prompts).not.toContain("Repository alias")
 		expect(workCalls).toEqual([
-			expect.objectContaining({ taskId: "new-outcome-2", cwd: root }),
+			expect.objectContaining({
+				taskId: "make-task-id-suggestions-shorter-2",
+				cwd: root,
+			}),
 		])
-		expect(await readTaskStatus("new-outcome-2")).toBe("open")
+		expect(await readTaskStatus("make-task-id-suggestions-shorter-2")).toBe(
+			"open",
+		)
 	})
 
 	test("GitHub mutation dispatch targets the recorded URL and reconciles only after success", async () => {
