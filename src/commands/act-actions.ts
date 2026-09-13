@@ -39,6 +39,7 @@ interface Input {
 	readonly id: string
 	readonly label: string
 	readonly required: boolean
+	readonly multiline?: boolean
 	/** An optional input is appended as this native CLI option. */
 	readonly option?: string
 }
@@ -71,11 +72,15 @@ const immediate = (details: Details, plan: Plan): ActAction => ({
 	preview: plan,
 	prepare: () => Effect.succeed(plan),
 })
-const input = (id: string, label: string, option?: string): Input => ({
+const input = (
+	id: string,
+	label: string,
+	options: { option?: string; multiline?: boolean } = {},
+): Input => ({
 	id,
 	label,
-	required: !option,
-	...(option ? { option } : {}),
+	required: !options.option,
+	...options,
 })
 const taskTarget = (node: ActEntity) =>
 	node.kind === "phase"
@@ -213,8 +218,8 @@ export const actActions = (
 							: "Create a standard task",
 						blockedReason: needsRepository,
 						inputs: [
+							input("description", "Outcome", { multiline: true }),
 							input("id", "Task ID"),
-							input("description", "Outcome"),
 							input("repo", "Repository alias"),
 							input("base", "Base branch"),
 						],
@@ -270,12 +275,12 @@ export const actActions = (
 								: "Review a pull request",
 						blockedReason: needsRepository,
 						inputs: [
-							input("id", "Review task ID"),
 							input("repo", "Repository alias"),
 							input(
 								"source",
 								sourceType === "ref" ? "Remote ref" : "PR URL or number",
 							),
+							input("id", "Review task ID"),
 						],
 					},
 					{ id: "<id>", repo: "<repo>", source: "<source>" },
@@ -497,7 +502,9 @@ export const actActions = (
 					input("repo", "Repository alias"),
 					input("base", "Base branch"),
 					input("branch", "New phase branch"),
-					input("dependsOn", "Completion dependency", "--depends-on"),
+					input("dependsOn", "Completion dependency", {
+						option: "--depends-on",
+					}),
 				],
 			},
 			{
@@ -629,7 +636,9 @@ export const actActions = (
 								? "Reconcile the recorded pull request instead"
 								: null),
 				),
-				inputs: [input("summary", "Completed outcome summary")],
+				inputs: [
+					input("summary", "Completed outcome summary", { multiline: true }),
+				],
 			},
 			"<summary>",
 			(p) => p.text("Completed non-PR outcome summary"),

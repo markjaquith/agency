@@ -158,6 +158,17 @@ const shellCommand = (argv: readonly string[]) =>
 		)
 		.join(" ")
 const available = (action: ActAction) => !action.blockedReason
+const entitySummary = (node: ActEntity) => ({
+	kind: node.kind,
+	id: node.id,
+	key: node.key,
+	status: node.status,
+	description: "description" in node.data ? node.data.description : undefined,
+	repo: "repo" in node.data ? node.data.repo : undefined,
+	repositories: node.repositories,
+	readiness: node.readiness,
+	revision: node.data.sha256,
+})
 const actionIcons: Record<string, string> = {
 	reopen: "󰑓",
 	drop: "󰅖",
@@ -401,16 +412,7 @@ const actStep = (
 						},
 						currentWork: nodes
 							.filter((node) => node.status === "working")
-							.map((node) => ({
-								kind: node.kind,
-								key: node.key,
-								description:
-									"description" in node.data
-										? node.data.description
-										: undefined,
-								repositories: node.repositories,
-								readiness: node.readiness,
-							})),
+							.map(entitySummary),
 						targets: globalAction
 							? []
 							: nodes
@@ -418,12 +420,7 @@ const actStep = (
 									.map((node) => {
 										const actions = catalog.get(node.id)!.filter(matches)
 										return {
-											kind: node.kind,
-											id: node.id,
-											key: node.key,
-											status: node.status,
-											readiness: node.readiness,
-											revision: node.data.sha256,
+											...entitySummary(node),
 											actions: actions
 												.filter(available)
 												.map((action) => actionOutput(action, options.auto)),

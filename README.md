@@ -619,6 +619,12 @@ For agents, `--json` never prompts or executes. Its compact, runtime-validated
 result includes workbase actions and repository aliases, current working items,
 and matching targets with readiness, document revisions, available `actions`,
 and `blockedActions` with reasons. `--action` filters discovery to one scenario.
+Targets and current working items share the same identity and metadata fields:
+`id`, `kind`, `key`, `status`, `description`, `repo` (the declared main repository,
+when present), `repositories`, `readiness`, and `revision`. Descriptions retain
+their original line breaks rather than the compact Workstream display wrapping.
+Input descriptors follow wizard collection order; narrative fields advertise
+`multiline: true`. Pass a multiline value as one argv element, preserving newlines.
 `command` is exact argv only when no inputs are missing and the action is
 available. Otherwise substitute the required `inputs` into `commandTemplate`'s
 `<input-id>` placeholders. The resulting argv is ready to run: standard task

@@ -869,9 +869,13 @@ describe("act command", () => {
 		)
 		const output = JSON.parse(logs[0]!)
 		expect(output.currentWork[0]).toMatchObject({
+			id: "task:example",
 			key: "example",
+			status: "working",
+			repo: "agency",
 			repositories: ["agency"],
 		})
+		expect(output.targets[0]).toMatchObject(output.currentWork[0])
 		expect(output.targets[0].actions).toEqual([])
 		expect(output.targets[0].blockedActions).toEqual([
 			expect.objectContaining({
@@ -1096,11 +1100,19 @@ describe("act command", () => {
 				id: action,
 				repo: "agency",
 				base: "main",
-				description: "Machine-created outcome",
+				description: "Machine-created outcome\nWith a second line",
 			}
 			const argv = descriptor.commandTemplate.map(
 				(argument: string) => values[argument.slice(1, -1)] ?? argument,
 			)
+			expect(
+				descriptor.inputs.map((input: { id: string }) => input.id),
+			).toEqual(["description", "id", "repo", "base"])
+			expect(descriptor.inputs[0].multiline).toBe(true)
+			expect(descriptor.nextActions[0]).toMatchObject({
+				id: "work",
+				requiresSelection: true,
+			})
 			expect(
 				descriptor.inputs.every(
 					(input: { required: boolean }) => input.required,
@@ -1119,6 +1131,22 @@ describe("act command", () => {
 			)
 			expect(result.exitCode).toBe(0)
 			expect(await readTaskStatus(action)).toBe("open")
+			const discovered = await captureLogs(() =>
+				runTestEffect(act({ cwd: root, taskId: action, json: true })),
+			)
+			const target = JSON.parse(discovered[0]!).targets[0]
+			expect(target).toMatchObject({
+				id: `task:${action}`,
+				status: "open",
+				description: values.description,
+				repo: "agency",
+				repositories: ["agency"],
+			})
+			expect(
+				target.actions.find(
+					(candidate: { id: string }) => candidate.id === "complete",
+				).inputs[0].multiline,
+			).toBe(true)
 		}
 	})
 

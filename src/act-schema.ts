@@ -14,6 +14,7 @@ const Action = Schema.Struct({
 				id: Schema.String,
 				label: Schema.String,
 				required: Schema.Boolean,
+				multiline: Schema.optional(Schema.Boolean),
 				option: Schema.optional(Schema.String),
 			}),
 		),
@@ -32,6 +33,17 @@ const Action = Schema.Struct({
 	),
 })
 const Kind = Schema.Literal("epic", "task", "phase")
+const EntityFields = {
+	kind: Kind,
+	id: Schema.String,
+	key: Schema.String,
+	status: WorkStatus,
+	description: Schema.optional(Schema.String),
+	repo: Schema.optional(Schema.String),
+	repositories: Argv,
+	readiness: GraphReadiness,
+	revision: Schema.String,
+}
 
 export const ActDiscovery = Schema.Struct({
 	workbase: Schema.Struct({
@@ -39,23 +51,10 @@ export const ActDiscovery = Schema.Struct({
 		repositories: Argv,
 		actions: Schema.Array(Action),
 	}),
-	currentWork: Schema.Array(
-		Schema.Struct({
-			kind: Kind,
-			key: Schema.String,
-			description: Schema.optional(Schema.String),
-			repositories: Argv,
-			readiness: GraphReadiness,
-		}),
-	),
+	currentWork: Schema.Array(Schema.Struct(EntityFields)),
 	targets: Schema.Array(
 		Schema.Struct({
-			kind: Kind,
-			id: Schema.String,
-			key: Schema.String,
-			status: WorkStatus,
-			readiness: GraphReadiness,
-			revision: Schema.String,
+			...EntityFields,
 			actions: Schema.Array(Action),
 			blockedActions: Schema.Array(Action),
 		}),
