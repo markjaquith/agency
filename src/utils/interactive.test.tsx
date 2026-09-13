@@ -77,6 +77,7 @@ describe("OpenTUI interaction", () => {
 			await setup.renderOnce()
 			await Bun.sleep(0)
 			const frame = setup.captureCharFrame()
+			expect(frame.split("\n")[0]?.trimEnd()).toBe("   Agency")
 			expect(frame.match(/Agency/g)).toHaveLength(1)
 			expect(frame).toContain("▎ Workstream")
 			expect(frame).toContain("  Summary")

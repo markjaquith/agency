@@ -520,15 +520,9 @@ export const InteractiveTabbedPrompt = (props: {
 			backgroundColor={macchiato.surface0}
 		>
 			<Show when={brandHeight() > 0}>
-				<text
-					fg={macchiato.blue}
-					height={1}
-					flexShrink={0}
-					paddingLeft={1}
-					paddingRight={1}
-				>
-					{"  Agency"}
-				</text>
+				<box height={1} flexShrink={0} paddingLeft={1} paddingRight={1}>
+					<text fg={macchiato.blue}>{"  Agency"}</text>
+				</box>
 				<box height={1} flexShrink={0} />
 			</Show>
 			<box
