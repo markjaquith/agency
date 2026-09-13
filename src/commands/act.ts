@@ -20,6 +20,7 @@ import {
 import {
 	ActCancelled,
 	actionPrompts,
+	wizardInputs,
 	actTabs,
 	defaultInteraction,
 	openActSession,
@@ -188,6 +189,8 @@ interface ActState {
 	notice: string
 	item?: string
 	atItemMenu?: boolean
+	goal?: string
+	atGoalMenu?: boolean
 }
 
 export const act = (
@@ -208,28 +211,39 @@ export const act = (
 			while (true) {
 				state.atHome = true
 				state.atItemMenu = false
+				state.atGoalMenu = false
 				const keepGoing = yield* actStep(
 					nextOptions,
 					interaction,
 					work,
 					state,
 				).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => {
+							state.goal = undefined
+						}),
+					),
 					Effect.as(true),
 					Effect.catchAll((error) => {
 						if (error instanceof ActCancelled) {
 							if (state.atItemMenu) state.item = undefined
+							if (state.atGoalMenu) state.goal = undefined
 							return Effect.succeed(
 								!state.atHome || options.exitOnEscape === false,
 							)
 						}
 						if (!state.native || state.atHome) return Effect.fail(error)
+						state.goal = undefined
 						state.notice = `󰅖  ${error instanceof Error ? error.message : String(error)}`
 						return Effect.succeed(true)
 					}),
 				)
 				if (!state.native || !keepGoing || state.session?.quitRequested) break
 				state.session?.resetCancellation()
-				if (state.session?.takeNavigation()) state.item = undefined
+				if (state.session?.takeNavigation()) {
+					state.item = undefined
+					state.goal = undefined
+				}
 				state.session?.notice(state.notice)
 				nextOptions = {
 					...options,
@@ -438,8 +452,10 @@ const actStep = (
 				value: id,
 				segments: [{ text: `${icon}  `, color }, { text: label }],
 			}))
-			let goal: string | undefined
-			if (ui.tabs) {
+			let goal: string | undefined = state.goal
+			if (goal) {
+				state.atHome = false
+			} else if (ui.tabs) {
 				type HomeChoice = { kind: "goal" | "item"; id: string }
 				const chosen = yield* ui.tabs<HomeChoice>([
 					{
@@ -493,10 +509,13 @@ const actStep = (
 					return yield* Effect.fail(
 						new Error("No work items yet; choose Create a task first"),
 					)
+				if (session && choices.length > 1) state.goal = goal
+				state.atGoalMenu = true
 				actionId =
 					choices.length === 1
 						? choices[0]!.id
 						: yield* select(group.label, actionChoices(choices))
+				state.atGoalMenu = false
 			}
 		}
 		if (
@@ -519,6 +538,7 @@ const actStep = (
 		}
 		const selected = nodes.find((node) => node.id === selectedKey)
 		if (selected && session) {
+			state.goal = undefined
 			state.item = selected.id
 			session.activateTab("workstream")
 		}
@@ -538,15 +558,24 @@ const actStep = (
 					`Action '${actionId}' is unavailable: ${action?.blockedReason ?? "not found"}`,
 				),
 			)
-		const prompts = actionPrompts(
-			ui,
-			graph.nodes
-				.filter((node) => node.kind === "repository")
-				.map((node) => node.key),
-			nodes.map((node) => node.key),
-			config.chooserCommand,
-		)
-		const plan = yield* action.prepare(prompts)
+		const prepare = (interaction: ActInteraction) =>
+			action.prepare(
+				actionPrompts(
+					interaction,
+					graph.nodes
+						.filter((node) => node.kind === "repository")
+						.map((node) => node.key),
+					nodes.map((node) => node.key),
+					config.chooserCommand,
+				),
+			)
+		const plan = yield* session
+			? wizardInputs(
+					ui,
+					prepare,
+					() => !session.quitRequested && !session.navigationRequested,
+				)
+			: prepare(ui)
 		if (selected) {
 			const fresh = yield* graphs.get({ cwd: root })
 			const current = fresh.nodes.find(

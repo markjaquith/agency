@@ -555,8 +555,10 @@ Filtering matches full IDs and metadata even when a displayed name is shortened.
 The built-in guided flow keeps one full-screen session across menus, text inputs,
 and execution, with the tabs visible throughout. Item actions use colored icons
 and return to the same item's refreshed action menu, with the latest outcome
-above the prompt. Escape from an item's input returns to its actions; Escape from
-its action menu returns to Workstream. Tab switches sections from any step. On
+above the prompt. In wizard inputs, Escape clears entered text first; with an
+empty input it returns one prompt, retaining earlier answers and recomputing later
+defaults. Escape from the first input returns to the menu; Escape from an item's
+action menu returns to Workstream. Tab switches sections from any step. On
 the front screen, Escape clears a filter first. With an empty filter it exits
 `agency act`, but keeps the TUI open when entered through bare `agency`. Ctrl-C quits from any
 screen. On exit it restores the shell and leaves a compact recap of

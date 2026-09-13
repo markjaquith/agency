@@ -368,6 +368,18 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				)
 				if (outcome === "preview") {
 					await wait("URL:")
+					const beforeBack = output.length
+					terminal.write("\x1b")
+					await waitFor(
+						() => output.slice(beforeBack).includes("alias:"),
+						() => output,
+					)
+					const beforeForward = output.length
+					terminal.write("demo\r")
+					await waitFor(
+						() => output.slice(beforeForward).includes("URL:"),
+						() => output,
+					)
 					terminal.write("https://example.com/demo.git\r")
 				}
 				if (outcome !== "cancel") {

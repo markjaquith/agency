@@ -127,6 +127,13 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	const editing = createReadlineEditing(() => input)
 	useKeyboard((key) => {
 		if (key.propagationStopped) return
+		if (props.embedded && key.name === "escape" && editing.value) {
+			key.preventDefault()
+			key.stopPropagation()
+			input?.clear()
+			editing.handleInput("")
+			return
+		}
 		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -863,6 +870,9 @@ export const createInteractiveSession = async (
 			const requested = navigationRequested
 			navigationRequested = false
 			return requested
+		},
+		get navigationRequested() {
+			return navigationRequested
 		},
 		get quitRequested() {
 			return quitRequested

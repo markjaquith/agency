@@ -23,6 +23,47 @@ interface ActTab<T> {
 
 export class ActCancelled extends Error {}
 
+/** Replay only input collection, retaining the answers before the previous prompt. */
+export const wizardInputs = <T>(
+	interaction: ActInteraction,
+	collect: (interaction: ActInteraction) => Effect.Effect<T, Error>,
+	canGoBack: () => boolean,
+): Effect.Effect<T, Error> =>
+	Effect.suspend(() => {
+		const answers: unknown[] = []
+		let cursor = 0
+		const ask = <A>(read: () => Effect.Effect<A | null, Error>) =>
+			Effect.suspend(() => {
+				const index = cursor++
+				if (index < answers.length) return Effect.succeed(answers[index] as A)
+				return read().pipe(
+					Effect.map((answer) => {
+						if (answer !== null) answers.push(answer)
+						return answer
+					}),
+				)
+			})
+		const ui: ActInteraction = {
+			...interaction,
+			text: (prompt) => ask(() => (interaction.text ?? readText)(prompt)),
+			select: (prompt, choices, command) =>
+				ask(() => interaction.select(prompt, choices, command)),
+		}
+		const run = (): Effect.Effect<T, Error> =>
+			Effect.suspend(() => {
+				cursor = 0
+				return collect(ui).pipe(
+					Effect.catchAll((error) => {
+						if (!(error instanceof ActCancelled) || cursor < 2 || !canGoBack())
+							return Effect.fail(error)
+						answers.length = cursor - 2
+						return run()
+					}),
+				)
+			})
+		return run()
+	})
+
 export const actTabs = [
 	{ id: "workstream", label: "  Workstream", prompt: "" },
 	{ id: "workbase", label: "  Workbase", prompt: "" },
@@ -114,6 +155,9 @@ export const openActSession = () =>
 				takeNavigation: session.takeNavigation,
 				get quitRequested() {
 					return session.quitRequested
+				},
+				get navigationRequested() {
+					return session.navigationRequested
 				},
 				resetCancellation,
 				notice: session.notice,
