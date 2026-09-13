@@ -372,7 +372,10 @@ const actStep = (
 						label: "  Workbase",
 						prompt: "Your mission:",
 						choices: goals
-							.filter((choice) => choice.value !== "browse")
+							.filter(
+								(choice) =>
+									!["browse", "split", "handoff"].includes(choice.value),
+							)
 							.map((choice) => ({
 								...choice,
 								value: { kind: "goal", id: choice.value },

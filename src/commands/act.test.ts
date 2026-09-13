@@ -117,9 +117,10 @@ describe("act command", () => {
 					...scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
 					tabs: (tabs) => {
 						expect(tabs.map((tab) => tab.id)).toEqual(["workbase", "workload"])
-						expect(
-							tabs[0]!.choices.some((choice) => choice.key === "browse"),
-						).toBe(false)
+						for (const key of ["browse", "split", "handoff"])
+							expect(
+								tabs[0]!.choices.some((choice) => choice.key === key),
+							).toBe(false)
 						const workload = tabs[1]!.choices
 						expect(workload.map((choice) => choice.key)).toEqual([
 							"task:multi",
@@ -628,13 +629,17 @@ describe("act command", () => {
 			act(
 				{
 					cwd: root,
-					taskId: "example",
-					action: "split",
 					silent: true,
 					inputAllowed: true,
 				},
 				{
-					...scriptedInteraction(["finish"]),
+					...scriptedInteraction(["split", "finish"]),
+					tabs: (tabs) =>
+						Effect.succeed(
+							tabs
+								.find((tab) => tab.id === "workload")!
+								.choices.find((choice) => choice.key === "task:example")!.value,
+						),
 					text: () => Effect.succeed(values.shift() ?? null),
 				},
 			),
@@ -670,13 +675,18 @@ describe("act command", () => {
 			act(
 				{
 					cwd: root,
-					taskId: "investigate",
-					action: "handoff",
 					silent: true,
 					inputAllowed: true,
 				},
 				{
-					...scriptedInteraction(["finish"]),
+					...scriptedInteraction(["handoff", "finish"]),
+					tabs: (tabs) =>
+						Effect.succeed(
+							tabs
+								.find((tab) => tab.id === "workload")!
+								.choices.find((choice) => choice.key === "task:investigate")!
+								.value,
+						),
 					text: () => Effect.succeed(values.shift() ?? null),
 				},
 			),

@@ -532,7 +532,7 @@ agency validate
 
 ### Interactive Actions
 
-`agency` with no subcommand (or `agency act`) opens on the **Workbase** tab with ten goals. Press **Tab** to cycle
+`agency` with no subcommand (or `agency act`) opens on the **Workbase** tab. Press **Tab** to cycle
 to **Workload**, a flat list of non-archived tasks and phases; select an item to
 see its available actions. Each tab remembers its filter and selection. The active
 tab shares its background with the panel beneath it. Creation
@@ -540,6 +540,9 @@ works even in an empty workbase. The guided flow collects required inputs,
 selects the sole repository automatically, and suggests IDs, base branches, and
 phase branches. Suggestions remain editable; choosing a base never adds a
 completion dependency.
+
+Splitting a task / adding a phase and turning an investigation into implementation
+start in **Workload**: select the source item, then choose its action.
 
 The item picker uses flat, aligned rows with colored Nerd Font type/status icons,
 prominent names, and quieter parent-task, repository, and description details.
