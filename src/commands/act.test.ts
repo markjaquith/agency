@@ -131,8 +131,7 @@ describe("act command", () => {
 							workstream.find((choice) => choice.key === "phase:multi/build")
 								?.details,
 						).toMatchObject({
-							subtitle: { text: "  agency  " },
-							badge: { text: "󰄱  open" },
+							metadata: [{ text: "  agency  " }, { text: "󰄱  open" }],
 						})
 						expect(workstream.map((choice) => choice.key)).toEqual([
 							"task:multi",

@@ -382,11 +382,8 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			...props.choices.map(({ details }) =>
 				details
 					? Math.max(
-							Bun.stringWidth(
-								details.title.map((segment) => segment.text).join(""),
-							),
-							Bun.stringWidth(
-								`${details.subtitle.text.trimEnd()}  ${details.badge.text}`,
+							...[details.title, details.metadata].map((row) =>
+								Bun.stringWidth(row.map((segment) => segment.text).join("")),
 							),
 						)
 					: 0,
@@ -503,36 +500,21 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 										height={2}
 										flexShrink={0}
 									>
-										<text height={1} wrapMode="none">
-											<For each={choice.details.title}>
-												{(segment) => (
-													<span
-														style={{ fg: segment.color } as TextNodeOptions}
-													>
-														{segment.text}
-													</span>
-												)}
-											</For>
-										</text>
-										<text height={1} wrapMode="none">
-											<span
-												style={
-													{
-														fg: choice.details.subtitle.color,
-													} as TextNodeOptions
-												}
-											>
-												{choice.details.subtitle.text.trimEnd()}
-												{"  "}
-											</span>
-											<span
-												style={
-													{ fg: choice.details.badge.color } as TextNodeOptions
-												}
-											>
-												{choice.details.badge.text}
-											</span>
-										</text>
+										<For each={[choice.details.title, choice.details.metadata]}>
+											{(row) => (
+												<text height={1} wrapMode="none">
+													<For each={row}>
+														{(segment) => (
+															<span
+																style={{ fg: segment.color } as TextNodeOptions}
+															>
+																{segment.text}
+															</span>
+														)}
+													</For>
+												</text>
+											)}
+										</For>
 									</box>
 									<box width={2} flexShrink={0} />
 									<text
@@ -606,7 +588,10 @@ export const InteractiveTabbedPrompt = (props: {
 	const [active, setActive] = createSignal(props.initialTab ?? 0)
 	const showBrand = () =>
 		dimensions().width >=
-		props.tabs.reduce((width, tab) => width + tab.label.length + 4, 12)
+		props.tabs.reduce(
+			(width, tab) => width + Bun.stringWidth(tab.label) + 4,
+			12,
+		)
 	const reservedRows = () => 1 + (props.notice ? 1 : 0)
 	const cycle = () => {
 		if (!props.tabs.length) return

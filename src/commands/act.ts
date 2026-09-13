@@ -117,14 +117,16 @@ const entityChoices = (
 									},
 									{ text: node.key, color: macchiato.text },
 								],
-								subtitle: {
-									text: `  ${"repo" in node.data ? node.data.repo : (node.repositories[0] ?? "—")}  `,
-									color: macchiato.overlay1,
-								},
-								badge: {
-									text: `${state.icon}  ${blocked ? "blocked" : node.status}`,
-									color: state.color,
-								},
+								metadata: [
+									{
+										text: `  ${"repo" in node.data ? node.data.repo : (node.repositories[0] ?? "—")}  `,
+										color: macchiato.overlay1,
+									},
+									{
+										text: `${state.icon}  ${blocked ? "blocked" : node.status}`,
+										color: state.color,
+									},
+								],
 								description: description ?? "",
 							},
 						}
@@ -184,13 +186,11 @@ interface ActState {
 	session?: Effect.Effect.Success<ReturnType<typeof openActSession>>
 	recap: string[]
 	root?: string
-	atHome: boolean
+	view: "home" | "item-menu" | "goal-menu" | "flow"
 	native: boolean
 	notice: string
 	item?: string
-	atItemMenu?: boolean
 	goal?: string
-	atGoalMenu?: boolean
 }
 
 export const act = (
@@ -201,7 +201,7 @@ export const act = (
 	Effect.gen(function* () {
 		const state: ActState = {
 			recap: [],
-			atHome: true,
+			view: "home",
 			native: false,
 			notice: "",
 		}
@@ -209,9 +209,7 @@ export const act = (
 		const { log } = createLoggers(options)
 		yield* Effect.gen(function* () {
 			while (true) {
-				state.atHome = true
-				state.atItemMenu = false
-				state.atGoalMenu = false
+				state.view = "home"
 				const keepGoing = yield* actStep(
 					nextOptions,
 					interaction,
@@ -226,13 +224,14 @@ export const act = (
 					Effect.as(true),
 					Effect.catchAll((error) => {
 						if (error instanceof ActCancelled) {
-							if (state.atItemMenu) state.item = undefined
-							if (state.atGoalMenu) state.goal = undefined
+							if (state.view === "item-menu") state.item = undefined
+							if (state.view === "goal-menu") state.goal = undefined
 							return Effect.succeed(
-								!state.atHome || options.exitOnEscape === false,
+								state.view !== "home" || options.exitOnEscape === false,
 							)
 						}
-						if (!state.native || state.atHome) return Effect.fail(error)
+						if (!state.native || state.view === "home")
+							return Effect.fail(error)
 						state.goal = undefined
 						state.notice = `󰅖  ${error instanceof Error ? error.message : String(error)}`
 						return Effect.succeed(true)
@@ -356,7 +355,7 @@ const actStep = (
 							: `task:${options.directory}`
 						: undefined
 		let actionId = options.action
-		state.atHome = !selectedKey && !actionId
+		state.view = !selectedKey && !actionId ? "home" : "flow"
 		if (
 			actionId &&
 			!actionGroups.some((group) => group.actions.some((id) => id === actionId))
@@ -378,7 +377,7 @@ const actStep = (
 		) {
 			state.item = undefined
 			selectedKey = undefined
-			state.atHome = true
+			state.view = "home"
 		}
 		if (selectedKey && !catalog.has(selectedKey))
 			return yield* Effect.fail(
@@ -454,7 +453,7 @@ const actStep = (
 			}))
 			let goal: string | undefined = state.goal
 			if (goal) {
-				state.atHome = false
+				state.view = "flow"
 			} else if (ui.tabs) {
 				type HomeChoice = { kind: "goal" | "item"; id: string }
 				const chosen = yield* ui.tabs<HomeChoice>([
@@ -485,12 +484,12 @@ const actStep = (
 					},
 				])
 				if (!chosen) return yield* Effect.fail(new ActCancelled())
-				state.atHome = false
+				state.view = "flow"
 				if (chosen.kind === "item") selectedKey = chosen.id
 				else goal = chosen.id
 			} else {
 				goal = yield* select("Choose an action", goals)
-				state.atHome = false
+				state.view = "flow"
 			}
 			if (goal === "browse") {
 				if (!nodes.length)
@@ -510,12 +509,12 @@ const actStep = (
 						new Error("No work items yet; choose Create a task first"),
 					)
 				if (session && choices.length > 1) state.goal = goal
-				state.atGoalMenu = true
+				state.view = "goal-menu"
 				actionId =
 					choices.length === 1
 						? choices[0]!.id
 						: yield* select(group.label, actionChoices(choices))
-				state.atGoalMenu = false
+				state.view = "flow"
 			}
 		}
 		if (
@@ -544,12 +543,12 @@ const actStep = (
 		}
 		const actions = selected ? catalog.get(selected.id)! : globals
 		if (!actionId) {
-			state.atItemMenu = true
+			state.view = "item-menu"
 			actionId = yield* select(
 				`Act on ${selected!.kind} ${selected!.key}`,
 				actionChoices(actions.filter(available)),
 			)
-			state.atItemMenu = false
+			state.view = "flow"
 		}
 		const action = actions.find((action) => action.id === actionId)
 		if (!action || action.blockedReason)
@@ -628,12 +627,12 @@ const actStep = (
 		if (session) {
 			recap.push(`󰄬  ${action.label}${selected ? ` — ${selected.key}` : ""}`)
 			state.notice = recap[recap.length - 1]!
-			if (plan.next)
+			if (plan.next) {
 				recap.push(
 					`Item: ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`,
 				)
-			if (plan.next)
 				state.notice += ` — ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`
+			}
 			recap.push(`Command: ${shellCommand(plan.command)}`)
 			if (action.id === "current-work") {
 				const current = nodes.filter((node) => node.status === "working")
@@ -670,7 +669,6 @@ const actStep = (
 				if (session) recap.push("󰄬  Work handoff completed")
 			} else if (session) recap.push("Kept for later — work was not started.")
 		}
-		if (action.id === "work") state.session = undefined
 	})
 
 export const help = `
@@ -678,7 +676,8 @@ Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <
 
 Choose a task/phase in Workstream, or press Tab for Workbase actions. Guided
 creation offers an explicit Work choice afterward; creation alone never starts work.
-Item actions stay on that item. Escape backs out to its actions, then Workstream,
+Item actions stay on that item. Escape clears input, then steps back through
+wizard prompts, the action menu, and Workstream,
 or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
 An existing directory selects its containing epic, task, or phase; otherwise
 the positional value is a task ID. Selectors skip item selection.

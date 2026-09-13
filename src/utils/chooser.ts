@@ -17,8 +17,7 @@ export interface ChoiceSegment {
 
 export interface ChoiceDetails {
 	readonly title: readonly ChoiceSegment[]
-	readonly subtitle: ChoiceSegment
-	readonly badge: ChoiceSegment
+	readonly metadata: readonly ChoiceSegment[]
 	readonly description: string
 }
 

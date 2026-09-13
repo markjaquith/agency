@@ -49,8 +49,10 @@ describe("OpenTUI interaction", () => {
 			label: `item-${index} demo working full searchable description`,
 			details: {
 				title: [{ text: `󰗡  item-${index}`, color: "#cad3f5" }],
-				subtitle: { text: "  demo", color: "#8087a2" },
-				badge: { text: "󰔟  working", color: "#8aadf4" },
+				metadata: [
+					{ text: "  demo  ", color: "#8087a2" },
+					{ text: "󰔟  working", color: "#8aadf4" },
+				],
 				description:
 					"Description wraps smoothly across both rows of this item.",
 			},
