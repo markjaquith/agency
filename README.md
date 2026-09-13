@@ -1311,6 +1311,23 @@ with the binding's required `solid-js` 1.9.12. Follow the upstream
 - Verify upgrades with the UI and PTY tests, including worker handoffs and
   terminal restoration.
 
+### Guided-flow ownership
+
+The `act` implementation has four boundaries:
+
+| Module                        | Responsibility                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/commands/act-actions.ts` | Defines availability, discovery argv, and executable plans using existing lifecycle commands.                |
+| `src/commands/act-prompts.ts` | Collects inputs and owns wizard replay. Preparation must be replayable; only `plan.run` performs operations. |
+| `src/commands/act.ts`         | Coordinates navigation, checks the selected item's freshness, executes plans, and records the recap.         |
+| `src/utils/interactive.tsx`   | Owns rendering, focus, keyboard handling, and terminal restoration; it has no workbase lifecycle logic.      |
+
+The Effect scope owns the interactive session. A worker handoff explicitly closes
+that session and permits a new one afterward. External renderer destruction
+(such as SIGTERM) requests application shutdown and interrupts in-flight work;
+it must never be interpreted as Back or reopen the interface. PTY regressions
+exercise both paths against real processes and check terminal restoration.
+
 ## License
 
 MIT

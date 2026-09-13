@@ -752,7 +752,11 @@ export const createInteractiveSession = async (
 	const renderer = await createCliRenderer({
 		...interactiveSelectRendererConfig,
 		onDestroy: () => {
+			// An external shutdown ends the application; an owned close may be a
+			// temporary worker handoff and must allow the caller to reopen the UI.
+			const external = !closed
 			closed = true
+			if (external) quit()
 			pending?.(null)
 		},
 	})
@@ -821,7 +825,8 @@ export const createInteractiveSession = async (
 		return new Promise<string | null>((resolve) => {
 			pending = (value) => {
 				pending = undefined
-				setView({ kind: "progress", prompt: "Preparing next step…" })
+				if (!closed)
+					setView({ kind: "progress", prompt: "Preparing next step…" })
 				resolve(value)
 			}
 			setView(

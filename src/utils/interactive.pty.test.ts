@@ -104,13 +104,50 @@ const runPrompt = async (
 }
 
 describe("interactive CLI terminal restoration", () => {
-	test("persistent session cancels in-flight work and restores the terminal", async () => {
-		const root = await createTempDir()
-		tempDirs.push(root)
-		const entry = join(root, "progress.ts")
-		await Bun.write(
-			entry,
-			`
+	test("bare agency exits when its renderer is destroyed by SIGTERM", async () => {
+		const root = await createWorkbase()
+		let output = ""
+		const decoder = new TextDecoder()
+		const terminal = new Bun.Terminal({
+			cols: 80,
+			rows: 24,
+			data: (_, bytes) => {
+				output += decoder.decode(bytes, { stream: true })
+			},
+		})
+		const initialModes = modes(terminal)
+		const subprocess = Bun.spawn([process.execPath, cliPath], {
+			cwd: root,
+			env: { ...process.env, TERM: "xterm-256color" },
+			terminal,
+		})
+		try {
+			await waitFor(
+				() => output.includes("No tasks or phases yet"),
+				() => output,
+			)
+			subprocess.kill("SIGTERM")
+			expect(await waitForExit(subprocess, () => output)).toBe(0)
+			expect(modes(terminal)).toEqual(initialModes)
+			expect(output.match(/\x1b\[\?1049h/g)).toHaveLength(1)
+			expect(output.match(/\x1b\[\?1049l/g)).toHaveLength(1)
+		} finally {
+			if (subprocess.exitCode === null) {
+				subprocess.kill("SIGKILL")
+				await subprocess.exited
+			}
+			terminal.close()
+		}
+	}, 12_000)
+
+	for (const shutdown of ["ctrl-c", "SIGTERM"] as const) {
+		test(`persistent session cancels in-flight work and restores the terminal (${shutdown})`, async () => {
+			const root = await createTempDir()
+			tempDirs.push(root)
+			const entry = join(root, "progress.ts")
+			await Bun.write(
+				entry,
+				`
 import { Effect } from ${JSON.stringify(join(projectRoot, "node_modules/effect"))}
 import { openActSession, ActCancelled } from ${JSON.stringify(join(projectRoot, "src/commands/act-prompts.ts"))}
 await Effect.runPromise(Effect.gen(function* () {
@@ -120,40 +157,42 @@ await Effect.runPromise(Effect.gen(function* () {
 }).pipe(Effect.scoped, Effect.catchAll(error => error instanceof ActCancelled ? Effect.void : Effect.fail(error))))
 console.log("Operation cancelled")
 `,
-		)
-		let output = ""
-		const decoder = new TextDecoder()
-		const terminal = new Bun.Terminal({
-			cols: 80,
-			rows: 24,
-			data: (_terminal, bytes) => {
-				output += decoder.decode(bytes, { stream: true })
-			},
-		})
-		const initialModes = modes(terminal)
-		const subprocess = Bun.spawn([process.execPath, entry], {
-			env: { ...process.env, TERM: "xterm-256color" },
-			terminal,
-		})
-		try {
-			await waitFor(
-				() => output.includes("Working fixture"),
-				() => output,
 			)
-			terminal.write("\x03")
-			expect(await waitForExit(subprocess, () => output)).toBe(0)
-			expect(modes(terminal)).toEqual(initialModes)
-			expect(output.indexOf("Operation cancelled")).toBeGreaterThan(
-				output.indexOf("\x1b[?1049l"),
-			)
-		} finally {
-			if (subprocess.exitCode === null) {
-				subprocess.kill("SIGKILL")
-				await subprocess.exited
+			let output = ""
+			const decoder = new TextDecoder()
+			const terminal = new Bun.Terminal({
+				cols: 80,
+				rows: 24,
+				data: (_terminal, bytes) => {
+					output += decoder.decode(bytes, { stream: true })
+				},
+			})
+			const initialModes = modes(terminal)
+			const subprocess = Bun.spawn([process.execPath, entry], {
+				env: { ...process.env, TERM: "xterm-256color" },
+				terminal,
+			})
+			try {
+				await waitFor(
+					() => output.includes("Working fixture"),
+					() => output,
+				)
+				if (shutdown === "SIGTERM") subprocess.kill("SIGTERM")
+				else terminal.write("\x03")
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
+				expect(modes(terminal)).toEqual(initialModes)
+				expect(output.indexOf("Operation cancelled")).toBeGreaterThan(
+					output.indexOf("\x1b[?1049l"),
+				)
+			} finally {
+				if (subprocess.exitCode === null) {
+					subprocess.kill("SIGKILL")
+					await subprocess.exited
+				}
+				terminal.close()
 			}
-			terminal.close()
-		}
-	}, 12_000)
+		}, 12_000)
+	}
 
 	for (const finish of ["\r", "\x1b", "work"]) {
 		test(`act preserves completed creation in its recap after ${finish === "\r" ? "Finish" : finish === "work" ? "worker return" : "cancellation"}`, async () => {
