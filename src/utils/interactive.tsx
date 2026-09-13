@@ -494,7 +494,7 @@ export const InteractiveTabbedPrompt = (props: {
 			flexDirection="column"
 			width="100%"
 			height="100%"
-			backgroundColor={macchiato.base}
+			backgroundColor={macchiato.surface0}
 		>
 			<Show when={brandHeight() > 0}>
 				<text fg={macchiato.blue} height={1} flexShrink={0}>
@@ -507,9 +507,14 @@ export const InteractiveTabbedPrompt = (props: {
 					{(tab, index) => (
 						<text
 							fg={index() === active() ? macchiato.text : macchiato.overlay1}
-							bg={index() === active() ? macchiato.surface0 : macchiato.base}
+							bg={index() === active() ? macchiato.base : macchiato.surface0}
 							wrapMode="none"
-						>{` ${tab.label} `}</text>
+						>
+							<span style={{ fg: macchiato.mauve } as TextNodeOptions}>
+								{index() === active() ? "▎" : " "}
+							</span>
+							{` ${tab.label}  `}
+						</text>
 					)}
 				</For>
 			</box>
@@ -517,7 +522,7 @@ export const InteractiveTabbedPrompt = (props: {
 				flexDirection="column"
 				flexGrow={1}
 				minHeight={0}
-				backgroundColor={macchiato.surface0}
+				backgroundColor={macchiato.base}
 			>
 				<For each={props.tabs}>
 					{(tab, index) => (
@@ -526,7 +531,7 @@ export const InteractiveTabbedPrompt = (props: {
 								embedded
 								active={index() === active()}
 								reservedRows={brandHeight() + 1}
-								backgroundColor={macchiato.surface0}
+								backgroundColor={macchiato.base}
 								prompt={tab.prompt}
 								choices={tab.choices}
 								emptyLabel={tab.emptyLabel}
