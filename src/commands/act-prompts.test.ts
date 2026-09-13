@@ -2,6 +2,38 @@ import { expect, test } from "bun:test"
 import { Effect } from "effect"
 import { actionPrompts, ActCancelled, wizardInputs } from "./act-prompts"
 
+test("wizard retries a required field without losing preceding answers", async () => {
+	const answers = ["Kept outcome", "", "", "fixed"]
+	const prompts: string[] = []
+	const errors: (string | undefined)[] = []
+	const result = await Effect.runPromise(
+		wizardInputs(
+			{
+				select: () => Effect.succeed(null),
+				text: (prompt) =>
+					Effect.sync(() => {
+						prompts.push(prompt)
+						if (!answers.length) throw new Error("Unexpected prompt")
+						return answers.shift()!
+					}),
+			},
+			(ui) =>
+				Effect.gen(function* () {
+					const p = actionPrompts(ui, [], [])
+					const outcome = yield* p.text("Outcome")
+					const id = yield* p.text("ID")
+					return { outcome, id }
+				}),
+			() => true,
+			(message) => errors.push(message),
+		),
+	)
+	expect(prompts).toEqual(["Outcome: ", "ID: ", "ID: ", "ID: "])
+	expect(result).toEqual({ outcome: "Kept outcome", id: "fixed" })
+	expect(errors.filter(Boolean)).toEqual(["ID is required", "ID is required"])
+	expect(errors.at(-1)).toBeUndefined()
+})
+
 test("wizard replays choice keys against current values and isolates each execution", async () => {
 	let generation = 0
 	let selections = 0

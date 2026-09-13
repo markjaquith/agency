@@ -579,6 +579,7 @@ const actStep = (
 					ui,
 					prepare,
 					() => !session.quitRequested && !session.navigationRequested,
+					(message) => session.notice(message ? `󰀦  ${message}` : state.notice),
 				)
 			: prepare(ui)
 		if (selected) {

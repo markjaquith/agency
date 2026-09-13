@@ -22,6 +22,9 @@ interface ActTab<T> {
 }
 
 export class ActCancelled extends Data.TaggedError("ActCancelled") {}
+class ActInputError extends Data.TaggedError("ActInputError")<{
+	readonly message: string
+}> {}
 
 /**
  * Collect inputs only: this callback must not execute operations or mutate work.
@@ -32,6 +35,7 @@ export const wizardInputs = <T>(
 	interaction: ActInteraction,
 	collect: (interaction: ActInteraction) => Effect.Effect<T, Error>,
 	canGoBack: () => boolean,
+	onInputError: (message?: string) => void = () => {},
 ): Effect.Effect<T, Error> =>
 	Effect.suspend(() => {
 		const answers: string[] = []
@@ -43,7 +47,10 @@ export const wizardInputs = <T>(
 				return read().pipe(
 					Effect.tap((answer) =>
 						Effect.sync(() => {
-							if (answer !== null) answers.push(answer)
+							if (answer !== null) {
+								answers.push(answer)
+								onInputError()
+							}
 						}),
 					),
 				)
@@ -75,10 +82,21 @@ export const wizardInputs = <T>(
 				cursor = 0
 				return collect(ui).pipe(
 					Effect.catchIf(
+						(error): error is ActInputError => error instanceof ActInputError,
+						(error) => {
+							if (!cursor || !canGoBack()) return Effect.fail(error)
+							return Effect.sync(() => {
+								answers.length = cursor - 1
+								onInputError(error.message)
+							}).pipe(Effect.zipRight(run()))
+						},
+					),
+					Effect.catchIf(
 						(error): error is ActCancelled => error instanceof ActCancelled,
 						(error) => {
 							if (cursor < 2 || !canGoBack()) return Effect.fail(error)
 							answers.length = cursor - 2
+							onInputError()
 							return run()
 						},
 					),
@@ -220,7 +238,9 @@ export const actionPrompts = (
 			if (value === null) return yield* Effect.fail(new ActCancelled())
 			const answer = value.trim() || fallback
 			if (required && !answer)
-				return yield* Effect.fail(new Error(`${label} is required`))
+				return yield* Effect.fail(
+					new ActInputError({ message: `${label} is required` }),
+				)
 			return answer
 		})
 	return {

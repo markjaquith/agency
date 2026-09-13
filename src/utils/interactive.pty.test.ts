@@ -423,6 +423,12 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				}
 				if (outcome !== "cancel") {
 					await wait(outcome === "preview" ? "Preview:" : "is required")
+					if (outcome === "invalid") {
+						terminal.write("recovered\r")
+						await wait("URL:")
+						terminal.write("https://example.com/recovered.git\r")
+						await wait("Preview:")
+					}
 					expect(subprocess.exitCode).toBeNull()
 					terminal.write("\x1b")
 				}
@@ -436,8 +442,12 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 							"Preview: agency repo add demo https://example.com/demo.git",
 						),
 					).toBeGreaterThan(output.indexOf("\x1b[?1049l"))
-				} else if (outcome === "invalid")
+				} else if (outcome === "invalid") {
 					expect(output).toContain("Repository alias is required")
+					expect(output).toContain(
+						"agency repo add recovered https://example.com/recovered.git",
+					)
+				}
 			} finally {
 				if (subprocess.exitCode === null) {
 					subprocess.kill("SIGKILL")

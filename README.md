@@ -562,6 +562,9 @@ above the prompt. Text-entry prompts support Shift-Return for a newline and
 Return to submit, including multiline outcomes and completion summaries.
 Wizard editors fill the available height and keep an editing hint visible below
 the input; longer content scrolls with the cursor as the terminal resizes.
+Submitting a blank required field retries that prompt with an explanation and
+keeps earlier answers. Only input validation is retried; execution failures are
+reported without automatically repeating a mutation.
 In wizard inputs, Escape clears entered text first; with an
 empty input it returns one prompt, retaining earlier answers and recomputing later
 defaults. Escape from the first input returns to the menu; Escape from an item's
