@@ -369,8 +369,25 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		props.choices.some((choice) => choice.details) && availableRows() >= 2
 			? 2
 			: 1
+	const contentWidth = createMemo(() =>
+		Math.max(
+			0,
+			...props.choices.map(({ details }) =>
+				details
+					? Math.max(
+							Bun.stringWidth(
+								details.title.map((segment) => segment.text).join(""),
+							),
+							Bun.stringWidth(
+								`${details.subtitle.text.trimEnd()}  ${details.badge.text}`,
+							),
+						)
+					: 0,
+			),
+		),
+	)
 	const detailWidth = () =>
-		Math.min(40, Math.max(16, Math.floor((dimensions().width - 6) * 0.48)))
+		Math.min(contentWidth(), Math.max(1, dimensions().width - 20))
 	const visible = () => {
 		const visibleCount = Math.max(Math.floor(availableRows() / rowHeight()), 1)
 		const start = Math.min(

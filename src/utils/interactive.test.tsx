@@ -77,7 +77,7 @@ describe("OpenTUI interaction", () => {
 			expect(rows[5]).toContain("Description wraps")
 			expect(rows[6]).toContain("  demo")
 			expect(rows[6]).toContain("working")
-			expect(rows[6]).toContain("rows of this item.")
+			expect(rows[6]).toContain("  demo  󰔟  working  this item.")
 			expect(rows[6]).not.toContain("item-1")
 			expect(setup.captureCharFrame()).not.toContain("item-3")
 			for (const line of setup.captureSpans().lines.slice(5, 7))
