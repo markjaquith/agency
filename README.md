@@ -1327,6 +1327,13 @@ with the binding's required `solid-js` 1.9.12. Follow the upstream
 - Verify upgrades with the UI and PTY tests, including worker handoffs and
   terminal restoration.
 
+The `@babel/core` override selects 7.29.6 to fix
+[GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8);
+OpenTUI Solid 0.5.11 otherwise pins vulnerable 7.28.0. Remove the override when
+the upstream dependency resolves to a patched version, after running `bun audit`
+and the TUI tests. Effect's minimum is 3.20.0 for
+[GHSA-38f7-945m-qr2g](https://github.com/advisories/GHSA-38f7-945m-qr2g).
+
 ### Guided-flow ownership
 
 The `act` implementation has four boundaries:
