@@ -14,7 +14,7 @@ import {
 	type JSX,
 } from "@opentui/solid"
 import { createMemo, createSignal, For, Show } from "solid-js"
-import type { ChoiceSegment } from "./chooser"
+import type { ChoiceDetails, ChoiceSegment } from "./chooser"
 import { macchiato } from "./theme"
 
 export interface InteractiveChoice {
@@ -22,6 +22,7 @@ export interface InteractiveChoice {
 	readonly label: string
 	readonly depth?: number
 	readonly segments?: readonly ChoiceSegment[]
+	readonly details?: ChoiceDetails
 }
 
 export const interactiveRendererConfig = {
@@ -363,11 +364,15 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	const background = () => props.backgroundColor ?? macchiato.base
 	const brandHeight = () => (!props.embedded && height() > 4 ? 1 : 0)
 	const gapHeight = () => (height() > (props.embedded ? 3 : 5) ? 1 : 0)
+	const availableRows = () => height() - 2 - 2 * brandHeight() - gapHeight()
+	const rowHeight = () =>
+		props.choices.some((choice) => choice.details) && availableRows() >= 2
+			? 2
+			: 1
+	const detailWidth = () =>
+		Math.min(40, Math.max(16, Math.floor((dimensions().width - 6) * 0.48)))
 	const visible = () => {
-		const visibleCount = Math.max(
-			height() - 2 - 2 * brandHeight() - gapHeight(),
-			1,
-		)
+		const visibleCount = Math.max(Math.floor(availableRows() / rowHeight()), 1)
 		const start = Math.min(
 			Math.max(selected() - Math.floor(visibleCount / 2), 0),
 			Math.max(choices().length - visibleCount, 0),
@@ -457,36 +462,97 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					{({ choice, index, originalIndex }) => (
 						<box
 							width="100%"
-							height={1}
+							height={rowHeight()}
+							flexDirection="row"
 							backgroundColor={
 								index === selected() ? macchiato.surface1 : background()
 							}
 						>
-							<text
-								fg={index === selected() ? macchiato.text : macchiato.subtext0}
-								bg={index === selected() ? macchiato.surface1 : background()}
-								wrapMode="none"
-							>
-								<span
-									style={
-										{
-											fg: index === selected() ? macchiato.mauve : undefined,
-										} as TextNodeOptions
+							{choice.details && rowHeight() === 2 ? (
+								<>
+									<text width={2} height={2} fg={macchiato.mauve}>
+										{index === selected() ? "▌\n▌" : ""}
+									</text>
+									<box
+										flexDirection="column"
+										width={detailWidth()}
+										height={2}
+										flexShrink={0}
+									>
+										<text height={1} wrapMode="none">
+											<For each={choice.details.title}>
+												{(segment) => (
+													<span
+														style={{ fg: segment.color } as TextNodeOptions}
+													>
+														{segment.text}
+													</span>
+												)}
+											</For>
+										</text>
+										<box flexDirection="row" height={1}>
+											<text
+												flexGrow={1}
+												minWidth={0}
+												width={0}
+												wrapMode="none"
+												fg={choice.details.subtitle.color}
+											>
+												{choice.details.subtitle.text}
+											</text>
+											<text
+												width={13}
+												flexShrink={0}
+												wrapMode="none"
+												fg={choice.details.badge.color}
+											>
+												{choice.details.badge.text}
+											</text>
+										</box>
+									</box>
+									<box width={2} flexShrink={0} />
+									<text
+										flexGrow={1}
+										minWidth={0}
+										width={0}
+										height={2}
+										wrapMode="word"
+										fg={macchiato.subtext0}
+									>
+										{choice.details.description}
+									</text>
+								</>
+							) : (
+								<text
+									fg={
+										index === selected() ? macchiato.text : macchiato.subtext0
 									}
+									bg={index === selected() ? macchiato.surface1 : background()}
+									wrapMode="none"
 								>
-									{index === selected() ? "▌ " : "  "}
-								</span>
-								<span style={{ fg: macchiato.overlay1 } as TextNodeOptions}>
-									{query() ? "" : hierarchyPrefix(props.choices, originalIndex)}
-								</span>
-								<For each={displaySegments(choice)}>
-									{(segment) => (
-										<span style={{ fg: segment.color } as TextNodeOptions}>
-											{segment.text}
-										</span>
-									)}
-								</For>
-							</text>
+									<span
+										style={
+											{
+												fg: index === selected() ? macchiato.mauve : undefined,
+											} as TextNodeOptions
+										}
+									>
+										{index === selected() ? "▌ " : "  "}
+									</span>
+									<span style={{ fg: macchiato.overlay1 } as TextNodeOptions}>
+										{query()
+											? ""
+											: hierarchyPrefix(props.choices, originalIndex)}
+									</span>
+									<For each={displaySegments(choice)}>
+										{(segment) => (
+											<span style={{ fg: segment.color } as TextNodeOptions}>
+												{segment.text}
+											</span>
+										)}
+									</For>
+								</text>
+							)}
 						</box>
 					)}
 				</For>

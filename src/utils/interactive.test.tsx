@@ -43,6 +43,65 @@ const submitEditedText = async (
 }
 
 describe("OpenTUI interaction", () => {
+	test("renders two-row items with metadata below the ID and a wrapping description alongside", async () => {
+		const choices = Array.from({ length: 5 }, (_, index) => ({
+			key: `item-${index}`,
+			label: `item-${index} demo working full searchable description`,
+			details: {
+				title: [{ text: `󰗡  item-${index}`, color: "#cad3f5" }],
+				subtitle: { text: "  demo", color: "#8087a2" },
+				badge: { text: "󰔟  working", color: "#8aadf4" },
+				description:
+					"Description wraps smoothly across both rows of this item.",
+			},
+		}))
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt=""
+					choices={choices}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 72, height: 12 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			const rows = setup.captureCharFrame().split("\n")
+			expect(rows[5]).toContain("item-0")
+			expect(rows[5]).toContain("Description wraps")
+			expect(rows[6]).toContain("  demo")
+			expect(rows[6]).toContain("working")
+			expect(rows[6]).toContain("rows of this item.")
+			expect(rows[6]).not.toContain("item-1")
+			expect(setup.captureCharFrame()).not.toContain("item-3")
+			for (const line of setup.captureSpans().lines.slice(5, 7))
+				expect(
+					line.spans.every(
+						(span) =>
+							JSON.stringify(span.bg.toInts()) ===
+							JSON.stringify([73, 77, 100, 255]),
+					),
+				).toBe(true)
+			setup.mockInput.pressArrow("up")
+			await setup.flush()
+			setup.resize(60, 8)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("item-4")
+			expect(setup.captureCharFrame()).toContain("working")
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBe("item-4")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("keeps the tab frame around action inputs and reserves Tab for navigation", async () => {
 		let switched: number | undefined
 		let submitted: string | null | undefined

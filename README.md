@@ -546,8 +546,10 @@ completion dependency.
 Splitting a task / adding a phase and turning an investigation into implementation
 start in **Workstream**: select the source item, then choose its action.
 
-The item picker uses flat, aligned rows with colored Nerd Font type/status icons,
-prominent names, and quieter parent-task, repository, and description details.
+Workstream items occupy two rows: a colored type icon and ID on the upper left,
+the main repository and colored status below, and the description wrapping across
+both rows on the right. Selection highlights the entire two-row item. Other item
+pickers retain their compact, flat rows with colored Nerd Font icons.
 Filtering matches full IDs and metadata even when a displayed name is shortened.
 
 The built-in guided flow keeps one full-screen session across menus, text inputs,

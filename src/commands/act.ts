@@ -41,7 +41,10 @@ interface ActOptions extends BaseCommandOptions {
 	readonly exitOnEscape?: boolean
 }
 
-const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
+const entityChoices = (
+	nodes: readonly ActEntity[],
+	twoRows = false,
+): Choice<string>[] => {
 	const name = (node: ActEntity) =>
 		node.kind === "phase"
 			? node.key.slice(node.key.lastIndexOf("/") + 1)
@@ -103,6 +106,28 @@ const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
 				key: node.id,
 				value: node.id,
 				segments,
+				...(twoRows
+					? {
+							details: {
+								title: [
+									{
+										text: `${workKindStyle[node.kind].icon}  `,
+										color: workKindStyle[node.kind].color,
+									},
+									{ text: node.key, color: macchiato.text },
+								],
+								subtitle: {
+									text: `  ${"repo" in node.data ? node.data.repo : (node.repositories[0] ?? "—")}  `,
+									color: macchiato.overlay1,
+								},
+								badge: {
+									text: `${state.icon}  ${blocked ? "blocked" : node.status}`,
+									color: state.color,
+								},
+								description: description ?? "",
+							},
+						}
+					: {}),
 				label: segments.map((segment) => segment.text).join(""),
 				plainLabel: `[${node.status}] ${node.kind} ${node.key}${blocked ? " blocked" : ""} ${node.repositories.join(" ")}${description ? ` — ${description}` : ""}`,
 			}
@@ -424,6 +449,7 @@ const actStep = (
 							nodes.filter(
 								(node) => node.kind === "task" || node.kind === "phase",
 							),
+							true,
 						).map((choice) => ({
 							...choice,
 							value: { kind: "item", id: choice.value },

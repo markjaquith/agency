@@ -126,6 +126,14 @@ describe("act command", () => {
 								tabs[1]!.choices.some((choice) => choice.key === key),
 							).toBe(false)
 						const workstream = tabs[0]!.choices
+						expect(workstream.every((choice) => choice.details)).toBe(true)
+						expect(
+							workstream.find((choice) => choice.key === "phase:multi/build")
+								?.details,
+						).toMatchObject({
+							subtitle: { text: "  agency  " },
+							badge: { text: "󰄱  open" },
+						})
 						expect(workstream.map((choice) => choice.key)).toEqual([
 							"task:multi",
 							"phase:multi/build",
