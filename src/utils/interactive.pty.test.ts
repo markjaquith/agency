@@ -252,13 +252,29 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				expect(output.slice(beforeFinish)).toContain("persistent-recap")
 				if (finish === "\r") {
 					terminal.write("\r")
-					await wait("Act on task")
+					await wait("task persistent-recap")
+					terminal.write("Complete")
+					await Bun.sleep(50)
+					terminal.write("\r")
+					await wait("outcome summary")
+					const beforeCancel = output.length
+					terminal.write("\x1b")
+					await waitFor(
+						() => output.slice(beforeCancel).includes("pull request"),
+						() => output,
+					)
 					terminal.write("Drop")
 					await Bun.sleep(50)
 					terminal.write("\r")
-					await wait("dropped")
+					await wait("Reopen")
 					expect(subprocess.exitCode).toBeNull()
 					expect(output).not.toContain("\x1b[?1049l")
+					const beforeBack = output.length
+					terminal.write("\x1b")
+					await waitFor(
+						() => output.slice(beforeBack).includes("dropped"),
+						() => output,
+					)
 				}
 				terminal.write(finish === "\r" ? "\x1b" : "\x03")
 				expect(await waitForExit(subprocess, () => output)).toBe(0)

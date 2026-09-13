@@ -23,6 +23,11 @@ interface ActTab<T> {
 
 export class ActCancelled extends Error {}
 
+export const actTabs = [
+	{ id: "workbase", label: "  Workbase", prompt: "Your mission:" },
+	{ id: "workload", label: "  Workload", prompt: "Choose an item" },
+] as const
+
 const readText = (prompt: string) =>
 	Effect.tryPromise({
 		try: async () => {
@@ -60,7 +65,10 @@ export const openActSession = () =>
 			resetCancellation()
 			const session = await (
 				await loadInteractive()
-			).createInteractiveSession(() => cancel())
+			).createInteractiveSession(
+				() => cancel(),
+				actTabs.map((tab) => ({ ...tab, choices: [] })),
+			)
 			const attempt = <T>(run: () => Promise<T>) =>
 				Effect.tryPromise({
 					try: run,
@@ -102,6 +110,8 @@ export const openActSession = () =>
 					}),
 			}
 			return {
+				activateTab: session.activateTab,
+				takeNavigation: session.takeNavigation,
 				get quitRequested() {
 					return session.quitRequested
 				},

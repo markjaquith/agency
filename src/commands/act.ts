@@ -20,6 +20,7 @@ import {
 import {
 	ActCancelled,
 	actionPrompts,
+	actTabs,
 	defaultInteraction,
 	openActSession,
 	type ActInteraction,
@@ -128,8 +129,29 @@ const shellCommand = (argv: readonly string[]) =>
 		)
 		.join(" ")
 const available = (action: ActAction) => !action.blockedReason
+const actionStyles: Record<string, { icon: string; color: string }> = {
+	reopen: { icon: "󰑓", color: macchiato.yellow },
+	drop: { icon: "󰅖", color: macchiato.red },
+	complete: { icon: "󰄬", color: macchiato.green },
+	sync: { icon: "󰑓", color: macchiato.sapphire },
+	"pr-ready": { icon: "", color: macchiato.green },
+	"pr-close": { icon: "", color: macchiato.red },
+}
 const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
-	actions.map(({ id, label }) => ({ key: id, label, value: id }))
+	actions.map(({ id, label }) => {
+		const { icon, color } =
+			actionStyles[id] ??
+			actionGroups.find((group) =>
+				group.actions.some((action) => action === id),
+			)!
+		return {
+			key: id,
+			value: id,
+			label: `${icon}  ${label}`,
+			plainLabel: label,
+			segments: [{ text: `${icon}  `, color }, { text: label }],
+		}
+	})
 
 interface ActState {
 	session?: Effect.Effect.Success<ReturnType<typeof openActSession>>
@@ -138,6 +160,8 @@ interface ActState {
 	atHome: boolean
 	native: boolean
 	notice: string
+	item?: string
+	atItemMenu?: boolean
 }
 
 export const act = (
@@ -157,6 +181,7 @@ export const act = (
 		yield* Effect.gen(function* () {
 			while (true) {
 				state.atHome = true
+				state.atItemMenu = false
 				const keepGoing = yield* actStep(
 					nextOptions,
 					interaction,
@@ -165,8 +190,10 @@ export const act = (
 				).pipe(
 					Effect.as(true),
 					Effect.catchAll((error) => {
-						if (error instanceof ActCancelled)
+						if (error instanceof ActCancelled) {
+							if (state.atItemMenu) state.item = undefined
 							return Effect.succeed(!state.atHome)
+						}
 						if (!state.native || state.atHome) return Effect.fail(error)
 						state.notice = `󰅖  ${error instanceof Error ? error.message : String(error)}`
 						return Effect.succeed(true)
@@ -174,6 +201,7 @@ export const act = (
 				)
 				if (!state.native || !keepGoing || state.session?.quitRequested) break
 				state.session?.resetCancellation()
+				if (state.session?.takeNavigation()) state.item = undefined
 				state.session?.notice(state.notice)
 				nextOptions = {
 					...options,
@@ -183,6 +211,16 @@ export const act = (
 					taskId: undefined,
 					phaseId: undefined,
 					action: undefined,
+					...(state.item?.startsWith("phase:")
+						? {
+								taskId: state.item.slice(6).split("/")[0],
+								phaseId: state.item.slice(6).split("/")[1],
+							}
+						: state.item?.startsWith("task:")
+							? { taskId: state.item.slice(5) }
+							: state.item?.startsWith("epic:")
+								? { epicId: state.item.slice(5) }
+								: {}),
 				}
 			}
 		}).pipe(
@@ -291,6 +329,15 @@ const actStep = (
 			return yield* Effect.fail(
 				new Error("Workbase actions do not accept an item selector"),
 			)
+		if (
+			selectedKey &&
+			!catalog.has(selectedKey) &&
+			state.item === selectedKey
+		) {
+			state.item = undefined
+			selectedKey = undefined
+			state.atHome = true
+		}
 		if (selectedKey && !catalog.has(selectedKey))
 			return yield* Effect.fail(
 				new Error(`Selected work item '${selectedKey}' was not found`),
@@ -368,9 +415,7 @@ const actStep = (
 				type HomeChoice = { kind: "goal" | "item"; id: string }
 				const chosen = yield* ui.tabs<HomeChoice>([
 					{
-						id: "workbase",
-						label: "  Workbase",
-						prompt: "Your mission:",
+						...actTabs[0],
 						choices: goals
 							.filter(
 								(choice) =>
@@ -382,9 +427,7 @@ const actStep = (
 							})),
 					},
 					{
-						id: "workload",
-						label: "  Workload",
-						prompt: "Choose an item",
+						...actTabs[1],
 						emptyLabel: "No tasks or phases yet",
 						choices: entityChoices(
 							nodes.filter(
@@ -446,12 +489,19 @@ const actStep = (
 			selectedKey = yield* select("Choose an item", entityChoices(eligible))
 		}
 		const selected = nodes.find((node) => node.id === selectedKey)
+		if (selected && session) {
+			state.item = selected.id
+			session.activateTab("workload")
+		}
 		const actions = selected ? catalog.get(selected.id)! : globals
-		if (!actionId)
+		if (!actionId) {
+			state.atItemMenu = true
 			actionId = yield* select(
 				`Act on ${selected!.kind} ${selected!.key}`,
 				actionChoices(actions.filter(available)),
 			)
+			state.atItemMenu = false
+		}
 		const action = actions.find((action) => action.id === actionId)
 		if (!action || action.blockedReason)
 			return yield* Effect.fail(
@@ -570,8 +620,8 @@ Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <
 
 Choose a goal in Workbase, or press Tab for tasks/phases in Workload. Guided
 creation offers an explicit Work choice afterward; creation alone never starts work.
-Actions return to refreshed tabs. Escape cancels a step or exits from the front
-screen; Ctrl-C quits. The session recap is printed when you exit.
+Item actions stay on that item. Escape backs out to its actions, then Workload,
+or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
 An existing directory selects its containing epic, task, or phase; otherwise
 the positional value is a task ID. Selectors skip item selection.
 

@@ -47,6 +47,7 @@ interface PromptProps<T> {
 	readonly onDone: (value: T | null) => void
 	readonly fullScreen?: boolean
 	readonly onQuit?: () => void
+	readonly embedded?: boolean
 }
 
 const isCancel = (key: { name: string; ctrl: boolean }) =>
@@ -124,6 +125,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	let input: TextareaRenderable | undefined
 	const editing = createReadlineEditing(() => input)
 	useKeyboard((key) => {
+		if (key.propagationStopped) return
 		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -145,7 +147,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			height="100%"
 			backgroundColor={macchiato.base}
 		>
-			{props.fullScreen && (
+			{props.fullScreen && !props.embedded && (
 				<>
 					<text fg={macchiato.blue}>{"  Agency"}</text>
 					<box height={1} flexShrink={0} />
@@ -186,7 +188,6 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 interface SelectPromptProps extends PromptProps<string> {
 	readonly choices: readonly InteractiveChoice[]
 	readonly active?: boolean
-	readonly embedded?: boolean
 	readonly reservedRows?: number
 	readonly backgroundColor?: string
 	readonly emptyLabel?: string
@@ -492,10 +493,24 @@ export const InteractiveTabbedPrompt = (props: {
 	readonly notice?: string
 	readonly initialTab?: number
 	readonly onTabChange?: (index: number) => void
+	readonly content?: (reservedRows: () => number) => JSX.Element
 }) => {
 	const dimensions = useTerminalDimensions()
 	const [active, setActive] = createSignal(props.initialTab ?? 0)
 	const brandHeight = () => (dimensions().height > 5 ? 2 : 0)
+	const reservedRows = () => brandHeight() + 1 + (props.notice ? 1 : 0)
+	const cycle = () => {
+		if (!props.tabs.length) return
+		const next = (active() + 1) % props.tabs.length
+		setActive(next)
+		props.onTabChange?.(next)
+	}
+	useKeyboard((key) => {
+		if (!props.content || key.name !== "tab" || key.propagationStopped) return
+		key.preventDefault()
+		key.stopPropagation()
+		cycle()
+	})
 	return (
 		<box
 			flexDirection="column"
@@ -536,33 +551,33 @@ export const InteractiveTabbedPrompt = (props: {
 						{props.notice}
 					</text>
 				</Show>
-				<For each={props.tabs}>
-					{(tab, index) => (
-						<box
-							visible={index() === active()}
-							width="100%"
-							flexGrow={1}
-							minHeight={0}
-						>
-							<InteractiveSelectPrompt
-								embedded
-								active={index() === active()}
-								reservedRows={brandHeight() + 1 + (props.notice ? 1 : 0)}
-								backgroundColor={macchiato.base}
-								prompt={tab.prompt}
-								choices={tab.choices}
-								emptyLabel={tab.emptyLabel}
-								onTab={() => {
-									const next = (active() + 1) % props.tabs.length
-									setActive(next)
-									props.onTabChange?.(next)
-								}}
-								onDone={props.onDone}
-								onQuit={props.onQuit}
-							/>
-						</box>
-					)}
-				</For>
+				{props.content ? (
+					props.content(reservedRows)
+				) : (
+					<For each={props.tabs}>
+						{(tab, index) => (
+							<box
+								visible={index() === active()}
+								width="100%"
+								flexGrow={1}
+								minHeight={0}
+							>
+								<InteractiveSelectPrompt
+									embedded
+									active={index() === active()}
+									reservedRows={reservedRows()}
+									backgroundColor={macchiato.base}
+									prompt={tab.prompt}
+									choices={tab.choices}
+									emptyLabel={tab.emptyLabel}
+									onTab={cycle}
+									onDone={props.onDone}
+									onQuit={props.onQuit}
+								/>
+							</box>
+						)}
+					</For>
+				)}
 			</box>
 		</box>
 	)
@@ -596,6 +611,7 @@ type SessionView =
 /** One terminal owner for a complete guided flow, rather than one per prompt. */
 export const createInteractiveSession = async (
 	onCancel: () => void = () => {},
+	initialTabs: readonly InteractiveTab[] = [],
 ) => {
 	const [view, setView] = createSignal<SessionView>({
 		kind: "progress",
@@ -606,6 +622,17 @@ export const createInteractiveSession = async (
 	let cancelled = false
 	let quitRequested = false
 	let activeTab = 0
+	let frameTabs = initialTabs
+	let navigationRequested = false
+	const navigate = (index: number) => {
+		activeTab = index
+		navigationRequested = true
+		if (pending) pending(null)
+		else {
+			cancelled = true
+			onCancel()
+		}
+	}
 	const [notice, setNotice] = createSignal("")
 	const quit = () => {
 		quitRequested = true
@@ -613,6 +640,7 @@ export const createInteractiveSession = async (
 	}
 	const Progress = (props: { prompt: string }) => {
 		useKeyboard((key) => {
+			if (key.propagationStopped) return
 			if (!isCancel(key)) return
 			key.preventDefault()
 			key.stopPropagation()
@@ -627,8 +655,6 @@ export const createInteractiveSession = async (
 				height="100%"
 				backgroundColor={macchiato.base}
 			>
-				<text fg={macchiato.blue}>{"  Agency"}</text>
-				<box height={1} />
 				<text fg={macchiato.text}>{props.prompt}</text>
 			</box>
 		)
@@ -656,22 +682,36 @@ export const createInteractiveSession = async (
 									activeTab = index
 								}}
 							/>
-						) : current.kind === "select" ? (
-							<InteractiveSelectPrompt
-								prompt={current.prompt}
-								choices={current.choices}
-								onDone={current.finish}
-								onQuit={quit}
-							/>
-						) : current.kind === "text" ? (
-							<InteractiveTextPrompt
-								fullScreen
-								prompt={current.prompt}
-								onDone={current.finish}
-								onQuit={quit}
-							/>
 						) : (
-							<Progress prompt={current.prompt} />
+							<InteractiveTabbedPrompt
+								tabs={frameTabs}
+								initialTab={activeTab}
+								notice={notice()}
+								onDone={() => {}}
+								onTabChange={navigate}
+								content={(reservedRows) =>
+									current.kind === "select" ? (
+										<InteractiveSelectPrompt
+											embedded
+											reservedRows={reservedRows()}
+											prompt={current.prompt}
+											choices={current.choices}
+											onDone={current.finish}
+											onQuit={quit}
+										/>
+									) : current.kind === "text" ? (
+										<InteractiveTextPrompt
+											fullScreen
+											embedded
+											prompt={current.prompt}
+											onDone={current.finish}
+											onQuit={quit}
+										/>
+									) : (
+										<Progress prompt={current.prompt} />
+									)
+								}
+							/>
 						)
 					}
 				</Show>
@@ -705,6 +745,15 @@ export const createInteractiveSession = async (
 		})
 	}
 	return {
+		activateTab: (id: string) => {
+			const index = frameTabs.findIndex((tab) => tab.id === id)
+			if (index >= 0) activeTab = index
+		},
+		takeNavigation: () => {
+			const requested = navigationRequested
+			navigationRequested = false
+			return requested
+		},
 		get quitRequested() {
 			return quitRequested
 		},
@@ -712,7 +761,10 @@ export const createInteractiveSession = async (
 			cancelled = false
 			setNotice(message)
 		},
-		tabs: (tabs: readonly InteractiveTab[]) => ask("", undefined, tabs),
+		tabs: (tabs: readonly InteractiveTab[]) => {
+			frameTabs = tabs
+			return ask("", undefined, tabs)
+		},
 		text: (prompt: string) => ask(prompt),
 		select: (prompt: string, choices: readonly InteractiveChoice[]) =>
 			ask(prompt, choices),

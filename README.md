@@ -549,8 +549,10 @@ prominent names, and quieter parent-task, repository, and description details.
 Filtering matches full IDs and metadata even when a displayed name is shortened.
 
 The built-in guided flow keeps one full-screen session across menus, text inputs,
-and execution. Actions return to refreshed tabs, with the latest outcome displayed
-above the prompt. Escape cancels an unfinished step and returns to the tabs; on
+and execution, with the tabs visible throughout. Item actions use colored icons
+and return to the same item's refreshed action menu, with the latest outcome
+above the prompt. Escape from an item's input returns to its actions; Escape from
+its action menu returns to Workload. Tab switches sections from any step. On
 the front screen, Escape clears a filter first, then exits. Ctrl-C quits from any
 screen. On exit it restores the shell and leaves a compact recap of
 completed actions, affected items, and commands. Dry runs are labeled as previews;

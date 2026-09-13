@@ -43,6 +43,56 @@ const submitEditedText = async (
 }
 
 describe("OpenTUI interaction", () => {
+	test("keeps the tab frame around action inputs and reserves Tab for navigation", async () => {
+		let switched: number | undefined
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{ id: "workbase", label: "Workbase", prompt: "", choices: [] },
+						{ id: "workload", label: "Workload", prompt: "", choices: [] },
+					]}
+					initialTab={1}
+					onTabChange={(index) => {
+						switched = index
+					}}
+					onDone={() => {}}
+					content={() => (
+						<InteractiveTextPrompt
+							fullScreen
+							embedded
+							prompt="Summary"
+							onDone={(value) => {
+								submitted = value
+							}}
+						/>
+					)}
+				/>
+			),
+			{ width: 50, height: 10 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			const frame = setup.captureCharFrame()
+			expect(frame.match(/Agency/g)).toHaveLength(1)
+			expect(frame).toContain("▎ Workload")
+			expect(frame).toContain("  Summary")
+			await setup.mockInput.typeText("Done")
+			await setup.flush()
+			setup.mockInput.pressTab()
+			await setup.flush()
+			expect(switched).toBe(0)
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => submitted !== undefined)
+			expect(submitted).toBe("Done")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("cycles tabs with independent filter/selection state and a contiguous active panel", async () => {
 		let submitted: string | null | undefined
 		const setup = await testRender(

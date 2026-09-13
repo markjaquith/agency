@@ -182,8 +182,20 @@ describe("act command", () => {
 					{ cwd: root, inputAllowed: true },
 					scriptedInteraction(
 						["browse", "task:example", "drop"],
-						(_prompt, choices) => {
+						(prompt, choices) => {
 							offered.push(choices.map((choice) => String(choice.value)))
+							if (prompt === "Act on task example") {
+								expect(
+									choices.every(
+										(choice) =>
+											choice.plainLabel && choice.segments?.[0]?.color,
+									),
+								).toBe(true)
+								expect(
+									choices.find((choice) => choice.key === "drop")
+										?.segments?.[0],
+								).toEqual({ text: "󰅖  ", color: macchiato.red })
+							}
 						},
 					),
 				),
