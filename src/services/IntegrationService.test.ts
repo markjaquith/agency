@@ -156,8 +156,17 @@ describe("IntegrationService", () => {
 		])
 	})
 
-	test("generates the complete Agency command fast paths with precedence", () => {
+	test("generates discovery-first guidance and the complete command fast paths", () => {
 		const body = managedBody(managedWorkbaseAgents)
+		expect(body.indexOf("## Discover Actions First")).toBeGreaterThan(-1)
+		expect(body.indexOf("## Discover Actions First")).toBeLessThan(
+			body.indexOf("## Command Fast Paths"),
+		)
+		expect(body).toContain(
+			"agency act --task <context-task-id> --phase <context-phase-id> --json",
+		)
+		expect(body).toContain("declared branch as `--base`")
+		expect(body).toContain("Branch ancestry is not a completion dependency")
 
 		expect(body.indexOf("## Command Fast Paths")).toBeLessThan(
 			body.indexOf("## Bootstrap"),

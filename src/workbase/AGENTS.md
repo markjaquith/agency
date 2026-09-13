@@ -4,6 +4,55 @@ This directory is an Agency workbase. Epics, tasks, and phases are durable
 Markdown documents; repository aliases and generated Git worktrees provide code
 access.
 
+## Discover Actions First
+
+After the `agency context . --json` bootstrap, use `agency act --json` as the
+primary way to discover what Agency can do. Prefer its live action catalog over
+searching command help, reading implementation code, or guessing commands from
+memory. It reports available actions, blocked reasons, required inputs, exact
+argv/templates, document revisions, and explicit follow-up choices.
+
+Keep discovery focused on the work at hand:
+
+- Current task: `agency act --task <context-task-id> --json`.
+- Current phase: `agency act --task <context-task-id> --phase <context-phase-id> --json`.
+- One operation: add `--action <action-id>` to either selector.
+- Workbase-level creation or repository actions: use
+  `agency act --action <action-id> --json` without an item selector.
+- Unsure which action or item applies: `agency act --json`.
+
+Use selectors returned by context, not IDs inferred from checkout or branch
+names. Execute an available `command` as argv from the returned workbase root.
+For a `commandTemplate`, substitute required input placeholders; append optional
+inputs using their declared `option`. Preserve multiline input as one argv value.
+Re-discover after mutations because availability and revisions may change.
+
+Discovery is read-only and does not grant consent. `followUpCommands` describe
+the action's bookkeeping; `nextActions` require a separate explicit choice.
+Creation never implies starting Work. Respect blocked reasons and the consent
+boundaries below. The command fast paths remain useful when the exact operation
+and arguments are already established; do not rediscover between every known
+step or use help unless discovery does not cover the operation.
+
+### Current Work and Branch Context
+
+When the request concerns this execution unit, target its context task/phase
+rather than browsing the entire workbase. Use `authority.writable.checkoutPath`
+for repository work and the declared delivery branch for publication.
+
+For new work that builds on the current implementation (a follow-up, additional
+phase, or explicitly requested continuation), prefer the current execution's
+declared branch as `--base` when that matches the user's intent. Do not blindly
+copy `main` from examples or accept a wizard default. Confirm the branch from
+Agency context; when checking the live Git branch is necessary, do so in the
+writable checkout, not the workbase root. An explicit user base takes precedence.
+Unrelated new work should use its intended integration base instead.
+
+Branch ancestry is not a completion dependency. Choosing the current branch as
+the base does not add `--depends-on`, reuse the current item for explicitly new
+work, switch branches, or expand write authority. Pass the chosen base as the
+discovered `base` input to the native creation/handoff command.
+
 ## Command Fast Paths
 
 When a request clearly matches one of these intents, use the exact recipe without
