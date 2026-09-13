@@ -602,8 +602,11 @@ provider state and authorization are checked by the underlying command. Native
 provider-aware PR creation remains available. Existing lifecycle services own
 validation, preparation, revision guards, and archive protections.
 
-Use an existing directory, a positional task ID, `--epic <id>`, `--task <id>`, or
-`--task <id> --phase <id>` for item-first selection. Use `--action <id>` to start
+Pass a task/phase directory, a file inside it (including `TASK.md` or `PHASE.md`),
+or a positional task ID to open that item's actions immediately. Absolute and
+relative paths work; a workbase-root path opens Workbase actions. Explicit
+`--epic <id>`, `--task <id>`, and `--task <id> --phase <id>` also skip item selection.
+Use `--action <id>` to start
 at a specific scenario. `--dry-run` collects inputs and prints exact commands,
 including automatic bookkeeping commands, without executing or offering Work.
 Cancelling before dispatch makes no changes; cancelling after creation leaves

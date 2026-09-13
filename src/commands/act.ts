@@ -1,6 +1,6 @@
 import { Schema } from "@effect/schema"
 import { Effect } from "effect"
-import { isAbsolute, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { ActDiscovery } from "../act-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
@@ -310,8 +310,10 @@ const actStep = (
 		const cwd = options.cwd ?? process.cwd()
 		const path = resolve(cwd, options.directory ?? ".")
 		const isDirectory = yield* fs.isDirectory(path)
+		const isPath =
+			isDirectory || Boolean(options.directory && (yield* fs.exists(path)))
 		const { root, config } = yield* workbase.loadConfig(
-			isDirectory ? path : cwd,
+			isDirectory ? path : isPath ? dirname(path) : cwd,
 		)
 		state.root = root
 		const graph = yield* graphs.get({
@@ -363,11 +365,13 @@ const actStep = (
 				: options.taskId
 					? `task:${options.taskId}`
 					: options.directory
-						? isDirectory
+						? isPath
 							? pathEntityKey(root, path)
 							: `task:${options.directory}`
 						: undefined
 		let actionId = options.action
+		if (session && options.directory && isPath && !selectedKey && !actionId)
+			session.activateTab("workbase")
 		state.view = !selectedKey && !actionId ? "home" : "flow"
 		if (
 			actionId &&
@@ -681,8 +685,9 @@ creation offers an explicit Work choice afterward; creation alone never starts w
 Item actions stay on that item. Escape clears input, then steps back through
 wizard prompts, the action menu, and Workstream,
 or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
-An existing directory selects its containing epic, task, or phase; otherwise
-the positional value is a task ID. Selectors skip item selection.
+An existing directory or file selects its containing epic, task, or phase.
+A workbase path opens Workbase actions. Otherwise the positional value is a
+task ID. Selectors skip item selection.
 
 Options:
   --action <id>         Start an action or filter discovery (IDs from --json)

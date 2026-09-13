@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import {
 	captureLogs,
 	cleanupTempDir,
@@ -257,6 +257,8 @@ describe("act command", () => {
 		for (const options of [
 			{ cwd: join(root, "tasks/example"), directory: "." },
 			{ cwd: join(root, "tasks/example"), directory: "code/agency" },
+			{ cwd: root, directory: "tasks/example/TASK.md" },
+			{ cwd: dirname(root), directory: join(root, "tasks/example/TASK.md") },
 			{ cwd: root, directory: "example" },
 		]) {
 			const prompts: string[] = []
@@ -291,21 +293,27 @@ describe("act command", () => {
 				silent: true,
 			}),
 		)
-		const prompts: string[] = []
-		await runTestEffect(
-			act(
-				{
-					cwd: join(root, "tasks/multi/phases/build"),
-					directory: ".",
-					inputAllowed: true,
-					dryRun: true,
-					silent: true,
-				},
-				scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
-			),
-		)
+		for (const directory of [
+			".",
+			"PHASE.md",
+			join(root, "tasks/multi/phases/build/PHASE.md"),
+		]) {
+			const prompts: string[] = []
+			await runTestEffect(
+				act(
+					{
+						cwd: join(root, "tasks/multi/phases/build"),
+						directory,
+						inputAllowed: true,
+						dryRun: true,
+						silent: true,
+					},
+					scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+				),
+			)
 
-		expect(prompts).toEqual(["Act on phase multi/build"])
+			expect(prompts).toEqual(["Act on phase multi/build"])
+		}
 	})
 
 	test("Browse shows flat colored rows with prominent names and secondary parent context", async () => {
