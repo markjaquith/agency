@@ -131,10 +131,78 @@ const available = (action: ActAction) => !action.blockedReason
 const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
 	actions.map(({ id, label }) => ({ key: id, label, value: id }))
 
+interface ActState {
+	session?: Effect.Effect.Success<ReturnType<typeof openActSession>>
+	recap: string[]
+	root?: string
+	atHome: boolean
+	native: boolean
+	notice: string
+}
+
 export const act = (
 	options: ActOptions = {},
 	interaction: ActInteraction = defaultInteraction,
 	work: StartWork = startWork,
+) =>
+	Effect.gen(function* () {
+		const state: ActState = {
+			recap: [],
+			atHome: true,
+			native: false,
+			notice: "",
+		}
+		let nextOptions = options
+		const { log } = createLoggers(options)
+		yield* Effect.gen(function* () {
+			while (true) {
+				state.atHome = true
+				const keepGoing = yield* actStep(
+					nextOptions,
+					interaction,
+					work,
+					state,
+				).pipe(
+					Effect.as(true),
+					Effect.catchAll((error) => {
+						if (error instanceof ActCancelled)
+							return Effect.succeed(!state.atHome)
+						if (!state.native || state.atHome) return Effect.fail(error)
+						state.notice = `󰅖  ${error instanceof Error ? error.message : String(error)}`
+						return Effect.succeed(true)
+					}),
+				)
+				if (!state.native || !keepGoing || state.session?.quitRequested) break
+				state.session?.resetCancellation()
+				state.session?.notice(state.notice)
+				nextOptions = {
+					...options,
+					cwd: state.root,
+					directory: undefined,
+					epicId: undefined,
+					taskId: undefined,
+					phaseId: undefined,
+					action: undefined,
+				}
+			}
+		}).pipe(
+			Effect.scoped,
+			Effect.ensuring(
+				Effect.sync(() => {
+					if (state.recap.length)
+						log(
+							`\n  Agency\n\n${state.recap.map((line) => `  ${line}`).join("\n")}\n`,
+						)
+				}),
+			),
+		)
+	})
+
+const actStep = (
+	options: ActOptions,
+	interaction: ActInteraction,
+	work: StartWork,
+	state: ActState,
 ) =>
 	Effect.gen(function* () {
 		if (!options.json && options.inputAllowed === false)
@@ -153,6 +221,7 @@ export const act = (
 		const { root, config } = yield* workbase.loadConfig(
 			isDirectory ? path : cwd,
 		)
+		state.root = root
 		const graph = yield* graphs.get({
 			cwd: root,
 			loadedConfig: { root, config },
@@ -161,26 +230,21 @@ export const act = (
 			(node): node is ActEntity =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
 		)
-		const recap: string[] = []
+		const recap = state.recap
 		const session =
-			!options.json &&
+			state.session ??
+			(!options.json &&
 			interaction === defaultInteraction &&
 			!config.chooserCommand &&
 			process.stdin.isTTY &&
 			process.stdout.isTTY
 				? yield* Effect.acquireRelease(openActSession(), (session) =>
-						session.close().pipe(
-							Effect.tap(() =>
-								Effect.sync(() => {
-									if (recap.length)
-										log(
-											`\n  Agency\n\n${recap.map((line) => `  ${line}`).join("\n")}\n`,
-										)
-								}),
-							),
-						),
+						session.close(),
 					)
-				: undefined
+				: undefined)
+		state.session = session
+		state.native = Boolean(session)
+		session?.notice(state.notice)
 		const ui = session?.interaction ?? interaction
 		const nativeOptions = {
 			cwd: root,
@@ -212,6 +276,7 @@ export const act = (
 							: `task:${options.directory}`
 						: undefined
 		let actionId = options.action
+		state.atHome = !selectedKey && !actionId
 		if (
 			actionId &&
 			!actionGroups.some((group) => group.actions.some((id) => id === actionId))
@@ -329,9 +394,13 @@ export const act = (
 					},
 				])
 				if (!chosen) return yield* Effect.fail(new ActCancelled())
+				state.atHome = false
 				if (chosen.kind === "item") selectedKey = chosen.id
 				else goal = chosen.id
-			} else goal = yield* select("Your mission:", goals)
+			} else {
+				goal = yield* select("Your mission:", goals)
+				state.atHome = false
+			}
 			if (goal === "browse") {
 				if (!nodes.length)
 					return yield* Effect.fail(
@@ -420,11 +489,15 @@ export const act = (
 			for (const command of [plan.command, ...(plan.followUpCommands ?? [])])
 				if (session) recap.push(`  Preview: ${shellCommand(command)}`)
 				else log(shellCommand(command))
+			state.notice = `  Preview: ${shellCommand(plan.command)}`
 			return
 		}
 		session?.show(`󰔟  ${action.label}…`)
 		// An interactive worker must receive a restored terminal.
-		if (action.id === "work" && session) yield* session.close()
+		if (action.id === "work" && session) {
+			yield* session.close()
+			state.session = undefined
+		}
 		yield* (
 			session && action.id !== "work"
 				? Effect.raceFirst(plan.run, session.cancelled)
@@ -432,29 +505,37 @@ export const act = (
 		).pipe(
 			Effect.tapError((error) =>
 				Effect.sync(() => {
-					if (session)
+					if (session) {
 						recap.push(
 							`󰅖  ${action.label} ${error instanceof ActCancelled ? "interrupted; check item state before retrying" : "failed"}${selected ? ` — ${selected.key}` : ""}`,
 						)
+						state.notice = recap[recap.length - 1]!
+					}
 				}),
 			),
 		)
 		if (session) {
 			recap.push(`󰄬  ${action.label}${selected ? ` — ${selected.key}` : ""}`)
+			state.notice = recap[recap.length - 1]!
 			if (plan.next)
 				recap.push(
 					`Item: ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`,
 				)
+			if (plan.next)
+				state.notice += ` — ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`
 			recap.push(`Command: ${shellCommand(plan.command)}`)
 			if (action.id === "current-work") {
 				const current = nodes.filter((node) => node.status === "working")
+				state.notice = current.length
+					? `  Working: ${current.map((node) => node.key).join(", ")}`
+					: "  No work is in progress."
 				recap.push(
 					...(current.length
 						? current.map(
 								(node) =>
 									`${node.kind} ${node.key} · ${node.repositories.join(", ")}${"description" in node.data && node.data.description ? ` — ${node.data.description}` : ""}`,
 							)
-						: ["No work is currently working."]),
+						: ["No work is in progress."]),
 				)
 			}
 		}
@@ -462,29 +543,32 @@ export const act = (
 			const next = yield* select("Created. What next?", [
 				{
 					key: "finish",
-					label: "Finish — keep this item for later",
+					label: session
+						? "Keep for later — return to tabs"
+						: "Finish — keep this item for later",
 					value: "finish",
 				},
 				{ key: "work", label: "Work on the new item now", value: "work" },
 			])
 			if (next === "work") {
-				if (session) yield* session.close()
+				if (session) {
+					yield* session.close()
+					state.session = undefined
+				}
 				yield* work({ ...nativeOptions, silent: options.silent, ...plan.next })
 				if (session) recap.push("󰄬  Work handoff completed")
 			} else if (session) recap.push("Kept for later — work was not started.")
 		}
-	}).pipe(
-		Effect.catchAll((error) =>
-			error instanceof ActCancelled ? Effect.void : Effect.fail(error),
-		),
-		Effect.scoped,
-	)
+		if (action.id === "work") state.session = undefined
+	})
 
 export const help = `
 Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]
 
 Choose a goal in Workbase, or press Tab for tasks/phases in Workload. Guided
 creation offers an explicit Work choice afterward; creation alone never starts work.
+Actions return to refreshed tabs. Escape cancels a step or exits from the front
+screen; Ctrl-C quits. The session recap is printed when you exit.
 An existing directory selects its containing epic, task, or phase; otherwise
 the positional value is a task ID. Selectors skip item selection.
 

@@ -46,6 +46,7 @@ interface PromptProps<T> {
 	readonly prompt: string
 	readonly onDone: (value: T | null) => void
 	readonly fullScreen?: boolean
+	readonly onQuit?: () => void
 }
 
 const isCancel = (key: { name: string; ctrl: boolean }) =>
@@ -126,6 +127,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
+			if (key.ctrl && key.name === "c") props.onQuit?.()
 			props.onDone(null)
 			return
 		}
@@ -332,6 +334,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		if (isCancel(key)) {
 			key.preventDefault()
 			key.stopPropagation()
+			if (key.ctrl && key.name === "c") props.onQuit?.()
 			props.onDone(null)
 			return
 		}
@@ -485,9 +488,13 @@ export interface InteractiveTab {
 export const InteractiveTabbedPrompt = (props: {
 	readonly tabs: readonly InteractiveTab[]
 	readonly onDone: (value: string | null) => void
+	readonly onQuit?: () => void
+	readonly notice?: string
+	readonly initialTab?: number
+	readonly onTabChange?: (index: number) => void
 }) => {
 	const dimensions = useTerminalDimensions()
-	const [active, setActive] = createSignal(0)
+	const [active, setActive] = createSignal(props.initialTab ?? 0)
 	const brandHeight = () => (dimensions().height > 5 ? 2 : 0)
 	return (
 		<box
@@ -524,21 +531,34 @@ export const InteractiveTabbedPrompt = (props: {
 				minHeight={0}
 				backgroundColor={macchiato.base}
 			>
+				<Show when={props.notice}>
+					<text fg={macchiato.text} height={1} flexShrink={0} wrapMode="none">
+						{props.notice}
+					</text>
+				</Show>
 				<For each={props.tabs}>
 					{(tab, index) => (
-						<box visible={index() === active()} width="100%" height="100%">
+						<box
+							visible={index() === active()}
+							width="100%"
+							flexGrow={1}
+							minHeight={0}
+						>
 							<InteractiveSelectPrompt
 								embedded
 								active={index() === active()}
-								reservedRows={brandHeight() + 1}
+								reservedRows={brandHeight() + 1 + (props.notice ? 1 : 0)}
 								backgroundColor={macchiato.base}
 								prompt={tab.prompt}
 								choices={tab.choices}
 								emptyLabel={tab.emptyLabel}
-								onTab={() =>
-									setActive((current) => (current + 1) % props.tabs.length)
-								}
+								onTab={() => {
+									const next = (active() + 1) % props.tabs.length
+									setActive(next)
+									props.onTabChange?.(next)
+								}}
 								onDone={props.onDone}
+								onQuit={props.onQuit}
 							/>
 						</box>
 					)}
@@ -584,12 +604,20 @@ export const createInteractiveSession = async (
 	let pending: ((value: string | null) => void) | undefined
 	let closed = false
 	let cancelled = false
+	let quitRequested = false
+	let activeTab = 0
+	const [notice, setNotice] = createSignal("")
+	const quit = () => {
+		quitRequested = true
+		onCancel()
+	}
 	const Progress = (props: { prompt: string }) => {
 		useKeyboard((key) => {
 			if (!isCancel(key)) return
 			key.preventDefault()
 			key.stopPropagation()
 			cancelled = true
+			if (key.ctrl && key.name === "c") quitRequested = true
 			onCancel()
 		})
 		return (
@@ -621,18 +649,26 @@ export const createInteractiveSession = async (
 							<InteractiveTabbedPrompt
 								tabs={current.tabs}
 								onDone={current.finish}
+								onQuit={quit}
+								notice={notice()}
+								initialTab={activeTab}
+								onTabChange={(index) => {
+									activeTab = index
+								}}
 							/>
 						) : current.kind === "select" ? (
 							<InteractiveSelectPrompt
 								prompt={current.prompt}
 								choices={current.choices}
 								onDone={current.finish}
+								onQuit={quit}
 							/>
 						) : current.kind === "text" ? (
 							<InteractiveTextPrompt
 								fullScreen
 								prompt={current.prompt}
 								onDone={current.finish}
+								onQuit={quit}
 							/>
 						) : (
 							<Progress prompt={current.prompt} />
@@ -669,6 +705,13 @@ export const createInteractiveSession = async (
 		})
 	}
 	return {
+		get quitRequested() {
+			return quitRequested
+		},
+		notice: (message: string) => {
+			cancelled = false
+			setNotice(message)
+		},
 		tabs: (tabs: readonly InteractiveTab[]) => ask("", undefined, tabs),
 		text: (prompt: string) => ask(prompt),
 		select: (prompt: string, choices: readonly InteractiveChoice[]) =>

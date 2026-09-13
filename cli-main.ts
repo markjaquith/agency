@@ -708,8 +708,10 @@ agency v${VERSION}
 
 Usage: agency <command> [options]
 
+Run agency without a command to open the TUI.
+
 Commands:
-  act                    Interactively choose and act on work
+  act                    Open the interactive workbase
   init [path]            Initialize an Agency workbase
   workbase <subcommand>  Manage registered workbases
   integration <command> Inspect or sync managed integration files
@@ -797,13 +799,19 @@ const pushUsageDetails = (error?: unknown) => {
 }
 
 try {
+	const parsed = parseCli(rawArguments)
 	const {
 		commandName,
 		commandPath,
 		args: commandArgs,
 		passthrough,
 		values,
-	} = parseCli(rawArguments)
+	} = {
+		...parsed,
+		...(!parsed.commandName && !parsed.values.help && !parsed.values.version
+			? { commandName: "act", commandPath: "act" }
+			: {}),
+	}
 	usageCommandPath = commandPath
 	usageFlagNames = Object.entries(values)
 		.filter(([, value]) => value !== undefined && value !== false)

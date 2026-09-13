@@ -51,12 +51,16 @@ export const openActSession = () =>
 		try: async () => {
 			const { loadInteractive } = await import("../utils/interactive-loader")
 			let cancel!: () => void
-			const cancellation = new Promise<void>((resolve) => {
-				cancel = resolve
-			})
+			let cancellation: Promise<void>
+			const resetCancellation = () => {
+				cancellation = new Promise<void>((resolve) => {
+					cancel = resolve
+				})
+			}
+			resetCancellation()
 			const session = await (
 				await loadInteractive()
-			).createInteractiveSession(cancel)
+			).createInteractiveSession(() => cancel())
 			const attempt = <T>(run: () => Promise<T>) =>
 				Effect.tryPromise({
 					try: run,
@@ -98,6 +102,11 @@ export const openActSession = () =>
 					}),
 			}
 			return {
+				get quitRequested() {
+					return session.quitRequested
+				},
+				resetCancellation,
+				notice: session.notice,
 				cancelled: Effect.promise(() => cancellation).pipe(
 					Effect.flatMap(() => Effect.fail(new ActCancelled())),
 				),

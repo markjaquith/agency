@@ -155,8 +155,8 @@ console.log("Operation cancelled")
 		}
 	}, 12_000)
 
-	for (const finish of ["\r", "\x1b"]) {
-		test(`act preserves completed creation in its recap after ${finish === "\r" ? "Finish" : "cancellation"}`, async () => {
+	for (const finish of ["\r", "\x1b", "work"]) {
+		test(`act preserves completed creation in its recap after ${finish === "\r" ? "Finish" : finish === "work" ? "worker return" : "cancellation"}`, async () => {
 			const root = await createWorkbase()
 			const source = join(root, "source")
 			for (const command of [
@@ -190,8 +190,25 @@ console.log("Operation cancelled")
 				},
 			})
 			const initialModes = modes(terminal)
+			const entry = join(root, "worker-fixture.ts")
+			if (finish === "work")
+				await Bun.write(
+					entry,
+					`
+import { Effect } from ${JSON.stringify(join(projectRoot, "node_modules/effect"))}
+import { runTestEffect } from ${JSON.stringify(join(projectRoot, "src/test-utils.ts"))}
+import { act } from ${JSON.stringify(join(projectRoot, "src/commands/act.ts"))}
+await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", inputAllowed: true }, undefined, () => Effect.sync(() => console.log("WORKER_RETURNED"))))
+`,
+				)
 			const subprocess = Bun.spawn(
-				[process.execPath, cliPath, "act", "--action", "task-create"],
+				finish === "work"
+					? [process.execPath, entry]
+					: [
+							process.execPath,
+							cliPath,
+							...(finish === "\r" ? [] : ["act", "--action", "task-create"]),
+						],
 				{
 					cwd: root,
 					env: { ...process.env, TERM: "xterm-256color" },
@@ -204,6 +221,12 @@ console.log("Operation cancelled")
 					() => output,
 				)
 			try {
+				if (finish === "\r") {
+					await wait("Your mission:")
+					terminal.write("\r")
+					await wait("standard")
+					terminal.write("\r")
+				}
 				await wait("Outcome:")
 				terminal.write("Persistent recap\r")
 				await wait("persistent-recap")
@@ -212,18 +235,48 @@ console.log("Operation cancelled")
 				terminal.write("\r")
 				await wait("Work on the new item now")
 				expect(output).not.toContain("\x1b[?1049l")
-				terminal.write(finish)
+				const beforeFinish = output.length
+				terminal.write(finish === "work" ? "\x1b[B\r" : finish)
+				await waitFor(
+					() => output.slice(beforeFinish).includes("Your mission:"),
+					() => output,
+				)
+				expect(subprocess.exitCode).toBeNull()
+				if (finish === "work")
+					expect(output.indexOf("WORKER_RETURNED")).toBeGreaterThan(
+						output.indexOf("\x1b[?1049l"),
+					)
+				else expect(output).not.toContain("\x1b[?1049l")
+				terminal.write("\t")
+				await wait("Choose an item")
+				expect(output.slice(beforeFinish)).toContain("persistent-recap")
+				if (finish === "\r") {
+					terminal.write("\r")
+					await wait("Act on task")
+					terminal.write("Drop")
+					await Bun.sleep(50)
+					terminal.write("\r")
+					await wait("dropped")
+					expect(subprocess.exitCode).toBeNull()
+					expect(output).not.toContain("\x1b[?1049l")
+				}
+				terminal.write(finish === "\r" ? "\x1b" : "\x03")
 				expect(await waitForExit(subprocess, () => output)).toBe(0)
 				expect(modes(terminal)).toEqual(initialModes)
 				const recap = output.slice(output.lastIndexOf("\x1b[?1049l"))
 				expect(recap).toContain("󰄬  Create a standard task")
 				expect(recap).toContain("Item: persistent-recap")
-				expect(recap).not.toContain("Work handoff completed")
+				if (finish === "work") expect(recap).toContain("Work handoff completed")
+				else expect(recap).not.toContain("Work handoff completed")
 				expect(
 					await Bun.file(join(root, "tasks/persistent-recap/TASK.md")).text(),
-				).toContain("status: open")
-				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(1)
-				expect(output.match(/\x1b\[\?1049l/g)?.length).toBe(1)
+				).toContain(finish === "\r" ? "status: dropped" : "status: open")
+				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(
+					finish === "work" ? 2 : 1,
+				)
+				expect(output.match(/\x1b\[\?1049l/g)?.length).toBe(
+					finish === "work" ? 2 : 1,
+				)
 			} finally {
 				if (subprocess.exitCode === null) {
 					subprocess.kill("SIGKILL")
@@ -282,15 +335,18 @@ console.log("Operation cancelled")
 					await wait("URL:")
 					terminal.write("https://example.com/demo.git\r")
 				}
-				expect(await waitForExit(subprocess, () => output)).toBe(
-					outcome === "invalid" ? 1 : 0,
-				)
+				if (outcome !== "cancel") {
+					await wait(outcome === "preview" ? "Preview:" : "is required")
+					expect(subprocess.exitCode).toBeNull()
+					terminal.write("\x03")
+				}
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
 				expect(modes(terminal)).toEqual(initialModes)
 				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(1)
 				expect(output.match(/\x1b\[\?1049l/g)?.length).toBe(1)
 				if (outcome === "preview") {
 					expect(
-						output.indexOf(
+						output.lastIndexOf(
 							"Preview: agency repo add demo https://example.com/demo.git",
 						),
 					).toBeGreaterThan(output.indexOf("\x1b[?1049l"))

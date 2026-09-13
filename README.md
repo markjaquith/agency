@@ -532,7 +532,7 @@ agency validate
 
 ### Interactive Actions
 
-`agency act` opens on the **Workbase** tab with ten goals. Press **Tab** to cycle
+`agency` with no subcommand (or `agency act`) opens on the **Workbase** tab with ten goals. Press **Tab** to cycle
 to **Workload**, a flat list of non-archived tasks and phases; select an item to
 see its available actions. Each tab remembers its filter and selection. The active
 tab shares its background with the panel beneath it. Creation
@@ -546,10 +546,14 @@ prominent names, and quieter parent-task, repository, and description details.
 Filtering matches full IDs and metadata even when a displayed name is shortened.
 
 The built-in guided flow keeps one full-screen session across menus, text inputs,
-and execution. On finish it restores the shell and leaves a compact recap of
+and execution. Actions return to refreshed tabs, with the latest outcome displayed
+above the prompt. Escape cancels an unfinished step and returns to the tabs; on
+the front screen, Escape clears a filter first, then exits. Ctrl-C quits from any
+screen. On exit it restores the shell and leaves a compact recap of
 completed actions, affected items, and commands. Dry runs are labeled as previews;
 completed steps remain in the recap if a later step is cancelled or fails. Work
-handoffs restore the terminal before starting the interactive worker. A configured
+handoffs restore the terminal before starting the interactive worker, then reopen
+the TUI when the worker returns. A configured
 external chooser continues to offer goals and **Browse items** through that chooser.
 
 | Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |

@@ -123,10 +123,13 @@ describe("CLI", () => {
 			stderr: "",
 		})
 
-		const noArgs = await runCli([])
+		const root = await createTempDir()
+		tempDirs.push(root)
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		const noArgs = await runCli([], root)
 		expect(noArgs.exitCode).toBe(1)
-		expect(noArgs.stdout).toContain("Usage: agency <command> [options]")
-		expect(noArgs.stderr).toBe("")
+		expect(noArgs.stdout).toBe("")
+		expect(noArgs.stderr).toContain("requires interactive input")
 
 		const help = await runCli(["--help"])
 		expect(help.exitCode).toBe(0)
