@@ -931,7 +931,7 @@ describe("OpenTUI interaction", () => {
 			const frame = setup.captureCharFrame()
 			expect(frame).toContain("alpha beta")
 			expect(frame).toContain("gamma")
-			expect(frame).toMatch(/alpha beta\s*\ngamma delta/)
+			expect(frame).toMatch(/alpha beta gamma\s*\ndelta/)
 		} finally {
 			setup.renderer.destroy()
 		}

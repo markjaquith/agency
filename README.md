@@ -7,7 +7,7 @@ read or write.
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.0 or newer
+- [Bun](https://bun.sh) 1.3 or newer (1.4 or newer on Windows ARM64)
 - Git
 - [GitHub CLI](https://cli.github.com/) for `agency pr`
 - OpenCode, Claude Code, or a configured agent for `agency work`
@@ -1295,6 +1295,21 @@ bun run build
 ```
 
 Run focused tests with `bun test <test-file>`. Run formatting with `bun format`.
+
+The TUI uses `@opentui/core` and `@opentui/solid`, pinned together at 0.5.11,
+with the binding's required `solid-js` 1.9.12. Follow the upstream
+[Solid bindings](https://github.com/anomalyco/opentui/blob/v0.5.11/packages/web/src/content/docs/bindings/solid.mdx) and
+[lifecycle guidance](https://github.com/anomalyco/opentui/blob/v0.5.11/packages/web/src/content/docs/core-concepts/lifecycle.mdx):
+
+- Use Solid signals and OpenTUI hooks for reactive state, keys, and dimensions.
+- Use declarative `focused` and component `keyBindings`/`onSubmit` for local
+  input behavior; reserve `useKeyboard` for navigation and shared shortcuts.
+- The renderer creator owns cleanup. `destroy()` restores terminal modes and
+  output streams and disposes the Solid root; keep it in a cleanup/finalizer path.
+- Keep the lazy Solid preload in `interactive-loader.ts` so non-TUI commands
+  avoid initializing the renderer and runtime-loaded TSX uses the right transform.
+- Verify upgrades with the UI and PTY tests, including worker handoffs and
+  terminal restoration.
 
 ## License
 

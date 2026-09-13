@@ -141,11 +141,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			props.onDone(null)
 			return
 		}
-		if (editing.handleKey(key)) return
-		if (key.name !== "return") return
-		key.preventDefault()
-		key.stopPropagation()
-		props.onDone(editing.value)
+		editing.handleKey(key)
 	})
 
 	return (
@@ -174,14 +170,12 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 				focusedTextColor={macchiato.text}
 				cursorColor={macchiato.rosewater}
 				keyBindings={[{ name: "return", action: "submit" }]}
+				onSubmit={() => props.onDone(editing.value)}
 				onContentChange={() => {
 					editing.handleInput(input?.plainText ?? "")
 				}}
 				ref={(next) => {
 					input = next
-					queueMicrotask(() => {
-						if (input && !input.isDestroyed) input.focus()
-					})
 				}}
 			/>
 			<Show when={!props.fullScreen}>
@@ -359,12 +353,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			move(1)
 			return
 		}
-		if (editing.handleKey(key)) return
-		if (key.name !== "return") return
-		key.preventDefault()
-		key.stopPropagation()
-		const choice = choices()[selected()]
-		if (choice) props.onDone(choice.key)
+		editing.handleKey(key)
 	})
 
 	const height = () => dimensions().height - (props.reservedRows ?? 0)
@@ -456,16 +445,16 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 						focusedTextColor={macchiato.text}
 						cursorColor={macchiato.rosewater}
 						keyBindings={[{ name: "return", action: "submit" }]}
+						onSubmit={() => {
+							const choice = choices()[selected()]
+							if (choice) props.onDone(choice.key)
+						}}
 						onContentChange={() => {
 							editing.handleInput(input?.plainText ?? "")
 							setSelected(0)
 						}}
 						ref={(next) => {
 							input = next
-							queueMicrotask(() => {
-								if (input && !input.isDestroyed && props.active !== false)
-									input.focus()
-							})
 						}}
 					/>
 				</box>
@@ -686,13 +675,12 @@ export const InteractiveTabbedPrompt = (props: {
 }
 
 const shutdown = async (renderer: CliRenderer) => {
-	await renderer.idle().catch(() => undefined)
-	if (renderer.externalOutputMode === "capture-stdout") {
-		renderer.externalOutputMode = "passthrough"
+	try {
+		await renderer.idle()
+	} finally {
+		// OpenTUI restores streams/terminal modes and disposes the Solid root.
+		renderer.destroy()
 	}
-	if (renderer.screenMode === "split-footer")
-		renderer.screenMode = "main-screen"
-	if (!renderer.isDestroyed) renderer.destroy()
 }
 
 type SessionView =
