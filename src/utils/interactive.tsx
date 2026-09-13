@@ -170,7 +170,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 				focusedBackgroundColor={macchiato.surface0}
 				textColor={macchiato.text}
 				focusedTextColor={macchiato.text}
-				cursorColor={macchiato.rosewater}
+				cursorColor={macchiato.blue}
 				keyBindings={[
 					{ name: "return", action: "submit" },
 					{ name: "return", shift: true, action: "newline" },
@@ -448,7 +448,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 						}
 						textColor={macchiato.text}
 						focusedTextColor={macchiato.text}
-						cursorColor={macchiato.rosewater}
+						cursorColor={macchiato.blue}
 						keyBindings={[{ name: "return", action: "submit" }]}
 						onSubmit={() => {
 							const choice = choices()[selected()]
@@ -485,7 +485,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 						>
 							{choice.details && rowHeight() === 2 ? (
 								<>
-									<text width={2} height={2} fg={macchiato.mauve}>
+									<text width={2} height={2} fg={macchiato.blue}>
 										{index === selected() ? "▌\n▌" : ""}
 									</text>
 									<box
@@ -533,7 +533,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 									<span
 										style={
 											{
-												fg: index === selected() ? macchiato.mauve : undefined,
+												fg: index === selected() ? macchiato.blue : undefined,
 											} as TextNodeOptions
 										}
 									>
@@ -620,7 +620,7 @@ export const InteractiveTabbedPrompt = (props: {
 							bg={index() === active() ? macchiato.base : macchiato.surface0}
 							wrapMode="none"
 						>
-							<span style={{ fg: macchiato.mauve } as TextNodeOptions}>
+							<span style={{ fg: macchiato.blue } as TextNodeOptions}>
 								{index() === active() ? "▎" : " "}
 							</span>
 							{` ${tab.label}  `}

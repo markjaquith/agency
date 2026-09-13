@@ -546,10 +546,13 @@ completion dependency.
 Splitting a task / adding a phase and turning an investigation into implementation
 start in **Workstream**: select the source item, then choose its action.
 
-Workstream items occupy two rows: a colored type icon and ID on the upper left,
+Workstream items occupy two rows: a muted type icon and ID on the upper left,
 the main repository and colored status below, and the description wrapping across
 both rows on the right. Selection highlights the entire two-row item. Other item
-pickers retain their compact, flat rows with colored Nerd Font icons.
+pickers retain their compact, flat rows with the same Nerd Font icons.
+Blue is the shared focus/active accent. Type and ordinary action icons are muted;
+status uses green for done, yellow for blocked, and red for dropped. Destructive
+actions use red. Icons and labels convey the meaning independently of color.
 Filtering matches full IDs and metadata even when a displayed name is shortened.
 
 The built-in guided flow keeps one full-screen session across menus, text inputs,

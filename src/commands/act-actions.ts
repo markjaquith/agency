@@ -1,7 +1,6 @@
 import { Effect } from "effect"
 import type { GraphNode } from "../graph-schema"
 import type { BaseCommandOptions } from "../utils/command"
-import { macchiato } from "../utils/theme"
 import type { ActionPrompts } from "./act-prompts"
 import { archive } from "./archive"
 import { repo } from "./repo"
@@ -88,77 +87,66 @@ export const actionGroups = [
 		id: "create",
 		label: "Create a task",
 		icon: "󰐕",
-		color: macchiato.green,
 		actions: ["task-create", "investigation-create"],
 	},
 	{
 		id: "work",
 		label: "Work on a task or phase",
 		icon: "",
-		color: macchiato.blue,
 		actions: ["work"],
 	},
 	{
 		id: "review",
 		label: "Review someone else's work",
 		icon: "󰍉",
-		color: macchiato.sapphire,
 		actions: ["review", "review-ref"],
 	},
 	{
 		id: "split",
 		label: "Split a task / add a phase",
 		icon: "",
-		color: macchiato.mauve,
 		actions: ["split"],
 	},
 	{
 		id: "handoff",
 		label: "Turn investigation into implementation",
 		icon: "",
-		color: macchiato.yellow,
 		actions: ["handoff"],
 	},
 	{
 		id: "current-work",
 		label: "See current work",
 		icon: "",
-		color: macchiato.blue,
 		actions: ["current-work"],
 	},
 	{
 		id: "browse",
 		label: "Browse items",
 		icon: "",
-		color: macchiato.yellow,
 		actions: [],
 	},
 	{
 		id: "pull-request",
 		label: "Update pull-request status",
 		icon: "",
-		color: macchiato.sapphire,
 		actions: ["sync", "pr", "pr-ready", "pr-close"],
 	},
 	{
 		id: "close",
 		label: "Close or reopen work",
 		icon: "󰄬",
-		color: macchiato.green,
 		actions: ["complete", "drop", "sync", "reopen"],
 	},
 	{
 		id: "archive",
 		label: "Archive finished work",
 		icon: "",
-		color: macchiato.overlay1,
 		actions: ["archive"],
 	},
 	{
 		id: "repository",
 		label: "Add a repository",
 		icon: "",
-		color: macchiato.overlay1,
 		actions: ["repo-add", "repo-link"],
 	},
 ] as const

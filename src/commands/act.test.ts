@@ -349,11 +349,11 @@ describe("act command", () => {
 		)
 		expect(choices[0]?.segments?.[0]).toEqual({
 			text: "󰗡  ",
-			color: macchiato.sapphire,
+			color: macchiato.overlay1,
 		})
 		expect(choices[1]?.segments?.[0]).toEqual({
-			text: "󰔚  ",
-			color: macchiato.yellow,
+			text: "  ",
+			color: macchiato.overlay1,
 		})
 		expect(choices[1]?.segments).toContainEqual({
 			text: "build",

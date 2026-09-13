@@ -503,7 +503,7 @@ describe("OpenTUI interaction", () => {
 			)!
 			expect(
 				active.spans.find((span) => span.text === "▌ ")?.fg.toInts(),
-			).toEqual([198, 160, 246, 255])
+			).toEqual([138, 173, 244, 255])
 			expect(
 				active.spans.find((span) => span.text === "╭─ ")?.fg.toInts(),
 			).toEqual([128, 135, 162, 255])

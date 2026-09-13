@@ -158,21 +158,23 @@ const shellCommand = (argv: readonly string[]) =>
 		)
 		.join(" ")
 const available = (action: ActAction) => !action.blockedReason
-const actionStyles: Record<string, { icon: string; color: string }> = {
-	reopen: { icon: "󰑓", color: macchiato.yellow },
-	drop: { icon: "󰅖", color: macchiato.red },
-	complete: { icon: "󰄬", color: macchiato.green },
-	sync: { icon: "󰑓", color: macchiato.sapphire },
-	"pr-ready": { icon: "", color: macchiato.green },
-	"pr-close": { icon: "", color: macchiato.red },
+const actionIcons: Record<string, string> = {
+	reopen: "󰑓",
+	drop: "󰅖",
+	complete: "󰄬",
+	sync: "󰑓",
+	"pr-ready": "󰄬",
+	"pr-close": "",
 }
 const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
 	actions.map(({ id, label }) => {
-		const { icon, color } =
-			actionStyles[id] ??
+		const icon =
+			actionIcons[id] ??
 			actionGroups.find((group) =>
 				group.actions.some((action) => action === id),
-			)!
+			)!.icon
+		const color =
+			id === "drop" || id === "pr-close" ? macchiato.red : macchiato.overlay1
 		return {
 			key: id,
 			value: id,
@@ -444,12 +446,15 @@ const actStep = (
 				return answer
 			})
 		if (!selectedKey && !actionId) {
-			const goals = actionGroups.map(({ id, label, icon, color }) => ({
+			const goals = actionGroups.map(({ id, label, icon }) => ({
 				key: id,
 				label: `${icon}  ${label}`,
 				plainLabel: label,
 				value: id,
-				segments: [{ text: `${icon}  `, color }, { text: label }],
+				segments: [
+					{ text: `${icon}  `, color: macchiato.overlay1 },
+					{ text: label },
+				],
 			}))
 			let goal: string | undefined = state.goal
 			if (goal) {

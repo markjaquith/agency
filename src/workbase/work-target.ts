@@ -68,7 +68,7 @@ const statuses: Record<
 > = {
 	open: { icon: "󰄱", color: macchiato.overlay1 },
 	working: { icon: "󰔟", color: macchiato.blue },
-	delegated: { icon: "󰁕", color: macchiato.mauve },
+	delegated: { icon: "󰁕", color: macchiato.blue },
 	done: { icon: "󰄬", color: macchiato.green },
 	dropped: { icon: "󰅖", color: macchiato.red },
 }
@@ -77,9 +77,9 @@ const kinds: Record<
 	WorkTarget["kind"],
 	{ readonly icon: string; readonly color: string }
 > = {
-	epic: { icon: "", color: macchiato.mauve },
-	task: { icon: "󰗡", color: macchiato.sapphire },
-	phase: { icon: "󰔚", color: macchiato.yellow },
+	epic: { icon: "", color: macchiato.overlay1 },
+	task: { icon: "󰗡", color: macchiato.overlay1 },
+	phase: { icon: "", color: macchiato.overlay1 },
 }
 
 export { statuses as workStatusStyle, kinds as workKindStyle }
