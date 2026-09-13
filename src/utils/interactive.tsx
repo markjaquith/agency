@@ -520,12 +520,24 @@ export const InteractiveTabbedPrompt = (props: {
 			backgroundColor={macchiato.surface0}
 		>
 			<Show when={brandHeight() > 0}>
-				<text fg={macchiato.blue} height={1} flexShrink={0}>
+				<text
+					fg={macchiato.blue}
+					height={1}
+					flexShrink={0}
+					paddingLeft={1}
+					paddingRight={1}
+				>
 					{"  Agency"}
 				</text>
 				<box height={1} flexShrink={0} />
 			</Show>
-			<box flexDirection="row" height={1} flexShrink={0}>
+			<box
+				flexDirection="row"
+				height={1}
+				flexShrink={0}
+				paddingLeft={1}
+				paddingRight={1}
+			>
 				<For each={props.tabs}>
 					{(tab, index) => (
 						<text
@@ -546,6 +558,8 @@ export const InteractiveTabbedPrompt = (props: {
 				flexGrow={1}
 				minHeight={0}
 				backgroundColor={macchiato.base}
+				paddingLeft={1}
+				paddingRight={1}
 			>
 				<Show when={props.notice}>
 					<text fg={macchiato.text} height={1} flexShrink={0} wrapMode="none">
