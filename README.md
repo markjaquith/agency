@@ -532,8 +532,10 @@ agency validate
 
 ### Interactive Actions
 
-`agency act` starts with ten goals and **Browse items**. Choose a goal and then
-an eligible item, or browse existing items first to see their available actions. Creation
+`agency act` opens on the **Workbase** tab with ten goals. Press **Tab** to cycle
+to **Workload**, a flat list of non-archived tasks and phases; select an item to
+see its available actions. Each tab remembers its filter and selection. The active
+tab shares its background with the panel beneath it. Creation
 works even in an empty workbase. The guided flow collects required inputs,
 selects the sole repository automatically, and suggests IDs, base branches, and
 phase branches. Suggestions remain editable; choosing a base never adds a
@@ -548,7 +550,7 @@ and execution. On finish it restores the shell and leaves a compact recap of
 completed actions, affected items, and commands. Dry runs are labeled as previews;
 completed steps remain in the recap if a later step is cancelled or fails. Work
 handoffs restore the terminal before starting the interactive worker. A configured
-external chooser continues to use that chooser instead of the built-in session.
+external chooser continues to offer goals and **Browse items** through that chooser.
 
 | Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------- |

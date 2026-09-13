@@ -291,23 +291,54 @@ export const act = (
 				return answer
 			})
 		if (!selectedKey && !actionId) {
-			const goal = yield* select(
-				"Your mission:",
-				actionGroups.map(({ id, label, icon, color }) => ({
-					key: id,
-					label: `${icon}  ${label}`,
-					plainLabel: label,
-					value: id,
-					segments: [{ text: `${icon}  `, color }, { text: label }],
-				})),
-			)
+			const goals = actionGroups.map(({ id, label, icon, color }) => ({
+				key: id,
+				label: `${icon}  ${label}`,
+				plainLabel: label,
+				value: id,
+				segments: [{ text: `${icon}  `, color }, { text: label }],
+			}))
+			let goal: string | undefined
+			if (ui.tabs) {
+				type HomeChoice = { kind: "goal" | "item"; id: string }
+				const chosen = yield* ui.tabs<HomeChoice>([
+					{
+						id: "workbase",
+						label: "  Workbase",
+						prompt: "Your mission:",
+						choices: goals
+							.filter((choice) => choice.value !== "browse")
+							.map((choice) => ({
+								...choice,
+								value: { kind: "goal", id: choice.value },
+							})),
+					},
+					{
+						id: "workload",
+						label: "  Workload",
+						prompt: "Choose an item",
+						emptyLabel: "No tasks or phases yet",
+						choices: entityChoices(
+							nodes.filter(
+								(node) => node.kind === "task" || node.kind === "phase",
+							),
+						).map((choice) => ({
+							...choice,
+							value: { kind: "item", id: choice.value },
+						})),
+					},
+				])
+				if (!chosen) return yield* Effect.fail(new ActCancelled())
+				if (chosen.kind === "item") selectedKey = chosen.id
+				else goal = chosen.id
+			} else goal = yield* select("Your mission:", goals)
 			if (goal === "browse") {
 				if (!nodes.length)
 					return yield* Effect.fail(
 						new Error("No work items yet; choose Create a task first"),
 					)
 				selectedKey = yield* select("Choose an item", entityChoices(nodes))
-			} else {
+			} else if (goal) {
 				const group = actionGroups.find((group) => group.id === goal)!
 				const all = [...globals, ...Array.from(catalog.values()).flat()]
 				const choices = group.actions.flatMap((id) => {
@@ -452,8 +483,8 @@ export const act = (
 export const help = `
 Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]
 
-Choose a goal, or Browse items to start with existing work. Guided creation
-offers an explicit Work choice afterward; creation alone never starts work.
+Choose a goal in Workbase, or press Tab for tasks/phases in Workload. Guided
+creation offers an explicit Work choice afterward; creation alone never starts work.
 An existing directory selects its containing epic, task, or phase; otherwise
 the positional value is a task ID. Selectors skip item selection.
 

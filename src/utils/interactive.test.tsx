@@ -8,6 +8,7 @@ import {
 	fuzzyChoices,
 	hierarchyPrefix,
 	InteractiveSelectPrompt,
+	InteractiveTabbedPrompt,
 	InteractiveTextPrompt,
 	interactiveRendererConfig,
 	interactiveSelectRendererConfig,
@@ -42,6 +43,130 @@ const submitEditedText = async (
 }
 
 describe("OpenTUI interaction", () => {
+	test("cycles tabs with independent filter/selection state and a contiguous active panel", async () => {
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{
+							id: "workbase",
+							label: "Workbase",
+							prompt: "Your mission:",
+							choices: [
+								{ key: "create", label: "Create a task" },
+								{ key: "work", label: "Work on a task" },
+							],
+						},
+						{
+							id: "workload",
+							label: "Workload",
+							prompt: "Choose an item",
+							choices: [
+								{ key: "one", label: "First task" },
+								{ key: "two", label: "Second task" },
+							],
+						},
+					]}
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 60, height: 12 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			expect(setup.captureCharFrame()).toContain("Your mission:")
+			expect(setup.captureCharFrame()).not.toContain("First task")
+			const spans = setup.captureSpans().lines.flatMap((line) => line.spans)
+			const panelColor = spans
+				.find((span) => span.text.includes("Your mission:"))!
+				.bg.toInts()
+			expect(
+				spans.find((span) => span.text.includes("Workbase"))!.bg.toInts(),
+			).toEqual(panelColor)
+			expect(
+				spans.find((span) => span.text.includes("Workload"))!.bg.toInts(),
+			).not.toEqual(panelColor)
+			await setup.mockInput.typeText("task")
+			setup.mockInput.pressArrow("down")
+			await setup.flush()
+			setup.mockInput.pressKey(KeyCodes.TAB)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("Choose an item")
+			expect(setup.captureCharFrame()).toContain("filter")
+			await setup.mockInput.typeText("Second")
+			await setup.flush()
+			expect(setup.captureCharFrame()).not.toContain("First task")
+			setup.mockInput.pressKey(KeyCodes.TAB)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("▌ Work on a task")
+			setup.mockInput.pressKey(KeyCodes.TAB, { shift: true })
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("Second")
+			setup.resize(32, 6)
+			await setup.flush()
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => submitted !== undefined)
+			expect(submitted).toBe("two")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("an empty workload stays navigable and only the active tab handles cancellation", async () => {
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{
+							id: "workbase",
+							label: "Workbase",
+							prompt: "Your mission:",
+							choices: [{ key: "create", label: "Create a task" }],
+						},
+						{
+							id: "workload",
+							label: "Workload",
+							prompt: "Choose an item",
+							choices: [],
+							emptyLabel: "No tasks or phases yet",
+						},
+					]}
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 40, height: 8 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("create")
+			await setup.flush()
+			setup.mockInput.pressKey(KeyCodes.TAB)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("No tasks or phases yet")
+			setup.mockInput.pressEnter()
+			setup.mockInput.pressKey("n", { ctrl: true })
+			await setup.flush()
+			expect(submitted).toBeUndefined()
+			setup.mockInput.pressEscape()
+			// A standalone Escape waits for the terminal decoder's ambiguity timeout.
+			await Bun.sleep(30)
+			await setup.flush()
+			expect(submitted).toBeNull()
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("selects the Solid JSX runtime without the project preload", async () => {
 		const source = await Bun.file(
 			new URL("./interactive.tsx", import.meta.url),

@@ -183,6 +183,12 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 
 interface SelectPromptProps extends PromptProps<string> {
 	readonly choices: readonly InteractiveChoice[]
+	readonly active?: boolean
+	readonly embedded?: boolean
+	readonly reservedRows?: number
+	readonly backgroundColor?: string
+	readonly emptyLabel?: string
+	readonly onTab?: () => void
 }
 
 const isWordBoundary = (value: string, index: number) =>
@@ -307,6 +313,13 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		setSelected((current) => (current + offset + count) % count)
 	}
 	useKeyboard((key) => {
+		if (props.active === false || key.propagationStopped) return
+		if (key.name === "tab" && props.onTab) {
+			key.preventDefault()
+			key.stopPropagation()
+			props.onTab()
+			return
+		}
 		if (key.name === "escape" && query()) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -342,11 +355,13 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		if (choice) props.onDone(choice.key)
 	})
 
-	const brandHeight = () => (dimensions().height > 4 ? 1 : 0)
-	const gapHeight = () => (dimensions().height > 5 ? 1 : 0)
+	const height = () => dimensions().height - (props.reservedRows ?? 0)
+	const background = () => props.backgroundColor ?? macchiato.base
+	const brandHeight = () => (!props.embedded && height() > 4 ? 1 : 0)
+	const gapHeight = () => (height() > (props.embedded ? 3 : 5) ? 1 : 0)
 	const visible = () => {
 		const visibleCount = Math.max(
-			dimensions().height - 2 - 2 * brandHeight() - gapHeight(),
+			height() - 2 - 2 * brandHeight() - gapHeight(),
 			1,
 		)
 		const start = Math.min(
@@ -367,7 +382,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			flexDirection="column"
 			width="100%"
 			height="100%"
-			backgroundColor={macchiato.base}
+			backgroundColor={background()}
 		>
 			{brandHeight() > 0 && (
 				<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
@@ -380,7 +395,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			</text>
 			<box flexDirection="row" width="100%" height={1} flexShrink={0}>
 				<textarea
-					focused
+					focused={props.active !== false}
 					flexGrow={1}
 					minWidth={8}
 					height={1}
@@ -388,7 +403,9 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					placeholder="filter"
 					placeholderColor={macchiato.overlay0}
 					backgroundColor={macchiato.mantle}
-					focusedBackgroundColor={macchiato.surface0}
+					focusedBackgroundColor={
+						props.embedded ? macchiato.surface1 : macchiato.surface0
+					}
 					textColor={macchiato.text}
 					focusedTextColor={macchiato.text}
 					cursorColor={macchiato.rosewater}
@@ -400,7 +417,8 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 					ref={(next) => {
 						input = next
 						queueMicrotask(() => {
-							if (input && !input.isDestroyed) input.focus()
+							if (input && !input.isDestroyed && props.active !== false)
+								input.focus()
 						})
 					}}
 				/>
@@ -409,19 +427,23 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			<box flexDirection="column" flexGrow={1}>
 				<For
 					each={visible()}
-					fallback={<text fg={macchiato.overlay1}>No matches</text>}
+					fallback={
+						<text fg={macchiato.overlay1}>
+							{query() ? "No matches" : (props.emptyLabel ?? "No matches")}
+						</text>
+					}
 				>
 					{({ choice, index, originalIndex }) => (
 						<box
 							width="100%"
 							height={1}
 							backgroundColor={
-								index === selected() ? macchiato.surface1 : macchiato.base
+								index === selected() ? macchiato.surface1 : background()
 							}
 						>
 							<text
 								fg={index === selected() ? macchiato.text : macchiato.subtext0}
-								bg={index === selected() ? macchiato.surface1 : macchiato.base}
+								bg={index === selected() ? macchiato.surface1 : background()}
 								wrapMode="none"
 							>
 								<span
@@ -452,6 +474,75 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	)
 }
 
+export interface InteractiveTab {
+	readonly id: string
+	readonly label: string
+	readonly prompt: string
+	readonly choices: readonly InteractiveChoice[]
+	readonly emptyLabel?: string
+}
+
+export const InteractiveTabbedPrompt = (props: {
+	readonly tabs: readonly InteractiveTab[]
+	readonly onDone: (value: string | null) => void
+}) => {
+	const dimensions = useTerminalDimensions()
+	const [active, setActive] = createSignal(0)
+	const brandHeight = () => (dimensions().height > 5 ? 2 : 0)
+	return (
+		<box
+			flexDirection="column"
+			width="100%"
+			height="100%"
+			backgroundColor={macchiato.base}
+		>
+			<Show when={brandHeight() > 0}>
+				<text fg={macchiato.blue} height={1} flexShrink={0}>
+					{"  Agency"}
+				</text>
+				<box height={1} flexShrink={0} />
+			</Show>
+			<box flexDirection="row" height={1} flexShrink={0}>
+				<For each={props.tabs}>
+					{(tab, index) => (
+						<text
+							fg={index() === active() ? macchiato.text : macchiato.overlay1}
+							bg={index() === active() ? macchiato.surface0 : macchiato.base}
+							wrapMode="none"
+						>{` ${tab.label} `}</text>
+					)}
+				</For>
+			</box>
+			<box
+				flexDirection="column"
+				flexGrow={1}
+				minHeight={0}
+				backgroundColor={macchiato.surface0}
+			>
+				<For each={props.tabs}>
+					{(tab, index) => (
+						<box visible={index() === active()} width="100%" height="100%">
+							<InteractiveSelectPrompt
+								embedded
+								active={index() === active()}
+								reservedRows={brandHeight() + 1}
+								backgroundColor={macchiato.surface0}
+								prompt={tab.prompt}
+								choices={tab.choices}
+								emptyLabel={tab.emptyLabel}
+								onTab={() =>
+									setActive((current) => (current + 1) % props.tabs.length)
+								}
+								onDone={props.onDone}
+							/>
+						</box>
+					)}
+				</For>
+			</box>
+		</box>
+	)
+}
+
 const shutdown = async (renderer: CliRenderer) => {
 	await renderer.idle().catch(() => undefined)
 	if (renderer.externalOutputMode === "capture-stdout") {
@@ -463,6 +554,11 @@ const shutdown = async (renderer: CliRenderer) => {
 }
 
 type SessionView =
+	| {
+			kind: "tabs"
+			tabs: readonly InteractiveTab[]
+			finish: (value: string | null) => void
+	  }
 	| {
 			kind: "select"
 			prompt: string
@@ -516,7 +612,12 @@ export const createInteractiveSession = async (
 			() => (
 				<Show when={view()} keyed>
 					{(current) =>
-						current.kind === "select" ? (
+						current.kind === "tabs" ? (
+							<InteractiveTabbedPrompt
+								tabs={current.tabs}
+								onDone={current.finish}
+							/>
+						) : current.kind === "select" ? (
 							<InteractiveSelectPrompt
 								prompt={current.prompt}
 								choices={current.choices}
@@ -540,7 +641,11 @@ export const createInteractiveSession = async (
 		await shutdown(renderer)
 		throw error
 	}
-	const ask = (prompt: string, choices?: readonly InteractiveChoice[]) => {
+	const ask = (
+		prompt: string,
+		choices?: readonly InteractiveChoice[],
+		tabs?: readonly InteractiveTab[],
+	) => {
 		if (closed || cancelled) return Promise.resolve(null)
 		return new Promise<string | null>((resolve) => {
 			pending = (value) => {
@@ -549,14 +654,17 @@ export const createInteractiveSession = async (
 				resolve(value)
 			}
 			setView(
-				choices
-					? { kind: "select", prompt, choices, finish: pending }
-					: { kind: "text", prompt, finish: pending },
+				tabs
+					? { kind: "tabs", tabs, finish: pending }
+					: choices
+						? { kind: "select", prompt, choices, finish: pending }
+						: { kind: "text", prompt, finish: pending },
 			)
 			renderer.requestRender()
 		})
 	}
 	return {
+		tabs: (tabs: readonly InteractiveTab[]) => ask("", undefined, tabs),
 		text: (prompt: string) => ask(prompt),
 		select: (prompt: string, choices: readonly InteractiveChoice[]) =>
 			ask(prompt, choices),

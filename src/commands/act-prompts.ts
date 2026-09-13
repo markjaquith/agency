@@ -2,12 +2,23 @@ import { Effect } from "effect"
 import { choose, type Choice } from "../utils/chooser"
 
 export interface ActInteraction {
+	readonly tabs?: <T>(
+		tabs: readonly ActTab<T>[],
+	) => Effect.Effect<T | null, Error>
 	readonly text?: (prompt: string) => Effect.Effect<string | null, Error>
 	readonly select: <T>(
 		prompt: string,
 		choices: readonly Choice<T>[],
 		command?: readonly string[],
 	) => Effect.Effect<T | null, Error>
+}
+
+interface ActTab<T> {
+	readonly id: string
+	readonly label: string
+	readonly prompt: string
+	readonly choices: readonly Choice<T>[]
+	readonly emptyLabel?: string
 }
 
 export class ActCancelled extends Error {}
@@ -52,6 +63,24 @@ export const openActSession = () =>
 					catch: (cause) => new Error("Interactive session failed", { cause }),
 				})
 			const interaction: ActInteraction = {
+				tabs: (tabs) =>
+					attempt(async () => {
+						const key = await session.tabs(
+							tabs.map((tab) => ({
+								...tab,
+								choices: tab.choices.map((choice) => ({
+									...choice,
+									label: choice.plainLabel ?? choice.label,
+								})),
+							})),
+						)
+						if (key === null) return null
+						const choice = tabs
+							.flatMap((tab) => tab.choices)
+							.find((choice) => choice.key === key)
+						if (!choice) throw new Error("Invalid tab selection")
+						return choice.value
+					}),
 				text: (prompt) => attempt(() => session.text(prompt)),
 				select: (prompt, choices) =>
 					attempt(async () => {

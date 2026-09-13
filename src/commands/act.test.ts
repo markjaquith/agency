@@ -79,6 +79,90 @@ describe("act command", () => {
 		})
 	})
 
+	test("Workload offers non-archived tasks and phases and dispatches its selected item", async () => {
+		await createTask("archived")
+		for (const action of ["drop", "archive"])
+			await runTestEffect(
+				act(
+					{ cwd: root, action, taskId: "archived", silent: true },
+					scriptedInteraction([]),
+				),
+			)
+		await createTask("single")
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "build"],
+				repo: "agency",
+				branch: "task/multi-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const prompts: string[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, silent: true },
+				{
+					...scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+					tabs: (tabs) => {
+						expect(tabs.map((tab) => tab.id)).toEqual(["workbase", "workload"])
+						expect(
+							tabs[0]!.choices.some((choice) => choice.key === "browse"),
+						).toBe(false)
+						const workload = tabs[1]!.choices
+						expect(workload.map((choice) => choice.key)).toEqual([
+							"task:multi",
+							"phase:multi/build",
+							"task:single",
+						])
+						return Effect.succeed(
+							workload.find((choice) => choice.key === "phase:multi/build")!
+								.value,
+						)
+					},
+				},
+			),
+		)
+		expect(prompts).toEqual(["Act on phase multi/build"])
+		expect(
+			await Bun.file(join(root, "tasks/multi/phases/build/PHASE.md")).text(),
+		).toContain("status: dropped")
+	})
+
+	test("Workbase tab choices reuse the goal workflow with an empty Workload", async () => {
+		let selected = false
+		await runTestEffect(
+			act(
+				{ cwd: root, silent: true },
+				{
+					select: () => {
+						throw new Error("No follow-up selection expected")
+					},
+					tabs: (tabs) => {
+						selected = true
+						expect(tabs[1]!.choices).toEqual([])
+						return Effect.succeed(
+							tabs[0]!.choices.find((choice) => choice.key === "current-work")!
+								.value,
+						)
+					},
+				},
+			),
+		)
+		expect(selected).toBe(true)
+	})
+
 	test("cancellation exits without changing the selected item", async () => {
 		await createTask("example")
 		await runTestEffect(
