@@ -2,6 +2,76 @@ import { expect, test } from "bun:test"
 import { Effect } from "effect"
 import { actionPrompts, ActCancelled, wizardInputs } from "./act-prompts"
 
+test("wizard replays choice keys against current values and isolates each execution", async () => {
+	let generation = 0
+	let selections = 0
+	const answers = [
+		"old",
+		null,
+		"changed",
+		"last",
+		"old",
+		null,
+		"changed",
+		"last",
+	]
+	const collect = wizardInputs(
+		{
+			select: (_, choices) =>
+				Effect.sync(() => {
+					selections++
+					return choices[0]!.value
+				}),
+			text: () => Effect.sync(() => answers.shift()!),
+		},
+		(ui) =>
+			Effect.gen(function* () {
+				const current = ++generation
+				const selected = yield* ui.select("Repository", [
+					{ key: "demo", label: "Demo", value: { generation: current } },
+				])
+				const p = actionPrompts(ui, [], [])
+				const second = yield* p.text("Second")
+				yield* p.text("Third")
+				return { selected, second }
+			}),
+		() => true,
+	)
+	expect(await Effect.runPromise(collect)).toEqual({
+		selected: { generation: 2 },
+		second: "changed",
+	})
+	expect(await Effect.runPromise(collect)).toEqual({
+		selected: { generation: 4 },
+		second: "changed",
+	})
+	expect(selections).toBe(2)
+})
+
+test("wizard propagates input failures without replaying the collector", async () => {
+	const failure = new Error("Terminal unavailable")
+	let runs = 0
+	const result = await Effect.runPromise(
+		Effect.either(
+			wizardInputs(
+				{
+					select: () => Effect.succeed(null),
+					text: () => Effect.fail(failure),
+				},
+				(ui) =>
+					Effect.suspend(() => {
+						runs++
+						return actionPrompts(ui, [], []).text("Outcome")
+					}),
+				() => true,
+			),
+		),
+	)
+	expect(result._tag).toBe("Left")
+	if (result._tag === "Left") expect(result.left).toBe(failure)
+	expect(runs).toBe(1)
+})
+
 test("wizard Escape returns one visible prompt and recomputes later defaults", async () => {
 	const answers = [
 		"Original outcome",

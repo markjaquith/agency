@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Data, Effect } from "effect"
 import { choose, type Choice } from "../utils/chooser"
 
 export interface ActInteraction {
@@ -21,44 +21,67 @@ interface ActTab<T> {
 	readonly emptyLabel?: string
 }
 
-export class ActCancelled extends Error {}
+export class ActCancelled extends Data.TaggedError("ActCancelled") {}
 
-/** Replay only input collection, retaining the answers before the previous prompt. */
+/**
+ * Collect inputs only: this callback must not execute operations or mutate work.
+ * Going back replays its answered prefix, then reopens the preceding prompt.
+ * Cache text and stable choice keys, never generic values from a previous run.
+ */
 export const wizardInputs = <T>(
 	interaction: ActInteraction,
 	collect: (interaction: ActInteraction) => Effect.Effect<T, Error>,
 	canGoBack: () => boolean,
 ): Effect.Effect<T, Error> =>
 	Effect.suspend(() => {
-		const answers: unknown[] = []
+		const answers: string[] = []
 		let cursor = 0
-		const ask = <A>(read: () => Effect.Effect<A | null, Error>) =>
+		const ask = (read: () => Effect.Effect<string | null, Error>) =>
 			Effect.suspend(() => {
 				const index = cursor++
-				if (index < answers.length) return Effect.succeed(answers[index] as A)
+				if (index < answers.length) return Effect.succeed(answers[index]!)
 				return read().pipe(
-					Effect.map((answer) => {
-						if (answer !== null) answers.push(answer)
-						return answer
-					}),
+					Effect.tap((answer) =>
+						Effect.sync(() => {
+							if (answer !== null) answers.push(answer)
+						}),
+					),
 				)
 			})
 		const ui: ActInteraction = {
 			...interaction,
 			text: (prompt) => ask(() => (interaction.text ?? readText)(prompt)),
 			select: (prompt, choices, command) =>
-				ask(() => interaction.select(prompt, choices, command)),
+				ask(() =>
+					interaction.select(
+						prompt,
+						choices.map((choice) => ({ ...choice, value: choice.key })),
+						command,
+					),
+				).pipe(
+					Effect.flatMap((key) => {
+						if (key === null) return Effect.succeed(null)
+						const choice = choices.find((choice) => choice.key === key)
+						return choice
+							? Effect.succeed(choice.value)
+							: Effect.fail(
+									new Error(`Wizard choice '${key}' is no longer available`),
+								)
+					}),
+				),
 		}
 		const run = (): Effect.Effect<T, Error> =>
 			Effect.suspend(() => {
 				cursor = 0
 				return collect(ui).pipe(
-					Effect.catchAll((error) => {
-						if (!(error instanceof ActCancelled) || cursor < 2 || !canGoBack())
-							return Effect.fail(error)
-						answers.length = cursor - 2
-						return run()
-					}),
+					Effect.catchIf(
+						(error): error is ActCancelled => error instanceof ActCancelled,
+						(error) => {
+							if (cursor < 2 || !canGoBack()) return Effect.fail(error)
+							answers.length = cursor - 2
+							return run()
+						},
+					),
 				)
 			})
 		return run()

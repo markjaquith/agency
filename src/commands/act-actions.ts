@@ -51,6 +51,7 @@ interface Details {
 }
 export interface ActAction extends Details {
 	readonly preview: Plan
+	/** Replayable input collection. All mutations belong in the returned plan.run. */
 	readonly prepare: (prompts: ActionPrompts) => Effect.Effect<Plan, Error>
 }
 
