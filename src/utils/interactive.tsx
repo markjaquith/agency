@@ -490,25 +490,25 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 												)}
 											</For>
 										</text>
-										<box flexDirection="row" height={1}>
-											<text
-												flexGrow={1}
-												minWidth={0}
-												width={0}
-												wrapMode="none"
-												fg={choice.details.subtitle.color}
+										<text height={1} wrapMode="none">
+											<span
+												style={
+													{
+														fg: choice.details.subtitle.color,
+													} as TextNodeOptions
+												}
 											>
-												{choice.details.subtitle.text}
-											</text>
-											<text
-												width={13}
-												flexShrink={0}
-												wrapMode="none"
-												fg={choice.details.badge.color}
+												{choice.details.subtitle.text.trimEnd()}
+												{"  "}
+											</span>
+											<span
+												style={
+													{ fg: choice.details.badge.color } as TextNodeOptions
+												}
 											>
 												{choice.details.badge.text}
-											</text>
-										</box>
+											</span>
+										</text>
 									</box>
 									<box width={2} flexShrink={0} />
 									<text
