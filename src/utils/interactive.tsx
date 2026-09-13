@@ -399,34 +399,50 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			</text>
 			<box flexDirection="row" width="100%" height={1} flexShrink={0}>
 				<text fg={macchiato.blue}>{"  "}</text>
-				<textarea
-					focused={props.active !== false}
+				<box
+					flexDirection="row"
 					flexGrow={1}
-					minWidth={8}
+					minWidth={10}
 					height={1}
-					wrapMode="none"
-					placeholder="type to filter"
-					placeholderColor={macchiato.overlay0}
-					backgroundColor={macchiato.mantle}
-					focusedBackgroundColor={
-						props.embedded ? macchiato.surface1 : macchiato.surface0
+					paddingLeft={1}
+					paddingRight={1}
+					backgroundColor={
+						props.active === false
+							? macchiato.mantle
+							: props.embedded
+								? macchiato.surface1
+								: macchiato.surface0
 					}
-					textColor={macchiato.text}
-					focusedTextColor={macchiato.text}
-					cursorColor={macchiato.rosewater}
-					keyBindings={[{ name: "return", action: "submit" }]}
-					onContentChange={() => {
-						editing.handleInput(input?.plainText ?? "")
-						setSelected(0)
-					}}
-					ref={(next) => {
-						input = next
-						queueMicrotask(() => {
-							if (input && !input.isDestroyed && props.active !== false)
-								input.focus()
-						})
-					}}
-				/>
+				>
+					<textarea
+						focused={props.active !== false}
+						flexGrow={1}
+						minWidth={8}
+						height={1}
+						wrapMode="none"
+						placeholder="type to filter"
+						placeholderColor={macchiato.overlay0}
+						backgroundColor={macchiato.mantle}
+						focusedBackgroundColor={
+							props.embedded ? macchiato.surface1 : macchiato.surface0
+						}
+						textColor={macchiato.text}
+						focusedTextColor={macchiato.text}
+						cursorColor={macchiato.rosewater}
+						keyBindings={[{ name: "return", action: "submit" }]}
+						onContentChange={() => {
+							editing.handleInput(input?.plainText ?? "")
+							setSelected(0)
+						}}
+						ref={(next) => {
+							input = next
+							queueMicrotask(() => {
+								if (input && !input.isDestroyed && props.active !== false)
+									input.focus()
+							})
+						}}
+					/>
+				</box>
 			</box>
 			<box height={gapHeight()} flexShrink={0} />
 			<box flexDirection="column" flexGrow={1}>

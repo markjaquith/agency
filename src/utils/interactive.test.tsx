@@ -291,7 +291,7 @@ describe("OpenTUI interaction", () => {
 			expect(rows[0]?.trim()).toBe("  Agency")
 			expect(rows[1]?.trim()).toBe("")
 			expect(rows[2]?.trim()).toBe("Work on")
-			expect(rows[3]?.trim()).toBe("  type to filter")
+			expect(rows[3]?.trim()).toBe("   type to filter")
 			expect(rows[4]?.trim()).toBe("")
 			expect(frame).not.toContain("enter select")
 			for (let index = 0; index < 3; index++) {
