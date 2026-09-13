@@ -557,6 +557,8 @@ and execution, with the tabs visible throughout. Item actions use colored icons
 and return to the same item's refreshed action menu, with the latest outcome
 above the prompt. Text-entry prompts support Shift-Return for a newline and
 Return to submit, including multiline outcomes and completion summaries.
+Wizard editors fill the available height and keep an editing hint visible below
+the input; longer content scrolls with the cursor as the terminal resizes.
 In wizard inputs, Escape clears entered text first; with an
 empty input it returns one prompt, retaining earlier answers and recomputing later
 defaults. Escape from the first input returns to the menu; Escape from an item's

@@ -157,12 +157,14 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 					<box height={1} flexShrink={0} />
 				</>
 			)}
-			<text fg={macchiato.blue}>
+			<text fg={macchiato.blue} flexShrink={0}>
 				{props.fullScreen ? `  ${props.prompt}` : props.prompt}
 			</text>
 			<textarea
 				focused
-				height={2}
+				height={props.fullScreen ? 0 : 2}
+				flexGrow={props.fullScreen ? 1 : 0}
+				minHeight={1}
 				wrapMode="word"
 				backgroundColor={macchiato.mantle}
 				focusedBackgroundColor={macchiato.surface0}
@@ -181,11 +183,11 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 					input = next
 				}}
 			/>
-			<Show when={!props.fullScreen}>
-				<text fg={macchiato.overlay1} wrapMode="none">
-					enter submit | shift-enter newline | esc cancel
-				</text>
-			</Show>
+			<text fg={macchiato.overlay1} wrapMode="none" height={1} flexShrink={0}>
+				{props.embedded
+					? "enter submit | shift-enter newline | esc clear/back"
+					: "enter submit | shift-enter newline | esc cancel"}
+			</text>
 		</box>
 	)
 }
