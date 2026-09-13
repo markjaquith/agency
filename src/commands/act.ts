@@ -570,7 +570,7 @@ const actStep = (
 					graph.nodes
 						.filter((node) => node.kind === "repository")
 						.map((node) => node.key),
-					nodes.map((node) => node.key),
+					nodes.filter((node) => node.kind !== "epic").map((node) => node.key),
 					config.chooserCommand,
 				),
 			)

@@ -565,6 +565,9 @@ the input; longer content scrolls with the cursor as the terminal resizes.
 Submitting a blank required field retries that prompt with an explanation and
 keeps earlier answers. Only input validation is retried; execution failures are
 reported without automatically repeating a mutation.
+Task, phase, review, and handoff ID prompts also check Agency's ID format and
+currently known duplicate IDs before continuing. Native commands still perform
+the final validation when executing, including concurrent changes.
 In wizard inputs, Escape clears entered text first; with an
 empty input it returns one prompt, retaining earlier answers and recomputing later
 defaults. Escape from the first input returns to the menu; Escape from an item's

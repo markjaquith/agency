@@ -2,6 +2,45 @@ import { expect, test } from "bun:test"
 import { Effect } from "effect"
 import { actionPrompts, ActCancelled, wizardInputs } from "./act-prompts"
 
+test("wizard rejects malformed and duplicate phase IDs at the ID prompt", async () => {
+	const answers = ["Kept outcome", "../bad", "build", "build-next"]
+	const seen: string[] = []
+	const errors: string[] = []
+	const result = await Effect.runPromise(
+		wizardInputs(
+			{
+				select: () => Effect.succeed(null),
+				text: (prompt) =>
+					Effect.sync(() => {
+						seen.push(prompt)
+						if (!answers.length) throw new Error("Unexpected prompt")
+						return answers.shift()!
+					}),
+			},
+			(ui) =>
+				Effect.gen(function* () {
+					const p = actionPrompts(ui, [], ["multi/build"])
+					const outcome = yield* p.text("Outcome")
+					const id = yield* p.id("Phase ID", "build", "multi/")
+					return { outcome, id }
+				}),
+			() => true,
+			(message) => {
+				if (message) errors.push(message)
+			},
+		),
+	)
+	expect(result).toEqual({ outcome: "Kept outcome", id: "build-next" })
+	expect(seen).toEqual([
+		"Outcome: ",
+		"Phase ID [build-2]: ",
+		"Phase ID [build-2]: ",
+		"Phase ID [build-2]: ",
+	])
+	expect(errors[0]).toContain("must start with a letter or number")
+	expect(errors[1]).toBe("Phase ID 'build' is already in use")
+})
+
 test("wizard retries a required field without losing preceding answers", async () => {
 	const answers = ["Kept outcome", "", "", "fixed"]
 	const prompts: string[] = []

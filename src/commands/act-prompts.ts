@@ -1,4 +1,6 @@
 import { Data, Effect } from "effect"
+import { Schema } from "@effect/schema"
+import { EntityId } from "../workbase/schemas"
 import { choose, type Choice } from "../utils/chooser"
 
 export interface ActInteraction {
@@ -213,6 +215,7 @@ export const openActSession = () =>
 		catch: (cause) =>
 			new Error("Failed to open interactive session", { cause }),
 	})
+const isEntityId = Schema.is(EntityId)
 const slug = (text: string) =>
 	text
 		.toLowerCase()
@@ -251,7 +254,23 @@ export const actionPrompts = (
 			let suffix = 2
 			while (candidate && keys.includes(prefix + candidate))
 				candidate = `${base}-${suffix++}`
-			return text(label, candidate)
+			return text(label, candidate).pipe(
+				Effect.flatMap((value) => {
+					if (!isEntityId(value))
+						return Effect.fail(
+							new ActInputError({
+								message: `${label} must start with a letter or number and contain only letters, numbers, dots, underscores, or hyphens`,
+							}),
+						)
+					if (keys.includes(prefix + value))
+						return Effect.fail(
+							new ActInputError({
+								message: `${label} '${value}' is already in use`,
+							}),
+						)
+					return Effect.succeed(value)
+				}),
+			)
 		},
 		repository: (preferred?: string) =>
 			Effect.gen(function* () {
