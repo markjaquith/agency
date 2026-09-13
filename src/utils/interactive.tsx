@@ -169,7 +169,10 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 				textColor={macchiato.text}
 				focusedTextColor={macchiato.text}
 				cursorColor={macchiato.rosewater}
-				keyBindings={[{ name: "return", action: "submit" }]}
+				keyBindings={[
+					{ name: "return", action: "submit" },
+					{ name: "return", shift: true, action: "newline" },
+				]}
 				onSubmit={() => props.onDone(editing.value)}
 				onContentChange={() => {
 					editing.handleInput(input?.plainText ?? "")
@@ -180,7 +183,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			/>
 			<Show when={!props.fullScreen}>
 				<text fg={macchiato.overlay1} wrapMode="none">
-					enter submit | esc cancel
+					enter submit | shift-enter newline | esc cancel
 				</text>
 			</Show>
 		</box>

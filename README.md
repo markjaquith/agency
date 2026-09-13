@@ -555,7 +555,9 @@ Filtering matches full IDs and metadata even when a displayed name is shortened.
 The built-in guided flow keeps one full-screen session across menus, text inputs,
 and execution, with the tabs visible throughout. Item actions use colored icons
 and return to the same item's refreshed action menu, with the latest outcome
-above the prompt. In wizard inputs, Escape clears entered text first; with an
+above the prompt. Text-entry prompts support Shift-Return for a newline and
+Return to submit, including multiline outcomes and completion summaries.
+In wizard inputs, Escape clears entered text first; with an
 empty input it returns one prompt, retaining earlier answers and recomputing later
 defaults. Escape from the first input returns to the menu; Escape from an item's
 action menu returns to Workstream. Tab switches sections from any step. On

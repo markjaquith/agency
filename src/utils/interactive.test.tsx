@@ -917,6 +917,38 @@ describe("OpenTUI interaction", () => {
 		}
 	})
 
+	test("Shift-Return inserts a newline and Return submits the complete Outcome", async () => {
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTextPrompt
+					embedded
+					fullScreen
+					prompt="Outcome"
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 60, height: 8, kittyKeyboard: true },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await setup.mockInput.typeText("First line")
+			setup.mockInput.pressEnter({ shift: true })
+			await setup.mockInput.typeText("Second line")
+			await setup.flush()
+			expect(submitted).toBeUndefined()
+			expect(setup.captureCharFrame()).toMatch(/First line\s*\nSecond line/)
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => submitted !== undefined)
+			expect(submitted).toBe("First line\nSecond line")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("wraps text prompt input onto another line", async () => {
 		const setup = await testRender(
 			() => <InteractiveTextPrompt prompt="Task ID" onDone={() => {}} />,
