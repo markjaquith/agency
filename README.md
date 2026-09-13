@@ -555,7 +555,8 @@ and execution, with the tabs visible throughout. Item actions use colored icons
 and return to the same item's refreshed action menu, with the latest outcome
 above the prompt. Escape from an item's input returns to its actions; Escape from
 its action menu returns to Workstream. Tab switches sections from any step. On
-the front screen, Escape clears a filter first, then exits. Ctrl-C quits from any
+the front screen, Escape clears a filter first. With an empty filter it exits
+`agency act`, but keeps the TUI open when entered through bare `agency`. Ctrl-C quits from any
 screen. On exit it restores the shell and leaves a compact recap of
 completed actions, affected items, and commands. Dry runs are labeled as previews;
 completed steps remain in the recap if a later step is cancelled or fails. Work

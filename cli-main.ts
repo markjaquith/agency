@@ -189,6 +189,7 @@ const commands: Record<string, Command> = {
 					taskId: options.task,
 					phaseId: options.phase,
 					inputAllowed: options.inputAllowed,
+					exitOnEscape: options.exitOnEscape,
 					silent: options.silent,
 					verbose: options.verbose,
 					cwd: options.cwd,
@@ -883,6 +884,7 @@ try {
 			...values,
 			cwd,
 			inputAllowed,
+			exitOnEscape: Boolean(parsed.commandName),
 			passthrough,
 		})
 	}

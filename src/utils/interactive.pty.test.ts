@@ -287,7 +287,13 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 						() => output,
 					)
 				}
-				terminal.write(finish === "\r" ? "\x1b" : "\x03")
+				if (finish === "\r") {
+					terminal.write("\x1b")
+					await Bun.sleep(100)
+					expect(subprocess.exitCode).toBeNull()
+					expect(output).not.toContain("\x1b[?1049l")
+				}
+				terminal.write("\x03")
 				expect(await waitForExit(subprocess, () => output)).toBe(0)
 				expect(modes(terminal)).toEqual(initialModes)
 				const recap = output.slice(output.lastIndexOf("\x1b[?1049l"))
@@ -367,7 +373,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				if (outcome !== "cancel") {
 					await wait(outcome === "preview" ? "Preview:" : "is required")
 					expect(subprocess.exitCode).toBeNull()
-					terminal.write("\x03")
+					terminal.write("\x1b")
 				}
 				expect(await waitForExit(subprocess, () => output)).toBe(0)
 				expect(modes(terminal)).toEqual(initialModes)

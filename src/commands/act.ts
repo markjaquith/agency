@@ -38,6 +38,7 @@ interface ActOptions extends BaseCommandOptions {
 	readonly epicId?: string
 	readonly taskId?: string
 	readonly phaseId?: string
+	readonly exitOnEscape?: boolean
 }
 
 const entityChoices = (nodes: readonly ActEntity[]): Choice<string>[] => {
@@ -192,7 +193,9 @@ export const act = (
 					Effect.catchAll((error) => {
 						if (error instanceof ActCancelled) {
 							if (state.atItemMenu) state.item = undefined
-							return Effect.succeed(!state.atHome)
+							return Effect.succeed(
+								!state.atHome || options.exitOnEscape === false,
+							)
 						}
 						if (!state.native || state.atHome) return Effect.fail(error)
 						state.notice = `󰅖  ${error instanceof Error ? error.message : String(error)}`
