@@ -51,7 +51,7 @@ describe("OpenTUI interaction", () => {
 				<InteractiveTabbedPrompt
 					tabs={[
 						{ id: "workbase", label: "Workbase", prompt: "", choices: [] },
-						{ id: "workload", label: "Workload", prompt: "", choices: [] },
+						{ id: "workstream", label: "Workstream", prompt: "", choices: [] },
 					]}
 					initialTab={1}
 					onTabChange={(index) => {
@@ -78,7 +78,7 @@ describe("OpenTUI interaction", () => {
 			await Bun.sleep(0)
 			const frame = setup.captureCharFrame()
 			expect(frame.match(/Agency/g)).toHaveLength(1)
-			expect(frame).toContain("▎ Workload")
+			expect(frame).toContain("▎ Workstream")
 			expect(frame).toContain("  Summary")
 			await setup.mockInput.typeText("Done")
 			await setup.flush()
@@ -102,15 +102,15 @@ describe("OpenTUI interaction", () => {
 						{
 							id: "workbase",
 							label: "Workbase",
-							prompt: "Your mission:",
+							prompt: "Actions",
 							choices: [
 								{ key: "create", label: "Create a task" },
 								{ key: "work", label: "Work on a task" },
 							],
 						},
 						{
-							id: "workload",
-							label: "Workload",
+							id: "workstream",
+							label: "Workstream",
 							prompt: "Choose an item",
 							choices: [
 								{ key: "one", label: "First task" },
@@ -129,17 +129,17 @@ describe("OpenTUI interaction", () => {
 			await setup.renderer.setupTerminal()
 			await setup.renderOnce()
 			await Bun.sleep(0)
-			expect(setup.captureCharFrame()).toContain("Your mission:")
+			expect(setup.captureCharFrame()).toContain("Actions")
 			expect(setup.captureCharFrame()).not.toContain("First task")
 			const spans = setup.captureSpans().lines.flatMap((line) => line.spans)
 			const panelColor = spans
-				.find((span) => span.text.includes("Your mission:"))!
+				.find((span) => span.text.includes("Actions"))!
 				.bg.toInts()
 			expect(
 				spans.find((span) => span.text.includes("Workbase"))!.bg.toInts(),
 			).toEqual(panelColor)
 			expect(
-				spans.find((span) => span.text.includes("Workload"))!.bg.toInts(),
+				spans.find((span) => span.text.includes("Workstream"))!.bg.toInts(),
 			).not.toEqual(panelColor)
 			await setup.mockInput.typeText("task")
 			setup.mockInput.pressArrow("down")
@@ -167,7 +167,7 @@ describe("OpenTUI interaction", () => {
 		}
 	})
 
-	test("an empty workload stays navigable and only the active tab handles cancellation", async () => {
+	test("an empty workstream stays navigable and only the active tab handles cancellation", async () => {
 		let submitted: string | null | undefined
 		const setup = await testRender(
 			() => (
@@ -176,12 +176,12 @@ describe("OpenTUI interaction", () => {
 						{
 							id: "workbase",
 							label: "Workbase",
-							prompt: "Your mission:",
+							prompt: "Actions",
 							choices: [{ key: "create", label: "Create a task" }],
 						},
 						{
-							id: "workload",
-							label: "Workload",
+							id: "workstream",
+							label: "Workstream",
 							prompt: "Choose an item",
 							choices: [],
 							emptyLabel: "No tasks or phases yet",
@@ -289,8 +289,8 @@ describe("OpenTUI interaction", () => {
 			const rows = frame.split("\n")
 			expect(rows[0]?.trim()).toBe("  Agency")
 			expect(rows[1]?.trim()).toBe("")
-			expect(rows[2]?.trim()).toBe("  Work on")
-			expect(rows[3]?.trim()).toBe("filter")
+			expect(rows[2]?.trim()).toBe("Work on")
+			expect(rows[3]?.trim()).toBe("  type to filter")
 			expect(rows[4]?.trim()).toBe("")
 			expect(frame).not.toContain("enter select")
 			for (let index = 0; index < 3; index++) {

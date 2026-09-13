@@ -395,16 +395,17 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			)}
 			<box height={brandHeight()} flexShrink={0} />
 			<text fg={macchiato.blue} height={1} flexShrink={0} wrapMode="none">
-				{`  ${props.prompt}`}
+				{props.prompt}
 			</text>
 			<box flexDirection="row" width="100%" height={1} flexShrink={0}>
+				<text fg={macchiato.blue}>{"  "}</text>
 				<textarea
 					focused={props.active !== false}
 					flexGrow={1}
 					minWidth={8}
 					height={1}
 					wrapMode="none"
-					placeholder="filter"
+					placeholder="type to filter"
 					placeholderColor={macchiato.overlay0}
 					backgroundColor={macchiato.mantle}
 					focusedBackgroundColor={

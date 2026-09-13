@@ -24,8 +24,8 @@ interface ActTab<T> {
 export class ActCancelled extends Error {}
 
 export const actTabs = [
-	{ id: "workbase", label: "  Workbase", prompt: "Your mission:" },
-	{ id: "workload", label: "  Workload", prompt: "Choose an item" },
+	{ id: "workstream", label: "  Workstream", prompt: "" },
+	{ id: "workbase", label: "  Workbase", prompt: "" },
 ] as const
 
 const readText = (prompt: string) =>

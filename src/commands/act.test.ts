@@ -79,7 +79,7 @@ describe("act command", () => {
 		})
 	})
 
-	test("Workload offers non-archived tasks and phases and dispatches its selected item", async () => {
+	test("Workstream offers non-archived tasks and phases and dispatches its selected item", async () => {
 		await createTask("archived")
 		for (const action of ["drop", "archive"])
 			await runTestEffect(
@@ -116,19 +116,23 @@ describe("act command", () => {
 				{
 					...scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
 					tabs: (tabs) => {
-						expect(tabs.map((tab) => tab.id)).toEqual(["workbase", "workload"])
+						expect(tabs.map((tab) => tab.id)).toEqual([
+							"workstream",
+							"workbase",
+						])
+						expect(tabs.map((tab) => tab.prompt)).toEqual(["", ""])
 						for (const key of ["browse", "split", "handoff"])
 							expect(
-								tabs[0]!.choices.some((choice) => choice.key === key),
+								tabs[1]!.choices.some((choice) => choice.key === key),
 							).toBe(false)
-						const workload = tabs[1]!.choices
-						expect(workload.map((choice) => choice.key)).toEqual([
+						const workstream = tabs[0]!.choices
+						expect(workstream.map((choice) => choice.key)).toEqual([
 							"task:multi",
 							"phase:multi/build",
 							"task:single",
 						])
 						return Effect.succeed(
-							workload.find((choice) => choice.key === "phase:multi/build")!
+							workstream.find((choice) => choice.key === "phase:multi/build")!
 								.value,
 						)
 					},
@@ -141,7 +145,7 @@ describe("act command", () => {
 		).toContain("status: dropped")
 	})
 
-	test("Workbase tab choices reuse the goal workflow with an empty Workload", async () => {
+	test("Workbase tab choices reuse the goal workflow with an empty Workstream", async () => {
 		let selected = false
 		await runTestEffect(
 			act(
@@ -152,9 +156,9 @@ describe("act command", () => {
 					},
 					tabs: (tabs) => {
 						selected = true
-						expect(tabs[1]!.choices).toEqual([])
+						expect(tabs[0]!.choices).toEqual([])
 						return Effect.succeed(
-							tabs[0]!.choices.find((choice) => choice.key === "current-work")!
+							tabs[1]!.choices.find((choice) => choice.key === "current-work")!
 								.value,
 						)
 					},
@@ -513,7 +517,7 @@ describe("act command", () => {
 								choices.find(
 									(choice) =>
 										choice.value ===
-										(prompt === "Your mission:" ? "browse" : "task:example"),
+										(prompt === "Choose an action" ? "browse" : "task:example"),
 								)?.value ?? null,
 							)
 						},
@@ -649,7 +653,7 @@ describe("act command", () => {
 					tabs: (tabs) =>
 						Effect.succeed(
 							tabs
-								.find((tab) => tab.id === "workload")!
+								.find((tab) => tab.id === "workstream")!
 								.choices.find((choice) => choice.key === "task:example")!.value,
 						),
 					text: () => Effect.succeed(values.shift() ?? null),
@@ -695,7 +699,7 @@ describe("act command", () => {
 					tabs: (tabs) =>
 						Effect.succeed(
 							tabs
-								.find((tab) => tab.id === "workload")!
+								.find((tab) => tab.id === "workstream")!
 								.choices.find((choice) => choice.key === "task:investigate")!
 								.value,
 						),

@@ -222,7 +222,9 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				)
 			try {
 				if (finish === "\r") {
-					await wait("Your mission:")
+					await wait("No tasks or phases yet")
+					terminal.write("\t")
+					await wait("Create a task")
 					terminal.write("\r")
 					await wait("standard")
 					terminal.write("\r")
@@ -238,7 +240,10 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				const beforeFinish = output.length
 				terminal.write(finish === "work" ? "\x1b[B\r" : finish)
 				await waitFor(
-					() => output.slice(beforeFinish).includes("Your mission:"),
+					() =>
+						output
+							.slice(beforeFinish)
+							.includes(finish === "\r" ? "Create a task" : "󰄱  open"),
 					() => output,
 				)
 				expect(subprocess.exitCode).toBeNull()
@@ -247,8 +252,14 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 						output.indexOf("\x1b[?1049l"),
 					)
 				else expect(output).not.toContain("\x1b[?1049l")
-				terminal.write("\t")
-				await wait("Choose an item")
+				if (finish === "\r") {
+					const beforeSwitch = output.length
+					terminal.write("\t")
+					await waitFor(
+						() => output.slice(beforeSwitch).includes("󰄱  open"),
+						() => output,
+					)
+				}
 				expect(output.slice(beforeFinish)).toContain("persistent-recap")
 				if (finish === "\r") {
 					terminal.write("\r")
@@ -330,7 +341,9 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 					() => output,
 				)
 			try {
-				await wait("Your mission:")
+				await wait("No tasks or phases yet")
+				terminal.write("\t")
+				await wait("Add a repository")
 				terminal.write("Add a repository")
 				await Bun.sleep(50)
 				terminal.write("\r")

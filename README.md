@@ -532,9 +532,11 @@ agency validate
 
 ### Interactive Actions
 
-`agency` with no subcommand (or `agency act`) opens on the **Workbase** tab. Press **Tab** to cycle
-to **Workload**, a flat list of non-archived tasks and phases; select an item to
-see its available actions. Each tab remembers its filter and selection. The active
+`agency` with no subcommand (or `agency act`) opens on **Workstream**, a flat list
+of non-archived tasks and phases; select an item to see its available actions.
+Press **Tab** to cycle to **Workbase** for workbase actions. Both tabs have a blank
+row above a chevron-prefixed filter with the placeholder “type to filter”.
+Each tab remembers its filter and selection. The active
 tab shares its background with the panel beneath it. Creation
 works even in an empty workbase. The guided flow collects required inputs,
 selects the sole repository automatically, and suggests IDs, base branches, and
@@ -542,7 +544,7 @@ phase branches. Suggestions remain editable; choosing a base never adds a
 completion dependency.
 
 Splitting a task / adding a phase and turning an investigation into implementation
-start in **Workload**: select the source item, then choose its action.
+start in **Workstream**: select the source item, then choose its action.
 
 The item picker uses flat, aligned rows with colored Nerd Font type/status icons,
 prominent names, and quieter parent-task, repository, and description details.
@@ -552,7 +554,7 @@ The built-in guided flow keeps one full-screen session across menus, text inputs
 and execution, with the tabs visible throughout. Item actions use colored icons
 and return to the same item's refreshed action menu, with the latest outcome
 above the prompt. Escape from an item's input returns to its actions; Escape from
-its action menu returns to Workload. Tab switches sections from any step. On
+its action menu returns to Workstream. Tab switches sections from any step. On
 the front screen, Escape clears a filter first, then exits. Ctrl-C quits from any
 screen. On exit it restores the shell and leaves a compact recap of
 completed actions, affected items, and commands. Dry runs are labeled as previews;

@@ -416,18 +416,6 @@ const actStep = (
 				const chosen = yield* ui.tabs<HomeChoice>([
 					{
 						...actTabs[0],
-						choices: goals
-							.filter(
-								(choice) =>
-									!["browse", "split", "handoff"].includes(choice.value),
-							)
-							.map((choice) => ({
-								...choice,
-								value: { kind: "goal", id: choice.value },
-							})),
-					},
-					{
-						...actTabs[1],
 						emptyLabel: "No tasks or phases yet",
 						choices: entityChoices(
 							nodes.filter(
@@ -438,13 +426,25 @@ const actStep = (
 							value: { kind: "item", id: choice.value },
 						})),
 					},
+					{
+						...actTabs[1],
+						choices: goals
+							.filter(
+								(choice) =>
+									!["browse", "split", "handoff"].includes(choice.value),
+							)
+							.map((choice) => ({
+								...choice,
+								value: { kind: "goal", id: choice.value },
+							})),
+					},
 				])
 				if (!chosen) return yield* Effect.fail(new ActCancelled())
 				state.atHome = false
 				if (chosen.kind === "item") selectedKey = chosen.id
 				else goal = chosen.id
 			} else {
-				goal = yield* select("Your mission:", goals)
+				goal = yield* select("Choose an action", goals)
 				state.atHome = false
 			}
 			if (goal === "browse") {
@@ -491,7 +491,7 @@ const actStep = (
 		const selected = nodes.find((node) => node.id === selectedKey)
 		if (selected && session) {
 			state.item = selected.id
-			session.activateTab("workload")
+			session.activateTab("workstream")
 		}
 		const actions = selected ? catalog.get(selected.id)! : globals
 		if (!actionId) {
@@ -618,9 +618,9 @@ const actStep = (
 export const help = `
 Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]
 
-Choose a goal in Workbase, or press Tab for tasks/phases in Workload. Guided
+Choose a task/phase in Workstream, or press Tab for Workbase actions. Guided
 creation offers an explicit Work choice afterward; creation alone never starts work.
-Item actions stay on that item. Escape backs out to its actions, then Workload,
+Item actions stay on that item. Escape backs out to its actions, then Workstream,
 or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
 An existing directory selects its containing epic, task, or phase; otherwise
 the positional value is a task ID. Selectors skip item selection.
