@@ -514,8 +514,10 @@ export const InteractiveTabbedPrompt = (props: {
 }) => {
 	const dimensions = useTerminalDimensions()
 	const [active, setActive] = createSignal(props.initialTab ?? 0)
-	const brandHeight = () => (dimensions().height > 5 ? 2 : 0)
-	const reservedRows = () => brandHeight() + 1 + (props.notice ? 1 : 0)
+	const showBrand = () =>
+		dimensions().width >=
+		props.tabs.reduce((width, tab) => width + tab.label.length + 4, 12)
+	const reservedRows = () => 1 + (props.notice ? 1 : 0)
 	const cycle = () => {
 		if (!props.tabs.length) return
 		const next = (active() + 1) % props.tabs.length
@@ -535,12 +537,6 @@ export const InteractiveTabbedPrompt = (props: {
 			height="100%"
 			backgroundColor={macchiato.surface0}
 		>
-			<Show when={brandHeight() > 0}>
-				<box height={1} flexShrink={0} paddingLeft={1} paddingRight={1}>
-					<text fg={macchiato.blue}>{"  Agency"}</text>
-				</box>
-				<box height={1} flexShrink={0} />
-			</Show>
 			<box
 				flexDirection="row"
 				height={1}
@@ -562,6 +558,12 @@ export const InteractiveTabbedPrompt = (props: {
 						</text>
 					)}
 				</For>
+				<box flexGrow={1} minWidth={1} />
+				<Show when={showBrand()}>
+					<text fg={macchiato.blue} flexShrink={0} wrapMode="none">
+						{"  Agency"}
+					</text>
+				</Show>
 			</box>
 			<box
 				flexDirection="column"
