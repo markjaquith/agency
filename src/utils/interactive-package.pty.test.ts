@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { mkdir, symlink } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir } from "../test-utils"
 
 const projectRoot = join(import.meta.dir, "../..")
@@ -33,10 +33,14 @@ beforeAll(async () => {
 	expect(
 		await Bun.file(join(installed, "src/utils/interactive.tsx")).exists(),
 	).toBe(false)
-	await symlink(
-		join(projectRoot, "node_modules"),
-		join(installed, "node_modules"),
-	)
+	// Keep tarball-bundled dependencies intact and supply the remaining runtime
+	// dependencies from the parent scope without requiring a network install.
+	const manifest = await Bun.file(join(projectRoot, "package.json")).json()
+	for (const name of Object.keys(manifest.dependencies)) {
+		const destination = join(root, "node_modules", name)
+		await mkdir(dirname(destination), { recursive: true })
+		await symlink(join(projectRoot, "node_modules", name), destination)
+	}
 	cli = join(installed, "cli.ts")
 	workbase = join(root, "workbase")
 	run([process.execPath, cli, "init", workbase, "--silent"], root)
