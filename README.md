@@ -564,7 +564,11 @@ agency validate
 ### Interactive Actions
 
 `agency` with no subcommand (or `agency act`) opens on **Workstream**, a flat list
-of non-archived tasks and phases; select an item to see its available actions.
+of non-archived tasks and phases. When run inside an epic, task, phase, or one of
+its checkout descendants, it opens that item's actions first; Escape returns to
+Workstream, where **Tab** reaches global Workbase actions. `agency .` is shorthand
+for `agency act .` and explicitly focuses the item containing the current path.
+Otherwise, select an item to see its available actions.
 Press **Tab** to cycle to **Workbase** for workbase actions. Both tabs have a blank
 row above a chevron-prefixed filter with the placeholder “type to filter”.
 Each tab remembers its filter and selection. The active

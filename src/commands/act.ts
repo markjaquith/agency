@@ -366,7 +366,7 @@ const actStep = (
 						? isPath
 							? pathEntityKey(root, path)
 							: `task:${options.directory}`
-						: undefined
+						: pathEntityKey(root, path)
 		let actionId = options.action
 		if (session && options.directory && isPath && !selectedKey && !actionId)
 			session.activateTab("workbase")

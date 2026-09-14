@@ -255,6 +255,7 @@ describe("act command", () => {
 		await createTask("example")
 		await mkdir(join(root, "tasks/example/code/agency"), { recursive: true })
 		for (const options of [
+			{ cwd: join(root, "tasks/example") },
 			{ cwd: join(root, "tasks/example"), directory: "." },
 			{ cwd: join(root, "tasks/example"), directory: "code/agency" },
 			{ cwd: root, directory: "tasks/example/TASK.md" },
@@ -294,6 +295,7 @@ describe("act command", () => {
 			}),
 		)
 		for (const directory of [
+			undefined,
 			".",
 			"PHASE.md",
 			join(root, "tasks/multi/phases/build/PHASE.md"),
