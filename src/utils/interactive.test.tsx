@@ -8,6 +8,7 @@ import {
 	fuzzyChoices,
 	hierarchyPrefix,
 	InteractiveSelectPrompt,
+	InteractiveTabbedPrompt,
 	InteractiveTextPrompt,
 	interactiveRendererConfig,
 	interactiveSelectRendererConfig,
@@ -42,6 +43,246 @@ const submitEditedText = async (
 }
 
 describe("OpenTUI interaction", () => {
+	test("renders two-row items with metadata below the ID and a wrapping description alongside", async () => {
+		const choices = Array.from({ length: 5 }, (_, index) => ({
+			key: `item-${index}`,
+			label: `item-${index} demo working full searchable description`,
+			details: {
+				title: [{ text: `󰗡  item-${index}`, color: "#cad3f5" }],
+				metadata: [
+					{ text: "  demo  ", color: "#8087a2" },
+					{ text: "󰔟  working", color: "#8aadf4" },
+				],
+				description:
+					"Description wraps smoothly across both rows of this item.",
+			},
+		}))
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt=""
+					choices={choices}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 72, height: 12 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			const rows = setup.captureCharFrame().split("\n")
+			expect(rows[5]).toContain("item-0")
+			expect(rows[5]).toContain("Description wraps")
+			expect(rows[6]).toContain("  demo")
+			expect(rows[6]).toContain("working")
+			expect(rows[6]).toContain("  demo  󰔟  working  this item.")
+			expect(rows[6]).not.toContain("item-1")
+			expect(setup.captureCharFrame()).not.toContain("item-3")
+			for (const line of setup.captureSpans().lines.slice(5, 7))
+				expect(
+					line.spans.every(
+						(span) =>
+							JSON.stringify(span.bg.toInts()) ===
+							JSON.stringify([73, 77, 100, 255]),
+					),
+				).toBe(true)
+			setup.mockInput.pressArrow("up")
+			await setup.flush()
+			setup.resize(60, 8)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("item-4")
+			expect(setup.captureCharFrame()).toContain("working")
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBe("item-4")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("keeps the tab frame around action inputs and reserves Tab for navigation", async () => {
+		let switched: number | undefined
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{ id: "workbase", label: "Workbase", prompt: "", choices: [] },
+						{ id: "workstream", label: "Workstream", prompt: "", choices: [] },
+					]}
+					initialTab={1}
+					onTabChange={(index) => {
+						switched = index
+					}}
+					onDone={() => {}}
+					content={() => (
+						<InteractiveTextPrompt
+							fullScreen
+							embedded
+							prompt="Summary"
+							onDone={(value) => {
+								submitted = value
+							}}
+						/>
+					)}
+				/>
+			),
+			{ width: 50, height: 10 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			const frame = setup.captureCharFrame()
+			const header = frame.split("\n")[0]!
+			expect(header).toContain("Workbase")
+			expect(header).toContain("Workstream")
+			expect(header.endsWith("  Agency ")).toBe(true)
+			expect(frame.split("\n")[1]).toContain("  Summary")
+			expect(frame.match(/Agency/g)).toHaveLength(1)
+			expect(frame).toContain("▎ Workstream")
+			expect(frame).toContain("  Summary")
+			await setup.mockInput.typeText("Done")
+			await setup.flush()
+			setup.mockInput.pressTab()
+			await setup.flush()
+			expect(switched).toBe(0)
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => submitted !== undefined)
+			expect(submitted).toBe("Done")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("cycles tabs with independent filter/selection state and a contiguous active panel", async () => {
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{
+							id: "workbase",
+							label: "Workbase",
+							prompt: "Actions",
+							choices: [
+								{ key: "create", label: "Create a task" },
+								{ key: "work", label: "Work on a task" },
+							],
+						},
+						{
+							id: "workstream",
+							label: "Workstream",
+							prompt: "Choose an item",
+							choices: [
+								{ key: "one", label: "First task" },
+								{ key: "two", label: "Second task" },
+							],
+						},
+					]}
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 60, height: 12 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			expect(setup.captureCharFrame()).toContain("Actions")
+			expect(setup.captureCharFrame()).not.toContain("First task")
+			const spans = setup.captureSpans().lines.flatMap((line) => line.spans)
+			const panelColor = spans
+				.find((span) => span.text.includes("Actions"))!
+				.bg.toInts()
+			expect(
+				spans.find((span) => span.text.includes("Workbase"))!.bg.toInts(),
+			).toEqual(panelColor)
+			expect(
+				spans.find((span) => span.text.includes("Workstream"))!.bg.toInts(),
+			).not.toEqual(panelColor)
+			await setup.mockInput.typeText("task")
+			setup.mockInput.pressArrow("down")
+			await setup.flush()
+			setup.mockInput.pressKey(KeyCodes.TAB)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("Choose an item")
+			expect(setup.captureCharFrame()).toContain("filter")
+			await setup.mockInput.typeText("Second")
+			await setup.flush()
+			expect(setup.captureCharFrame()).not.toContain("First task")
+			setup.mockInput.pressKey(KeyCodes.TAB)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("▌ Work on a task")
+			setup.mockInput.pressKey(KeyCodes.TAB, { shift: true })
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("Second")
+			setup.resize(32, 6)
+			await setup.flush()
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => submitted !== undefined)
+			expect(submitted).toBe("two")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("an empty workstream stays navigable and only the active tab handles cancellation", async () => {
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{
+							id: "workbase",
+							label: "Workbase",
+							prompt: "Actions",
+							choices: [{ key: "create", label: "Create a task" }],
+						},
+						{
+							id: "workstream",
+							label: "Workstream",
+							prompt: "Choose an item",
+							choices: [],
+							emptyLabel: "No tasks or phases yet",
+						},
+					]}
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 40, height: 8 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("create")
+			await setup.flush()
+			setup.mockInput.pressKey(KeyCodes.TAB)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("No tasks or phases yet")
+			setup.mockInput.pressEnter()
+			setup.mockInput.pressKey("n", { ctrl: true })
+			await setup.flush()
+			expect(submitted).toBeUndefined()
+			setup.mockInput.pressEscape()
+			// A standalone Escape waits for the terminal decoder's ambiguity timeout.
+			await Bun.sleep(30)
+			await setup.flush()
+			expect(submitted).toBeNull()
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("selects the Solid JSX runtime without the project preload", async () => {
 		const source = await Bun.file(
 			new URL("./interactive.tsx", import.meta.url),
@@ -111,25 +352,32 @@ describe("OpenTUI interaction", () => {
 			await Bun.sleep(0)
 
 			let frame = setup.captureCharFrame()
-			for (let index = 0; index < 5; index++) {
+			const rows = frame.split("\n")
+			expect(rows[0]?.trim()).toBe("  Agency")
+			expect(rows[1]?.trim()).toBe("")
+			expect(rows[2]?.trim()).toBe("Work on")
+			expect(rows[3]?.trim()).toBe("   type to filter")
+			expect(rows[4]?.trim()).toBe("")
+			expect(frame).not.toContain("enter select")
+			for (let index = 0; index < 3; index++) {
 				expect(frame).toContain(`choice-${index}`)
 			}
-			expect(frame).not.toContain("choice-5")
+			expect(frame).not.toContain("choice-3")
 
 			for (let index = 0; index < 7; index++) {
 				setup.mockInput.pressArrow("down")
 			}
 			await setup.flush()
 			frame = setup.captureCharFrame()
-			expect(frame).toContain("choice-5")
+			expect(frame).toContain("choice-6")
 			expect(frame).toContain("▌ choice-7")
-			expect(frame).toContain("choice-9")
+			expect(frame).toContain("choice-8")
 
 			setup.resize(40, 5)
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).not.toContain("choice-5")
-			expect(frame).toContain("choice-6")
+			expect(frame).not.toContain("choice-6")
 			expect(frame).toContain("▌ choice-7")
 			expect(frame).not.toContain("choice-8")
 			expect(frame).not.toContain("choice-9")
@@ -194,7 +442,7 @@ describe("OpenTUI interaction", () => {
 					onDone={() => undefined}
 				/>
 			),
-			{ width: 40, height: 5 },
+			{ width: 40, height: 7 },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -220,7 +468,7 @@ describe("OpenTUI interaction", () => {
 
 			setup.mockInput.pressKey("u", { ctrl: true })
 			await setup.flush()
-			setup.resize(32, 5)
+			setup.resize(32, 7)
 			await setup.flush()
 			frame = setup.captureCharFrame()
 			expect(frame).toContain("▌ ╭─ epic delivery")
@@ -242,7 +490,7 @@ describe("OpenTUI interaction", () => {
 					onDone={() => undefined}
 				/>
 			),
-			{ width: 40, height: 5 },
+			{ width: 40, height: 7 },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -255,7 +503,7 @@ describe("OpenTUI interaction", () => {
 			)!
 			expect(
 				active.spans.find((span) => span.text === "▌ ")?.fg.toInts(),
-			).toEqual([198, 160, 246, 255])
+			).toEqual([138, 173, 244, 255])
 			expect(
 				active.spans.find((span) => span.text === "╭─ ")?.fg.toInts(),
 			).toEqual([128, 135, 162, 255])
@@ -342,7 +590,7 @@ describe("OpenTUI interaction", () => {
 					}}
 				/>
 			),
-			{ width: 40, height: 5, kittyKeyboard: true },
+			{ width: 40, height: 7, kittyKeyboard: true },
 		)
 		try {
 			await setup.renderer.setupTerminal()
@@ -669,6 +917,48 @@ describe("OpenTUI interaction", () => {
 		}
 	})
 
+	test("Shift-Return inserts a newline and Return submits the complete Outcome", async () => {
+		let submitted: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTextPrompt
+					embedded
+					fullScreen
+					prompt="Outcome"
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 60, height: 8, kittyKeyboard: true },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await setup.mockInput.typeText("First line")
+			setup.mockInput.pressEnter({ shift: true })
+			await setup.mockInput.typeText("Second line")
+			setup.mockInput.pressEnter({ shift: true })
+			await setup.mockInput.typeText("Third line")
+			setup.mockInput.pressEnter({ shift: true })
+			await setup.mockInput.typeText("Fourth line")
+			await setup.flush()
+			expect(submitted).toBeUndefined()
+			expect(setup.captureCharFrame()).toMatch(/First line\s*\nSecond line/)
+			expect(setup.captureCharFrame()).toContain("Third line")
+			expect(setup.captureCharFrame()).toContain("Fourth line")
+			expect(setup.captureCharFrame()).toContain("shift-enter newline")
+			setup.resize(60, 5)
+			await setup.flush()
+			expect(setup.captureCharFrame()).toContain("Fourth line")
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => submitted !== undefined)
+			expect(submitted).toBe("First line\nSecond line\nThird line\nFourth line")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("wraps text prompt input onto another line", async () => {
 		const setup = await testRender(
 			() => <InteractiveTextPrompt prompt="Task ID" onDone={() => {}} />,
@@ -683,7 +973,7 @@ describe("OpenTUI interaction", () => {
 			const frame = setup.captureCharFrame()
 			expect(frame).toContain("alpha beta")
 			expect(frame).toContain("gamma")
-			expect(frame).toMatch(/alpha beta\s*\ngamma delta/)
+			expect(frame).toMatch(/alpha beta gamma\s*\ndelta/)
 		} finally {
 			setup.renderer.destroy()
 		}

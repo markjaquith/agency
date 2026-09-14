@@ -6,12 +6,19 @@ export interface Choice<T> {
 	readonly plainLabel?: string
 	readonly depth?: number
 	readonly segments?: readonly ChoiceSegment[]
+	readonly details?: ChoiceDetails
 	readonly value: T
 }
 
 export interface ChoiceSegment {
 	readonly text: string
 	readonly color?: string
+}
+
+export interface ChoiceDetails {
+	readonly title: readonly ChoiceSegment[]
+	readonly metadata: readonly ChoiceSegment[]
+	readonly description: string
 }
 
 export type ChooserErrorReason =

@@ -179,6 +179,7 @@ const commands: Record<string, Command> = {
 			if (options.help) return console.log(actHelp)
 			await runCommand(
 				act({
+					action: options.action,
 					directory: args[0],
 					auto: options.auto,
 					draft: options.draft,
@@ -188,6 +189,7 @@ const commands: Record<string, Command> = {
 					taskId: options.task,
 					phaseId: options.phase,
 					inputAllowed: options.inputAllowed,
+					exitOnEscape: options.exitOnEscape,
 					silent: options.silent,
 					verbose: options.verbose,
 					cwd: options.cwd,
@@ -707,8 +709,10 @@ agency v${VERSION}
 
 Usage: agency <command> [options]
 
+Run agency without a command to open the TUI.
+
 Commands:
-  act                    Interactively choose and act on work
+  act                    Open the interactive workbase
   init [path]            Initialize an Agency workbase
   workbase <subcommand>  Manage registered workbases
   integration <command> Inspect or sync managed integration files
@@ -796,13 +800,19 @@ const pushUsageDetails = (error?: unknown) => {
 }
 
 try {
+	const parsed = parseCli(rawArguments)
 	const {
 		commandName,
 		commandPath,
 		args: commandArgs,
 		passthrough,
 		values,
-	} = parseCli(rawArguments)
+	} = {
+		...parsed,
+		...(!parsed.commandName && !parsed.values.help && !parsed.values.version
+			? { commandName: "act", commandPath: "act" }
+			: {}),
+	}
 	usageCommandPath = commandPath
 	usageFlagNames = Object.entries(values)
 		.filter(([, value]) => value !== undefined && value !== false)
@@ -874,6 +884,7 @@ try {
 			...values,
 			cwd,
 			inputAllowed,
+			exitOnEscape: Boolean(parsed.commandName),
 			passthrough,
 		})
 	}
