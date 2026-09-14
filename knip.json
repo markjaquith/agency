@@ -3,6 +3,8 @@
   "entry": [
     "cli.ts",
     "index.ts",
+    "src/utils/interactive.tsx!",
+    "scripts/build-interactive.ts!",
     "pi-extensions/agency.ts",
     "scripts/benchmark-act.ts",
     "scripts/benchmark-archive.ts",

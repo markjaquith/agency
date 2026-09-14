@@ -7,11 +7,16 @@ interface PackResult {
 
 describe("npm package", () => {
 	test("ships public exports without test-only files", async () => {
-		const process = Bun.spawn(["npm", "pack", "--dry-run", "--json"], {
-			cwd: join(import.meta.dir, ".."),
-			stdout: "pipe",
-			stderr: "pipe",
-		})
+		// The installed-package PTY test exercises pack hooks. This metadata-only
+		// check must not race those hooks in the parallel test suite.
+		const process = Bun.spawn(
+			["npm", "pack", "--dry-run", "--json", "--ignore-scripts"],
+			{
+				cwd: join(import.meta.dir, ".."),
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		)
 		const [stdout, stderr, exitCode] = await Promise.all([
 			new Response(process.stdout).text(),
 			new Response(process.stderr).text(),

@@ -22,6 +22,7 @@
     "cli.ts",
     "cli-main.ts",
     "src",
+    "!src/utils/interactive.tsx",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
     "!src/test-utils.ts",
@@ -69,6 +70,8 @@
     "tag": "latest"
   },
   "scripts": {
+    "prepack": "bun scripts/build-interactive.ts",
+    "postpack": "bun scripts/build-interactive.ts --clean",
     "postinstall": "bun scripts/install-pi-extension.ts install",
     "preuninstall": "bun scripts/install-pi-extension.ts uninstall",
     "benchmark:act": "bun scripts/benchmark-act.ts",
