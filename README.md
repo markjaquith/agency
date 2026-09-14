@@ -7,7 +7,7 @@ read or write.
 
 ## Requirements
 
-- [Bun](https://bun.sh) 1.0 or newer
+- [Bun](https://bun.sh) 1.3 or newer (1.4 or newer on Windows ARM64)
 - Git
 - [GitHub CLI](https://cli.github.com/) for `agency pr`
 - OpenCode, Claude Code, or a configured agent for `agency work`
@@ -318,11 +318,26 @@ set `agent` in `$XDG_CONFIG_HOME/agency/agency.json` (or
 The selection precedence is `--agent` (including the legacy `--opencode` and
 `--claude` aliases), then `AGENCY_AGENT`, then `agent`, then automatic
 detection. Supported global values are `opencode2`, `opencode`, `pi`, and
-`claude`; an unavailable configured agent fails rather than falling back. A launch
-is fresh unless `AGENCY_SESSION_ID` is already set; resumed launches use the agent's
-`resumeCommand` when configured. The built-in presets use `--continue` only for
-resumed launches. By default Agency opens the agent without a prompt. `--auto`
-uses its autonomous command and sends the generated task, phase, or epic prompt.
+`claude`; an unavailable configured agent fails rather than falling back. A
+launch is fresh unless `AGENCY_SESSION_ID` is already set; resumed launches use
+the agent's `resumeCommand` when configured. The built-in presets use
+`--continue` only for resumed launches, except autonomous OpenCode V2 launches,
+which open a fresh TUI session so the generated continuation prompt cannot be
+routed to an unrelated prior session. By default Agency opens the agent without
+a prompt. `--auto` uses its autonomous command and sends the generated task,
+phase, or epic prompt. OpenCode V2 receives a launch-only environment marker;
+Agency's managed TUI companion retries the native submit command until the exact
+prompt appears as a persisted user message. It records whether OpenCode submitted
+the prompt natively or submission followed a companion dispatch, and shows a
+bounded error with a manual recovery instruction when delivery is not observed.
+
+For built-in OpenCode V2 launches, Agency submits through the selected CLI's
+authenticated session API, then opens the TUI with `--session` and an empty
+composer. V2's native `--prompt` only fills the composer. Agency sets session
+environment before submission and passes that same environment into the TUI;
+reconnecting the TUI does not replay the prompt. V1 keeps its native launch path.
+See [OpenCode auto-start](docs/opencode-auto-start.md) for details and real
+startup verification.
 
 Custom agents are direct argv commands, never shell snippets:
 
@@ -352,6 +367,9 @@ Every agent receives the same `AGENCY_AGENT`, `AGENCY_SESSION_ID`,
 `AGENCY_WORKBASE`, `AGENCY_TARGET`,
 `AGENCY_TASK_ID`, `AGENCY_PHASE_ID`, and `AGENCY_PROMPT` environment. Configured
 environment is added without overriding these normalized values.
+Autonomous OpenCode V2 launches additionally receive
+`AGENCY_TUI_AUTOSUBMIT=1`; the client-side managed TUI companion consumes it,
+and manual and non-V2 launches do not receive it.
 Execution-unit agents also receive `AGENCY_WRITABLE_CHECKOUT` with the
 authoritative writable checkout path.
 `AGENCY_PROMPT` is empty unless `--auto` is set.
@@ -364,16 +382,22 @@ before acting; a matching worker performs the task directly and must not invoke
 generated prompts when their document paths, current directory, and active valid
 context all agree. External session state is not part of this identity contract.
 The managed OpenCode plugin validates the marker against Agency context, binds it
-to the receiving OpenCode session, injects an explicit active-worker system
-instruction, and restores Agency identity for that session's shell environment.
-This session bridge is necessary because an OpenCode client can attach to a
-long-lived server process that did not inherit the client's launch environment.
+to the receiving OpenCode session, and injects an explicit active-worker system
+instruction. Its V1 integration also restores Agency identity for that session's
+shell environment. OpenCode V2's shell hook is location-scoped and does not
+identify the invoking session, so Agency deliberately avoids leaking one
+session's worker identity into another; the validated marker and injected system
+instruction remain the V2 fallback when the long-lived server did not inherit
+the client's launch environment.
 The `opencode2` and `opencode` agents remain rooted in their task or epic
 working directory so the workbase `AGENTS.md` and managed OpenCode config are
 discovered normally.
 Agency's managed OpenCode plugin grants the active workbase external-directory
-access and adds existing checkout-local `.claude/skills`, `.agents/skills`, and
-`.opencode/{skill,skills}` directories to `skills.paths`. The global Pi
+access and exposes existing checkout-local `.claude/skills`, `.agents/skills`,
+and `.opencode/{skill,skills}` definitions. V1 adds those source directories to
+`skills.paths`; V2 registers their discovered skill definitions through the
+plugin API and injects the managed Agency instructions through a session context
+hook. The global Pi
 extension provides equivalent whole-workbase context and additionally discovers
 checkout-local `.pi/skills` through Pi's `resources_discover` lifecycle.
 `agency work` supplies the checkout directly; plain OpenCode and Pi launches
@@ -381,8 +405,10 @@ resolve a materialized execution-unit
 checkout through `agency context`. A multi-phase
 task root has no single checkout, so launch from its phase directory when using
 plain OpenCode or Pi. Other checkout-local configuration is not composed.
-`--print-command` prints the exact cwd and argv plus non-secret environment keys
-without launching the agent.
+`--print-command` prints the cwd, command template, and non-secret environment
+keys without launching the agent. Built-in OpenCode auto launches also report a
+`startup` note: V2 resolves the final `--session` argv during actual startup, so
+print-only mode creates neither a session nor a prompt.
 
 ### Custom Chooser Command
 
@@ -532,23 +558,123 @@ agency validate
 
 ### Interactive Actions
 
-`agency act` opens a filterable work-item chooser followed by an action palette
-derived from the selected item's current state and readiness. It offers only
-actions that can use existing lifecycle semantics, such as working, creating a
-pull request, dropping, reopening, or archiving. Cancelling either chooser makes
-no changes, and the command refreshes the graph before dispatch so a stale
-selection cannot act on changed work.
+`agency` with no subcommand (or `agency act`) opens on **Workstream**, a flat list
+of non-archived tasks and phases; select an item to see its available actions.
+Press **Tab** to cycle to **Workbase** for workbase actions. Both tabs have a blank
+row above a chevron-prefixed filter with the placeholder “type to filter”.
+Each tab remembers its filter and selection. The active
+tab shares its background with the panel beneath it. Creation
+works even in an empty workbase. The guided flow collects required inputs,
+selects the sole repository automatically, and suggests IDs, base branches, and
+phase branches. Suggestions remain editable; choosing a base never adds a
+completion dependency.
 
-Use an existing directory, a positional task ID, `--epic <id>`, `--task <id>`,
-or `--task <id> --phase <id>` to skip work-item selection. For example,
-`agency act .` selects the current task or phase. `--dry-run` still prompts for
-an action but prints the exact Agency command instead of executing it. `--json`
-never prompts or executes; it returns matching targets, status and readiness
-details, document revisions, and each available action's command argv. With no
-selector, JSON includes every active work item.
+Splitting a task / adding a phase and turning an investigation into implementation
+start in **Workstream**: select the source item, then choose its action.
 
-`--auto` is included in generated or executed work commands, and `--draft` is
-included in generated or executed pull request commands.
+Workstream items occupy two rows: a muted type icon and ID on the upper left,
+the main repository and colored status below, and the description wrapping across
+both rows on the right. Selection highlights the entire two-row item. Other item
+pickers retain their compact, flat rows with the same Nerd Font icons.
+Blue is the shared focus/active accent. Type and ordinary action icons are muted;
+status uses green for done, yellow for blocked, and red for dropped. Destructive
+actions use red. Icons and labels convey the meaning independently of color.
+Filtering matches full IDs and metadata even when a displayed name is shortened.
+
+The built-in guided flow keeps one full-screen session across menus, text inputs,
+and execution, with the tabs visible throughout. Item actions use colored icons
+and return to the same item's refreshed action menu, with the latest outcome
+above the prompt. Text-entry prompts support Shift-Return for a newline and
+Return to submit, including multiline outcomes and completion summaries.
+Wizard editors fill the available height and keep an editing hint visible below
+the input; longer content scrolls with the cursor as the terminal resizes.
+Submitting a blank required field retries that prompt with an explanation and
+keeps earlier answers. Only input validation is retried; execution failures are
+reported without automatically repeating a mutation.
+Task, phase, review, and handoff ID prompts also check Agency's ID format and
+currently known duplicate IDs before continuing. Native commands still perform
+the final validation when executing, including concurrent changes.
+In wizard inputs, Escape clears entered text first; with an
+empty input it returns one prompt, retaining earlier answers and recomputing later
+defaults. Escape from the first input returns to the menu; Escape from an item's
+action menu returns to Workstream. Tab switches sections from any step. On
+the front screen, Escape clears a filter first. With an empty filter it exits
+`agency act`, but keeps the TUI open when entered through bare `agency`. Ctrl-C quits from any
+screen. On exit it restores the shell and leaves a compact recap of
+completed actions, affected items, and commands. Dry runs are labeled as previews;
+completed steps remain in the recap if a later step is cancelled or fails. Work
+handoffs restore the terminal before starting the interactive worker, then reopen
+the TUI when the worker returns. A configured
+external chooser continues to offer goals and **Browse items** through that chooser.
+
+| Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Add a repository                     | Add from a remote, or link an existing local repository                                           | `repo-add`, `repo-link`               |
+| Create a task                        | Create a task → standard task or investigation; describe the outcome                              | `task-create`, `investigation-create` |
+| Split work                           | Add a phase / split this task; name the existing work's first phase                               | `split`                               |
+| Work on a task or phase              | Work on this item                                                                                 | `work`                                |
+| Move from investigation to execution | Create implementation follow-up                                                                   | `handoff`                             |
+| Review someone else's work           | Review a PR, or a remote branch/commit                                                            | `review`, `review-ref`                |
+| Close finished work                  | Close or reopen work → complete without a PR, drop abandoned work, refresh a merged PR, or reopen | `complete`, `drop`, `sync`, `reopen`  |
+| Update PR status                     | Refresh Agency state from the provider, create a PR, mark a GitHub PR ready, or close it          | `sync`, `pr`, `pr-ready`, `pr-close`  |
+| Archive terminal work                | Archive                                                                                           | `archive`                             |
+| See current work                     | See current work                                                                                  | `current-work`                        |
+
+After creating a task, phase, review, or implementation follow-up, choose **Work
+on the new item now** or **Finish**. Only choosing Work prepares checkouts and
+launches the configured runner; creation alone leaves the item for later.
+Investigation handoff creates a distinct implementation item with source and
+revision provenance. Completing a non-PR outcome requires a durable summary.
+PR-backed completion comes from provider reconciliation after merge.
+
+**Refresh Agency state** reads the provider and reconciles local records. The
+explicit **GitHub PR ready/close** actions mutate the recorded GitHub URL, then
+refresh Agency state. They are offered only for recorded GitHub PR URLs; actual
+provider state and authorization are checked by the underlying command. Native
+provider-aware PR creation remains available. Existing lifecycle services own
+validation, preparation, revision guards, and archive protections.
+
+Pass a task/phase directory, a file inside it (including `TASK.md` or `PHASE.md`),
+or a positional task ID to open that item's actions immediately. Absolute and
+relative paths work; a workbase-root path opens Workbase actions. Explicit
+`--epic <id>`, `--task <id>`, and `--task <id> --phase <id>` also skip item selection.
+Use `--action <id>` to start
+at a specific scenario. `--dry-run` collects inputs and prints exact commands,
+including automatic bookkeeping commands, without executing or offering Work.
+Cancelling before dispatch makes no changes; cancelling after creation leaves
+the newly created item. The graph is refreshed before item actions are dispatched.
+
+```bash
+agency act .
+agency act --action task-create --dry-run
+agency act --task investigate --action handoff --json
+```
+
+For agents, `--json` never prompts or executes. Its compact, runtime-validated
+result includes workbase actions and repository aliases, current working items,
+and matching targets with readiness, document revisions, available `actions`,
+and `blockedActions` with reasons. `--action` filters discovery to one scenario.
+Targets and current working items share the same identity and metadata fields:
+`id`, `kind`, `key`, `status`, `description`, `repo` (the declared main repository,
+when present), `repositories`, `readiness`, and `revision`. Descriptions retain
+their original line breaks rather than the compact Workstream display wrapping.
+Input descriptors follow wizard collection order; narrative fields advertise
+`multiline: true`. Pass a multiline value as one argv element, preserving newlines.
+`command` is exact argv only when no inputs are missing and the action is
+available. Otherwise substitute the required `inputs` into `commandTemplate`'s
+`<input-id>` placeholders. The resulting argv is ready to run: standard task
+creation has no `--purpose` flag, and investigation creation includes a fixed
+`--purpose investigation`. Optional inputs are excluded from the template;
+append their native `option` and value only when wanted (for example,
+`--depends-on <phase-id>`). Human prompting and suggestions are not part of the
+machine protocol. Run commands from the
+returned workbase root. `followUpCommands` are automatic bookkeeping;
+`nextActions` require a separate explicit choice and are never implied by
+creation. Re-discover after mutations rather than reusing old revisions.
+
+`--auto` applies to Work, including the post-creation choice. `--draft` applies
+to PR creation. Discovery is based on local state and does not fetch GitHub or
+promise that remote operations or checkout preparation will succeed.
 
 ### Target Context
 
@@ -1231,6 +1357,45 @@ their compatible peers. Keep the root optional native packages aligned with
 `@opentui/core`'s optional dependencies when updating OpenTUI: they let installs
 on other platforms fetch binaries absent from the packing host. The smoke test
 also verifies installation with the bundled host binary removed.
+
+The TUI uses `@opentui/core` and `@opentui/solid`, pinned together at 0.5.11,
+with the binding's required `solid-js` 1.9.12. Follow the upstream
+[Solid bindings](https://github.com/anomalyco/opentui/blob/v0.5.11/packages/web/src/content/docs/bindings/solid.mdx) and
+[lifecycle guidance](https://github.com/anomalyco/opentui/blob/v0.5.11/packages/web/src/content/docs/core-concepts/lifecycle.mdx):
+
+- Use Solid signals and OpenTUI hooks for reactive state, keys, and dimensions.
+- Use declarative `focused` and component `keyBindings`/`onSubmit` for local
+  input behavior; reserve `useKeyboard` for navigation and shared shortcuts.
+- The renderer creator owns cleanup. `destroy()` restores terminal modes and
+  output streams and disposes the Solid root; keep it in a cleanup/finalizer path.
+- Keep the lazy Solid preload in `interactive-loader.ts` so non-TUI commands
+  avoid initializing the renderer and runtime-loaded TSX uses the right transform.
+- Verify upgrades with the UI and PTY tests, including worker handoffs and
+  terminal restoration.
+
+The `@babel/core` override selects 7.29.6 to fix
+[GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8);
+OpenTUI Solid 0.5.11 otherwise pins vulnerable 7.28.0. Remove the override when
+the upstream dependency resolves to a patched version, after running `bun audit`
+and the TUI tests. Effect's minimum is 3.20.0 for
+[GHSA-38f7-945m-qr2g](https://github.com/advisories/GHSA-38f7-945m-qr2g).
+
+### Guided-flow ownership
+
+The `act` implementation has four boundaries:
+
+| Module                        | Responsibility                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `src/commands/act-actions.ts` | Defines availability, discovery argv, and executable plans using existing lifecycle commands.                |
+| `src/commands/act-prompts.ts` | Collects inputs and owns wizard replay. Preparation must be replayable; only `plan.run` performs operations. |
+| `src/commands/act.ts`         | Coordinates navigation, checks the selected item's freshness, executes plans, and records the recap.         |
+| `src/utils/interactive.tsx`   | Owns rendering, focus, keyboard handling, and terminal restoration; it has no workbase lifecycle logic.      |
+
+The Effect scope owns the interactive session. A worker handoff explicitly closes
+that session and permits a new one afterward. External renderer destruction
+(such as SIGTERM) requests application shutdown and interrupts in-flight work;
+it must never be interpreted as Back or reopen the interface. PTY regressions
+exercise both paths against real processes and check terminal restoration.
 
 ## License
 

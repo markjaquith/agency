@@ -1420,6 +1420,21 @@ pr: null
 				}),
 			]),
 		)
+		expect(
+			workspace.operations.find(
+				(operation) =>
+					operation.action === "fetch" && operation.repo === "agency",
+			),
+		).toMatchObject({
+			command: [
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"fetch",
+				"origin",
+				"main",
+			],
+		})
 		expect(await Bun.file(workspace.codePath).exists()).toBe(false)
 		expect(
 			Bun.spawnSync([
@@ -1431,6 +1446,69 @@ pr: null
 				"refs/heads/task/planned",
 			]).exitCode,
 		).not.toBe(0)
+	})
+
+	test("targets a remote base while honoring a custom fetch refspec", async () => {
+		await git([
+			"-C",
+			join(root, "repos/agency"),
+			"config",
+			"remote.origin.fetch",
+			"+refs/heads/*:refs/remotes/origin/*",
+		])
+		await Bun.write(join(source, "remote-base.txt"), "remote base\n")
+		await git(["add", "remote-base.txt"], source)
+		await git(
+			["-c", "commit.gpgsign=false", "commit", "-m", "advance remote base"],
+			source,
+		)
+		const remoteCommit = await gitOutput(["rev-parse", "HEAD"], source)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "targeted-base",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/targeted-base",
+							base: "origin/main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("targeted-base", undefined, root),
+				),
+			),
+		)
+
+		expect(
+			await gitOutput(
+				["rev-parse", "refs/remotes/origin/main"],
+				join(root, "repos/agency"),
+			),
+		).toBe(remoteCommit)
+		expect(
+			await gitOutput(["rev-parse", "HEAD"], workspace.writablePath!),
+		).toBe(remoteCommit)
+		expect(
+			workspace.operations.find((operation) => operation.action === "fetch"),
+		).toMatchObject({
+			command: [
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"fetch",
+				"origin",
+				"main",
+			],
+		})
 	})
 
 	test("dry-run resolves a reference that exists only on the remote", async () => {

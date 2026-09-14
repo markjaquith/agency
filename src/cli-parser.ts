@@ -144,20 +144,30 @@ const commands = {
 	},
 	act: {
 		usage:
-			"agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
+			"agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
 			"dry-run": { type: "boolean" },
 			auto: { type: "boolean" },
 			draft: { type: "boolean" },
+			action: { type: "string" },
 		},
 		command: {
 			usage:
-				"agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]",
+				"agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]",
 			minArgs: 0,
 			maxArgs: 1,
-			options: ["epic", "task", "phase", "dry-run", "json", "auto", "draft"],
+			options: [
+				"epic",
+				"task",
+				"phase",
+				"dry-run",
+				"json",
+				"auto",
+				"draft",
+				"action",
+			],
 			conflicts: [
 				["dry-run", "json"],
 				["epic", "task"],
@@ -665,14 +675,14 @@ const commands = {
 		},
 	},
 	sync: {
-		usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
+		usage: "agency sync [<task-id|path> [phase-id]] [--dry-run] [--json]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
 			"dry-run": { type: "boolean" },
 		},
 		command: {
-			usage: "agency sync [<task-id> [phase-id]] [--dry-run] [--json]",
+			usage: "agency sync [<task-id|path> [phase-id]] [--dry-run] [--json]",
 			minArgs: 0,
 			maxArgs: 2,
 			options: ["dry-run", "json", "task", "phase"],

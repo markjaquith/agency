@@ -25,7 +25,8 @@
     "scripts/benchmark-worktree.ts",
     "scripts/benchmark-workbase.ts",
     "scripts/install-pi-extension.ts",
-    "scripts/test-global-install.ts"
+    "scripts/test-global-install.ts",
+    "scripts/smoke-opencode-auto.ts"
   ],
   "ignoreDependencies": ["web-tree-sitter"],
   "ignore": ["src/test-utils.ts", "**/*.test.ts", "**/*.test.tsx"]

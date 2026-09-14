@@ -104,6 +104,360 @@ const runPrompt = async (
 }
 
 describe("interactive CLI terminal restoration", () => {
+	test("bare agency exits when its renderer is destroyed by SIGTERM", async () => {
+		const root = await createWorkbase()
+		let output = ""
+		const decoder = new TextDecoder()
+		const terminal = new Bun.Terminal({
+			cols: 80,
+			rows: 24,
+			data: (_, bytes) => {
+				output += decoder.decode(bytes, { stream: true })
+			},
+		})
+		const initialModes = modes(terminal)
+		const subprocess = Bun.spawn([process.execPath, cliPath], {
+			cwd: root,
+			env: { ...process.env, TERM: "xterm-256color" },
+			terminal,
+		})
+		try {
+			await waitFor(
+				() => output.includes("No tasks or phases yet"),
+				() => output,
+			)
+			subprocess.kill("SIGTERM")
+			expect(await waitForExit(subprocess, () => output)).toBe(0)
+			expect(modes(terminal)).toEqual(initialModes)
+			expect(output.match(/\x1b\[\?1049h/g)).toHaveLength(1)
+			expect(output.match(/\x1b\[\?1049l/g)).toHaveLength(1)
+		} finally {
+			if (subprocess.exitCode === null) {
+				subprocess.kill("SIGKILL")
+				await subprocess.exited
+			}
+			terminal.close()
+		}
+	}, 12_000)
+
+	for (const shutdown of ["ctrl-c", "SIGTERM"] as const) {
+		test(`persistent session cancels in-flight work and restores the terminal (${shutdown})`, async () => {
+			const root = await createTempDir()
+			tempDirs.push(root)
+			const entry = join(root, "progress.ts")
+			await Bun.write(
+				entry,
+				`
+import { Effect } from ${JSON.stringify(join(projectRoot, "node_modules/effect"))}
+import { openActSession, ActCancelled } from ${JSON.stringify(join(projectRoot, "src/commands/act-prompts.ts"))}
+await Effect.runPromise(Effect.gen(function* () {
+  const session = yield* Effect.acquireRelease(openActSession(), s => s.close())
+  session.show("Working fixture")
+  yield* Effect.raceFirst(Effect.never, session.cancelled)
+}).pipe(Effect.scoped, Effect.catchAll(error => error instanceof ActCancelled ? Effect.void : Effect.fail(error))))
+console.log("Operation cancelled")
+`,
+			)
+			let output = ""
+			const decoder = new TextDecoder()
+			const terminal = new Bun.Terminal({
+				cols: 80,
+				rows: 24,
+				data: (_terminal, bytes) => {
+					output += decoder.decode(bytes, { stream: true })
+				},
+			})
+			const initialModes = modes(terminal)
+			const subprocess = Bun.spawn([process.execPath, entry], {
+				env: { ...process.env, TERM: "xterm-256color" },
+				terminal,
+			})
+			try {
+				await waitFor(
+					() => output.includes("Working fixture"),
+					() => output,
+				)
+				if (shutdown === "SIGTERM") subprocess.kill("SIGTERM")
+				else terminal.write("\x03")
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
+				expect(modes(terminal)).toEqual(initialModes)
+				expect(output.indexOf("Operation cancelled")).toBeGreaterThan(
+					output.indexOf("\x1b[?1049l"),
+				)
+			} finally {
+				if (subprocess.exitCode === null) {
+					subprocess.kill("SIGKILL")
+					await subprocess.exited
+				}
+				terminal.close()
+			}
+		}, 12_000)
+	}
+
+	for (const finish of ["\r", "\x1b", "work"]) {
+		test(`act preserves completed creation in its recap after ${finish === "\r" ? "Finish" : finish === "work" ? "worker return" : "cancellation"}`, async () => {
+			const root = await createWorkbase()
+			const source = join(root, "source")
+			for (const command of [
+				["git", "init", "-b", "main", source],
+				[
+					"git",
+					"-C",
+					source,
+					"remote",
+					"add",
+					"origin",
+					"https://example.com/demo.git",
+				],
+				[process.execPath, cliPath, "repo", "link", "demo", source, "--silent"],
+			]) {
+				const result = Bun.spawnSync(command, {
+					cwd: root,
+					stdout: "pipe",
+					stderr: "pipe",
+				})
+				if (result.exitCode !== 0)
+					throw new Error(new TextDecoder().decode(result.stderr))
+			}
+			let output = ""
+			const decoder = new TextDecoder()
+			const terminal = new Bun.Terminal({
+				cols: 100,
+				rows: 24,
+				data: (_terminal, bytes) => {
+					output += decoder.decode(bytes, { stream: true })
+				},
+			})
+			const initialModes = modes(terminal)
+			const entry = join(root, "worker-fixture.ts")
+			if (finish === "work")
+				await Bun.write(
+					entry,
+					`
+import { Effect } from ${JSON.stringify(join(projectRoot, "node_modules/effect"))}
+import { runTestEffect } from ${JSON.stringify(join(projectRoot, "src/test-utils.ts"))}
+import { act } from ${JSON.stringify(join(projectRoot, "src/commands/act.ts"))}
+await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", inputAllowed: true }, undefined, () => Effect.sync(() => console.log("WORKER_RETURNED"))))
+`,
+				)
+			const subprocess = Bun.spawn(
+				finish === "work"
+					? [process.execPath, entry]
+					: [
+							process.execPath,
+							cliPath,
+							...(finish === "\r" ? [] : ["act", "--action", "task-create"]),
+						],
+				{
+					cwd: root,
+					env: { ...process.env, TERM: "xterm-256color" },
+					terminal,
+				},
+			)
+			const wait = (text: string) =>
+				waitFor(
+					() => output.includes(text),
+					() => output,
+				)
+			try {
+				if (finish === "\r") {
+					await wait("No tasks or phases yet")
+					terminal.write("\t")
+					await wait("Create a task")
+					terminal.write("\r")
+					await wait("standard")
+					terminal.write("\r")
+				}
+				await wait("Outcome:")
+				terminal.write("Persistent recap\r")
+				await wait("persistent-recap")
+				terminal.write("\r")
+				await wait("main")
+				terminal.write("\r")
+				await wait("Work on the new item now")
+				expect(output).not.toContain("\x1b[?1049l")
+				const beforeFinish = output.length
+				terminal.write(finish === "work" ? "\x1b[B\r" : finish)
+				await waitFor(
+					() =>
+						output
+							.slice(beforeFinish)
+							.includes(finish === "\r" ? "Create a task" : "󰄱  open"),
+					() => output,
+				)
+				expect(subprocess.exitCode).toBeNull()
+				if (finish === "work")
+					expect(output.indexOf("WORKER_RETURNED")).toBeGreaterThan(
+						output.indexOf("\x1b[?1049l"),
+					)
+				else expect(output).not.toContain("\x1b[?1049l")
+				if (finish === "\r") {
+					const beforeSwitch = output.length
+					terminal.write("\t")
+					await waitFor(
+						() => output.slice(beforeSwitch).includes("󰄱  open"),
+						() => output,
+					)
+				}
+				expect(output.slice(beforeFinish)).toContain("persistent-recap")
+				if (finish === "\r") {
+					terminal.write("\r")
+					await wait("task persistent-recap")
+					terminal.write("Complete")
+					await Bun.sleep(50)
+					terminal.write("\r")
+					await wait("outcome summary")
+					const beforeCancel = output.length
+					terminal.write("\x1b")
+					await waitFor(
+						() => output.slice(beforeCancel).includes("pull request"),
+						() => output,
+					)
+					terminal.write("Drop")
+					await Bun.sleep(50)
+					terminal.write("\r")
+					await wait("Reopen")
+					expect(subprocess.exitCode).toBeNull()
+					expect(output).not.toContain("\x1b[?1049l")
+					const beforeBack = output.length
+					terminal.write("\x1b")
+					await waitFor(
+						() => output.slice(beforeBack).includes("dropped"),
+						() => output,
+					)
+				}
+				if (finish === "\r") {
+					terminal.write("\x1b")
+					await Bun.sleep(100)
+					expect(subprocess.exitCode).toBeNull()
+					expect(output).not.toContain("\x1b[?1049l")
+				}
+				terminal.write("\x03")
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
+				expect(modes(terminal)).toEqual(initialModes)
+				const recap = output.slice(output.lastIndexOf("\x1b[?1049l"))
+				expect(recap).toContain("󰄬  Create a standard task")
+				expect(recap).toContain("Item: persistent-recap")
+				if (finish === "work") expect(recap).toContain("Work handoff completed")
+				else expect(recap).not.toContain("Work handoff completed")
+				expect(
+					await Bun.file(join(root, "tasks/persistent-recap/TASK.md")).text(),
+				).toContain(finish === "\r" ? "status: dropped" : "status: open")
+				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(
+					finish === "work" ? 2 : 1,
+				)
+				expect(output.match(/\x1b\[\?1049l/g)?.length).toBe(
+					finish === "work" ? 2 : 1,
+				)
+			} finally {
+				if (subprocess.exitCode === null) {
+					subprocess.kill("SIGKILL")
+					await subprocess.exited
+				}
+				terminal.close()
+			}
+		}, 15_000)
+	}
+
+	for (const outcome of ["preview", "cancel", "invalid"] as const) {
+		test(`act keeps one renderer through selection and text input (${outcome})`, async () => {
+			const root = await createWorkbase()
+			let output = ""
+			const decoder = new TextDecoder()
+			const terminal = new Bun.Terminal({
+				cols: 90,
+				rows: 24,
+				data: (_terminal, bytes) => {
+					output += decoder.decode(bytes, { stream: true })
+				},
+			})
+			const initialModes = modes(terminal)
+			const subprocess = Bun.spawn(
+				[process.execPath, cliPath, "act", "--dry-run"],
+				{
+					cwd: root,
+					env: { ...process.env, TERM: "xterm-256color" },
+					terminal,
+				},
+			)
+			const wait = (text: string) =>
+				waitFor(
+					() => output.includes(text),
+					() => output,
+				)
+			try {
+				await wait("No tasks or phases yet")
+				terminal.write("\t")
+				await wait("Add a repository")
+				terminal.write("Add a repository")
+				await Bun.sleep(50)
+				terminal.write("\r")
+				await wait("Link a local repository")
+				terminal.write("\r")
+				await wait("Repository alias:")
+				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(1)
+				expect(output).not.toContain("\x1b[?1049l")
+				terminal.resize(60, 15)
+				terminal.write(
+					outcome === "cancel"
+						? "\x03"
+						: outcome === "invalid"
+							? "\r"
+							: "demo\r",
+				)
+				if (outcome === "preview") {
+					await wait("URL:")
+					const beforeBack = output.length
+					terminal.write("\x1b")
+					await waitFor(
+						() => output.slice(beforeBack).includes("alias:"),
+						() => output,
+					)
+					const beforeForward = output.length
+					terminal.write("demo\r")
+					await waitFor(
+						() => output.slice(beforeForward).includes("URL:"),
+						() => output,
+					)
+					terminal.write("https://example.com/demo.git\r")
+				}
+				if (outcome !== "cancel") {
+					await wait(outcome === "preview" ? "Preview:" : "is required")
+					if (outcome === "invalid") {
+						terminal.write("recovered\r")
+						await wait("URL:")
+						terminal.write("https://example.com/recovered.git\r")
+						await wait("Preview:")
+					}
+					expect(subprocess.exitCode).toBeNull()
+					terminal.write("\x1b")
+				}
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
+				expect(modes(terminal)).toEqual(initialModes)
+				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(1)
+				expect(output.match(/\x1b\[\?1049l/g)?.length).toBe(1)
+				if (outcome === "preview") {
+					expect(
+						output.lastIndexOf(
+							"Preview: agency repo add demo https://example.com/demo.git",
+						),
+					).toBeGreaterThan(output.indexOf("\x1b[?1049l"))
+				} else if (outcome === "invalid") {
+					expect(output).toContain("Repository alias is required")
+					expect(output).toContain(
+						"agency repo add recovered https://example.com/recovered.git",
+					)
+				}
+			} finally {
+				if (subprocess.exitCode === null) {
+					subprocess.kill("SIGKILL")
+					await subprocess.exited
+				}
+				terminal.close()
+			}
+		}, 15_000)
+	}
+
 	test("restores terminal state after submission, resize, and escape", async () => {
 		const output = await runPrompt(async (terminal, currentOutput) => {
 			terminal.resize(30, 8)

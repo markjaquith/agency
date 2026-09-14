@@ -37,6 +37,7 @@ import {
 	readValidationEvidence,
 } from "../workbase/execution-contract"
 import { ValidationFailedError } from "./validate"
+import { prepareOpenCodeLaunch } from "../workbase/opencode-launch"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -386,12 +387,22 @@ export const work = (
 			...agentEnvironment(agent, variables),
 		}
 		if (writablePath) environment.AGENCY_WRITABLE_CHECKOUT = writablePath
+		const managedOpenCodeAuto =
+			options.auto &&
+			(agent === "opencode" || agent === "opencode2") &&
+			!config.agents?.[agent]
 		if (options.printCommand) {
 			log(
 				JSON.stringify(
 					{
 						cwd: launchPath,
 						argv: resolved.argv,
+						...(managedOpenCodeAuto
+							? {
+									startup:
+										"OpenCode V2: submit via API, then attach with --session; V1: use argv",
+								}
+							: {}),
 						environment: printableEnvironment(environment),
 					},
 					null,
@@ -449,14 +460,17 @@ export const work = (
 				)
 			}
 		}
+		const launchArgv = managedOpenCodeAuto
+			? yield* prepareOpenCodeLaunch(resolved.argv, launchPath, environment)
+			: resolved.argv
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
 		}
 		verboseLog(
-			`Launching command: ${formatCommand(resolved.argv)} (cwd: ${launchPath})`,
+			`Launching command: ${formatCommand(launchArgv)} (cwd: ${launchPath})`,
 		)
 		try {
-			launch(cli, resolved.argv, launchPath, environment)
+			launch(cli, launchArgv, launchPath, environment)
 		} finally {
 			for (const key of Object.keys(environment)) {
 				const previous = previousEnvironment[key]

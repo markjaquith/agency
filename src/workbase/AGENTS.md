@@ -4,6 +4,55 @@ This directory is an Agency workbase. Epics, tasks, and phases are durable
 Markdown documents; repository aliases and generated Git worktrees provide code
 access.
 
+## Discover Actions First
+
+After the `agency context . --json` bootstrap, use `agency act --json` as the
+primary way to discover what Agency can do. Prefer its live action catalog over
+searching command help, reading implementation code, or guessing commands from
+memory. It reports available actions, blocked reasons, required inputs, exact
+argv/templates, document revisions, and explicit follow-up choices.
+
+Keep discovery focused on the work at hand:
+
+- Current task: `agency act --task <context-task-id> --json`.
+- Current phase: `agency act --task <context-task-id> --phase <context-phase-id> --json`.
+- One operation: add `--action <action-id>` to either selector.
+- Workbase-level creation or repository actions: use
+  `agency act --action <action-id> --json` without an item selector.
+- Unsure which action or item applies: `agency act --json`.
+
+Use selectors returned by context, not IDs inferred from checkout or branch
+names. Execute an available `command` as argv from the returned workbase root.
+For a `commandTemplate`, substitute required input placeholders; append optional
+inputs using their declared `option`. Preserve multiline input as one argv value.
+Re-discover after mutations because availability and revisions may change.
+
+Discovery is read-only and does not grant consent. `followUpCommands` describe
+the action's bookkeeping; `nextActions` require a separate explicit choice.
+Creation never implies starting Work. Respect blocked reasons and the consent
+boundaries below. The command fast paths remain useful when the exact operation
+and arguments are already established; do not rediscover between every known
+step or use help unless discovery does not cover the operation.
+
+### Current Work and Branch Context
+
+When the request concerns this execution unit, target its context task/phase
+rather than browsing the entire workbase. Use `authority.writable.checkoutPath`
+for repository work and the declared delivery branch for publication.
+
+For new work that builds on the current implementation (a follow-up, additional
+phase, or explicitly requested continuation), prefer the current execution's
+declared branch as `--base` when that matches the user's intent. Do not blindly
+copy `main` from examples or accept a wizard default. Confirm the branch from
+Agency context; when checking the live Git branch is necessary, do so in the
+writable checkout, not the workbase root. An explicit user base takes precedence.
+Unrelated new work should use its intended integration base instead.
+
+Branch ancestry is not a completion dependency. Choosing the current branch as
+the base does not add `--depends-on`, reuse the current item for explicitly new
+work, switch branches, or expand write authority. Pass the chosen base as the
+discovered `base` input to the native creation/handoff command.
+
 ## Command Fast Paths
 
 When a request clearly matches one of these intents, use the exact recipe without
@@ -207,10 +256,11 @@ recursively launch. External session state is never part of worker identity. If
 the prompt and context disagree, stop and ask the user rather than launching.
 
 For OpenCode, Agency's managed plugin validates the generated marker against
-`agency context`, binds that identity to the OpenCode session, injects an
-active-worker system instruction, and supplies Agency identity to that session's
-shell environment. This avoids relying on the environment of OpenCode's
-long-lived server process.
+`agency context`, binds that identity to the OpenCode session, and injects an
+active-worker system instruction. The V1 integration also supplies Agency
+identity to that session's shell environment. OpenCode V2's shell hook does not
+identify the invoking session, so the plugin does not leak one session's identity
+into another and instead retains the validated prompt fallback.
 
 ## Closeout
 
@@ -238,9 +288,11 @@ a refinement loop, or pausing or handing off completed implementation work):
 
 `agency integration status` reports `managed`, `drifted`, `customized`, or
 `missing` generated files. Agency keeps these instructions in
-`.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
+`.agency/AGENTS.md`, and its managed OpenCode integration loads them automatically.
 It also installs a managed server plugin that exposes skills from the
-authoritative writable checkout and an explicitly registered TUI companion
+authoritative writable checkout. In OpenCode V2 it injects these managed
+instructions through a session context hook because configured instruction paths
+are not currently loaded. The V1 integration also registers a TUI companion
 providing `/agency-debug` without submitting an LLM prompt.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
@@ -253,7 +305,7 @@ OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
 `agency context`. OpenCode remains rooted in the task or epic directory so the
 workbase instructions and config compose normally. The managed plugin resolves
-the writable checkout from launch context or `agency context`, then adds its
-supported skill directories through `skills.paths`; this does not make other
-checkout-local OpenCode configuration authoritative. Agents must follow the
-authority reported by `agency context`.
+the writable checkout from launch context or `agency context`, then exposes its
+supported skill directories through the applicable OpenCode plugin API; this
+does not make other checkout-local OpenCode configuration authoritative. Agents
+must follow the authority reported by `agency context`.

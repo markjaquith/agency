@@ -122,13 +122,14 @@ export const sync = (
 	})
 
 export const help = `
-Usage: agency sync [<task-id> [phase-id]] [--dry-run] [--json]
+Usage: agency sync [<task-id|path> [phase-id]] [--dry-run] [--json]
 
 Compare portable repository declarations and execution state with local Git
 repositories, worktrees, branches, references, and pull requests.
 Safe reconciliation transitions are applied by default.
-When a task or phase is provided, only that target and its repositories are
-queried or reconciled. Task scope includes all phases of a multi-phase task.
+When a task, phase, or item path is provided, only that target and its
+repositories are queried or reconciled. Task and epic scopes include their
+child execution units.
 
 Options:
   --dry-run                 Report planned safe transitions without changing state

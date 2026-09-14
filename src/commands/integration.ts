@@ -18,6 +18,7 @@ interface IntegrationResult {
 			| "opencode-plugin"
 			| "opencode-tui"
 			| "opencode-tui-plugin"
+			| "opencode-v2-tui-plugin"
 		readonly path: string
 		readonly state: string
 		readonly diagnostic: string
@@ -32,6 +33,7 @@ const integrationNames = {
 	"opencode-plugin": "OpenCode workbase plugin",
 	"opencode-tui": "OpenCode TUI config",
 	"opencode-tui-plugin": "OpenCode /agency-debug",
+	"opencode-v2-tui-plugin": "OpenCode V2 TUI companion",
 } as const
 
 const logHumanResult = (
