@@ -261,20 +261,18 @@ export const act = (
 					...options,
 					cwd: state.root,
 					directory: undefined,
-					epicId: undefined,
-					taskId: undefined,
-					phaseId: undefined,
-					action: undefined,
-					...(state.item?.startsWith("phase:")
-						? {
-								taskId: state.item.slice(6).split("/")[0],
-								phaseId: state.item.slice(6).split("/")[1],
-							}
+					epicId: state.item?.startsWith("epic:")
+						? state.item.slice(5)
+						: undefined,
+					taskId: state.item?.startsWith("phase:")
+						? state.item.slice(6).split("/")[0]
 						: state.item?.startsWith("task:")
-							? { taskId: state.item.slice(5) }
-							: state.item?.startsWith("epic:")
-								? { epicId: state.item.slice(5) }
-								: {}),
+							? state.item.slice(5)
+							: undefined,
+					phaseId: state.item?.startsWith("phase:")
+						? state.item.slice(6).split("/")[1]
+						: undefined,
+					action: undefined,
 				}
 			}
 		}).pipe(

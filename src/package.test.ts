@@ -9,6 +9,7 @@ describe("npm package", () => {
 	test("ships public exports without test-only files", async () => {
 		// The installed-package PTY test exercises pack hooks. This metadata-only
 		// check must not race those hooks in the parallel test suite.
+		// Enumerating bundled OpenTUI files can exceed Bun's default 5s on CI.
 		const process = Bun.spawn(
 			["npm", "pack", "--dry-run", "--json", "--ignore-scripts"],
 			{
@@ -44,5 +45,5 @@ describe("npm package", () => {
 				"fixtures/protocol/error.json",
 			]),
 		)
-	})
+	}, 30_000)
 })

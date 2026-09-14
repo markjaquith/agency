@@ -1349,6 +1349,20 @@ bun run build
 
 Run focused tests with `bun test <test-file>`. Run formatting with `bun format`.
 
+Run `bun run test:global-install` for the network-backed package smoke test. It
+packs the checkout and uses temporary Bun global directories, caches, and homes
+to test clean installation and coexistence with newer global TypeScript and
+web-tree-sitter versions. It checks peer resolution, the installed CLI, native
+rendering, and the packaged Pi installation hook.
+
+OpenTUI requires web-tree-sitter `0.25.10`, and its bun-ffi-structs dependency
+requires TypeScript `^5`. Agency declares these as production dependencies and
+bundles the OpenTUI packages so Bun's global hoisting cannot separate them from
+their compatible peers. Keep the root optional native packages aligned with
+`@opentui/core`'s optional dependencies when updating OpenTUI: they let installs
+on other platforms fetch binaries absent from the packing host. The smoke test
+also verifies installation with the bundled host binary removed.
+
 The TUI uses `@opentui/core` and `@opentui/solid`, pinned together at 0.5.11,
 with the binding's required `solid-js` 1.9.12. Follow the upstream
 [Solid bindings](https://github.com/anomalyco/opentui/blob/v0.5.11/packages/web/src/content/docs/bindings/solid.mdx) and
