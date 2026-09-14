@@ -20,6 +20,11 @@ bun install -g @markjaquith/agency
 
 For development, run `bun link` from this repository.
 
+Package with lifecycle scripts enabled (`bun pm pack` or `npm pack`). The
+`prepack` hook compiles the interactive Solid UI because OpenTUI's runtime JSX
+transform skips files installed under `node_modules`. The `postpack` hook removes
+the generated sibling so subsequent development runs use the source UI.
+
 ## Local Usage Logging
 
 Agency records privacy-safe CLI usage events locally so command journeys,
