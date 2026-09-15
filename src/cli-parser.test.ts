@@ -27,6 +27,11 @@ describe("strict CLI parsing", () => {
 	})
 
 	test("parses act selectors, dry-run, and JSON options", () => {
+		expect(parseCli(["."])).toMatchObject({
+			commandName: "act",
+			commandPath: "act",
+			args: ["."],
+		})
 		expect(
 			parseCli([
 				"act",

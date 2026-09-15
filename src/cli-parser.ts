@@ -1355,12 +1355,13 @@ export function parseCli(args: readonly string[]): ParsedCli {
 		return { commandPath: "root", args: [], values: parsed.values }
 	}
 
-	const commandName = args[commandIndex]!
+	const suppliedCommandName = args[commandIndex]!
+	const commandName = suppliedCommandName === "." ? "act" : suppliedCommandName
 	const definition: CommandDefinition | undefined =
 		commands[commandName as keyof typeof commands]
 	if (!definition) {
 		throw usageError(
-			`Unknown command '${commandName}'.`,
+			`Unknown command '${suppliedCommandName}'.`,
 			"agency <command> [options]",
 		)
 	}
@@ -1405,6 +1406,7 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	const commandArgs = [
 		...args.slice(0, commandIndex),
+		...(suppliedCommandName === "." ? ["."] : []),
 		...args.slice(commandIndex + 1),
 	]
 	const parsed = parse(commandArgs, definition.options, definition.usage)
