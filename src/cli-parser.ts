@@ -499,7 +499,14 @@ const commands = {
 				usage: "agency task status <id> <status> [options] [--json]",
 				minArgs: 2,
 				maxArgs: 2,
-				options: ["json", "task", "no-pull-request", "summary", "evidence-url"],
+				options: [
+					"json",
+					"task",
+					"if-revision",
+					"no-pull-request",
+					"summary",
+					"evidence-url",
+				],
 			},
 			update: {
 				usage: "agency task update <id> [options] [--json]",
@@ -630,6 +637,7 @@ const commands = {
 					"json",
 					"task",
 					"phase",
+					"if-revision",
 					"no-pull-request",
 					"summary",
 					"evidence-url",

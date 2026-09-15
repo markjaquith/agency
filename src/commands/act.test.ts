@@ -9,6 +9,7 @@ import {
 	runTestEffect,
 } from "../test-utils"
 import type { Choice } from "../utils/chooser"
+import { epic } from "./epic"
 import { phase } from "./phase"
 import { task } from "./task"
 import { act, type ActInteraction } from "./act"
@@ -158,9 +159,7 @@ describe("act command", () => {
 			act(
 				{ cwd: root, silent: true },
 				{
-					select: () => {
-						throw new Error("No follow-up selection expected")
-					},
+					...scriptedInteraction(["current-work"]),
 					tabs: (tabs) => {
 						selected = true
 						expect(tabs[0]!.choices).toEqual([])
@@ -220,6 +219,8 @@ describe("act command", () => {
 			"split",
 			"complete",
 			"sync",
+			"rename",
+			"move-to-epic",
 		])
 		expect(logs).toEqual(["Marked task 'example' as dropped"])
 		expect(await readTaskStatus("example")).toBe("dropped")
@@ -451,7 +452,13 @@ describe("act command", () => {
 			),
 		)
 
-		expect(actions).toEqual(["reopen", "archive", "sync"])
+		expect(actions).toEqual([
+			"reopen",
+			"archive",
+			"sync",
+			"rename",
+			"move-to-epic",
+		])
 	})
 
 	test("dispatches phase actions with the parent task identifier", async () => {
@@ -491,7 +498,16 @@ describe("act command", () => {
 			),
 		)
 
-		expect(actions).toEqual(["work", "pr", "drop", "complete", "sync"])
+		expect(actions).toEqual([
+			"work",
+			"pr",
+			"drop",
+			"complete",
+			"sync",
+			"rename",
+			"dependency-add",
+			"dependency-remove",
+		])
 		const content = await Bun.file(
 			join(root, "tasks/multi/phases/build/PHASE.md"),
 		).text()
@@ -1089,6 +1105,8 @@ describe("act command", () => {
 			"close",
 			"archive",
 			"repository",
+			"health",
+			"organize",
 		])
 		expect(
 			offered.every(
@@ -1158,6 +1176,242 @@ describe("act command", () => {
 				).inputs[0].multiline,
 			).toBe(true)
 		}
+	})
+
+	test("discovery covers workbase maintenance with presentation metadata", async () => {
+		await createTask("example")
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, taskId: "example", json: true })),
+		)
+		const output = JSON.parse(logs[0]!)
+		const globalIds = output.workbase.actions.map(
+			(candidate: { id: string }) => candidate.id,
+		)
+		expect(globalIds).toEqual([
+			"repo-add",
+			"repo-link",
+			"task-create",
+			"multi-phase-create",
+			"investigation-create",
+			"epic-create",
+			"review",
+			"review-ref",
+			"current-work",
+			"ready-work",
+			"repo-setup",
+			"repo-materialize",
+			"repo-fetch",
+			"repo-verify",
+			"repo-rename",
+			"repo-remote",
+			"repo-unlink",
+			"repo-remove",
+			"validate",
+			"doctor",
+			"sync-all",
+			"integration-status",
+			"integration-sync",
+		])
+		for (const descriptor of [
+			...output.workbase.actions,
+			...output.targets[0].actions,
+			...output.targets[0].blockedActions,
+		]) {
+			expect(descriptor).toMatchObject({
+				description: expect.stringMatching(/\.$/),
+				icon: expect.any(String),
+				color: expect.stringMatching(/^#[a-f0-9]{6}$/),
+			})
+			expect(descriptor.icon).not.toBe("")
+			const argv = descriptor.command ?? descriptor.commandTemplate
+			if (argv) expect(() => parseCli(argv.slice(1))).not.toThrow()
+		}
+	})
+
+	test("creates multi-phase tasks and epics through guided actions", async () => {
+		const taskAnswers = ["Deliver in stages", "staged"]
+		await runTestEffect(
+			act(
+				{ cwd: root, action: "multi-phase-create", silent: true },
+				{
+					...scriptedInteraction(["finish"]),
+					text: () => Effect.succeed(taskAnswers.shift() ?? null),
+				},
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/staged/TASK.md")).text()).toContain(
+			"phases: []",
+		)
+
+		const epicAnswers = [
+			"Coordinate a rollout",
+			"rollout",
+			"https://example.com/TICKET-1",
+			"main",
+		]
+		await runTestEffect(
+			act(
+				{ cwd: root, action: "epic-create", silent: true },
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed(epicAnswers.shift() ?? null),
+				},
+			),
+		)
+		const epicContent = await Bun.file(
+			join(root, "epics/rollout/EPIC.md"),
+		).text()
+		expect(epicContent).toContain("ticketUrl: https://example.com/TICKET-1")
+		expect(epicContent).toContain("repo: agency\n    ref: main")
+
+		const childAnswers = ["Deliver one part", "child", "main"]
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					epicId: "rollout",
+					action: "task-create-in-epic",
+					silent: true,
+				},
+				{
+					...scriptedInteraction(["finish"]),
+					text: () => Effect.succeed(childAnswers.shift() ?? null),
+				},
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/child/TASK.md")).text()).toContain(
+			"epic: rollout",
+		)
+	})
+
+	test("renames items and manages phase dependencies through guarded actions", async () => {
+		await createTask("rename-me")
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "rename-me",
+					action: "rename",
+					silent: true,
+				},
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed("renamed"),
+				},
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/renamed/TASK.md")).exists()).toBe(
+			true,
+		)
+		await runTestEffect(
+			epic({
+				subcommand: "create",
+				args: ["parent"],
+				ticketUrl: "https://example.com/parent",
+				repos: ["agency:main"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "renamed",
+					action: "move-to-epic",
+					silent: true,
+				},
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed("parent"),
+				},
+			),
+		)
+		expect(
+			await Bun.file(join(root, "tasks/renamed/TASK.md")).text(),
+		).toContain("epic: parent")
+		await runTestEffect(
+			act({
+				cwd: root,
+				taskId: "renamed",
+				action: "remove-from-epic",
+				silent: true,
+			}),
+		)
+		expect(
+			(await Bun.file(join(root, "tasks/renamed/TASK.md")).text()).includes(
+				"epic:",
+			),
+		).toBe(false)
+
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		for (const id of ["build", "deploy"])
+			await runTestEffect(
+				phase({
+					subcommand: "create",
+					args: ["multi", id],
+					repo: "agency",
+					branch: `task/multi-${id}`,
+					base: "main",
+					cwd: root,
+					silent: true,
+				}),
+			)
+		for (const action of ["dependency-add", "dependency-remove"]) {
+			await runTestEffect(
+				act(
+					{
+						cwd: root,
+						taskId: "multi",
+						phaseId: "deploy",
+						action,
+						silent: true,
+					},
+					{
+						...scriptedInteraction([]),
+						text: () => Effect.succeed("build"),
+					},
+				),
+			)
+			const content = await Bun.file(join(root, "tasks/multi/TASK.md")).text()
+			expect(content.includes("dependsOn:\n      - build")).toBe(
+				action === "dependency-add",
+			)
+		}
+	})
+
+	test("offers target-aware publication and review maintenance actions", async () => {
+		await createTask("example")
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["example", "working"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, taskId: "example", json: true })),
+		)
+		const target = JSON.parse(logs[0]!).targets[0]
+		expect(
+			target.actions.find((action: { id: string }) => action.id === "push"),
+		).toMatchObject({
+			command: ["agency", "--cwd", join(root, "tasks/example"), "push"],
+		})
+		expect(
+			target.blockedActions.find(
+				(action: { id: string }) => action.id === "review-refresh",
+			),
+		).toMatchObject({ blockedReason: "Select a review task" })
 	})
 
 	test("optional ordering is separate from the executable split template", async () => {
