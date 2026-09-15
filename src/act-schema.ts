@@ -6,6 +6,9 @@ const Argv = Schema.Array(Schema.String)
 const Action = Schema.Struct({
 	id: Schema.String,
 	label: Schema.optional(Schema.String),
+	description: Schema.String,
+	icon: Schema.String,
+	color: Schema.String,
 	available: Schema.Boolean,
 	blockedReason: Schema.optional(Schema.NullOr(Schema.String)),
 	inputs: Schema.optional(

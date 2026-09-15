@@ -114,11 +114,11 @@ describe("published interactive CLI", () => {
 			await withTerminal(args, async (terminal, wait) => {
 				await wait("No tasks or phases yet")
 				terminal.write("\t")
-				await wait("Add a repository")
+				await wait("Manage repositories")
 				terminal.write("no-matching-action")
 				await wait("No matches")
 				terminal.write("\x1b")
-				await wait("Create a task")
+				await wait("Create work")
 				terminal.write("\x0e\x10")
 				terminal.write("\r")
 				await wait("standard")

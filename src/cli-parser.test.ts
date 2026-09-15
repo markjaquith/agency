@@ -558,6 +558,13 @@ describe("strict CLI parsing", () => {
 				revision,
 			]),
 		).toMatchObject({ values: { "if-revision": revision } })
+		for (const args of [
+			["task", "status", "example", "dropped"],
+			["phase", "status", "example", "build", "dropped"],
+		])
+			expect(parseCli([...args, "--if-revision", revision])).toMatchObject({
+				values: { "if-revision": revision },
+			})
 		expect(() =>
 			parseCli([
 				"phase",

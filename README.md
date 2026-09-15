@@ -616,18 +616,21 @@ handoffs restore the terminal before starting the interactive worker, then reope
 the TUI when the worker returns. A configured
 external chooser continues to offer goals and **Browse items** through that chooser.
 
-| Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                   |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Add a repository                     | Add from a remote, or link an existing local repository                                           | `repo-add`, `repo-link`               |
-| Create a task                        | Create a task → standard task or investigation; describe the outcome                              | `task-create`, `investigation-create` |
-| Split work                           | Add a phase / split this task; name the existing work's first phase                               | `split`                               |
-| Work on a task or phase              | Work on this item                                                                                 | `work`                                |
-| Move from investigation to execution | Create implementation follow-up                                                                   | `handoff`                             |
-| Review someone else's work           | Review a PR, or a remote branch/commit                                                            | `review`, `review-ref`                |
-| Close finished work                  | Close or reopen work → complete without a PR, drop abandoned work, refresh a merged PR, or reopen | `complete`, `drop`, `sync`, `reopen`  |
-| Update PR status                     | Refresh Agency state from the provider, create a PR, mark a GitHub PR ready, or close it          | `sync`, `pr`, `pr-ready`, `pr-close`  |
-| Archive terminal work                | Archive                                                                                           | `archive`                             |
-| See current work                     | See current work                                                                                  | `current-work`                        |
+| Goal                                 | Choose in `act`                                                                                   | Discovery/action ID                                                                                                                                |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manage repositories                  | Add, link, set up, materialize, fetch, verify, rename, update, unlink, or remove aliases          | `repo-add`, `repo-link`, `repo-setup`, `repo-materialize`, `repo-fetch`, `repo-verify`, `repo-rename`, `repo-remote`, `repo-unlink`, `repo-remove` |
+| Create work                          | Create a standard task, multi-phase task, investigation, epic, or a task inside an epic           | `task-create`, `multi-phase-create`, `investigation-create`, `epic-create`, `task-create-in-epic`                                                  |
+| Split work                           | Add a phase / split this task; name the existing work's first phase                               | `split`                                                                                                                                            |
+| Work on a task or phase              | Work on this item                                                                                 | `work`                                                                                                                                             |
+| Move from investigation to execution | Create implementation follow-up                                                                   | `handoff`                                                                                                                                          |
+| Review someone else's work           | Review a PR, or a remote branch/commit                                                            | `review`, `review-ref`                                                                                                                             |
+| Close finished work                  | Close or reopen work → complete without a PR, drop abandoned work, refresh a merged PR, or reopen | `complete`, `drop`, `sync`, `reopen`                                                                                                               |
+| Publish or update PR status          | Push without a PR, refresh provider state, create a PR, mark a GitHub PR ready, or close it       | `push`, `sync`, `pr`, `pr-ready`, `pr-close`                                                                                                       |
+| Maintain review work                 | Fetch and repin a review task to its current source                                               | `review-refresh`                                                                                                                                   |
+| Organize work                        | Rename an item, move a task into/out of an epic, or add/remove a sibling dependency               | `rename`, `move-to-epic`, `remove-from-epic`, `dependency-add`, `dependency-remove`                                                                |
+| Archive terminal work                | Archive                                                                                           | `archive`                                                                                                                                          |
+| See work status                      | See current or ready work                                                                         | `current-work`, `ready-work`                                                                                                                       |
+| Check or refresh the workbase        | Validate, diagnose, reconcile all state, or inspect/update managed integration files              | `validate`, `doctor`, `sync-all`, `integration-status`, `integration-sync`                                                                         |
 
 After creating a task, phase, review, or implementation follow-up, choose **Work
 on the new item now** or **Finish**. Only choosing Work prepares checkouts and
@@ -663,6 +666,8 @@ For agents, `--json` never prompts or executes. Its compact, runtime-validated
 result includes workbase actions and repository aliases, current working items,
 and matching targets with readiness, document revisions, available `actions`,
 and `blockedActions` with reasons. `--action` filters discovery to one scenario.
+Every action includes a concise `description`, Nerd Font `icon`, and semantic
+hex `color`, in addition to its label and availability.
 Targets and current working items share the same identity and metadata fields:
 `id`, `kind`, `key`, `status`, `description`, `repo` (the declared main repository,
 when present), `repositories`, `readiness`, and `revision`. Descriptions retain

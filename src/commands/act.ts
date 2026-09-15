@@ -169,29 +169,18 @@ const entitySummary = (node: ActEntity) => ({
 	readiness: node.readiness,
 	revision: node.data.sha256,
 })
-const actionIcons: Record<string, string> = {
-	reopen: "󰑓",
-	drop: "󰅖",
-	complete: "󰄬",
-	sync: "󰑓",
-	"pr-ready": "󰄬",
-	"pr-close": "",
-}
 const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
-	actions.map(({ id, label }) => {
-		const icon =
-			actionIcons[id] ??
-			actionGroups.find((group) =>
-				group.actions.some((action) => action === id),
-			)!.icon
-		const color =
-			id === "drop" || id === "pr-close" ? macchiato.red : macchiato.overlay1
+	actions.map(({ id, label, description, icon, color }) => {
 		return {
 			key: id,
 			value: id,
-			label: `${icon}  ${label}`,
-			plainLabel: label,
-			segments: [{ text: `${icon}  `, color }, { text: label }],
+			label: `${icon}  ${label} — ${description}`,
+			plainLabel: `${label} — ${description}`,
+			segments: [
+				{ text: `${icon}  `, color },
+				{ text: label },
+				{ text: ` — ${description}`, color: macchiato.overlay0 },
+			],
 		}
 	})
 
@@ -568,7 +557,7 @@ const actStep = (
 					graph.nodes
 						.filter((node) => node.kind === "repository")
 						.map((node) => node.key),
-					nodes.filter((node) => node.kind !== "epic").map((node) => node.key),
+					nodes.map((node) => node.key),
 					config.chooserCommand,
 				),
 			)

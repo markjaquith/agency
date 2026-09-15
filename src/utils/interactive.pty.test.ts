@@ -263,7 +263,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				if (finish === "\r") {
 					await wait("No tasks or phases yet")
 					terminal.write("\t")
-					await wait("Create a task")
+					await wait("Create work")
 					terminal.write("\r")
 					await wait("standard")
 					terminal.write("\r")
@@ -282,7 +282,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 					() =>
 						output
 							.slice(beforeFinish)
-							.includes(finish === "\r" ? "Create a task" : "󰄱  open"),
+							.includes(finish === "\r" ? "Create work" : "󰄱  open"),
 					() => output,
 				)
 				expect(subprocess.exitCode).toBeNull()
@@ -388,13 +388,13 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 			try {
 				await wait("No tasks or phases yet")
 				terminal.write("\t")
-				await wait("Add a repository")
-				terminal.write("Add a repository")
+				await wait("Manage repositories")
+				terminal.write("Manage repositories")
 				await Bun.sleep(50)
 				terminal.write("\r")
 				await wait("Link a local repository")
 				terminal.write("\r")
-				await wait("Repository alias:")
+				await wait("enter submit | shift-enter newline")
 				expect(output.match(/\x1b\[\?1049h/g)?.length).toBe(1)
 				expect(output).not.toContain("\x1b[?1049l")
 				terminal.resize(60, 15)
