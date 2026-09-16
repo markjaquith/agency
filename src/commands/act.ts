@@ -14,6 +14,7 @@ import {
 	actionGroups,
 	actActions,
 	actionOutput,
+	isActActionId,
 	type ActAction,
 	type ActEntity,
 } from "./act-actions"
@@ -360,10 +361,7 @@ const actStep = (
 		if (session && options.directory && isPath && !selectedKey && !actionId)
 			session.activateTab("workbase")
 		state.view = !selectedKey && !actionId ? "home" : "flow"
-		if (
-			actionId &&
-			!actionGroups.some((group) => group.actions.some((id) => id === actionId))
-		)
+		if (actionId && !isActActionId(actionId))
 			return yield* Effect.fail(
 				new Error(
 					`Unknown action '${actionId}'; use agency act --json to discover actions`,

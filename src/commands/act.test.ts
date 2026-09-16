@@ -1102,7 +1102,6 @@ describe("act command", () => {
 			"current-work",
 			"browse",
 			"pull-request",
-			"close",
 			"archive",
 			"repository",
 			"health",
