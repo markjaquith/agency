@@ -116,8 +116,8 @@ const unquote = (value: string) => {
   return trimmed
 }
 
-const skillInfo = (location: string) => {
-  const raw = readFileSync(location, "utf8")
+const skillInfo = (path: string) => {
+  const raw = readFileSync(path, "utf8")
   const match = raw.match(/^---\\r?\\n([\\s\\S]*?)\\r?\\n---\\r?\\n?/)
   const frontmatter = match?.[1] ?? ""
   const scalar = (name: string) => {
@@ -126,15 +126,15 @@ const skillInfo = (location: string) => {
     ))?.[1]
     return value ? unquote(value) : undefined
   }
-  const id = basename(location) === "SKILL.md"
-    ? basename(dirname(location))
-    : basename(location, extname(location))
+  const id = basename(path) === "SKILL.md"
+    ? basename(dirname(path))
+    : basename(path, extname(path))
   const description = scalar("description")
   return {
     id,
     name: scalar("name") ?? id,
     ...(description === undefined ? {} : { description }),
-    location,
+    path,
     content: match ? raw.slice(match[0].length) : raw,
   }
 }
@@ -283,8 +283,8 @@ const setup = async (context: V2PluginContext) => {
   )
   await context.skill.transform((skills) => {
     for (const path of paths) {
-      for (const location of skillFiles(path)) {
-        skills.add(skillInfo(location) as unknown as Parameters<typeof skills.add>[0])
+      for (const skillPath of skillFiles(path)) {
+        skills.add(skillInfo(skillPath) as unknown as Parameters<typeof skills.add>[0])
       }
     }
   })

@@ -276,7 +276,7 @@ describe("IntegrationService", () => {
 			'context.permission.hook("evaluate"',
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"skills.add(skillInfo(location)",
+			"skills.add(skillInfo(skillPath)",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain('"chat.message"')
 		expect(managedWorkbaseOpencodePlugin).toContain(
@@ -596,6 +596,9 @@ describe("IntegrationService", () => {
 					transform: async (callback: (skills: any) => void) =>
 						callback({
 							add: (skill: Record<string, unknown>) => {
+								if (typeof skill.path !== "string") {
+									throw new Error("Skill path must be a string")
+								}
 								if (
 									"description" in skill &&
 									typeof skill.description !== "string"
@@ -629,14 +632,14 @@ describe("IntegrationService", () => {
 				{
 					id: "EVALS",
 					name: "EVALS",
-					location: minimalSkillPath,
+					path: minimalSkillPath,
 					content: "Evaluate the repository without frontmatter.\n",
 				},
 				{
 					id: "release",
 					name: "Release",
 					description: "Prepare a release",
-					location: skillPath,
+					path: skillPath,
 					content: "\nShip it.\n",
 				},
 			]),
