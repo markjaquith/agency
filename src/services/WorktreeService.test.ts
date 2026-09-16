@@ -111,6 +111,9 @@ describe("WorktreeService", () => {
 			join(workspace.codePath, "effect"),
 		]) {
 			await Bun.write(join(checkout, ".worktree.lock"), "")
+			await Bun.write(join(checkout, ".DS_Store"), "metadata")
+			await mkdir(join(checkout, "nested"), { recursive: true })
+			await Bun.write(join(checkout, "nested/.DS_Store"), "metadata")
 			expect(await gitOutput(["status", "--porcelain"], checkout)).toBe("")
 		}
 	})
@@ -161,8 +164,70 @@ describe("WorktreeService", () => {
 			),
 		)
 		const excludes = await Bun.file(excludePath).text()
-		expect(excludes).toBe("user-entry\n/.worktree.lock\n")
+		expect(excludes).toBe("user-entry\n/.worktree.lock\n.DS_Store\n")
 		expect(excludes.match(/^\/\.worktree\.lock$/gm)).toHaveLength(1)
+		expect(excludes.match(/^\.DS_Store$/gm)).toHaveLength(1)
+	})
+
+	test("does not report legacy checkouts dirty for untracked .DS_Store files", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "ds-store-only",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/ds-store-only",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("ds-store-only", undefined, root),
+				),
+			),
+		)
+		const checkout = workspace.writablePath!
+		const excludePath = resolve(
+			checkout,
+			await gitOutput(["rev-parse", "--git-path", "info/exclude"], checkout),
+		)
+		const excludes = await Bun.file(excludePath).text()
+		await Bun.write(
+			excludePath,
+			excludes
+				.split("\n")
+				.filter((line) => line !== ".DS_Store")
+				.join("\n"),
+		)
+		await Bun.write(join(checkout, ".DS_Store"), "metadata")
+		await mkdir(join(checkout, "folder with spaces"), { recursive: true })
+		await Bun.write(join(checkout, "folder with spaces/.DS_Store"), "metadata")
+
+		const inspection = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("ds-store-only", undefined, root),
+				),
+			),
+		)
+		expect(inspection.checkouts[0]?.dirty).toBe(false)
+
+		await Bun.write(join(checkout, "meaningful.txt"), "keep")
+		const dirtyInspection = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.inspect("ds-store-only", undefined, root),
+				),
+			),
+		)
+		expect(dirtyInspection.checkouts[0]?.dirty).toBe(true)
 	})
 
 	test("runs repository hooks for new writable and reference checkouts", async () => {

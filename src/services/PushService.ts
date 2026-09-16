@@ -5,6 +5,7 @@ import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
 import { parseGitCommits, type PushCommitMetadata } from "./push-validation"
+import { isDirtyGitStatus } from "./VersionControlService"
 
 type PushCategory =
 	| "precondition"
@@ -374,11 +375,11 @@ const publishGit = (
 		const status = yield* git(
 			fs,
 			checkout,
-			["status", "--porcelain=v1"],
+			["status", "--porcelain=v1", "-z", "--untracked-files=all"],
 			"Failed to inspect Git status",
 			"inspect",
 		)
-		if (status.stdout.length > 0) {
+		if (isDirtyGitStatus(status.stdout)) {
 			return yield* pushError(
 				"Cannot publish a dirty Git worktree; commit or discard changes first",
 				"precondition",

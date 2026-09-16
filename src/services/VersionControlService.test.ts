@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import {
 	GitVersionControlService,
+	isDirtyGitStatus,
 	VersionControlService,
 } from "./VersionControlService"
 import { FileSystemService } from "./FileSystemService"
@@ -13,6 +14,13 @@ describe("VersionControlService", () => {
 
 	afterEach(async () => {
 		await Promise.all(roots.splice(0).map(cleanupTempDir))
+	})
+
+	test("ignores only untracked .DS_Store files in Git status", () => {
+		expect(isDirtyGitStatus("?? .DS_Store\0?? nested/.DS_Store\0")).toBe(false)
+		expect(isDirtyGitStatus("?? folder with spaces/.DS_Store\0")).toBe(false)
+		expect(isDirtyGitStatus("?? nested/file.txt\n")).toBe(true)
+		expect(isDirtyGitStatus(" M .DS_Store\n")).toBe(true)
 	})
 
 	test("inspects a Git repository with one subprocess", async () => {
