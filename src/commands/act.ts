@@ -674,7 +674,8 @@ Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <
 
 Choose a task/phase in Workstream, or press Tab for Workbase actions. Guided
 creation offers an explicit Work choice afterward; creation alone never starts work.
-Item actions stay on that item. Escape clears input, then steps back through
+Completed item actions return to a freshly loaded Workstream. Escape clears input,
+then steps back through
 wizard prompts, the action menu, and Workstream,
 or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
 An existing directory or file selects its containing epic, task, or phase.

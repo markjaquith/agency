@@ -316,15 +316,9 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 					terminal.write("Drop")
 					await Bun.sleep(50)
 					terminal.write("\r")
-					await wait("Reopen")
+					await wait("dropped")
 					expect(subprocess.exitCode).toBeNull()
 					expect(output).not.toContain("\x1b[?1049l")
-					const beforeBack = output.length
-					terminal.write("\x1b")
-					await waitFor(
-						() => output.slice(beforeBack).includes("dropped"),
-						() => output,
-					)
 				}
 				if (finish === "\r") {
 					terminal.write("\x1b")
