@@ -119,6 +119,36 @@ describe("sync command", () => {
 		).toBe(false)
 	})
 
+	test("defaults to the task containing the current directory", async () => {
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "second",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "task/second",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(sync({ cwd: join(root, "tasks/example"), json: true })),
+		)
+
+		expect(
+			JSON.parse(logs[0]!).executions.map((execution: any) => execution.target),
+		).toEqual(["task:example"])
+		expect(
+			await Bun.file(join(root, "tasks/second/code/agency/README.md")).exists(),
+		).toBe(false)
+	})
+
 	test("resolves a task path", async () => {
 		const logs = await captureLogs(() =>
 			runTestEffect(
@@ -210,6 +240,20 @@ describe("sync command", () => {
 		expect(
 			JSON.parse(logs[0]!).executions.map((execution: any) => execution.target),
 		).toEqual(["phase:multi/release"])
+
+		const currentLogs = await captureLogs(() =>
+			runTestEffect(
+				sync({
+					cwd: join(root, "tasks/multi/phases/release"),
+					json: true,
+				}),
+			),
+		)
+		expect(
+			JSON.parse(currentLogs[0]!).executions.map(
+				(execution: any) => execution.target,
+			),
+		).toEqual(["phase:multi/release"])
 	})
 
 	test("resolves an epic path", async () => {
@@ -261,6 +305,15 @@ describe("sync command", () => {
 				join(root, "tasks/example/code/agency/README.md"),
 			).exists(),
 		).toBe(false)
+
+		const currentLogs = await captureLogs(() =>
+			runTestEffect(sync({ cwd: join(root, "epics/delivery"), json: true })),
+		)
+		expect(
+			JSON.parse(currentLogs[0]!).executions.map(
+				(execution: any) => execution.target,
+			),
+		).toEqual(["task:delivery-task"])
 	})
 
 	test("preserves structured output behind --json", async () => {
