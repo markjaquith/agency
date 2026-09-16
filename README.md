@@ -568,7 +568,9 @@ of non-archived tasks and phases. When run inside an epic, task, phase, or one o
 its checkout descendants, it opens that item's actions first; Escape returns to
 Workstream, where **Tab** reaches global Workbase actions. `agency .` is shorthand
 for `agency act .` and explicitly focuses the item containing the current path.
-Otherwise, select an item to see its available actions.
+Otherwise, select an item to see its available actions. After an action,
+Agency reloads the graph and returns to Workstream so changed items and available
+actions are current, and archived items no longer appear.
 Press **Tab** to cycle to **Workbase** for workbase actions. Both tabs have a blank
 row above a chevron-prefixed filter with the placeholder “type to filter”.
 Each tab remembers its filter and selection. The active

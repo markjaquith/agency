@@ -226,6 +226,79 @@ describe("act command", () => {
 		expect(await readTaskStatus("example")).toBe("dropped")
 	})
 
+	test("refreshes every changed item before returning to Workstream", async () => {
+		await createTask("example")
+		let visits = 0
+		let refreshedStatus = ""
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						inputAllowed: true,
+						exitOnEscape: false,
+						silent: true,
+					},
+					{
+						...scriptedInteraction(["drop"]),
+						tabs: (tabs) => {
+							const example = tabs[0]!.choices.find(
+								(choice) => choice.key === "task:example",
+							)!
+							if (visits++ === 0) return Effect.succeed(example.value)
+							refreshedStatus = example.details!.metadata[1]!.text
+							return Effect.fail(new Error("stop after refresh"))
+						},
+					},
+				),
+			),
+		).rejects.toThrow("stop after refresh")
+
+		expect(refreshedStatus).toBe("󰅖  dropped")
+	})
+
+	test("removes archived items before returning to Workstream", async () => {
+		await createTask("archived")
+		await createTask("remaining")
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["archived", "dropped"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		let visits = 0
+		let refreshedItems: string[] = []
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						inputAllowed: true,
+						exitOnEscape: false,
+						silent: true,
+					},
+					{
+						...scriptedInteraction(["archive"]),
+						tabs: (tabs) => {
+							const choices = tabs[0]!.choices
+							if (visits++ === 0)
+								return Effect.succeed(
+									choices.find((choice) => choice.key === "task:archived")!
+										.value,
+								)
+							refreshedItems = choices.map((choice) => choice.key)
+							return Effect.fail(new Error("stop after refresh"))
+						},
+					},
+				),
+			),
+		).rejects.toThrow("stop after refresh")
+
+		expect(refreshedItems).toEqual(["task:remaining"])
+	})
+
 	test("accepts an explicit selector and prints dry-run command without mutation", async () => {
 		await createTask("example")
 		const prompts: string[] = []
