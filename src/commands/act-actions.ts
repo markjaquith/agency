@@ -292,6 +292,9 @@ const actionPresentation: Record<
 	},
 }
 
+export const isActActionId = (id: string): boolean =>
+	Object.hasOwn(actionPresentation, id)
+
 const present = (details: Details) => {
 	const presentation = actionPresentation[details.id]
 	if (!presentation)
@@ -385,12 +388,6 @@ export const actionGroups = [
 		label: "Publish or update a pull request",
 		icon: "",
 		actions: ["push", "sync", "pr", "pr-ready", "pr-close"],
-	},
-	{
-		id: "close",
-		label: "Close or reopen work",
-		icon: "󰄬",
-		actions: ["complete", "drop", "sync", "reopen"],
 	},
 	{
 		id: "archive",
