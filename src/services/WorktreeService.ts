@@ -18,7 +18,10 @@ import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 import { createProgress } from "../utils/progress"
 import { withWorktreeLocks } from "./WorktreeLock"
-import { VersionControlService } from "./VersionControlService"
+import {
+	isDirtyGitStatus,
+	VersionControlService,
+} from "./VersionControlService"
 import type {
 	RegisteredWorkspace,
 	VersionControlBackend,
@@ -75,7 +78,7 @@ interface GitWorktree {
 	readonly branch?: string
 }
 
-const managedWorktreeIgnorePatterns = ["/.worktree.lock"] as const
+const managedWorktreeIgnorePatterns = ["/.worktree.lock", ".DS_Store"] as const
 const vcs = "git" as const
 
 interface WorktreeOwner {
@@ -550,13 +553,21 @@ const inspectExecution = (
 			const status =
 				actual && actualExists
 					? yield* fs.runCommand(
-							["git", "-C", actual.path, "status", "--porcelain"],
+							[
+								"git",
+								"-C",
+								actual.path,
+								"status",
+								"--porcelain=v1",
+								"-z",
+								"--untracked-files=all",
+							],
 							{ captureOutput: true },
 						)
 					: null
 			const dirty = status
 				? status.exitCode === 0
-					? status.stdout.length > 0
+					? isDirtyGitStatus(status.stdout)
 					: null
 				: null
 			const expectedRef = "branch" in checkout ? checkout.branch : checkout.ref
@@ -2076,7 +2087,15 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							}
 							if (checkoutExists) {
 								const status = yield* fs.runCommand(
-									["git", "-C", checkoutPath, "status", "--porcelain"],
+									[
+										"git",
+										"-C",
+										checkoutPath,
+										"status",
+										"--porcelain=v1",
+										"-z",
+										"--untracked-files=all",
+									],
 									{ captureOutput: true },
 								)
 								if (status.exitCode !== 0) {
@@ -2084,7 +2103,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 										message: `Failed to remove worktree for '${alias}': checkout cleanliness could not be verified: ${status.stderr.trim() || `git status exited with code ${status.exitCode}`}`,
 									})
 								}
-								if (status.stdout.trim()) {
+								if (isDirtyGitStatus(status.stdout)) {
 									return yield* new WorktreeError({
 										message: `Failed to remove worktree for '${alias}': checkout has uncommitted changes`,
 									})
