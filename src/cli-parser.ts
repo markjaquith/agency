@@ -697,7 +697,7 @@ const commands = {
 		},
 	},
 	archive: {
-		usage: "agency archive <path|list|show|epic|task|tasks|phase>",
+		usage: "agency archive [path|list|show|epic|task|tasks|phase]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
@@ -707,8 +707,8 @@ const commands = {
 			repository: { type: "string", multiple: true },
 		},
 		command: {
-			usage: "agency archive <path> [--dry-run] [--json]",
-			minArgs: 1,
+			usage: "agency archive [path] [--dry-run] [--json]",
+			minArgs: 0,
 			maxArgs: 1,
 			options: ["dry-run", "json"],
 		},

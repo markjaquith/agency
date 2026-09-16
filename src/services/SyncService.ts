@@ -229,13 +229,10 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const repositories = yield* RepositoryService
 				const versionControl = yield* VersionControlService
 				const cwd = resolve(options.cwd ?? process.cwd())
-				const candidate = options.taskId
-					? resolve(cwd, options.taskId)
-					: undefined
-				const candidateExists =
-					candidate !== undefined && !options.phaseId
-						? yield* fs.exists(candidate)
-						: false
+				const candidate = resolve(cwd, options.taskId ?? ".")
+				const candidateExists = !options.phaseId
+					? yield* fs.exists(candidate)
+					: false
 				const { root, config } = yield* workbase.loadConfig(
 					candidateExists ? candidate : cwd,
 				)
@@ -262,7 +259,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const existingTaskSelector =
 					options.taskId !== undefined &&
 					documents.tasks.some((task) => task.id === options.taskId)
-				if (candidateExists && candidate && !existingTaskSelector) {
+				if (candidateExists && !existingTaskSelector) {
 					const canonicalPath = yield* fs.realPath(candidate)
 					const canonicalRoot = yield* fs.realPath(root)
 					const parts = relative(canonicalRoot, canonicalPath).split(sep)
@@ -272,7 +269,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					} else if (parts[0] === "tasks" && parts[1]) {
 						taskId = parts[1]
 						phaseId = parts[2] === "phases" && parts[3] ? parts[3] : undefined
-					} else {
+					} else if (options.taskId !== undefined) {
 						return yield* new SyncError({
 							message: `Sync path does not identify an active task, phase, or epic: ${canonicalPath}`,
 						})

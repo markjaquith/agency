@@ -139,12 +139,8 @@ export const work = (
 		const integrations = yield* IntegrationService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const directoryPath = options.directory
-			? resolve(cwd, options.directory)
-			: undefined
-		const isDirectory = directoryPath
-			? yield* fs.isDirectory(directoryPath)
-			: false
+		const directoryPath = resolve(cwd, options.directory ?? ".")
+		const isDirectory = yield* fs.isDirectory(directoryPath)
 		const startPath = isDirectory && directoryPath ? directoryPath : cwd
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
@@ -660,16 +656,17 @@ export const help = `
 Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto]
        agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 
-Launch an agent for an epic, task, or phase. With no directory, select one
-interactively. A positional argument resolves as a directory first, then as a task
-ID. Use '.' for the current directory. Outside a workbase, select a registered
-workbase first. Managed OpenCode launches receive whole-workbase access through
-Agency's project plugin; Agency context remains authoritative for writes. Automatic
-agent discovery checks opencode2, opencode, pi, then claude.
+Launch an agent for an epic, task, or phase. With no directory, infer the current
+item or select one interactively at the workbase root. A positional argument
+resolves as a directory first, then as a task ID. Outside a workbase, select a
+registered workbase first. Managed OpenCode launches receive whole-workbase access
+through Agency's project plugin; Agency context remains authoritative for writes.
+Automatic agent discovery checks opencode2, opencode, pi, then claude.
 
 The prepare subcommand resolves and materializes an execution workspace without
-launching an agent or changing lifecycle status. --dry-run reports planned Git
-changes without fetching, creating branches, or creating worktrees.
+launching an agent or changing lifecycle status. Its omitted target defaults to
+the current execution unit. --dry-run reports planned Git changes without
+fetching, creating branches, or creating worktrees.
 It emits revision-bound validation evidence and an idempotent external-orchestrator
 contract. Evidence is reused only while the target, workbase, configuration, and
 repository mapping remain unchanged. Dynamic readiness and workspace safety checks

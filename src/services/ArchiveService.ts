@@ -54,8 +54,9 @@ class ArchiveError extends Data.TaggedError("ArchiveError")<{
 export type ArchiveKind = "epic" | "task" | "phase"
 
 interface ArchivePathTarget {
-	readonly kind: "epic" | "task"
+	readonly kind: ArchiveKind
 	readonly id: string
+	readonly taskId?: string
 }
 
 const LifecycleEventSchema = Schema.Struct({
@@ -489,14 +490,11 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 								: undefined
 					if (!kind || !id) {
 						return yield* new ArchiveError({
-							message: `Archive path must be within an active epic or task: ${canonicalPath}`,
+							message: `Archive path must be within an active epic, task, or phase: ${canonicalPath}`,
 						})
 					}
-					if (kind === "task" && parts[2] === "phases") {
-						return yield* new ArchiveError({
-							message: `Archive path identifies a phase; use 'agency archive phase <task-id> <phase-id>': ${canonicalPath}`,
-						})
-					}
+					const phaseId =
+						kind === "task" && parts[2] === "phases" ? parts[3] : undefined
 
 					const document = join(
 						root,
@@ -508,6 +506,26 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						return yield* new ArchiveError({
 							message: `Archive path does not identify an active ${kind}: ${canonicalPath}`,
 						})
+					}
+					if (phaseId) {
+						const phaseDocument = join(
+							root,
+							"tasks",
+							id,
+							"phases",
+							phaseId,
+							"PHASE.md",
+						)
+						if (!(yield* fs.exists(phaseDocument))) {
+							return yield* new ArchiveError({
+								message: `Archive path does not identify an active phase: ${canonicalPath}`,
+							})
+						}
+						return {
+							kind: "phase",
+							id: phaseId,
+							taskId: id,
+						} satisfies ArchivePathTarget
 					}
 					return { kind, id } satisfies ArchivePathTarget
 				}),

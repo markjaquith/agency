@@ -26,11 +26,13 @@ export const archive = (options: ArchiveOptions) =>
 		const [id, phaseId] = options.args
 		let archiveType = options.type
 		let archiveId = id
+		let archiveTaskId: string | undefined
 
-		if (!archiveType && id) {
-			const target = yield* archives.resolvePathTarget(id, cwd)
+		if (!archiveType) {
+			const target = yield* archives.resolvePathTarget(id ?? ".", cwd)
 			archiveType = target.kind
 			archiveId = target.id
+			archiveTaskId = target.taskId
 		}
 
 		if (options.type === "list") {
@@ -106,13 +108,18 @@ export const archive = (options: ArchiveOptions) =>
 				})
 				break
 			case "phase":
-				if (!id || !phaseId)
+				if (!(archiveTaskId && archiveId) && (!id || !phaseId))
 					return yield* Effect.fail(
 						new Error("Usage: agency archive phase <task-id> <phase-id>"),
 					)
-				result = yield* archives.archivePhase(id, phaseId, cwd, {
-					dryRun: options.dryRun,
-				})
+				result = yield* archives.archivePhase(
+					archiveTaskId ?? id!,
+					archiveTaskId ? archiveId! : phaseId!,
+					cwd,
+					{
+						dryRun: options.dryRun,
+					},
+				)
 				break
 			default:
 				return yield* Effect.fail(
@@ -149,14 +156,15 @@ export const archive = (options: ArchiveOptions) =>
 	})
 
 export const help = `
-Usage: agency archive <path|list|show|epic|task|tasks|phase>
+Usage: agency archive [path|list|show|epic|task|tasks|phase]
 
 Browse or archive work items after preflighting worktrees and graph references.
 
-An existing path within an active epic or task infers that work item.
+With no target, the current epic, task, or phase is inferred. An existing path
+within one of those items infers it too.
 
 Commands:
-  <path>                                 Archive the containing epic or task
+  [path]                                 Archive the containing epic, task, or phase
   list [filters]                         List archived work
   show <type> <id>                       Show an archived epic or task
   show phase <task-id> <phase-id>        Show an archived phase

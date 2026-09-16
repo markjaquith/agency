@@ -129,7 +129,8 @@ repositories, worktrees, branches, references, and pull requests.
 Safe reconciliation transitions are applied by default.
 When a task, phase, or item path is provided, only that target and its
 repositories are queried or reconciled. Task and epic scopes include their
-child execution units.
+child execution units. With no target, the current item is inferred when the
+command runs inside one; the workbase root retains whole-workbase scope.
 
 Options:
   --dry-run                 Report planned safe transitions without changing state

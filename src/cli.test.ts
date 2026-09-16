@@ -469,7 +469,7 @@ status: dropped
 		)
 
 		expect(
-			(await runCli(["archive", "."], join(root, "tasks/example"))).exitCode,
+			(await runCli(["archive"], join(root, "tasks/example"))).exitCode,
 		).toBe(0)
 		const result = await runCli(["archive", "task", "example", "--json"], root)
 

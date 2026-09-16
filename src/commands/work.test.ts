@@ -644,6 +644,19 @@ describe("work command", () => {
 		expect(phaseHarness.materializeOptions).toHaveLength(1)
 	})
 
+	test("prepare defaults to the execution unit containing the current directory", async () => {
+		const harness = createHarness()
+
+		await harness.runPrepare({
+			cwd: "/workbase/tasks/example/code/agency/src",
+			dryRun: true,
+			silent: true,
+		})
+
+		expect(harness.guards[0]?.target).toBe("execution-unit:task/example")
+		expect(harness.materializeOptions).toHaveLength(1)
+	})
+
 	test("returns structured validation issues before readiness or materialization", async () => {
 		const harness = createHarness({
 			existingDirectories: [],
@@ -832,7 +845,6 @@ describe("work command", () => {
 
 		await harness.run({
 			cwd: "/workbase/tasks/example/phases/implementation/code/agency/src",
-			directory: ".",
 			opencode: true,
 			auto: true,
 		})
@@ -862,11 +874,14 @@ describe("work command", () => {
 
 		await harness.run({
 			cwd: "/workbase/tasks/example/code/agency/src",
-			directory: ".",
 			opencode: true,
 		})
 
-		expect(harness.events[0]).toBe("materialize")
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
 		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
 	})
@@ -898,7 +913,7 @@ describe("work command", () => {
 				choices.find((choice) => choice.label.includes("build"))!.target,
 			)
 
-		await harness.run({ cwd: "/workbase/tasks/example", opencode: true }, pick)
+		await harness.run({ cwd: "/workbase", opencode: true }, pick)
 
 		expect(harness.events).toEqual([
 			"materialize",

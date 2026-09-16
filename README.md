@@ -775,9 +775,11 @@ structured `changes`, `warnings`, `unresolved`, and per-execution evidence. The
 default mode applies safe reconciliation transitions; `--dry-run` is explicitly
 observational.
 
-Pass `<task-id>` to scope reconciliation to one task and its repositories. A
-multi-phase task scope includes all of its phases; add `[phase-id]` to select one
-phase. Scoped sync does not query, materialize, or reconcile unrelated work.
+Pass `<task-id>` to scope reconciliation to one task and its repositories. With
+no target, invocation inside an epic, task, or phase scopes to that current item;
+invocation at the workbase root retains whole-workbase scope. A multi-phase task
+scope includes all of its phases; add `[phase-id]` to select one phase. Scoped
+sync does not query, materialize, or reconcile unrelated work.
 
 `agency sync` performs only these safe transitions:
 
@@ -1103,15 +1105,16 @@ agency archive task <task-id> [--dry-run] [--json]
 agency archive tasks [--dry-run] [--json]
 agency archive phase <task-id> <phase-id> [--dry-run] [--json]
 agency archive <path> [--dry-run] [--json]
+agency archive [--dry-run] [--json]
 agency restore epic <epic-id> [--dry-run] [--json]
 agency restore task <task-id> [--dry-run] [--json]
 agency restore phase <task-id> <phase-id> [--dry-run] [--json]
 ```
 
-An existing path within an active epic or task infers that work item, so
-`agency archive .` works from its directory. Collection roots are ambiguous,
-phase paths require the explicit `archive phase` form, and paths outside active
-epic or task trees are rejected. Archived work keeps its hierarchy under
+With no target, `agency archive` infers the active epic, task, or phase containing
+the current directory. An existing path within one of those items is inferred
+the same way. Collection roots are ambiguous, and paths outside active work item
+trees are rejected. Archived work keeps its hierarchy under
 `archive/`. Epic archiving includes its
 listed tasks. A task can be archived only when its effective status is terminal
 (`done` or `dropped`). Multi-phase task status is derived from its phases, every
@@ -1145,10 +1148,11 @@ agency pr create <task-id> [phase-id] [--draft] [--title <title>] [--head <branc
 agency pr [args...]
 ```
 
-`agency work` presents the full hierarchy in the native OpenTUI selector or the
-configured external chooser. Pass a directory, including `.` for the current
-directory, to infer its epic, task, or phase. Outside a workbase, Agency first
-presents the registered workbases, then the selected workbase's hierarchy.
+Inside an epic, task, or phase, `agency work` defaults to that current item.
+At the workbase root it presents the full hierarchy in the native OpenTUI
+selector or the configured external chooser. An explicit directory can target a
+different item. Outside a workbase, Agency first presents the registered
+workbases, then the selected workbase's hierarchy.
 
 Agency automatically uses the first available agent in this order: `opencode2`,
 `opencode`, then `claude`. `--opencode` and `--claude` remain aliases for

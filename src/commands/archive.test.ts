@@ -8,6 +8,7 @@ import {
 	runTestEffect,
 } from "../test-utils"
 import { archive } from "./archive"
+import { phase } from "./phase"
 import { task } from "./task"
 
 describe("archive command", () => {
@@ -114,6 +115,76 @@ describe("archive command", () => {
 		})
 	})
 
+	test("defaults to the task containing the current directory", async () => {
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				archive({
+					args: [],
+					cwd: join(root, "tasks/example"),
+					dryRun: true,
+					json: true,
+				}),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			operation: "archive",
+			kind: "task",
+			id: "example",
+			dryRun: true,
+		})
+	})
+
+	test("defaults to the phase containing the current directory", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["delivery"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["delivery", "build"],
+				repo: "agency",
+				branch: "task/delivery-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "status",
+				args: ["delivery", "build", "dropped"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				archive({
+					args: [],
+					cwd: join(root, "tasks/delivery/phases/build"),
+					dryRun: true,
+					json: true,
+				}),
+			),
+		)
+
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			operation: "archive",
+			kind: "phase",
+			taskId: "delivery",
+			id: "build",
+			dryRun: true,
+		})
+	})
+
 	test("infers an epic from a filesystem path", async () => {
 		const directory = join(root, "epics/delivery")
 		await mkdir(directory, { recursive: true })
@@ -152,15 +223,9 @@ tasks: []
 			runTestEffect(
 				archive({ args: ["repos/agency"], cwd: root, silent: true }),
 			),
-		).rejects.toThrow("Archive path must be within an active epic or task")
-
-		const phaseDirectory = join(root, "tasks/example/phases/build")
-		await mkdir(phaseDirectory, { recursive: true })
-		await expect(
-			runTestEffect(
-				archive({ args: ["."], cwd: phaseDirectory, silent: true }),
-			),
-		).rejects.toThrow("Archive path identifies a phase")
+		).rejects.toThrow(
+			"Archive path must be within an active epic, task, or phase",
+		)
 	})
 
 	test("reports an already archived task", async () => {
@@ -210,12 +275,10 @@ tasks: []
 		])
 	})
 
-	test("requires a supported work item type", async () => {
+	test("requires an unambiguous current work item", async () => {
 		await expect(
 			runTestEffect(archive({ args: [], cwd: root, silent: true })),
-		).rejects.toThrow(
-			"Provide a path or use: list, show, epic, task, tasks, phase",
-		)
+		).rejects.toThrow("Archive path is ambiguous")
 	})
 
 	test("rejects an extra archive show identifier", async () => {
