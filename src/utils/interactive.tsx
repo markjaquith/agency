@@ -199,6 +199,7 @@ interface SelectPromptProps extends PromptProps<string> {
 	readonly backgroundColor?: string
 	readonly emptyLabel?: string
 	readonly onTab?: () => void
+	readonly initialKey?: string
 }
 
 const isWordBoundary = (value: string, index: number) =>
@@ -313,7 +314,10 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	const dimensions = useTerminalDimensions()
 	const [query, setQuery] = createSignal("")
 	const editing = createReadlineEditing(() => input, setQuery)
-	const [selected, setSelected] = createSignal(0)
+	const initialIndex = props.initialKey
+		? props.choices.findIndex((choice) => choice.key === props.initialKey)
+		: 0
+	const [selected, setSelected] = createSignal(Math.max(initialIndex, 0))
 	const choices = createMemo(() => fuzzyChoices(props.choices, query()))
 	const displaySegments = (choice: InteractiveChoice) =>
 		choice.segments ?? [{ text: choice.label }]
@@ -567,6 +571,7 @@ export interface InteractiveTab {
 	readonly prompt: string
 	readonly choices: readonly InteractiveChoice[]
 	readonly emptyLabel?: string
+	readonly initialKey?: string
 }
 
 export const InteractiveTabbedPrompt = (props: {
@@ -666,6 +671,7 @@ export const InteractiveTabbedPrompt = (props: {
 									prompt={tab.prompt}
 									choices={tab.choices}
 									emptyLabel={tab.emptyLabel}
+									initialKey={tab.initialKey}
 									onTab={cycle}
 									onDone={props.onDone}
 									onQuit={props.onQuit}
@@ -718,6 +724,7 @@ export const createInteractiveSession = async (
 	let quitRequested = false
 	let activeTab = 0
 	let frameTabs = initialTabs
+	const tabSelections = new Map<string, string>()
 	let navigationRequested = false
 	const navigate = (index: number) => {
 		activeTab = index
@@ -864,9 +871,19 @@ export const createInteractiveSession = async (
 			cancelled = false
 			setNotice(message)
 		},
-		tabs: (tabs: readonly InteractiveTab[]) => {
-			frameTabs = tabs
-			return ask("", undefined, tabs)
+		tabs: async (tabs: readonly InteractiveTab[]) => {
+			frameTabs = tabs.map((tab) => ({
+				...tab,
+				initialKey: tabSelections.get(tab.id),
+			}))
+			const selected = await ask("", undefined, frameTabs)
+			const tab = frameTabs[activeTab]
+			if (
+				selected !== null &&
+				tab?.choices.some((choice) => choice.key === selected)
+			)
+				tabSelections.set(tab.id, selected)
+			return selected
 		},
 		text: (prompt: string) => ask(prompt),
 		select: (prompt: string, choices: readonly InteractiveChoice[]) =>

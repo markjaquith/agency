@@ -386,6 +386,39 @@ describe("OpenTUI interaction", () => {
 		}
 	})
 
+	test("starts a tab with the requested choice selected", async () => {
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{
+							id: "workstream",
+							label: "Workstream",
+							prompt: "",
+							choices: [
+								{ key: "first", label: "first" },
+								{ key: "second", label: "second" },
+								{ key: "third", label: "third" },
+							],
+							initialKey: "second",
+						},
+					]}
+					onDone={() => undefined}
+				/>
+			),
+			{ width: 40, height: 5 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+
+			expect(setup.captureCharFrame()).toContain("▌ second")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
 	test("ranks case-insensitive fuzzy matches", () => {
 		const choices = [
 			{ key: "nested", label: "Manage Agency" },
