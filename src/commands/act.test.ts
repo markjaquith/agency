@@ -13,6 +13,7 @@ import { epic } from "./epic"
 import { phase } from "./phase"
 import { task } from "./task"
 import { act, type ActInteraction } from "./act"
+import { worktree } from "./worktree"
 import { parseCli } from "../cli-parser"
 import { FileSystemService } from "../services/FileSystemService"
 import { SyncService } from "../services/SyncService"
@@ -1003,6 +1004,155 @@ describe("act command", () => {
 		).rejects.toThrow("Unknown action")
 	})
 
+	test("discovers checkout cleanup and reports active and dirty blockers", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+
+		const available = await discoverAction("cleanup", "worktree-remove")
+		expect(available.actions).toEqual([
+			expect.objectContaining({
+				id: "worktree-remove",
+				label: "Clear local checkout",
+				command: ["agency", "worktree", "remove", "cleanup"],
+			}),
+		])
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "build"],
+				repo: "agency",
+				branch: "task/multi-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await materializeTask("multi", "build")
+		const phaseAction = await discoverAction(
+			"multi",
+			"worktree-remove",
+			"build",
+		)
+		expect(phaseAction.actions[0].command).toEqual([
+			"agency",
+			"worktree",
+			"remove",
+			"multi",
+			"build",
+		])
+
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["cleanup", "working"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const working = await discoverAction("cleanup", "worktree-remove")
+		expect(working.blockedActions[0].blockedReason).toContain(
+			"active 'working' ownership",
+		)
+		let blockedLabel = ""
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true },
+				scriptedInteraction(
+					["browse", "task:cleanup", null],
+					(prompt, choices) => {
+						if (prompt !== "Act on task cleanup") return
+						blockedLabel =
+							choices.find((choice) => choice.key === "worktree-remove")
+								?.plainLabel ?? ""
+					},
+				),
+			),
+		)
+		expect(blockedLabel).toContain("unavailable: Item has active 'working'")
+
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["cleanup", "open"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await Bun.write(
+			join(root, "tasks/cleanup/code/agency/dirty.txt"),
+			"dirty\n",
+		)
+		const dirty = await discoverAction("cleanup", "worktree-remove")
+		expect(dirty.blockedActions[0].blockedReason).toBe(
+			"Local checkout has uncommitted changes",
+		)
+	})
+
+	test("confirms checkout paths, dispatches removal, and refreshes availability", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+		const checkoutPath = join(root, "tasks/cleanup/code/agency")
+		let visits = 0
+		let confirmed = false
+
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						exitOnEscape: false,
+						silent: true,
+					},
+					{
+						tabs: (tabs) => {
+							visits++
+							return Effect.succeed(
+								tabs[0]!.choices.find(
+									(choice) => choice.key === "task:cleanup",
+								)!.value,
+							)
+						},
+						select: (prompt, choices) => {
+							if (prompt.startsWith("Clear these local worktrees?")) {
+								expect(prompt).toContain(checkoutPath)
+								confirmed = true
+								return Effect.succeed(
+									choices.find((choice) => choice.key === "confirm")!.value,
+								)
+							}
+							const cleanup = choices.find(
+								(choice) => choice.value === "worktree-remove",
+							)
+							if (!cleanup)
+								return Effect.fail(new Error("refreshed checkout is absent"))
+							return Effect.succeed(cleanup.value)
+						},
+					},
+				),
+			),
+		).rejects.toThrow("refreshed checkout is absent")
+
+		expect(confirmed).toBe(true)
+		expect(visits).toBe(2)
+		expect(await Bun.file(checkoutPath).exists()).toBe(false)
+		expect(await readTaskStatus("cleanup")).toBe("open")
+		const refreshed = await discoverAction("cleanup", "worktree-remove")
+		expect(refreshed.blockedActions[0].blockedReason).toBe(
+			"Local checkout is not materialized",
+		)
+	})
+
 	test("suggests safe IDs, skips the only repository, and works only after explicit selection", async () => {
 		await createTask("make-task-id-suggestions-shorter")
 		const values = [
@@ -1515,6 +1665,50 @@ describe("act command", () => {
 				silent: true,
 			}),
 		)
+
+	const seedRepository = async () => {
+		const seed = join(root, "seed")
+		await mkdir(seed, { recursive: true })
+		for (const args of [
+			["init", "--initial-branch=main"],
+			["config", "user.email", "agency@example.com"],
+			["config", "user.name", "Agency Tests"],
+		] as const) {
+			const result = Bun.spawnSync(["git", "-C", seed, ...args])
+			if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+		}
+		await Bun.write(join(seed, "README.md"), "# Test repository\n")
+		for (const args of [
+			["add", "README.md"],
+			["commit", "-m", "Initial commit"],
+			["remote", "add", "origin", join(root, "repos/agency")],
+			["push", "origin", "main"],
+		] as const) {
+			const result = Bun.spawnSync(["git", "-C", seed, ...args])
+			if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+		}
+	}
+
+	const materializeTask = (id: string, phaseId?: string) =>
+		runTestEffect(
+			worktree({
+				cwd: root,
+				subcommand: "prepare",
+				args: [id, ...(phaseId ? [phaseId] : [])],
+				silent: true,
+			}),
+		)
+
+	const discoverAction = async (
+		taskId: string,
+		action: string,
+		phaseId?: string,
+	) => {
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, taskId, phaseId, action, json: true })),
+		)
+		return JSON.parse(logs[0]!).targets[0]
+	}
 
 	const readTaskStatus = async (id: string) => {
 		const content = await Bun.file(join(root, `tasks/${id}/TASK.md`)).text()

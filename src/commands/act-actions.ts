@@ -17,6 +17,7 @@ import { status } from "./status"
 import { pr, prCreate } from "./pr"
 import { validate } from "./validate"
 import { work as startWork, type StartWork } from "./work"
+import { worktree } from "./worktree"
 import { macchiato } from "../utils/theme"
 
 export type ActEntity = Extract<
@@ -37,6 +38,7 @@ type NativeOperation =
 	| ReturnType<typeof validate>
 	| ReturnType<typeof prCreate>
 	| ReturnType<typeof archive>
+	| ReturnType<typeof worktree>
 	| ReturnType<StartWork>
 type Operation = Effect.Effect<
 	unknown,
@@ -70,6 +72,12 @@ export interface ActAction extends Details {
 	readonly preview: Plan
 	/** Replayable input collection. All mutations belong in the returned plan.run. */
 	readonly prepare: (prompts: ActionPrompts) => Effect.Effect<Plan, Error>
+}
+
+export interface ActCheckoutState {
+	readonly paths: readonly string[]
+	readonly conflicts: readonly string[]
+	readonly dirty: boolean
 }
 
 const actionPresentation: Record<
@@ -204,6 +212,12 @@ const actionPresentation: Record<
 		description: "Prepare this item and start its configured worker.",
 		icon: "",
 		color: macchiato.green,
+	},
+	"worktree-remove": {
+		description:
+			"Remove clean local worktrees while preserving the item, commits, and branches. Agency recreates the checkout when you work on this item again.",
+		icon: "󰆴",
+		color: macchiato.red,
 	},
 	push: {
 		description: "Validate and publish this execution branch without a PR.",
@@ -440,7 +454,11 @@ export const actionGroups = [
 
 export const actActions = (
 	nodes: readonly GraphNode[],
-	options: BaseCommandOptions & { auto?: boolean; draft?: boolean },
+	options: BaseCommandOptions & {
+		auto?: boolean
+		draft?: boolean
+		checkoutStates?: ReadonlyMap<string, ActCheckoutState>
+	},
 	work: StartWork = startWork,
 	node?: ActEntity,
 ): readonly ActAction[] => {
@@ -878,6 +896,26 @@ export const actActions = (
 		blockedReason: validation ?? reason,
 	})
 	const noExecution = execution ? null : "Select an execution unit"
+	const checkoutState = options.checkoutStates?.get(node.id)
+	const activeClaim =
+		"claim" in node.data &&
+		typeof node.data.claim === "object" &&
+		node.data.claim !== null &&
+		"state" in node.data.claim &&
+		node.data.claim.state === "active"
+	const checkoutBlockedReason = noExecution
+		? noExecution
+		: !checkoutState
+			? "Local checkout is not materialized"
+			: activeClaim
+				? "Item has an active claim; release or finish it before clearing its checkout"
+				: node.status === "working" || node.status === "delegated"
+					? `Item has active '${node.status}' ownership; reopen it before clearing its checkout`
+					: checkoutState.conflicts.length
+						? checkoutState.conflicts.join("; ")
+						: checkoutState.dirty
+							? "Local checkout has uncommitted changes"
+							: null
 	const statusCommand = (status: string) => [
 		"agency",
 		target.phaseId ? "phase" : "task",
@@ -936,6 +974,29 @@ export const actActions = (
 				],
 				run: Effect.suspend(() => work({ ...options, ...workTarget })),
 			},
+		),
+		action(
+			{
+				id: "worktree-remove",
+				label: "Clear local checkout",
+				blockedReason: checkoutBlockedReason,
+			},
+			undefined,
+			(p) =>
+				options.dryRun
+					? Effect.void
+					: p.confirm(
+							`Clear these local worktrees?\n${checkoutState?.paths.map((path) => `  ${path}`).join("\n") ?? ""}\n\nThe item, commits, and branches will be preserved.`,
+							"Clear local checkout",
+						),
+			() => ({
+				command: ["agency", "worktree", "remove", ...args],
+				run: worktree({
+					...options,
+					subcommand: "remove",
+					args,
+				}),
+			}),
 		),
 		immediate(
 			details(
