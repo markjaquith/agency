@@ -248,6 +248,18 @@ export const actionPrompts = (
 		})
 	return {
 		text,
+		confirm: (prompt: string, label = "Confirm") =>
+			Effect.gen(function* () {
+				const confirmed = yield* interaction.select(
+					prompt,
+					[
+						{ key: "confirm", label, value: true },
+						{ key: "cancel", label: "Cancel", value: false },
+					],
+					chooser,
+				)
+				if (!confirmed) return yield* Effect.fail(new ActCancelled())
+			}),
 		id: (label: string, suggestion: string, prefix = "") => {
 			const base = slug(suggestion)
 			let candidate = base

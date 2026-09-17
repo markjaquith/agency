@@ -5,6 +5,7 @@ import { ActDiscovery } from "../act-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
+import { WorktreeService } from "../services/WorktreeService"
 import type { BaseCommandOptions } from "../utils/command"
 import type { Choice } from "../utils/chooser"
 import { createLoggers } from "../utils/effect"
@@ -17,6 +18,7 @@ import {
 	isActActionId,
 	type ActAction,
 	type ActEntity,
+	type ActCheckoutState,
 } from "./act-actions"
 import {
 	ActCancelled,
@@ -170,17 +172,27 @@ const entitySummary = (node: ActEntity) => ({
 	readiness: node.readiness,
 	revision: node.data.sha256,
 })
+
 const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
-	actions.map(({ id, label, description, icon, color }) => {
+	actions.map(({ id, label, description, icon, color, blockedReason }) => {
+		const availability = blockedReason ? ` — unavailable: ${blockedReason}` : ""
 		return {
 			key: id,
 			value: id,
-			label: `${icon}  ${label} — ${description}`,
-			plainLabel: `${label} — ${description}`,
+			label: `${icon}  ${label} — ${description}${availability}`,
+			plainLabel: `${label} — ${description}${availability}`,
 			segments: [
 				{ text: `${icon}  `, color },
 				{ text: label },
 				{ text: ` — ${description}`, color: macchiato.overlay0 },
+				...(blockedReason
+					? [
+							{
+								text: availability,
+								color: macchiato.yellow,
+							},
+						]
+					: []),
 			],
 		}
 	})
@@ -300,6 +312,7 @@ const actStep = (
 		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
 		const graphs = yield* GraphService
+		const worktrees = yield* WorktreeService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const path = resolve(cwd, options.directory ?? ".")
@@ -313,7 +326,35 @@ const actStep = (
 		const graph = yield* graphs.get({
 			cwd: root,
 			loadedConfig: { root, config },
+			include: ["workspace"],
 		})
+		const checkoutStates = new Map<string, ActCheckoutState>()
+		const materialized = graph.nodes.some(
+			(node) => node.kind === "execution-unit" && node.workspace?.materialized,
+		)
+		for (const inspection of materialized
+			? yield* worktrees.list(root, { materializedOnly: true })
+			: []) {
+			const id =
+				inspection.owner.kind === "phase"
+					? `phase:${inspection.owner.taskId}/${inspection.owner.phaseId}`
+					: `task:${inspection.owner.taskId}`
+			checkoutStates.set(id, {
+				paths: inspection.checkouts.flatMap((checkout) =>
+					checkout.exists
+						? [checkout.path]
+						: checkout.registeredPath
+							? [checkout.registeredPath]
+							: [],
+				),
+				conflicts: inspection.conflicts
+					.filter((conflict) => conflict.kind !== "stale-registration")
+					.map((conflict) => conflict.message),
+				dirty: inspection.checkouts.some(
+					(checkout) => checkout.exists && checkout.dirty !== false,
+				),
+			})
+		}
 		const nodes = graph.nodes.filter(
 			(node): node is ActEntity =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
@@ -341,6 +382,7 @@ const actStep = (
 			inputAllowed: options.inputAllowed,
 			silent: session ? true : options.silent,
 			verbose: options.verbose,
+			checkoutStates,
 		}
 		const runWork: StartWork = session
 			? (args) => work({ ...args, silent: options.silent })
@@ -541,9 +583,15 @@ const actStep = (
 		const actions = selected ? catalog.get(selected.id)! : globals
 		if (!actionId) {
 			state.view = "item-menu"
+			const menuActions = actions.filter(
+				(action) =>
+					available(action) ||
+					(action.id === "worktree-remove" &&
+						action.blockedReason !== "Local checkout is not materialized"),
+			)
 			actionId = yield* select(
 				`Act on ${selected!.kind} ${selected!.key}`,
-				actionChoices(actions.filter(available)),
+				actionChoices(menuActions),
 			)
 			state.view = "flow"
 		}
