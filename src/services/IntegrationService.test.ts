@@ -251,7 +251,7 @@ describe("IntegrationService", () => {
 			"result.validation?.valid !== true",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"dirname(document) !== resolve(directory)",
+			"documentDirectory === current",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"!result.authority?.writable?.checkoutPath",
@@ -264,13 +264,13 @@ describe("IntegrationService", () => {
 			"Do not invoke agency work for this target",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"as the default implementation directory",
+			"authoritative writable checkout",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"Set each tool's working directory to that checkout when supported",
+			"Set each tool's working directory to it when supported",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"Run Agency lifecycle and context commands from the task or phase directory",
+			"Run Agency lifecycle commands from",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"reference checkouts reported by Agency context are read-only",
@@ -365,6 +365,11 @@ describe("IntegrationService", () => {
 				task: "example",
 				phase,
 			})
+			expect(await generated.agencyContext(checkoutPath)).toMatchObject({
+				root,
+				checkout: checkoutPath,
+				target: launchTarget,
+			})
 			expect(generated.default).toMatchObject({
 				id: "agency",
 				setup: expect.any(Function),
@@ -402,10 +407,10 @@ describe("IntegrationService", () => {
 			expect(system.system).toHaveLength(1)
 			expect(system.system[0]).toContain(`active worker for ${launchTarget}`)
 			expect(system.system[0]).toContain(
-				`${checkoutPath} as the default implementation directory`,
+				`change the working directory to that checkout`,
 			)
 			expect(system.system[0]).toContain(
-				"Run Agency lifecycle and context commands from the task or phase directory",
+				`Run Agency lifecycle commands from ${root}`,
 			)
 			expect(system.system[0]).toContain(
 				"reference checkouts reported by Agency context are read-only",
@@ -415,7 +420,11 @@ describe("IntegrationService", () => {
 				{ sessionID: "mismatched-session" } as never,
 				mismatchedSystem,
 			)
-			expect(mismatchedSystem.system).toEqual([])
+			expect(mismatchedSystem.system).toHaveLength(1)
+			expect(mismatchedSystem.system[0]).not.toContain("active worker")
+			expect(mismatchedSystem.system[0]).toContain(
+				"change the working directory to that checkout",
+			)
 
 			const shell = { env: {} as Record<string, string> }
 			await hooks["shell.env"]!({ sessionID: "worker-session" } as never, shell)
@@ -461,6 +470,7 @@ describe("IntegrationService", () => {
 			| undefined
 
 		await generated.default.setup({
+			location: { directory: root },
 			reference: {
 				transform: async (callback: (references: unknown) => void) =>
 					callback({
@@ -478,6 +488,7 @@ describe("IntegrationService", () => {
 					}),
 			},
 			skill: { transform: async () => {} },
+			session: { hook: async () => {} },
 		})
 
 		expect(reference).toEqual({

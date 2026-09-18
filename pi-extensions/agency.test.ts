@@ -92,7 +92,15 @@ describe("global Pi extension", () => {
 		)
 		expect(prompt.systemPrompt).toContain("# Managed instructions")
 		expect(prompt.systemPrompt).toContain(
-			`${checkout} as the default implementation directory`,
+			`rooted in Agency's authoritative writable checkout at ${checkout}`,
+		)
+
+		const taskPrompt = await handlers.get("before_agent_start")?.(
+			{ systemPrompt: "Base" },
+			{ cwd: task },
+		)
+		expect(taskPrompt.systemPrompt).toContain(
+			`change the working directory to that checkout`,
 		)
 	})
 
