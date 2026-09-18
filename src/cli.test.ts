@@ -1210,7 +1210,7 @@ status: open
 			const launches = [
 				{
 					args: ["--task", "example"],
-					cwd: join(workbaseRoot, "tasks/example"),
+					cwd: join(workbaseRoot, "tasks/example/code/agency"),
 					checkoutPath: join(workbaseRoot, "tasks/example/code/agency"),
 					skillPath: join(
 						workbaseRoot,
@@ -1219,7 +1219,7 @@ status: open
 				},
 				{
 					args: ["--task", "pipeline", "--phase", "build"],
-					cwd: join(workbaseRoot, "tasks/pipeline/phases/build"),
+					cwd: join(workbaseRoot, "tasks/pipeline/phases/build/code/agency"),
 					checkoutPath: join(
 						workbaseRoot,
 						"tasks/pipeline/phases/build/code/agency",

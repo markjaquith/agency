@@ -140,7 +140,8 @@ whether the server plugin registered writable-checkout skills. It uses a native
 toast and does not submit a prompt to an LLM. When no writable checkout skill
 directory is available, server initialization is reported as indeterminate
 rather than inferred from plugin discovery.
-OpenCode discovers the config and plugin from task and epic launch directories.
+OpenCode discovers the config and plugin from Agency launch directories and
+their ancestors.
 The plugin uses OpenCode's plural discovery directory and exports both the V1
 server function and the `opencode2` module wrapper. Integration sync migrates a
 checksum-valid legacy singular-path plugin and preserves customized files.
@@ -394,9 +395,11 @@ identify the invoking session, so Agency deliberately avoids leaking one
 session's worker identity into another; the validated marker and injected system
 instruction remain the V2 fallback when the long-lived server did not inherit
 the client's launch environment.
-The `opencode2` and `opencode` agents remain rooted in their task or epic
-working directory so the workbase `AGENTS.md` and managed OpenCode config are
-discovered normally.
+For execution units, the `opencode2`, `opencode`, and `pi` agents launch from
+the authoritative writable checkout so their project and Git interfaces reflect
+the implementation repository. Epic and multi-phase task orchestration remains
+rooted in its Agency document directory. Ancestor discovery still supplies the
+workbase `AGENTS.md` and managed OpenCode config.
 Agency's managed OpenCode plugin grants the active workbase external-directory
 access and exposes existing checkout-local `.claude/skills`, `.agents/skills`,
 and `.opencode/{skill,skills}` definitions. V1 adds those source directories to
@@ -406,8 +409,9 @@ hook. The global Pi
 extension provides equivalent whole-workbase context and additionally discovers
 checkout-local `.pi/skills` through Pi's `resources_discover` lifecycle.
 `agency work` supplies the checkout directly; plain OpenCode and Pi launches
-resolve a materialized execution-unit
-checkout through `agency context`. A multi-phase
+from a task or phase directory resolve a materialized execution-unit checkout
+through `agency context` and instruct the agent to change to it before
+implementation or Git operations. A multi-phase
 task root has no single checkout, so launch from its phase directory when using
 plain OpenCode or Pi. Other checkout-local configuration is not composed.
 `--print-command` prints the cwd, command template, and non-secret environment

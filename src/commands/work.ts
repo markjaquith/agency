@@ -378,6 +378,12 @@ export const work = (
 			options.auto,
 		)
 		cli = resolved.argv[0]!
+		if (
+			writablePath &&
+			(agent === "opencode2" || agent === "opencode" || agent === "pi")
+		) {
+			launchPath = writablePath
+		}
 		const environment = {
 			...resolved.environment,
 			...agentEnvironment(agent, variables),
