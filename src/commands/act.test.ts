@@ -17,6 +17,7 @@ import { worktree } from "./worktree"
 import { parseCli } from "../cli-parser"
 import { FileSystemService } from "../services/FileSystemService"
 import { SyncService } from "../services/SyncService"
+import { WorktreeService } from "../services/WorktreeService"
 import { macchiato } from "../utils/theme"
 
 const scriptedInteraction = (
@@ -1096,6 +1097,42 @@ describe("act command", () => {
 		expect(dirty.blockedActions[0].blockedReason).toBe(
 			"Local checkout has uncommitted changes",
 		)
+		await expect(
+			runTestEffect(
+				act(
+					{ cwd: root, inputAllowed: true },
+					scriptedInteraction(["browse", "task:cleanup", "worktree-remove"]),
+				),
+			),
+		).rejects.toThrow("Local checkout has uncommitted changes")
+	})
+
+	test("opens without inspecting every materialized checkout", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+		let listCalls = 0
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((worktrees) =>
+					act(
+						{ cwd: root, inputAllowed: true },
+						scriptedInteraction([null]),
+					).pipe(
+						Effect.provideService(WorktreeService, {
+							...worktrees,
+							list: (...args: Parameters<typeof worktrees.list>) => {
+								listCalls++
+								return worktrees.list(...args)
+							},
+						} as WorktreeService),
+					),
+				),
+			),
+		)
+
+		expect(listCalls).toBe(0)
 	})
 
 	test("confirms checkout paths, dispatches removal, and refreshes availability", async () => {

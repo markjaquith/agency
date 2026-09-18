@@ -161,6 +161,32 @@ const shellCommand = (argv: readonly string[]) =>
 		)
 		.join(" ")
 const available = (action: ActAction) => !action.blockedReason
+const checkoutState = (inspection: {
+	readonly checkouts: readonly {
+		readonly exists: boolean
+		readonly path: string
+		readonly registeredPath: string | null
+		readonly dirty: boolean | null
+	}[]
+	readonly conflicts: readonly {
+		readonly kind: string
+		readonly message: string
+	}[]
+}): ActCheckoutState => ({
+	paths: inspection.checkouts.flatMap((checkout) =>
+		checkout.exists
+			? [checkout.path]
+			: checkout.registeredPath
+				? [checkout.registeredPath]
+				: [],
+	),
+	conflicts: inspection.conflicts
+		.filter((conflict) => conflict.kind !== "stale-registration")
+		.map((conflict) => conflict.message),
+	dirty: inspection.checkouts.some(
+		(checkout) => checkout.exists && checkout.dirty !== false,
+	),
+})
 const entitySummary = (node: ActEntity) => ({
 	kind: node.kind,
 	id: node.id,
@@ -329,31 +355,30 @@ const actStep = (
 			include: ["workspace"],
 		})
 		const checkoutStates = new Map<string, ActCheckoutState>()
-		const materialized = graph.nodes.some(
-			(node) => node.kind === "execution-unit" && node.workspace?.materialized,
-		)
-		for (const inspection of materialized
-			? yield* worktrees.list(root, { materializedOnly: true })
-			: []) {
+		for (const node of graph.nodes) {
+			if (node.kind !== "execution-unit" || !node.workspace?.materialized)
+				continue
 			const id =
-				inspection.owner.kind === "phase"
-					? `phase:${inspection.owner.taskId}/${inspection.owner.phaseId}`
-					: `task:${inspection.owner.taskId}`
+				"phaseId" in node.data
+					? `phase:${node.data.taskId}/${node.data.phaseId}`
+					: `task:${node.data.taskId}`
 			checkoutStates.set(id, {
-				paths: inspection.checkouts.flatMap((checkout) =>
-					checkout.exists
-						? [checkout.path]
-						: checkout.registeredPath
-							? [checkout.registeredPath]
-							: [],
-				),
-				conflicts: inspection.conflicts
-					.filter((conflict) => conflict.kind !== "stale-registration")
-					.map((conflict) => conflict.message),
-				dirty: inspection.checkouts.some(
-					(checkout) => checkout.exists && checkout.dirty !== false,
-				),
+				paths: [node.workspace.checkoutPath],
+				conflicts: [],
+				dirty: false,
 			})
+		}
+		if (options.json && checkoutStates.size > 0) {
+			checkoutStates.clear()
+			for (const inspection of yield* worktrees.list(root, {
+				materializedOnly: true,
+			})) {
+				const id =
+					inspection.owner.kind === "phase"
+						? `phase:${inspection.owner.taskId}/${inspection.owner.phaseId}`
+						: `task:${inspection.owner.taskId}`
+				checkoutStates.set(id, checkoutState(inspection))
+			}
 		}
 		const nodes = graph.nodes.filter(
 			(node): node is ActEntity =>
@@ -580,7 +605,7 @@ const actStep = (
 			state.item = selected.id
 			session.activateTab("workstream")
 		}
-		const actions = selected ? catalog.get(selected.id)! : globals
+		let actions = selected ? catalog.get(selected.id)! : globals
 		if (!actionId) {
 			state.view = "item-menu"
 			const menuActions = actions.filter(
@@ -594,6 +619,24 @@ const actStep = (
 				actionChoices(menuActions),
 			)
 			state.view = "flow"
+		}
+		if (
+			selected &&
+			selected.kind !== "epic" &&
+			actionId === "worktree-remove" &&
+			!options.json
+		) {
+			const inspection = yield* worktrees.inspect(
+				selected.kind === "phase"
+					? selected.key.slice(0, selected.key.lastIndexOf("/"))
+					: selected.key,
+				selected.kind === "phase"
+					? selected.key.slice(selected.key.lastIndexOf("/") + 1)
+					: undefined,
+				root,
+			)
+			checkoutStates.set(selected.id, checkoutState(inspection))
+			actions = actActions(graph.nodes, nativeOptions, runWork, selected)
 		}
 		const action = actions.find((action) => action.id === actionId)
 		if (!action || action.blockedReason)
