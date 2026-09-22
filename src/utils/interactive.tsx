@@ -124,6 +124,9 @@ const createReadlineEditing = (
 
 export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	let input: TextareaRenderable | undefined
+	const dimensions = useTerminalDimensions()
+	// OpenTUI reserves the last wrap column, so clip a one-column-wider editor.
+	const inputWidth = () => dimensions().width + 1
 	const editing = createReadlineEditing(() => input)
 	useKeyboard((key) => {
 		if (key.propagationStopped) return
@@ -149,6 +152,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			flexDirection="column"
 			width="100%"
 			height="100%"
+			overflow="hidden"
 			backgroundColor={macchiato.base}
 		>
 			{props.fullScreen && !props.embedded && (
@@ -162,6 +166,7 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 			</text>
 			<textarea
 				focused
+				width={inputWidth()}
 				height={props.fullScreen ? 0 : 2}
 				flexGrow={props.fullScreen ? 1 : 0}
 				minHeight={1}
