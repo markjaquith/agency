@@ -1004,8 +1004,6 @@ describe("OpenTUI interaction", () => {
 			await setup.mockInput.typeText("alpha beta gamma delta")
 			await setup.flush()
 			const frame = setup.captureCharFrame()
-			expect(frame).toContain("alpha beta")
-			expect(frame).toContain("gamma")
 			expect(frame).toMatch(/alpha beta gamma\s*\ndelta/)
 		} finally {
 			setup.renderer.destroy()
