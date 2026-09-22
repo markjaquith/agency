@@ -107,6 +107,7 @@ export const WorkbaseConfig = Schema.Struct({
 		Schema.Record({ key: RepositoryAlias, value: RepositoryDeclaration }),
 	),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
+	branchNameCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	agents: Schema.optional(
 		Schema.Record({

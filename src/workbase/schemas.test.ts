@@ -256,6 +256,22 @@ describe("repository post-checkout configuration", () => {
 	})
 })
 
+describe("branch name configuration", () => {
+	test("accepts an argv command and rejects a shell string", () => {
+		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
+			version: 2,
+			branchNameCommand: ["resolve-branch", "{ticket}"],
+		})
+		expect(config.branchNameCommand).toEqual(["resolve-branch", "{ticket}"])
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseConfig)({
+				version: 2,
+				branchNameCommand: "resolve-branch {ticket}",
+			}),
+		).toThrow()
+	})
+})
+
 describe("agent configuration", () => {
 	test("accepts named argv commands with resume commands and environment", () => {
 		const config = Schema.decodeUnknownSync(WorkbaseConfig)({

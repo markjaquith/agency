@@ -72,6 +72,13 @@ describe("act command", () => {
 			runTestEffect(act({ cwd: root, inputAllowed: false, json: true })),
 		)
 		expect(JSON.parse(logs[0]!)).toMatchObject({
+			creationDefaults: {
+				branch: {
+					configured: false,
+					task: "task/<id>",
+					phase: "task/<task-id>-<phase-id>",
+				},
+			},
 			targets: [],
 			workbase: {
 				actions: expect.arrayContaining([
@@ -470,6 +477,13 @@ describe("act command", () => {
 		)
 
 		expect(JSON.parse(logs[0]!)).toMatchObject({
+			creationDefaults: {
+				branch: {
+					configured: false,
+					task: "task/<id>",
+					phase: "task/<task-id>-<phase-id>",
+				},
+			},
 			targets: [
 				{
 					kind: "task",

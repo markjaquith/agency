@@ -49,6 +49,19 @@ const EntityFields = {
 }
 
 export const ActDiscovery = Schema.Struct({
+	creationDefaults: Schema.Struct({
+		branch: Schema.Union(
+			Schema.Struct({
+				configured: Schema.Literal(true),
+				guidance: Schema.String,
+			}),
+			Schema.Struct({
+				configured: Schema.Literal(false),
+				task: Schema.String,
+				phase: Schema.String,
+			}),
+		),
+	}),
 	workbase: Schema.Struct({
 		root: Schema.String,
 		repositories: Argv,

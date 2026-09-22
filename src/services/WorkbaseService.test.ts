@@ -477,6 +477,25 @@ status: done
 		).rejects.toThrow("{worktree}")
 	})
 
+	test("rejects an unknown branch name command placeholder", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: ["tool", "{unknown}"],
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.discover(root)),
+				),
+			),
+		).rejects.toThrow("Unknown branchNameCommand placeholder")
+	})
+
 	test("rejects an unknown post-checkout command placeholder", async () => {
 		await write(
 			root,

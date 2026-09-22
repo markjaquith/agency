@@ -160,6 +160,21 @@ const shellCommand = (argv: readonly string[]) =>
 				: `'${arg.replaceAll("'", `'\\''`)}'`,
 		)
 		.join(" ")
+const creationDefaults = (config: {
+	readonly branchNameCommand?: readonly string[]
+}) => ({
+	branch: config.branchNameCommand
+		? {
+				configured: true as const,
+				guidance:
+					"Omit --branch to use the workbase branchNameCommand; pass it only for an explicit override.",
+			}
+		: {
+				configured: false as const,
+				task: "task/<id>",
+				phase: "task/<task-id>-<phase-id>",
+			},
+})
 const available = (action: ActAction) => !action.blockedReason
 const checkoutState = (inspection: {
 	readonly checkouts: readonly {
@@ -463,6 +478,7 @@ const actStep = (
 			log(
 				JSON.stringify(
 					yield* Schema.decodeUnknown(ActDiscovery)({
+						creationDefaults: creationDefaults(config),
 						workbase: {
 							root,
 							repositories: graph.nodes
@@ -772,6 +788,8 @@ or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
 An existing directory or file selects its containing epic, task, or phase.
 A workbase path opens Workbase actions. Otherwise the positional value is a
 task ID. Selectors skip item selection.
+JSON discovery includes creation defaults identifying when callers should omit
+--branch so the workbase branchNameCommand can choose it.
 
 Options:
   --action <id>         Start an action or filter discovery (IDs from --json)

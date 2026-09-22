@@ -573,7 +573,7 @@ const commands = {
 		subcommands: {
 			new: {
 				usage:
-					"agency phase new <task-id> <phase-id> --repo <alias> --branch <name> --base <name> [options] [--work [--auto]]",
+					"agency phase new <task-id> <phase-id> --repo <alias> --base <name> [--branch <name>] [options] [--work [--auto]]",
 				minArgs: 2,
 				maxArgs: 2,
 				options: [
@@ -596,7 +596,7 @@ const commands = {
 			},
 			create: {
 				usage:
-					"agency phase create <task-id> <phase-id> --repo <alias> --branch <name> --base <name> [options]",
+					"agency phase create <task-id> <phase-id> --repo <alias> --base <name> [--branch <name>] [options]",
 				minArgs: 2,
 				maxArgs: 2,
 				options: [

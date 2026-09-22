@@ -22,6 +22,7 @@ import {
 } from "../workbase/schemas"
 import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
 import { validatePostCheckoutCommand } from "../workbase/checkout-command"
+import { validateBranchNameCommand } from "../workbase/branch-name-template"
 import { validateAgents } from "../workbase/agent-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
@@ -326,6 +327,19 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												cause instanceof Error
 													? cause.message
 													: "Invalid worktreeCreateCommand",
+										})
+									}
+								}
+								if (decoded.value.branchNameCommand) {
+									try {
+										validateBranchNameCommand(decoded.value.branchNameCommand)
+									} catch (cause) {
+										return yield* new WorkbaseConfigError({
+											path: configPath,
+											message:
+												cause instanceof Error
+													? cause.message
+													: "Invalid branchNameCommand",
 										})
 									}
 								}
