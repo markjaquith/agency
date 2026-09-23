@@ -801,7 +801,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.shownTasks).toEqual(["delivery", "delivery"])
-		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath!)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("treats a positional value as a task ID when it is not a directory", async () => {
@@ -814,7 +814,7 @@ describe("work command", () => {
 		})
 
 		expect(harness.shownTasks).toEqual(["delivery", "delivery"])
-		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath!)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("launches a multi-phase task agent without materializing", async () => {
@@ -861,7 +861,7 @@ describe("work command", () => {
 				"--prompt",
 				"Agency worker launch target: execution-unit:phase/example/implementation. Start the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
-			cwd: multiPhaseWorkspace.writablePath!,
+			cwd: phaseDirectory,
 		})
 		expect(harness.statusUpdates).toEqual([
 			"phase:example:implementation:working",
@@ -882,7 +882,7 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.cwd).toBe(singlePhaseWorkspace.writablePath!)
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
 	})
 
@@ -920,7 +920,9 @@ describe("work command", () => {
 			"probe:opencode",
 			"launch:opencode",
 		])
-		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath!)
+		expect(harness.launches[0]?.cwd).toBe(
+			"/workbase/tasks/delivery/phases/build",
+		)
 	})
 
 	test("requires an explicit target when input is disabled", async () => {
@@ -1046,7 +1048,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([])
 	})
 
-	test("launches OpenCode in the task checkout with explicit context", async () => {
+	test("launches OpenCode in the task directory with explicit context", async () => {
 		const harness = createHarness()
 
 		await harness.run({ taskId: "example", opencode: true })
@@ -1060,7 +1062,7 @@ describe("work command", () => {
 			{
 				cli: "opencode",
 				args: ["opencode"],
-				cwd: singlePhaseWorkspace.writablePath!,
+				cwd: taskDirectory,
 			},
 		])
 		expect(harness.launchEnvironments[0]?.AGENCY_PROMPT).toBe("")
@@ -1072,7 +1074,7 @@ describe("work command", () => {
 		])
 	})
 
-	test("launches OpenCode in the phase checkout with explicit context", async () => {
+	test("launches OpenCode in the phase directory with explicit context", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 
 		await harness.run({
@@ -1081,7 +1083,7 @@ describe("work command", () => {
 			opencode: true,
 		})
 
-		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath!)
+		expect(harness.launches[0]?.cwd).toBe(phaseDirectory)
 	})
 
 	test("submits V2 startup before launching the exact session without a prompt", async () => {
@@ -1166,7 +1168,7 @@ describe("work command", () => {
 				"--prompt",
 				"Agency worker launch target: execution-unit:phase/example/implementation. Continue the task. Read /workbase/tasks/example/TASK.md and /workbase/tasks/example/phases/implementation/PHASE.md.",
 			],
-			cwd: multiPhaseWorkspace.writablePath!,
+			cwd: phaseDirectory,
 		})
 	})
 
@@ -1241,7 +1243,7 @@ describe("work command", () => {
 		expect(printed.environment.API_TOKEN).toBeUndefined()
 	})
 
-	test("prints the phase checkout in the OpenCode command contract", async () => {
+	test("prints the phase directory in the command contract", async () => {
 		const harness = createHarness({ workspace: multiPhaseWorkspace })
 		const output = await captureLogs(() =>
 			harness.run({
@@ -1252,9 +1254,7 @@ describe("work command", () => {
 			}),
 		)
 
-		expect(JSON.parse(output.join("\n")).cwd).toBe(
-			multiPhaseWorkspace.writablePath,
-		)
+		expect(JSON.parse(output.join("\n")).cwd).toBe(phaseDirectory)
 	})
 
 	test("does not reopen a forced terminal target in print-only mode", async () => {
@@ -1284,14 +1284,14 @@ describe("work command", () => {
 		expect(printed.environment.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 	})
 
-	test("launches OpenCode from the writable checkout", async () => {
+	test("provides the writable checkout to plugins without changing the project", async () => {
 		const harness = createHarness()
 		await harness.run({ taskId: "example", opencode: true })
 
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
 			args: ["opencode"],
-			cwd: singlePhaseWorkspace.writablePath!,
+			cwd: taskDirectory,
 		})
 		expect(harness.launchEnvironments[0]?.AGENCY_WRITABLE_CHECKOUT).toBe(
 			"/workbase/tasks/example/code/agency",
@@ -1299,6 +1299,60 @@ describe("work command", () => {
 		expect(
 			harness.launchEnvironments[0]?.OPENCODE_CONFIG_CONTENT,
 		).toBeUndefined()
+	})
+
+	test("launches OpenCode V2 from the writable task checkout", async () => {
+		const harness = createHarness({ openCodeV2: true })
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: ["opencode"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
+	})
+
+	test("launches OpenCode V2 from the writable phase checkout", async () => {
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			openCodeV2: true,
+		})
+		await harness.run({
+			taskId: "example",
+			phaseId: "implementation",
+			opencode: true,
+		})
+
+		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath!)
+	})
+
+	test("prints the OpenCode V2 checkout in the command contract", async () => {
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			openCodeV2: true,
+		})
+		const output = await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				phaseId: "implementation",
+				opencode: true,
+				printCommand: true,
+			}),
+		)
+
+		expect(JSON.parse(output.join("\n")).cwd).toBe(
+			multiPhaseWorkspace.writablePath,
+		)
+	})
+
+	test("keeps configured OpenCode agents in the task directory", async () => {
+		const harness = createHarness({
+			openCodeV2: true,
+			agents: { opencode: { command: ["opencode"] } },
+		})
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 	})
 
 	test("automatically prefers opencode2", async () => {
@@ -1310,7 +1364,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode2",
 			args: ["opencode2"],
-			cwd: singlePhaseWorkspace.writablePath!,
+			cwd: taskDirectory,
 		})
 	})
 
@@ -1349,7 +1403,7 @@ describe("work command", () => {
 		expect(harness.launches[0]).toEqual({
 			cli: "opencode",
 			args: ["opencode"],
-			cwd: singlePhaseWorkspace.writablePath!,
+			cwd: taskDirectory,
 		})
 	})
 
@@ -1499,7 +1553,7 @@ describe("work command", () => {
 			verboseHarness.run({ taskId: "example", verbose: true }),
 		)
 		expect(verboseLogs).toEqual([
-			"Launching command: opencode2 (cwd: /workbase/tasks/example/code/agency)",
+			"Launching command: opencode2 (cwd: /workbase/tasks/example)",
 		])
 		expect(verboseHarness.materializeOptions[0]?.verbose).toBe(true)
 

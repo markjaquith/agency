@@ -37,7 +37,10 @@ import {
 	readValidationEvidence,
 } from "../workbase/execution-contract"
 import { ValidationFailedError } from "./validate"
-import { prepareOpenCodeLaunch } from "../workbase/opencode-launch"
+import {
+	openCodeDiscoversAncestorConfig,
+	prepareOpenCodeLaunch,
+} from "../workbase/opencode-launch"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -378,11 +381,14 @@ export const work = (
 			options.auto,
 		)
 		cli = resolved.argv[0]!
-		if (
-			writablePath &&
-			(agent === "opencode2" || agent === "opencode" || agent === "pi")
-		) {
-			launchPath = writablePath
+		if (writablePath && !config.agents?.[agent]) {
+			if (
+				agent === "pi" ||
+				((agent === "opencode2" || agent === "opencode") &&
+					(yield* openCodeDiscoversAncestorConfig(cli)))
+			) {
+				launchPath = writablePath
+			}
 		}
 		const environment = {
 			...resolved.environment,

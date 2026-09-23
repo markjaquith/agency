@@ -15,6 +15,21 @@ const Admitted = Schema.Struct({
 	}),
 })
 
+// V1 stops config discovery at the Git root, so a checkout-rooted V1 launch
+// would miss the workbase's managed OpenCode config and plugin.
+export const openCodeDiscoversAncestorConfig = (cli: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const result = yield* fs.runCommand([cli, "--version"], {
+			captureOutput: true,
+			timeoutMs: 60_000,
+		})
+		return (
+			result.exitCode === 0 &&
+			/^(?:opencode\s+v?)?2\./.test(result.stdout.trim())
+		)
+	}).pipe(Effect.orElseSucceed(() => false))
+
 // V2's TUI --prompt only seeds the composer. Submit through the same CLI's
 // authenticated service connection, then attach without a prompt. Reloading or
 // reconnecting the TUI cannot replay the launch input. Only built-in Agency

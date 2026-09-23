@@ -395,9 +395,11 @@ identify the invoking session, so Agency deliberately avoids leaking one
 session's worker identity into another; the validated marker and injected system
 instruction remain the V2 fallback when the long-lived server did not inherit
 the client's launch environment.
-For execution units, the `opencode2`, `opencode`, and `pi` agents launch from
-the authoritative writable checkout so their project and Git interfaces reflect
-the implementation repository. Epic and multi-phase task orchestration remains
+For execution units, the built-in `pi` agent and the `opencode2` and `opencode`
+agents running OpenCode V2 launch from the authoritative writable checkout so
+their project and Git interfaces reflect the implementation repository.
+OpenCode V1 stops configuration discovery at the checkout's Git root, so V1
+launches remain rooted in the task or phase directory. Epic and multi-phase task orchestration remains
 rooted in its Agency document directory. Ancestor discovery still supplies the
 workbase `AGENTS.md` and managed OpenCode config.
 Agency's managed OpenCode plugin grants the active workbase external-directory
