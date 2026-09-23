@@ -423,6 +423,11 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 						terminal.write("https://example.com/recovered.git\r")
 						await wait("Preview:")
 					}
+					const afterPreview = output.lastIndexOf("Preview:")
+					await waitFor(
+						() => output.slice(afterPreview).includes("Create work"),
+						() => output,
+					)
 					expect(subprocess.exitCode).toBeNull()
 					terminal.write("\x1b")
 				}
