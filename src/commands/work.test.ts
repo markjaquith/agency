@@ -1301,6 +1301,60 @@ describe("work command", () => {
 		).toBeUndefined()
 	})
 
+	test("launches OpenCode V2 from the writable task checkout", async () => {
+		const harness = createHarness({ openCodeV2: true })
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: ["opencode"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
+	})
+
+	test("launches OpenCode V2 from the writable phase checkout", async () => {
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			openCodeV2: true,
+		})
+		await harness.run({
+			taskId: "example",
+			phaseId: "implementation",
+			opencode: true,
+		})
+
+		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath!)
+	})
+
+	test("prints the OpenCode V2 checkout in the command contract", async () => {
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			openCodeV2: true,
+		})
+		const output = await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				phaseId: "implementation",
+				opencode: true,
+				printCommand: true,
+			}),
+		)
+
+		expect(JSON.parse(output.join("\n")).cwd).toBe(
+			multiPhaseWorkspace.writablePath,
+		)
+	})
+
+	test("keeps configured OpenCode agents in the task directory", async () => {
+		const harness = createHarness({
+			openCodeV2: true,
+			agents: { opencode: { command: ["opencode"] } },
+		})
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
+	})
+
 	test("automatically prefers opencode2", async () => {
 		const harness = createHarness()
 
@@ -1376,7 +1430,11 @@ describe("work command", () => {
 		await harness.run({ taskId: "example" })
 
 		expect(harness.probes).toEqual(["opencode2", "opencode", "pi"])
-		expect(harness.launches[0]).toMatchObject({ cli: "pi", args: ["pi"] })
+		expect(harness.launches[0]).toEqual({
+			cli: "pi",
+			args: ["pi"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
 	})
 
 	test("uses the global agent before automatic detection", async () => {
@@ -1385,7 +1443,11 @@ describe("work command", () => {
 		await harness.run({ taskId: "example" })
 
 		expect(harness.probes).toEqual(["pi"])
-		expect(harness.launches[0]).toMatchObject({ cli: "pi", args: ["pi"] })
+		expect(harness.launches[0]).toEqual({
+			cli: "pi",
+			args: ["pi"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
 	})
 
 	test("lets an invocation agent override the global agent", async () => {

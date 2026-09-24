@@ -303,9 +303,12 @@ before launching an agent.
 
 OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
-`agency context`. OpenCode remains rooted in the task or epic directory so the
-workbase instructions and config compose normally. The managed plugin resolves
-the writable checkout from launch context or `agency context`, then exposes its
-supported skill directories through the applicable OpenCode plugin API; this
-does not make other checkout-local OpenCode configuration authoritative. Agents
-must follow the authority reported by `agency context`.
+`agency context`. Pi and OpenCode V2 execution units launched by `agency work`
+are rooted in the authoritative writable checkout so their project and Git
+status reflect the implementation repository; OpenCode V1 remains rooted in the
+task or phase directory. Orchestration remains rooted in its
+Agency document directory. The managed integrations resolve the writable
+checkout from launch context or `agency context`, guide task-directory sessions
+to use it for implementation, and expose its supported skill directories through
+the applicable plugin API; this does not make other checkout-local configuration
+authoritative. Agents must follow the authority reported by `agency context`.
