@@ -1438,6 +1438,246 @@ pr: null
 		])
 	})
 
+	test("uses a configured worktree remove command for the writable checkout", async () => {
+		await ensureEffectRepository()
+		const marker = join(root, "remove-command")
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				worktreeRemoveCommand: [
+					"sh",
+					"-c",
+					'printf "%s\\n" "$@" "$AGENCY_REPO" "$AGENCY_WORKTREE" "$AGENCY_BRANCH" "$AGENCY_BASE" >> "$0"; git -C "$1" worktree remove "$2"',
+					marker,
+					"{repo}",
+					"{worktree}",
+					"{branch}",
+					"{base}",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "custom-remove",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							repos: [{ repo: "effect", ref: "main" }],
+							branch: "task/custom-remove",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("custom-remove", undefined, root),
+				),
+			),
+		)
+
+		const removed = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("custom-remove", undefined, root),
+				),
+			),
+		)
+
+		expect(removed.sort()).toEqual(
+			[
+				join(workspace.codePath, "agency"),
+				join(workspace.codePath, "effect"),
+			].sort(),
+		)
+		expect(await Bun.file(workspace.codePath).exists()).toBe(false)
+		const repositoryPath = join(root, "repos/agency")
+		const checkoutPath = join(workspace.codePath, "agency")
+		expect((await Bun.file(marker).text()).trim().split("\n")).toEqual([
+			repositoryPath,
+			checkoutPath,
+			"task/custom-remove",
+			"main",
+			repositoryPath,
+			checkoutPath,
+			"task/custom-remove",
+			"main",
+		])
+		expect(
+			await gitOutput(["worktree", "list", "--porcelain"], repositoryPath),
+		).not.toContain("custom-remove")
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				repositoryPath,
+				"show-ref",
+				"--verify",
+				"refs/heads/task/custom-remove",
+			]).exitCode,
+		).toBe(0)
+	})
+
+	test("reports incomplete configured remove commands", async () => {
+		const fixtures = [
+			{
+				id: "remove-noop",
+				command: ["sh", "-c", "exit 0", "{repo}", "{worktree}"],
+				expected: "Worktree remove command did not remove",
+				restored: true,
+			},
+			{
+				id: "remove-registered",
+				command: ["sh", "-c", 'rm -rf "$1"', "{repo}", "{worktree}"],
+				expected: "registered as a Git worktree",
+				restored: false,
+			},
+			{
+				id: "remove-branch",
+				command: [
+					"sh",
+					"-c",
+					'git -C "$0" worktree remove "$1" && git -C "$0" branch -D "$2"',
+					"{repo}",
+					"{worktree}",
+					"{branch}",
+				],
+				expected: "must preserve the branch",
+				restored: false,
+			},
+			{
+				id: "remove-failure",
+				command: ["sh", "-c", "echo nope >&2; exit 3", "{repo}", "{worktree}"],
+				expected: "Failed to remove worktree for 'agency'",
+				restored: true,
+			},
+		]
+		for (const fixture of fixtures) {
+			await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id: fixture.id,
+								ticketUrl: "https://example.com/task",
+								repo: "agency",
+								branch: `task/${fixture.id}`,
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			const workspace = await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize(fixture.id, undefined, root),
+					),
+				),
+			)
+			await Bun.write(
+				join(root, "agency.json"),
+				JSON.stringify({ version: 2, worktreeRemoveCommand: fixture.command }),
+			)
+
+			const failure = await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.remove(fixture.id, undefined, root),
+					),
+					Effect.flip,
+				),
+			)
+			const message = String((failure as Error).message)
+			expect(message).toContain(fixture.expected)
+			expect(message).toEndWith(
+				fixture.restored
+					? "no worktrees were removed"
+					: "Worktree removal requires manual recovery",
+			)
+			if (fixture.restored) {
+				expect(
+					await Bun.file(join(workspace.codePath, "agency/README.md")).text(),
+				).toBe("example\n")
+			}
+		}
+	})
+
+	test("rolls back a failed materialization with the configured remove command", async () => {
+		const marker = join(root, "rollback-remove")
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				repositories: {
+					agency: {
+						remote: "https://example.com/agency.git",
+						postCheckoutCommand: ["sh", "-c", "echo hook-failed >&2; exit 9"],
+					},
+				},
+				worktreeRemoveCommand: [
+					"sh",
+					"-c",
+					'printf "%s\\n" "$2" >> "$0"; git -C "$1" worktree remove --force "$2" && git -C "$1" branch -D "$3"',
+					marker,
+					"{repo}",
+					"{worktree}",
+					"{branch}",
+				],
+			}),
+		)
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "rollback-remove",
+							ticketUrl: "https://example.com/task",
+							repo: "agency",
+							branch: "task/rollback-remove",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+
+		const failure = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("rollback-remove", undefined, root),
+				),
+				Effect.flip,
+			),
+		)
+		expect(failure).toMatchObject({
+			rolledBack: ["create-worktree agency", "create-branch agency"],
+			manualRecovery: ["Review fetched refs for repository 'agency'"],
+		})
+		const checkoutPath = join(root, "tasks/rollback-remove/code/agency")
+		expect(await Bun.file(checkoutPath).exists()).toBe(false)
+		expect((await Bun.file(marker).text()).trim()).toBe(checkoutPath)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/rollback-remove",
+			]).exitCode,
+		).not.toBe(0)
+	})
+
 	test("reports dry-run fetch and worktree changes without mutating", async () => {
 		await ensureEffectRepository()
 		await runTestEffect(
@@ -2368,7 +2608,7 @@ pr: null
 		)
 	})
 
-	test("supports Worktrunk as the configured command", async () => {
+	test("supports Worktrunk as the configured commands", async () => {
 		if (Bun.spawnSync(["which", "wt"], { stdout: "ignore" }).exitCode !== 0) {
 			return
 		}
@@ -2390,6 +2630,18 @@ pr: null
 					"{base}",
 					"{branch}",
 					"--no-cd",
+					"--format",
+					"json",
+				],
+				worktreeRemoveCommand: [
+					"wt",
+					"-C",
+					"{repo}",
+					"-y",
+					"remove",
+					"{worktree}",
+					"--no-delete-branch",
+					"--foreground",
 					"--format",
 					"json",
 				],
@@ -2431,5 +2683,24 @@ pr: null
 				workspace.writablePath!,
 			),
 		).toBe(".worktree.lock")
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.remove("worktrunk", undefined, root),
+				),
+			),
+		)
+		expect(await Bun.file(workspace.codePath).exists()).toBe(false)
+		expect(
+			Bun.spawnSync([
+				"git",
+				"-C",
+				join(root, "repos/agency"),
+				"show-ref",
+				"--verify",
+				"refs/heads/task/worktrunk",
+			]).exitCode,
+		).toBe(0)
 	})
 })

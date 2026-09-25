@@ -172,6 +172,15 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 									] as const,
 								]
 							: []),
+						...(config.worktreeRemoveCommand
+							? [
+									[
+										"integration.worktree-remove",
+										config.worktreeRemoveCommand,
+										"Worktree remover",
+									] as const,
+								]
+							: []),
 						...Object.entries(config.repositories ?? {}).flatMap(
 							([alias, repository]) =>
 								repository.postCheckoutCommand

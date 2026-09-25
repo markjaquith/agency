@@ -5,7 +5,7 @@ import { WorkbaseService } from "./WorkbaseService"
 import { TaskService } from "./TaskService"
 import { PhaseService } from "./PhaseService"
 import {
-	expandWorktreeCreateCommand,
+	expandWorktreeCommand,
 	worktreeCommandEnvironment,
 } from "../workbase/worktree-command"
 import {
@@ -256,6 +256,105 @@ const runPostCheckoutHook = (options: {
 			command,
 			status: "completed",
 		})
+	})
+
+const runWorktreeRemoveCommand = (options: {
+	readonly command: readonly string[]
+	readonly alias: string
+	readonly repositoryPath: string
+	readonly checkoutPath: string
+	readonly branch: string
+	readonly base: string
+	readonly preserveBranch: boolean
+	readonly forwardOutput: boolean
+	readonly verboseLog: (...args: unknown[]) => void
+}) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const variables = {
+			repo: options.repositoryPath,
+			worktree: options.checkoutPath,
+			branch: options.branch,
+			base: options.base,
+		}
+		let args: string[]
+		try {
+			args = expandWorktreeCommand(
+				"worktreeRemoveCommand",
+				options.command,
+				variables,
+			)
+		} catch (cause) {
+			return yield* new WorktreeError({
+				message:
+					cause instanceof Error
+						? cause.message
+						: "Invalid worktreeRemoveCommand",
+			})
+		}
+		const canonicalCheckoutPath = yield* fs.realPath(options.checkoutPath)
+		options.verboseLog(
+			`Running worktree remove command: ${formatCommand(args)}`,
+		)
+		const result = yield* fs.runCommand(args, {
+			cwd: options.repositoryPath,
+			captureOutput: true,
+			forwardOutput: options.forwardOutput,
+			env: worktreeCommandEnvironment(variables),
+		})
+		if (result.exitCode !== 0) {
+			return yield* new WorktreeError({
+				message: `Failed to remove worktree for '${options.alias}': ${result.stderr}`,
+			})
+		}
+		if (yield* fs.exists(options.checkoutPath)) {
+			return yield* new WorktreeError({
+				message: `Worktree remove command did not remove ${options.checkoutPath}`,
+			})
+		}
+		const listed = yield* fs.runCommand(
+			[
+				"git",
+				"-C",
+				options.repositoryPath,
+				"worktree",
+				"list",
+				"--porcelain",
+				"-z",
+			],
+			{ captureOutput: true },
+		)
+		if (
+			listed.exitCode !== 0 ||
+			parseWorktreeList(listed.stdout).some(
+				(worktree) =>
+					resolve(worktree.path) === canonicalCheckoutPath ||
+					resolve(worktree.path) === resolve(options.checkoutPath),
+			)
+		) {
+			return yield* new WorktreeError({
+				message: `Worktree remove command left ${options.checkoutPath} registered as a Git worktree`,
+			})
+		}
+		if (options.preserveBranch) {
+			const branchExists = yield* fs.runCommand(
+				[
+					"git",
+					"-C",
+					options.repositoryPath,
+					"show-ref",
+					"--verify",
+					"--quiet",
+					`refs/heads/${options.branch}`,
+				],
+				{ captureOutput: true },
+			)
+			if (branchExists.exitCode !== 0) {
+				return yield* new WorktreeError({
+					message: `Worktree remove command deleted branch '${options.branch}' in repository '${options.alias}'; it must preserve the branch`,
+				})
+			}
+		}
 	})
 
 const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
@@ -1083,12 +1182,16 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								}
 								if (config.worktreeCreateCommand) {
 									try {
-										expandWorktreeCreateCommand(config.worktreeCreateCommand, {
-											repo: repositoryPath,
-											worktree: checkoutPath,
-											branch: checkout.branch,
-											base: executionBase,
-										})
+										expandWorktreeCommand(
+											"worktreeCreateCommand",
+											config.worktreeCreateCommand,
+											{
+												repo: repositoryPath,
+												worktree: checkoutPath,
+												branch: checkout.branch,
+												base: executionBase,
+											},
+										)
 									} catch (cause) {
 										return yield* new WorktreeError({
 											message:
@@ -1364,7 +1467,8 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											base: executionBase,
 										}
 										try {
-											args = expandWorktreeCreateCommand(
+											args = expandWorktreeCommand(
+												"worktreeCreateCommand",
 												config.worktreeCreateCommand,
 												variables,
 											)
@@ -1781,18 +1885,37 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 											!(yield* fs.isDirectory(checkoutPath))
 										)
 											continue
-										const removed = yield* fs.runCommand(
-											[
-												"git",
-												"-C",
-												join(root, "repos", checkout.repo),
-												"worktree",
-												"remove",
-												"--force",
-												checkoutPath,
-											],
-											{ captureOutput: true },
-										)
+										const repositoryPath = join(root, "repos", checkout.repo)
+										const removed =
+											config.worktreeRemoveCommand && "branch" in checkout
+												? yield* runWorktreeRemoveCommand({
+														command: config.worktreeRemoveCommand,
+														alias: checkout.repo,
+														repositoryPath,
+														checkoutPath,
+														branch: checkout.branch,
+														base: executionBase,
+														preserveBranch: false,
+														forwardOutput: forwardCommandOutput,
+														verboseLog,
+													}).pipe(
+														Effect.as({ exitCode: 0 }),
+														Effect.catchAll(() =>
+															Effect.succeed({ exitCode: 1 }),
+														),
+													)
+												: yield* fs.runCommand(
+														[
+															"git",
+															"-C",
+															repositoryPath,
+															"worktree",
+															"remove",
+															"--force",
+															checkoutPath,
+														],
+														{ captureOutput: true },
+													)
 										if (removed.exitCode === 0)
 											rolledBack.push(`create-worktree ${checkout.repo}`)
 										else manualRecovery.push(`Remove ${checkoutPath}`)
@@ -1821,6 +1944,24 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 										]),
 									).values()
 									for (const branch of branchCandidates) {
+										if (config.worktreeRemoveCommand) {
+											const branchExists = yield* fs.runCommand(
+												[
+													"git",
+													"-C",
+													join(root, "repos", branch.repo),
+													"show-ref",
+													"--verify",
+													"--quiet",
+													`refs/heads/${branch.branch}`,
+												],
+												{ captureOutput: true },
+											)
+											if (branchExists.exitCode !== 0) {
+												rolledBack.push(`create-branch ${branch.repo}`)
+												continue
+											}
+										}
 										const deleted = yield* fs.runCommand(
 											[
 												"git",
@@ -1881,7 +2022,10 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const phases = yield* PhaseService
-					const root = yield* workbase.discover(startPath)
+					const { verboseLog } = createLoggers(options)
+					const forwardCommandOutput =
+						options.verbose === true && !options.silent && !options.json
+					const { root, config } = yield* workbase.loadConfig(startPath)
 					const removal = Effect.gen(function* () {
 						const inspection = yield* inspectExecution(taskId, phaseId, root)
 						const blockingConflicts = inspection.conflicts.filter(
@@ -1907,6 +2051,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 									repo: string
 									repos?: readonly RepositoryReference[]
 									branch: string
+									base: string
 							  }
 							| { review: { repo: string; commit: string } }
 						let codePath: string
@@ -1959,6 +2104,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							checkoutPath: string
 							registeredPath: string
 							checkoutExists: boolean
+							writable: boolean
 							head?: string
 							branch?: string
 						}[] = []
@@ -2115,6 +2261,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								checkoutPath,
 								registeredPath: registered.path,
 								checkoutExists,
+								writable: "branch" in checkout,
 								head: registered.head,
 								branch: registered.branch?.replace(/^refs\/heads\//, ""),
 							})
@@ -2188,6 +2335,34 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							})
 						const removed = yield* Effect.gen(function* () {
 							for (const plan of removalPlans) {
+								if (
+									config.worktreeRemoveCommand &&
+									plan.writable &&
+									plan.checkoutExists &&
+									plan.branch &&
+									!("review" in execution)
+								) {
+									yield* runWorktreeRemoveCommand({
+										command: config.worktreeRemoveCommand,
+										alias: plan.alias,
+										repositoryPath: plan.repositoryPath,
+										checkoutPath: plan.checkoutPath,
+										branch: plan.branch,
+										base: execution.base,
+										preserveBranch: true,
+										forwardOutput: forwardCommandOutput,
+										verboseLog,
+									}).pipe(
+										Effect.tapError(() =>
+											Effect.gen(function* () {
+												if (!(yield* fs.exists(plan.checkoutPath)))
+													completed.push(plan)
+											}),
+										),
+									)
+									completed.push(plan)
+									continue
+								}
 								const command = plan.checkoutExists
 									? [
 											"git",

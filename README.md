@@ -184,8 +184,8 @@ existing Git repositories.
 Existing version 2 workbases without `repositories` remain valid. Run
 `agency repo setup` to preview deterministic adoption of legacy local aliases;
 `agency repo setup --apply` writes declarations only when a portable origin is
-unambiguous. Workbase configuration may also provide a custom writable-worktree
-creation command.
+unambiguous. Workbase configuration may also provide custom writable-worktree
+creation and removal commands.
 
 ### Custom Branch Names
 
@@ -298,6 +298,43 @@ tracked ignore configuration or overwriting user-maintained local excludes.
 The configured command applies only to the writable checkout.
 Supplemental read-only repositories remain detached Git worktrees at their
 declared refs so they do not acquire writable branches.
+
+### Custom Worktree Remove Command
+
+Git workbases remove worktrees with `git worktree remove`. Set
+`worktreeRemoveCommand` to an argv template when another tool should remove
+writable worktrees:
+
+```json
+{
+	"version": 2,
+	"worktreeRemoveCommand": [
+		"wt",
+		"-C",
+		"{repo}",
+		"-y",
+		"remove",
+		"{worktree}",
+		"--no-delete-branch",
+		"--foreground",
+		"--format",
+		"json"
+	]
+}
+```
+
+It accepts the same placeholders and environment variables as
+`worktreeCreateCommand`, and `{repo}` and `{worktree}` are required. Agency
+invokes it directly without a shell whenever it removes an existing writable
+checkout, including `agency worktree remove`, rebuilds, archives, and rollback
+of a failed materialization. Agency still refuses dirty or mismatched checkouts
+before running the command.
+
+The command must remove the checkout synchronously, unregister it from Git, and
+preserve the execution branch; Agency verifies all three afterward. Rollback of
+a newly created checkout may delete the branch because Agency discards it
+anyway. Reference checkouts and stale registrations are still removed or pruned
+with Git.
 
 ### Post-checkout Commands
 

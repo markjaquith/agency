@@ -20,7 +20,7 @@ import {
 	type WorkbaseRegistry as WorkbaseRegistryData,
 	type WorkbaseRegistration,
 } from "../workbase/schemas"
-import { validateWorktreeCreateCommand } from "../workbase/worktree-command"
+import { validateWorktreeCommand } from "../workbase/worktree-command"
 import { validatePostCheckoutCommand } from "../workbase/checkout-command"
 import { validateBranchNameCommand } from "../workbase/branch-name-template"
 import { validateAgents } from "../workbase/agent-command"
@@ -315,18 +315,21 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 										message: `Invalid workbase configuration in ${configPath}:\n${decoded.error}`,
 									})
 								}
-								if (decoded.value.worktreeCreateCommand) {
+								for (const setting of [
+									"worktreeCreateCommand",
+									"worktreeRemoveCommand",
+								] as const) {
+									const command = decoded.value[setting]
+									if (!command) continue
 									try {
-										validateWorktreeCreateCommand(
-											decoded.value.worktreeCreateCommand,
-										)
+										validateWorktreeCommand(setting, command)
 									} catch (cause) {
 										return yield* new WorkbaseConfigError({
 											path: configPath,
 											message:
 												cause instanceof Error
 													? cause.message
-													: "Invalid worktreeCreateCommand",
+													: `Invalid ${setting}`,
 										})
 									}
 								}

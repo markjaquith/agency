@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-	expandWorktreeCreateCommand,
+	expandWorktreeCommand,
 	worktreeCommandEnvironment,
 } from "./worktree-command"
 
@@ -14,7 +14,8 @@ const variables = {
 describe("worktree command templates", () => {
 	test("expands argv placeholders without shell interpolation", () => {
 		expect(
-			expandWorktreeCreateCommand(
+			expandWorktreeCommand(
+				"worktreeCreateCommand",
 				[
 					"tool",
 					"--repo={repo}",
@@ -37,17 +38,29 @@ describe("worktree command templates", () => {
 
 	test("requires repo and worktree placeholders", () => {
 		expect(() =>
-			expandWorktreeCreateCommand(["tool", "{repo}"], variables),
-		).toThrow("{worktree}")
+			expandWorktreeCommand(
+				"worktreeCreateCommand",
+				["tool", "{repo}"],
+				variables,
+			),
+		).toThrow("worktreeCreateCommand must include the {worktree} placeholder")
+		expect(() =>
+			expandWorktreeCommand(
+				"worktreeRemoveCommand",
+				["tool", "{worktree}"],
+				variables,
+			),
+		).toThrow("worktreeRemoveCommand must include the {repo} placeholder")
 	})
 
 	test("rejects unknown placeholders", () => {
 		expect(() =>
-			expandWorktreeCreateCommand(
+			expandWorktreeCommand(
+				"worktreeRemoveCommand",
 				["tool", "{repo}", "{worktree}", "{unknown}"],
 				variables,
 			),
-		).toThrow("{unknown}")
+		).toThrow("Unknown worktreeRemoveCommand placeholder: {unknown}")
 	})
 
 	test("provides equivalent environment variables", () => {
