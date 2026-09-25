@@ -113,6 +113,12 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 		retryable: false,
 		remediation: "Resolve workbase validation errors before reconciling.",
 	},
+	BranchNameCommandError: {
+		code: "BRANCH_NAME_COMMAND_FAILED",
+		retryable: false,
+		remediation:
+			"Fix the workbase branchNameCommand or pass an explicit --branch.",
+	},
 	ProcessError: { code: "PROCESS_ERROR", retryable: true },
 	ProtocolOutputError: {
 		code: "PROTOCOL_OUTPUT_ERROR",

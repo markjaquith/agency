@@ -8,6 +8,7 @@ import {
 	createTempDir,
 	runTestEffect,
 } from "../test-utils"
+import { errorEnvelope } from "../protocol"
 import { task, type TaskInteraction } from "./task"
 
 describe("task creation input", () => {
@@ -168,19 +169,22 @@ describe("task creation input", () => {
 				branchNameCommand: ["sh", "-c", "echo resolver-error >&2; exit 7"],
 			}),
 		)
-		await expect(
-			runTestEffect(
-				task({
-					subcommand: "create",
-					args: ["failed"],
-					repo: "agency",
-					cwd: root,
-					silent: true,
-				}),
+		const failure = await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["failed"],
+				repo: "agency",
+				cwd: root,
+				silent: true,
+			}),
+		).catch((error: unknown) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "BRANCH_NAME_COMMAND_FAILED",
+			message: expect.stringContaining(
+				"branchNameCommand failed with exit code 7: resolver-error",
 			),
-		).rejects.toThrow(
-			"branchNameCommand failed with exit code 7: resolver-error",
-		)
+			fields: { exitCode: 7 },
+		})
 
 		await Bun.write(
 			join(root, "agency.json"),

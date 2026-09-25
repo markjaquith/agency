@@ -219,6 +219,9 @@ Available placeholders are:
 | `{taskId}`       | Task ID                                            |
 | `{phaseId}`      | Phase ID, or an empty string when creating a task  |
 
+Resolver failures are reported with the `BRANCH_NAME_COMMAND_FAILED` error code
+in JSON output.
+
 Matching `AGENCY_ID`, `AGENCY_TICKET`, `AGENCY_TICKET_URL`, `AGENCY_REPO`,
 `AGENCY_BASE`, `AGENCY_WORKBASE_ROOT`, `AGENCY_TASK_ID`, and `AGENCY_PHASE_ID`
 environment variables are also set. Without `branchNameCommand`, task branches

@@ -1,10 +1,19 @@
-import { Effect } from "effect"
+import { Data, Effect } from "effect"
 import { FileSystemService } from "../services/FileSystemService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import {
 	expandBranchNameCommand,
 	type BranchNameVariables,
 } from "./branch-name-template"
+
+class BranchNameCommandError extends Data.TaggedError(
+	"BranchNameCommandError",
+)<{
+	readonly message: string
+	readonly command: readonly string[]
+	readonly exitCode?: number
+	readonly branch?: string
+}> {}
 
 const TIMEOUT_MS = 120_000
 
@@ -59,22 +68,28 @@ export const resolveBranchName = (input: ResolveBranchNameInput) =>
 			.pipe(
 				Effect.mapError(
 					(error) =>
-						new Error(
-							`branchNameCommand could not run: ${error.cause instanceof Error ? error.cause.message : error.message}`,
-						),
+						new BranchNameCommandError({
+							message: `branchNameCommand could not run: ${error.cause instanceof Error ? error.cause.message : error.message}`,
+							command,
+						}),
 				),
 			)
 		if (result.exitCode !== 0) {
 			return yield* Effect.fail(
-				new Error(
-					`branchNameCommand failed with exit code ${result.exitCode}${result.stderr ? `: ${result.stderr}` : ""}`,
-				),
+				new BranchNameCommandError({
+					message: `branchNameCommand failed with exit code ${result.exitCode}${result.stderr ? `: ${result.stderr}` : ""}`,
+					command,
+					exitCode: result.exitCode,
+				}),
 			)
 		}
 		const branch = result.stdout.trim()
 		if (!branch) {
 			return yield* Effect.fail(
-				new Error("branchNameCommand produced an empty branch name"),
+				new BranchNameCommandError({
+					message: "branchNameCommand produced an empty branch name",
+					command,
+				}),
 			)
 		}
 		const checked = yield* fs.runCommand(
@@ -83,9 +98,11 @@ export const resolveBranchName = (input: ResolveBranchNameInput) =>
 		)
 		if (checked.exitCode !== 0) {
 			return yield* Effect.fail(
-				new Error(
-					`branchNameCommand produced invalid Git branch name '${branch}'`,
-				),
+				new BranchNameCommandError({
+					message: `branchNameCommand produced invalid Git branch name '${branch}'`,
+					command,
+					branch,
+				}),
 			)
 		}
 		return branch
