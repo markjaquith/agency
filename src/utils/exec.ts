@@ -1,7 +1,7 @@
 import { dlopen, FFIType, ptr } from "bun:ffi"
 
 /**
- * Native exec implementation using Bun FFI to call POSIX execvp.
+ * PATH-resolving native exec using POSIX execve and an explicit environment.
  * This completely replaces the current process with the specified command.
  *
  * IMPORTANT: This function will never return if successful. The process
@@ -12,12 +12,18 @@ import { dlopen, FFIType, ptr } from "bun:ffi"
  * @throws Error if exec fails (e.g., command not found)
  */
 export function execvp(file: string, args: string[]): never {
-	// Open libc to access execvp (platform-specific library paths)
+	const executable = Bun.which(file)
+	if (!executable) throw new Error(`Unable to find executable '${file}'`)
+	// Bun's process.env mutations are not reflected in libc's environ. Passing
+	// envp explicitly preserves launch identity and deletions across replacement.
+	const variables = Object.entries(process.env)
+		.filter((entry): entry is [string, string] => entry[1] !== undefined)
+		.map(([key, value]) => `${key}=${value}`)
 	const libcPath =
 		process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6"
 	const libc = dlopen(libcPath, {
-		execvp: {
-			args: [FFIType.cstring, FFIType.ptr],
+		execve: {
+			args: [FFIType.cstring, FFIType.ptr, FFIType.ptr],
 			returns: FFIType.int,
 		},
 	})
@@ -36,10 +42,19 @@ export function execvp(file: string, args: string[]): never {
 	}
 	// Null-terminate the pointer array
 	ptrs[args.length] = 0n
+	const environmentStrings = variables.map((value) => Buffer.from(value + "\0"))
+	const environmentPointers = new BigUint64Array(environmentStrings.length + 1)
+	for (let i = 0; i < environmentStrings.length; i++) {
+		environmentPointers[i] = BigInt(ptr(environmentStrings[i]!))
+	}
 
 	// Call execvp - this will replace the current process if successful
-	const fileBuffer = Buffer.from(file + "\0")
-	const result = libc.symbols.execvp(ptr(fileBuffer), ptr(ptrs))
+	const fileBuffer = Buffer.from(executable + "\0")
+	const result = libc.symbols.execve(
+		ptr(fileBuffer),
+		ptr(ptrs),
+		ptr(environmentPointers),
+	)
 
 	// If we reach here, exec failed
 	throw new Error(

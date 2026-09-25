@@ -377,15 +377,6 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						})
 					}
 					if (
-						executionChange &&
-						"claim" in record.data &&
-						record.data.claim?.state === "active"
-					) {
-						return yield* new GraphMutationError({
-							message: `Task '${id}' has an active claim; release or finish it before changing execution metadata`,
-						})
-					}
-					if (
 						updates.pr &&
 						"completion" in record.data &&
 						record.data.completion
@@ -524,11 +515,6 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 					) {
 						return yield* new GraphMutationError({
 							message: `Phase '${id}' has materialized code; remove its worktree with Agency before changing execution metadata`,
-						})
-					}
-					if (executionChange && record.data.claim?.state === "active") {
-						return yield* new GraphMutationError({
-							message: `Phase '${id}' has an active claim; release or finish it before changing execution metadata`,
 						})
 					}
 					if (updates.pr && record.data.completion) {
@@ -842,10 +828,6 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						return yield* new GraphMutationError({
 							message: `Task '${newId}' already exists`,
 						})
-					if ("claim" in task.data && task.data.claim?.state === "active")
-						return yield* new GraphMutationError({
-							message: `Task '${id}' has an active claim; release or finish it before renaming`,
-						})
 					if (yield* fs.isDirectory(join(from, "code")))
 						return yield* new GraphMutationError({
 							message: `Task '${id}' has a materialized worktree; remove it with Agency before renaming`,
@@ -859,10 +841,6 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 								root,
 							)
 							movedPhases.push(record)
-							if (record.data.claim?.state === "active")
-								return yield* new GraphMutationError({
-									message: `Phase '${phase.id}' has an active claim; release or finish it before renaming task '${id}'`,
-								})
 							if (yield* fs.isDirectory(join(dirname(record.path), "code")))
 								return yield* new GraphMutationError({
 									message: `Phase '${phase.id}' has a materialized worktree; remove it with Agency before renaming task '${id}'`,
@@ -952,10 +930,6 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						})
 					}
 					const phase = yield* phases.show(taskId, id, root)
-					if (phase.data.claim?.state === "active")
-						return yield* new GraphMutationError({
-							message: `Phase '${id}' has an active claim; release or finish it before renaming`,
-						})
 					const from = dirname(phase.path)
 					const to = join(dirname(from), newId)
 					if (yield* fs.exists(to))

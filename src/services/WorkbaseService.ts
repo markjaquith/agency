@@ -22,10 +22,12 @@ import {
 } from "../workbase/schemas"
 import { validateWorktreeCommand } from "../workbase/worktree-command"
 import { validatePostCheckoutCommand } from "../workbase/checkout-command"
+import { validateBranchNameCommand } from "../workbase/branch-name-template"
 import { validateAgents } from "../workbase/agent-command"
 import { findDependencyCycles } from "../workbase/dependency-graph"
 import { validateDelivery } from "../workbase/delivery-command"
 import { documentRevision } from "../workbase/document-revision"
+import { documentLoadConcurrency } from "../workbase/document-loading"
 
 class WorkbaseNotFoundError extends Data.TaggedError("WorkbaseNotFoundError")<{
 	readonly message: string
@@ -65,8 +67,6 @@ interface DocumentRecord<T> {
 	readonly revision: string
 	readonly data: T
 }
-
-const validationConcurrency = 32
 
 interface ValidationDocuments {
 	readonly epics: readonly DocumentRecord<EpicData>[]
@@ -330,6 +330,19 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												cause instanceof Error
 													? cause.message
 													: `Invalid ${setting}`,
+										})
+									}
+								}
+								if (decoded.value.branchNameCommand) {
+									try {
+										validateBranchNameCommand(decoded.value.branchNameCommand)
+									} catch (cause) {
+										return yield* new WorkbaseConfigError({
+											path: configPath,
+											message:
+												cause instanceof Error
+													? cause.message
+													: "Invalid branchNameCommand",
 										})
 									}
 								}
@@ -697,7 +710,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 									.map((entry) => entry.name)
 									.sort(),
 							),
-							Effect.catchAll(() => Effect.succeed([])),
+							Effect.catchTag("FileNotFoundError", () => Effect.succeed([])),
 						)
 
 					const aliases = new Set(Object.keys(config.repositories ?? {}))
@@ -713,12 +726,18 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						schema: S,
 					) =>
 						Effect.gen(function* () {
-							const content = yield* Effect.option(fs.readFile(path))
-							if (content._tag === "None") {
+							const content = yield* fs
+								.readFile(path)
+								.pipe(
+									Effect.catchTag("FileNotFoundError", () =>
+										Effect.succeed(null),
+									),
+								)
+							if (content === null) {
 								issue(path, "Required document is missing")
 								return null
 							}
-							const documentContent = content.value
+							const documentContent = content
 							const parsed = yield* Effect.either(
 								parseFrontmatter(documentContent, path),
 							)
@@ -748,7 +767,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								return document ? { id, path, ...document } : null
 							}),
 						),
-						{ concurrency: validationConcurrency },
+						{ concurrency: documentLoadConcurrency },
 					)
 					for (const document of epicDocuments) {
 						if (document) epics.set(document.id, document)
@@ -790,7 +809,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 												: null
 										}),
 									),
-									{ concurrency: validationConcurrency },
+									{ concurrency: documentLoadConcurrency },
 								)
 								return {
 									id,
@@ -799,7 +818,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								}
 							}),
 						),
-						{ concurrency: validationConcurrency },
+						{ concurrency: documentLoadConcurrency },
 					)
 					for (const documents of taskDocuments) {
 						if (documents.task) tasks.set(documents.id, documents.task)
@@ -872,9 +891,6 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								record.path,
 								"Non-PR completion cannot have a recorded pull request",
 							)
-						}
-						if (record.data.claim?.state === "active") {
-							issue(record.path, "Completed work cannot have an active claim")
 						}
 					}
 

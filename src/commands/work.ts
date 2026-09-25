@@ -36,6 +36,11 @@ import {
 	normalizeRecalledContext,
 	readValidationEvidence,
 } from "../workbase/execution-contract"
+import { ValidationFailedError } from "./validate"
+import {
+	openCodeDiscoversAncestorConfig,
+	prepareOpenCodeLaunch,
+} from "../workbase/opencode-launch"
 
 export interface WorkOptions extends BaseCommandOptions {
 	readonly directory?: string
@@ -48,6 +53,7 @@ export interface WorkOptions extends BaseCommandOptions {
 	readonly printCommand?: boolean
 	readonly auto?: boolean
 	readonly force?: boolean
+	readonly allowWorkingDependencies?: boolean
 	readonly evidence?: string
 }
 
@@ -92,6 +98,22 @@ export const work = (
 	pickBase: PickWorkbase = pickWorkbase,
 ) =>
 	Effect.gen(function* () {
+		if (options.allowWorkingDependencies && options.force) {
+			return yield* Effect.fail(
+				new Error("Cannot combine --force with --allow-working-dependencies"),
+			)
+		}
+		if (
+			options.allowWorkingDependencies &&
+			!options.directory &&
+			!options.taskId
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"--allow-working-dependencies requires an explicit execution-unit target",
+				),
+			)
+		}
 		if (
 			(options.opencode && options.claude) ||
 			(options.agent && (options.opencode || options.claude))
@@ -120,12 +142,8 @@ export const work = (
 		const integrations = yield* IntegrationService
 		const { log, verboseLog } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const directoryPath = options.directory
-			? resolve(cwd, options.directory)
-			: undefined
-		const isDirectory = directoryPath
-			? yield* fs.isDirectory(directoryPath)
-			: false
+		const directoryPath = resolve(cwd, options.directory ?? ".")
+		const isDirectory = yield* fs.isDirectory(directoryPath)
 		const startPath = isDirectory && directoryPath ? directoryPath : cwd
 		const inputAllowed = options.inputAllowed ?? true
 		const root = yield* resolveWorkbase(startPath, pickBase, inputAllowed)
@@ -200,6 +218,13 @@ export const work = (
 		}
 
 		if (!target) {
+			if (options.allowWorkingDependencies) {
+				return yield* Effect.fail(
+					new Error(
+						"--allow-working-dependencies requires an explicit execution-unit target",
+					),
+				)
+			}
 			if (!inputAllowed) {
 				return yield* Effect.fail(
 					new Error(
@@ -236,7 +261,24 @@ export const work = (
 			target = yield* pick(choices, config.chooserCommand)
 			if (!target) return
 		}
-		yield* readiness.guardWorkTarget(targetNodeId(target), root, options.force)
+		if (
+			options.allowWorkingDependencies &&
+			(target.kind === "epic" || (target.kind === "task" && target.multiPhase))
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"--allow-working-dependencies requires an execution-unit target",
+				),
+			)
+		}
+		yield* readiness.guardWorkTarget(
+			targetNodeId(target),
+			root,
+			options.force,
+			{
+				allowWorkingDependencies: options.allowWorkingDependencies,
+			},
+		)
 		const validationAlreadyPerformed = !options.force
 
 		const continuing =
@@ -288,7 +330,6 @@ export const work = (
 		const defaultAgents = ["opencode2", "opencode", "pi", "claude"] as const
 		let defaultAgentIndex = 0
 		let agent: string = selectedAgent ?? defaultAgents[defaultAgentIndex]!
-		const claimant = process.env.AGENCY_CLAIMANT ?? process.env.USER ?? "agency"
 		const sessionId =
 			process.env.AGENCY_SESSION_ID ?? `${process.pid}-${Date.now()}`
 		const resume =
@@ -300,9 +341,7 @@ export const work = (
 			target: targetNodeId(target),
 			task: target.kind === "epic" ? "" : target.taskId,
 			phase: target.kind === "phase" ? target.phaseId : "",
-			claimant,
 			sessionId,
-			claimRevision: "",
 		}
 		let resolved = resolveAgentCommand(
 			agent,
@@ -342,17 +381,36 @@ export const work = (
 			options.auto,
 		)
 		cli = resolved.argv[0]!
+		if (writablePath && !config.agents?.[agent]) {
+			if (
+				agent === "pi" ||
+				((agent === "opencode2" || agent === "opencode") &&
+					(yield* openCodeDiscoversAncestorConfig(cli)))
+			) {
+				launchPath = writablePath
+			}
+		}
 		const environment = {
 			...resolved.environment,
 			...agentEnvironment(agent, variables),
 		}
 		if (writablePath) environment.AGENCY_WRITABLE_CHECKOUT = writablePath
+		const managedOpenCodeAuto =
+			options.auto &&
+			(agent === "opencode" || agent === "opencode2") &&
+			!config.agents?.[agent]
 		if (options.printCommand) {
 			log(
 				JSON.stringify(
 					{
 						cwd: launchPath,
 						argv: resolved.argv,
+						...(managedOpenCodeAuto
+							? {
+									startup:
+										"OpenCode V2: submit via API, then attach with --session; V1: use argv",
+								}
+							: {}),
 						environment: printableEnvironment(environment),
 					},
 					null,
@@ -410,14 +468,17 @@ export const work = (
 				)
 			}
 		}
+		const launchArgv = managedOpenCodeAuto
+			? yield* prepareOpenCodeLaunch(resolved.argv, launchPath, environment)
+			: resolved.argv
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
 		}
 		verboseLog(
-			`Launching command: ${formatCommand(resolved.argv)} (cwd: ${launchPath})`,
+			`Launching command: ${formatCommand(launchArgv)} (cwd: ${launchPath})`,
 		)
 		try {
-			launch(cli, resolved.argv, launchPath, environment)
+			launch(cli, launchArgv, launchPath, environment)
 		} finally {
 			for (const key of Object.keys(environment)) {
 				const previous = previousEnvironment[key]
@@ -429,6 +490,22 @@ export const work = (
 
 export const workPrepare = (options: WorkOptions = {}) =>
 	Effect.gen(function* () {
+		if (options.allowWorkingDependencies && options.force) {
+			return yield* Effect.fail(
+				new Error("Cannot combine --force with --allow-working-dependencies"),
+			)
+		}
+		if (
+			options.allowWorkingDependencies &&
+			!options.directory &&
+			!options.taskId
+		) {
+			return yield* Effect.fail(
+				new Error(
+					"--allow-working-dependencies requires an explicit execution-unit target",
+				),
+			)
+		}
 		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
 		const tasks = yield* TaskService
@@ -439,7 +516,8 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		const cwd = options.cwd ?? process.cwd()
 		const targetPath = options.directory ? resolve(cwd, options.directory) : cwd
 		const isDirectory = yield* fs.isDirectory(targetPath)
-		const root = yield* workbase.discover(isDirectory ? targetPath : cwd)
+		const targetExists = isDirectory || (yield* fs.exists(targetPath))
+		const root = yield* workbase.discover(targetExists ? targetPath : cwd)
 
 		let taskId = options.taskId
 		let phaseId = options.phaseId
@@ -447,7 +525,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			const task = yield* tasks.show(taskId, root)
 			taskId = task.id
 			if (phaseId) phaseId = (yield* phases.show(task.id, phaseId, root)).id
-		} else if (options.directory && !isDirectory) {
+		} else if (options.directory && !targetExists) {
 			const task = yield* tasks.show(options.directory, root)
 			taskId = task.id
 		} else {
@@ -526,12 +604,22 @@ export const workPrepare = (options: WorkOptions = {}) =>
 		})
 		let validation: unknown = { valid: true, source: "evidence" }
 		if (assessment.disposition.status === "refreshed") {
-			validation = yield* workbase.validate(root)
-			if (!(validation as { valid: boolean }).valid && !options.force) {
-				return yield* Effect.fail(new Error("Workbase validation failed"))
+			const report = yield* workbase.validate(root)
+			validation = report
+			if (!report.valid && !options.force) {
+				const details = report.issues
+					.map((issue) => `- ${issue.path}: ${issue.message}`)
+					.join("\n")
+				return yield* new ValidationFailedError({
+					message: `Workbase validation failed with ${report.issues.length} issue${report.issues.length === 1 ? "" : "s"}:\n${details}`,
+					root: report.root,
+					issues: report.issues,
+				})
 			}
 		}
-		yield* readiness.guardWorkTarget(target, root, options.force)
+		yield* readiness.guardWorkTarget(target, root, options.force, {
+			allowWorkingDependencies: options.allowWorkingDependencies,
+		})
 		const workspace = yield* worktrees.materialize(taskId, phaseId, root, {
 			...options,
 			dryRun: options.dryRun,
@@ -564,6 +652,7 @@ export const workPrepare = (options: WorkOptions = {}) =>
 				checkoutPath: workspace.writablePath ?? workspace.reviewPath,
 				documentRevision: document.revision,
 				dryRun: options.dryRun === true,
+				allowWorkingDependencies: options.allowWorkingDependencies,
 			}),
 		}
 		if (options.json) {
@@ -577,22 +666,31 @@ export const workPrepare = (options: WorkOptions = {}) =>
 
 export const help = `
 Usage: agency work [<directory-or-task-id> | --epic <epic-id>] [--agent <name>] [--auto]
-       agency work prepare [target] [--evidence <json-or-path>] [--dry-run] [--json]
+       agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 
-Launch an agent for an epic, task, or phase. With no directory, select one
-interactively. A positional argument resolves as a directory first, then as a task
-ID. Use '.' for the current directory. Outside a workbase, select a registered
-workbase first. Managed OpenCode launches receive whole-workbase access through
-Agency's project plugin; Agency context remains authoritative for writes. Automatic
-agent discovery checks opencode2, opencode, pi, then claude.
+Launch an agent for an epic, task, or phase. With no directory, infer the current
+item or select one interactively at the workbase root. A positional argument
+resolves as a directory first, then as a task ID. Outside a workbase, select a
+registered workbase first. Managed OpenCode launches receive whole-workbase access
+through Agency's project plugin; Agency context remains authoritative for writes.
+Automatic agent discovery checks opencode2, opencode, pi, then claude.
 
 The prepare subcommand resolves and materializes an execution workspace without
-launching an agent or changing lifecycle status. --dry-run reports planned Git
-changes without fetching, creating branches, or creating worktrees.
+launching an agent or changing lifecycle status. Its omitted target defaults to
+the current execution unit. --dry-run reports planned Git changes without
+fetching, creating branches, or creating worktrees.
 It emits revision-bound validation evidence and an idempotent external-orchestrator
 contract. Evidence is reused only while the target, workbase, configuration, and
 repository mapping remain unchanged. Dynamic readiness and workspace safety checks
-always run.
+always run. With prepare, --force overrides readiness without launching or changing
+lifecycle status.
+
+For an explicit execution-unit target, --allow-working-dependencies admits open
+work blocked only by dependencies whose status is working. It does not override
+validation, lifecycle, or workspace safety checks and cannot be combined with
+--force or interactive target selection. Ready and resumable working targets keep
+their normal behavior. Preparation includes the opt-in in commands.work; validation
+evidence does not grant it to later calls.
 
 Options:
   --epic <id>          Work on an epic
@@ -605,8 +703,9 @@ Options:
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset
-  --force              Override readiness; reopen terminal execution units
-	--evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
+  --force              Override readiness; launched terminal work is reopened
+  --allow-working-dependencies  Allow only working dependency blockers
+  --evidence <value>   Validation evidence JSON or a path to JSON (prepare only)
   --no-input           Never open an interactive selector
 
 Without interactive input, provide an explicit workbase or cwd and an entity

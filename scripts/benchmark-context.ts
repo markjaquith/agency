@@ -16,19 +16,20 @@ const run = async (args: readonly string[], cwd: string) => {
 	if (exitCode !== 0) throw new Error(stderr.trim() || args.join(" "))
 }
 
-const createWorkbase = async (taskCount: number) => {
+const createWorkbase = async (taskCount: number, archivedTaskCount: number) => {
 	const root = await mkdtemp(join(tmpdir(), "agency-context-benchmark-"))
 	const repository = join(root, "repos", "agency")
 	await mkdir(repository, { recursive: true })
 	await run(["git", "init", "--bare", "--initial-branch=main"], repository)
 	await Bun.write(join(root, "agency.json"), '{"version":2}\n')
-	for (let index = 1; index <= taskCount; index += 1) {
-		const id = `benchmark-${index}`
-		const taskPath = join(root, "tasks", id)
-		await mkdir(taskPath, { recursive: true })
-		await Bun.write(
-			join(taskPath, "TASK.md"),
-			`---
+	const writeTasks = async (count: number, archived: boolean) => {
+		for (let index = 1; index <= count; index += 1) {
+			const id = `${archived ? "archived" : "benchmark"}-${index}`
+			const taskPath = join(root, archived ? "archive/tasks" : "tasks", id)
+			await mkdir(taskPath, { recursive: true })
+			await Bun.write(
+				join(taskPath, "TASK.md"),
+				`---
 ticketUrl: null
 repo: agency
 branch: task/${id}
@@ -39,8 +40,11 @@ status: open
 
 # ${id}
 `,
-		)
+			)
+		}
 	}
+	await writeTasks(taskCount, false)
+	await writeTasks(archivedTaskCount, true)
 	return root
 }
 
@@ -52,8 +56,8 @@ const median = (samples: readonly number[]) =>
 		Math.floor(samples.length / 2)
 	]!
 
-const measure = async (taskCount: number) => {
-	const root = await createWorkbase(taskCount)
+const measure = async (taskCount: number, archivedTaskCount = 0) => {
+	const root = await createWorkbase(taskCount, archivedTaskCount)
 	try {
 		await context(root)
 		const samples: number[] = []
@@ -64,6 +68,7 @@ const measure = async (taskCount: number) => {
 		}
 		return {
 			taskCount,
+			archivedTaskCount,
 			medianMs: Math.round(median(samples)),
 			samplesMs: samples.map(Math.round),
 		}
@@ -78,6 +83,7 @@ console.log(
 			sampleCount,
 			small: await measure(5),
 			large: await measure(100),
+			archiveHeavy: await measure(5, 100),
 		},
 		null,
 		2,

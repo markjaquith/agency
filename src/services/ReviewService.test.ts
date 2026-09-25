@@ -11,7 +11,6 @@ import { GraphService } from "./GraphService"
 import { PullRequestService } from "./PullRequestService"
 import { PhaseService } from "./PhaseService"
 import { ArchiveService } from "./ArchiveService"
-import { ClaimService } from "./ClaimService"
 import { SyncService } from "./SyncService"
 import { task as taskCommand } from "../commands/task"
 
@@ -181,69 +180,6 @@ describe("ReviewService", () => {
 				),
 			),
 		).rejects.toThrow("cannot be converted to phases")
-	})
-
-	test("participates in claim lifecycle", async () => {
-		const task = await createReview()
-		const claimed = await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.claim(
-						{
-							taskId: "review",
-							claimant: "reviewer",
-							agent: "opencode",
-							sessionId: "session",
-							revision: task.revision,
-						},
-						root,
-					),
-				),
-			),
-		)
-		expect(claimed.data.status).toBe("working")
-		const released = await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.release(
-						{
-							taskId: "review",
-							sessionId: "session",
-							revision: claimed.revision,
-						},
-						root,
-					),
-				),
-			),
-		)
-		expect(released.data.status).toBe("open")
-	})
-
-	test("rejects refresh while actively claimed", async () => {
-		const task = await createReview()
-		await runTestEffect(
-			ClaimService.pipe(
-				Effect.flatMap((service) =>
-					service.claim(
-						{
-							taskId: "review",
-							claimant: "reviewer",
-							agent: "opencode",
-							sessionId: "active",
-							revision: task.revision,
-						},
-						root,
-					),
-				),
-			),
-		)
-		await expect(
-			runTestEffect(
-				ReviewService.pipe(
-					Effect.flatMap((service) => service.refresh("review", root)),
-				),
-			),
-		).rejects.toThrow("active claim")
 	})
 
 	test("rolls back document and checkout when pin advancement fails", async () => {

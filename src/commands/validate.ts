@@ -13,7 +13,9 @@ interface ValidateOptions extends BaseCommandOptions {
 	readonly json?: boolean
 }
 
-class ValidationFailedError extends Data.TaggedError("ValidationFailedError")<{
+export class ValidationFailedError extends Data.TaggedError(
+	"ValidationFailedError",
+)<{
 	readonly message: string
 	readonly root: string
 	readonly issues: readonly {

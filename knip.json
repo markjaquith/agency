@@ -3,21 +3,20 @@
   "entry": [
     "cli.ts",
     "index.ts",
+    "src/utils/interactive.tsx!",
+    "scripts/build-interactive.ts!",
     "pi-extensions/agency.ts",
     "scripts/benchmark-act.ts",
     "scripts/benchmark-archive.ts",
     "scripts/benchmark-doctor.ts",
     "scripts/benchmark-context.ts",
-    "scripts/benchmark-claim.ts",
     "scripts/benchmark-epic.ts",
     "scripts/benchmark-phase.ts",
     "scripts/benchmark-pr.ts",
     "scripts/benchmark-push.ts",
-    "scripts/benchmark-release.ts",
     "scripts/benchmark-repositories.ts",
     "scripts/benchmark-review.ts",
     "scripts/benchmark-status.ts",
-    "scripts/benchmark-finish.ts",
     "scripts/benchmark-graph.ts",
     "scripts/benchmark-init.ts",
     "scripts/benchmark-next.ts",
@@ -27,8 +26,10 @@
     "scripts/benchmark-validate.ts",
     "scripts/benchmark-worktree.ts",
     "scripts/benchmark-workbase.ts",
-    "scripts/install-pi-extension.ts"
+    "scripts/install-pi-extension.ts",
+    "scripts/test-global-install.ts",
+    "scripts/smoke-opencode-auto.ts"
   ],
-  "ignoreDependencies": [],
+  "ignoreDependencies": ["web-tree-sitter"],
   "ignore": ["src/test-utils.ts", "**/*.test.ts", "**/*.test.tsx"]
 }

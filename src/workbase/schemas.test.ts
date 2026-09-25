@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "@effect/schema"
 import {
 	EntityId,
-	ClaimRecord,
 	EpicFrontmatter,
 	PhaseFrontmatter,
 	TaskFrontmatter,
@@ -257,6 +256,22 @@ describe("repository post-checkout configuration", () => {
 	})
 })
 
+describe("branch name configuration", () => {
+	test("accepts an argv command and rejects a shell string", () => {
+		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
+			version: 2,
+			branchNameCommand: ["resolve-branch", "{ticket}"],
+		})
+		expect(config.branchNameCommand).toEqual(["resolve-branch", "{ticket}"])
+		expect(() =>
+			Schema.decodeUnknownSync(WorkbaseConfig)({
+				version: 2,
+				branchNameCommand: "resolve-branch {ticket}",
+			}),
+		).toThrow()
+	})
+})
+
 describe("agent configuration", () => {
 	test("accepts named argv commands with resume commands and environment", () => {
 		const config = Schema.decodeUnknownSync(WorkbaseConfig)({
@@ -401,30 +416,47 @@ describe("work status", () => {
 	})
 })
 
-describe("claim records", () => {
-	const record = {
-		claimant: "orchestrator",
-		agent: "agent",
-		sessionId: "job-1",
-		startedAt: "2026-07-17T12:00:00.000Z",
-		targetRevision: "0".repeat(64),
-		expiresAt: "2026-07-17T13:00:00.000Z",
-		state: "active" as const,
+test("rejects removed claim frontmatter", () => {
+	expect(() =>
+		Schema.decodeUnknownSync(TaskFrontmatter, { onExcessProperty: "error" })({
+			ticketUrl: null,
+			repo: "agency",
+			branch: "task/example",
+			base: "main",
+			pr: null,
+			status: "working",
+			claim: { state: "active" },
+		}),
+	).toThrow()
+})
+
+test("rejects impossible and non-canonical timestamps", () => {
+	const task = {
+		ticketUrl: null,
+		repo: "agency",
+		branch: "task/example",
+		base: "main",
+		pr: null,
+		status: "done",
+		completion: {
+			mode: "non-pr",
+			completedAt: "2026-07-17T12:00:00.000Z",
+			summary: "Completed work",
+		},
 	}
 
-	test("accepts explicit ownership and revision metadata", () => {
-		expect(Schema.decodeUnknownSync(ClaimRecord)(record)).toEqual(record)
-	})
-
-	test("rejects malformed timestamps, revisions, and empty identities", () => {
-		for (const invalid of [
-			{ ...record, claimant: "" },
-			{ ...record, startedAt: "today" },
-			{ ...record, targetRevision: "abc" },
-		]) {
-			expect(() => Schema.decodeUnknownSync(ClaimRecord)(invalid)).toThrow()
-		}
-	})
+	for (const completedAt of [
+		"2026-99-99T99:99:99.000Z",
+		"2026-07-17T12:00:00Z",
+		"2026-02-29T13:00:00.000Z",
+	]) {
+		expect(() =>
+			Schema.decodeUnknownSync(TaskFrontmatter)({
+				...task,
+				completion: { ...task.completion, completedAt },
+			}),
+		).toThrow()
+	}
 })
 
 describe("workbase registry", () => {

@@ -139,6 +139,80 @@ describe("task and phase command JSON output", () => {
 		)
 	})
 
+	test("resolves configured branch names for handoffs", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["resolver-investigation"],
+				repo: "agency",
+				purpose: "investigation",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: [
+					"sh",
+					"-c",
+					'printf "handoff/%s" "$1"',
+					"resolver",
+					"{id}",
+				],
+			}),
+		)
+
+		await runTestEffect(
+			task({
+				subcommand: "handoff",
+				args: ["resolver-investigation", "resolver-implementation"],
+				repo: "agency",
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		expect(
+			await Bun.file(
+				join(root, "tasks/resolver-implementation/TASK.md"),
+			).text(),
+		).toContain("branch: handoff/resolver-implementation")
+	})
+
+	test("resolves configured branch names for phases", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: [
+					"sh",
+					"-c",
+					'printf "phase/%s-%s" "$1" "$2"',
+					"resolver",
+					"{taskId}",
+					"{phaseId}",
+				],
+			}),
+		)
+
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "second"],
+				repo: "agency",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		expect(
+			await Bun.file(join(root, "tasks/multi/phases/second/PHASE.md")).text(),
+		).toContain("branch: phase/multi-second")
+	})
+
 	test("lists and shows phase metadata without Markdown content", async () => {
 		const listLogs = await captureLogs(() =>
 			runTestEffect(

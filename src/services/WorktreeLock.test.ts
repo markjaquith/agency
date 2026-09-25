@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { Effect, Fiber } from "effect"
+import { mkdtemp, readdir, rm, utimes } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { withWorktreeLocks } from "./WorktreeLock"
@@ -54,9 +54,88 @@ describe("withWorktreeLocks", () => {
 			_tag: "Left",
 			left: {
 				_tag: "WorktreeLockError",
-				message: `Another worktree operation is in progress for 'alpha'. If no operation is active, remove the stale sentinel with: rm '${lockPath}'`,
+				message: `Another worktree operation is in progress for 'alpha'. Retry with --force or remove the stale sentinel with: rm '${lockPath}'`,
 			},
 		})
+	})
+
+	test("removes stale locks before acquiring them", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		const lockPath = join(
+			root,
+			`.agency-worktree-${Buffer.from("alpha:task").toString("hex")}.lock`,
+		)
+		await Bun.write(lockPath, "")
+		const staleAt = new Date(Date.now() - 11 * 60 * 1000)
+		await utimes(lockPath, staleAt, staleAt)
+
+		await expect(
+			Effect.runPromise(
+				withWorktreeLocks(root, [{ taskId: "alpha" }], Effect.void),
+			),
+		).resolves.toBeUndefined()
+	})
+
+	test("force overrides an active lock", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		let firstEntered!: () => void
+		let firstRelease!: () => void
+		const firstEnteredPromise = new Promise<void>((resolve) => {
+			firstEntered = resolve
+		})
+		const firstReleasePromise = new Promise<void>((resolve) => {
+			firstRelease = resolve
+		})
+		const first = Effect.runPromise(
+			withWorktreeLocks(
+				root,
+				[{ taskId: "alpha" }],
+				Effect.promise(async () => {
+					firstEntered()
+					await firstReleasePromise
+				}),
+			),
+		)
+		await firstEnteredPromise
+
+		let forcedEntered!: () => void
+		let forcedRelease!: () => void
+		const forcedEnteredPromise = new Promise<void>((resolve) => {
+			forcedEntered = resolve
+		})
+		const forcedReleasePromise = new Promise<void>((resolve) => {
+			forcedRelease = resolve
+		})
+		const forced = Effect.runPromise(
+			withWorktreeLocks(
+				root,
+				[{ taskId: "alpha" }],
+				Effect.promise(async () => {
+					forcedEntered()
+					await forcedReleasePromise
+				}),
+				{ force: true },
+			),
+		)
+		await forcedEnteredPromise
+
+		firstRelease()
+		await first
+
+		const conflict = await Effect.runPromise(
+			Effect.either(
+				withWorktreeLocks(root, [{ taskId: "alpha" }], Effect.void),
+			),
+		)
+		expect(conflict).toMatchObject({
+			_tag: "Left",
+			left: { _tag: "WorktreeLockError" },
+		})
+
+		forcedRelease()
+		await forced
 	})
 
 	test("releases locks when the protected operation fails", async () => {
@@ -84,6 +163,29 @@ describe("withWorktreeLocks", () => {
 				),
 			),
 		).resolves.toBe("reacquired")
+	})
+
+	test("releases locks when the protected operation is interrupted", async () => {
+		const root = await createTempDir()
+		tempDirs.push(root)
+		let entered!: () => void
+		const enteredPromise = new Promise<void>((resolve) => {
+			entered = resolve
+		})
+		const fiber = Effect.runFork(
+			withWorktreeLocks(
+				root,
+				[{ taskId: "interrupted" }],
+				Effect.sync(entered).pipe(Effect.zipRight(Effect.never)),
+			),
+		)
+		await enteredPromise
+
+		await Effect.runPromise(Fiber.interrupt(fiber))
+
+		expect(
+			(await readdir(root)).filter((path) => path.endsWith(".lock")),
+		).toEqual([])
 	})
 
 	test("deduplicates targets while keeping task and phase locks distinct", async () => {

@@ -16,6 +16,11 @@ import {
 	canUpdateManagedWorkbaseOpencodeTuiPlugin,
 	managedWorkbaseOpencodeTuiPlugin,
 } from "../workbase/opencode-tui-plugin-file"
+import {
+	managedWorkbaseOpencodeV2TuiIndex,
+	managedWorkbaseOpencodeV2TuiPackage,
+	managedWorkbaseOpencodeV2TuiPlugin,
+} from "../workbase/opencode-v2-tui-plugin-file"
 import { IntegrationService } from "./IntegrationService"
 import { FileSystemService } from "./FileSystemService"
 
@@ -66,6 +71,7 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
+			"missing",
 		])
 		expect(await Bun.file(join(root, ".agency/AGENTS.md")).exists()).toBe(false)
 
@@ -82,7 +88,23 @@ describe("IntegrationService", () => {
 			".opencode/tui/agency-debug.ts",
 			managedWorkbaseOpencodeTuiPlugin,
 		)
+		await write(
+			root,
+			".opencode/plugins/agency-tui/package.json",
+			managedWorkbaseOpencodeV2TuiPackage,
+		)
+		await write(
+			root,
+			".opencode/plugins/agency-tui/index.ts",
+			managedWorkbaseOpencodeV2TuiIndex,
+		)
+		await write(
+			root,
+			".opencode/plugins/agency-tui/tui.ts",
+			managedWorkbaseOpencodeV2TuiPlugin,
+		)
 		expect((await status(root)).files.map(({ state }) => state)).toEqual([
+			"managed",
 			"managed",
 			"managed",
 			"managed",
@@ -111,8 +133,8 @@ describe("IntegrationService", () => {
 			),
 		)
 
-		expect(inspected.size).toBe(8)
-		expect([...inspected.values()]).toEqual(Array(8).fill(1))
+		expect(inspected.size).toBe(11)
+		expect([...inspected.values()]).toEqual(Array(11).fill(1))
 	})
 
 	test("inspects integration and legacy paths once per synchronized call", async () => {
@@ -135,8 +157,8 @@ describe("IntegrationService", () => {
 			),
 		)
 
-		expect(inspected.size).toBe(11)
-		expect([...inspected.values()]).toEqual(Array(11).fill(1))
+		expect(inspected.size).toBe(14)
+		expect([...inspected.values()]).toEqual(Array(14).fill(1))
 	})
 
 	test("reports customized and checksum-safe drifted files", async () => {
@@ -153,11 +175,21 @@ describe("IntegrationService", () => {
 			"missing",
 			"missing",
 			"missing",
+			"missing",
 		])
 	})
 
-	test("generates the complete Agency command fast paths with precedence", () => {
+	test("generates discovery-first guidance and the complete command fast paths", () => {
 		const body = managedBody(managedWorkbaseAgents)
+		expect(body.indexOf("## Discover Actions First")).toBeGreaterThan(-1)
+		expect(body.indexOf("## Discover Actions First")).toBeLessThan(
+			body.indexOf("## Command Fast Paths"),
+		)
+		expect(body).toContain(
+			"agency act --task <context-task-id> --phase <context-phase-id> --json",
+		)
+		expect(body).toContain("declared branch as `--base`")
+		expect(body).toContain("Branch ancestry is not a completion dependency")
 
 		expect(body.indexOf("## Command Fast Paths")).toBeLessThan(
 			body.indexOf("## Bootstrap"),
@@ -177,7 +209,7 @@ describe("IntegrationService", () => {
 			"agency task status <task> dropped --if-revision <revision> --json",
 			"Continue already materialized work",
 			"agency pr create <task> [phase]",
-			"agency finish <task> [phase] --session-id <id>",
+			"agency task status <task> done --if-revision <revision> --no-pull-request",
 			"agency task create <slug> --multi-phase",
 			"agency task handoff <investigation-task> <new-task>",
 			"agency review refresh <task> --if-revision <revision> --json",
@@ -186,9 +218,12 @@ describe("IntegrationService", () => {
 		}
 		expect(managedWorkbaseAgents).toContain("agency push --json")
 		expect(managedWorkbaseAgents).toContain("agency-execution-v1")
-		expect(managedWorkbaseAgents).toContain("agency context . --full --json")
+		expect(managedWorkbaseAgents).toContain("agency context . --json")
 		expect(managedWorkbaseAgents).toContain(
-			"Workers use full context here because they need the assigned document prose",
+			"Pass `--full` only when document prose or low-level VCS details are needed",
+		)
+		expect(managedWorkbaseAgents).not.toContain(
+			"agency context . --full --json",
 		)
 		expect(managedWorkbaseAgents).toContain(
 			"Never pass `--work` or `--auto` to `agency task create`",
@@ -206,9 +241,7 @@ describe("IntegrationService", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"process.env.AGENCY_WRITABLE_CHECKOUT",
 		)
-		expect(managedWorkbaseOpencodePlugin).toContain(
-			'import type { Plugin, PluginModule } from "@opencode-ai/plugin/v1"',
-		)
+		expect(managedWorkbaseOpencodePlugin).toContain("type V2PluginContext =")
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"export const AgencyPlugin = plugin",
 		)
@@ -233,6 +266,18 @@ describe("IntegrationService", () => {
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"config.skills.paths = [...new Set",
 		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'context.session.hook("prompt"',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'context.session.hook("context"',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'context.permission.hook("evaluate"',
+		)
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			"skills.add(skillInfo(skillPath)",
+		)
 		expect(managedWorkbaseOpencodePlugin).toContain('"chat.message"')
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"if (!Array.isArray(parts)) return",
@@ -251,12 +296,15 @@ describe("IntegrationService", () => {
 			"result.validation?.valid !== true",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"dirname(document) !== resolve(directory)",
+			"documentDirectory === current",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"!result.authority?.writable?.checkoutPath",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain('status !== "working"')
+		expect(managedWorkbaseOpencodePlugin).toContain(
+			'output.env.AGENCY_INVOCATION_SOURCE = "agent"',
+		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"output.env.AGENCY_SESSION_ID = sessionID",
 		)
@@ -264,13 +312,13 @@ describe("IntegrationService", () => {
 			"Do not invoke agency work for this target",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"as the default implementation directory",
+			"authoritative writable checkout",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"Set each tool's working directory to that checkout when supported",
+			"Set each tool's working directory to it when supported",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
-			"Run Agency lifecycle and context commands from the task or phase directory",
+			"Run Agency lifecycle commands from",
 		)
 		expect(managedWorkbaseOpencodePlugin).toContain(
 			"reference checkouts reported by Agency context are read-only",
@@ -305,6 +353,7 @@ describe("IntegrationService", () => {
 	}) => {
 		const path = join(root, "agency-repository-skills.ts")
 		const checkoutPath = join(root, "code/agency")
+		await write(root, ".agency/AGENTS.md", "Managed Agency instructions\n")
 		const contextResponse = JSON.stringify({
 			version: 1,
 			ok: true,
@@ -365,11 +414,16 @@ describe("IntegrationService", () => {
 				task: "example",
 				phase,
 			})
+			expect(await generated.agencyContext(checkoutPath)).toMatchObject({
+				root,
+				checkout: checkoutPath,
+				target: launchTarget,
+			})
 			expect(generated.default).toMatchObject({
 				id: "agency",
-				setup: expect.any(Function),
 				server: generated.AgencyPlugin,
 			})
+			expect(typeof generated.default.setup).toBe("function")
 			const hooks = await generated.AgencyPlugin({ directory: root } as never)
 			await hooks["chat.message"]!(
 				{ sessionID: "worker-session" } as never,
@@ -402,10 +456,10 @@ describe("IntegrationService", () => {
 			expect(system.system).toHaveLength(1)
 			expect(system.system[0]).toContain(`active worker for ${launchTarget}`)
 			expect(system.system[0]).toContain(
-				`${checkoutPath} as the default implementation directory`,
+				`change the working directory to that checkout`,
 			)
 			expect(system.system[0]).toContain(
-				"Run Agency lifecycle and context commands from the task or phase directory",
+				`Run Agency lifecycle commands from ${root}`,
 			)
 			expect(system.system[0]).toContain(
 				"reference checkouts reported by Agency context are read-only",
@@ -415,7 +469,11 @@ describe("IntegrationService", () => {
 				{ sessionID: "mismatched-session" } as never,
 				mismatchedSystem,
 			)
-			expect(mismatchedSystem.system).toEqual([])
+			expect(mismatchedSystem.system).toHaveLength(1)
+			expect(mismatchedSystem.system[0]).not.toContain("active worker")
+			expect(mismatchedSystem.system[0]).toContain(
+				"change the working directory to that checkout",
+			)
 
 			const shell = { env: {} as Record<string, string> }
 			await hooks["shell.env"]!({ sessionID: "worker-session" } as never, shell)
@@ -427,6 +485,54 @@ describe("IntegrationService", () => {
 				AGENCY_WRITABLE_CHECKOUT: checkoutPath,
 			})
 			if (phase) expect(shell.env.AGENCY_PHASE_ID).toBe(phase)
+
+			const v2Hooks = new Map<string, (event: any) => Promise<void> | void>()
+			let v2PermissionHook: ((event: any) => void) | undefined
+			await generated.default.setup({
+				location: { directory: root },
+				reference: {
+					transform: async (callback: (editor: any) => void) =>
+						callback({ list: () => [["workbase", {}]], add: () => {} }),
+				},
+				skill: {
+					transform: async (callback: (editor: any) => void) =>
+						callback({ add: () => {} }),
+				},
+				session: {
+					hook: async (name: string, callback: (event: any) => void) => {
+						v2Hooks.set(name, callback)
+					},
+				},
+				permission: {
+					hook: async (_name: string, callback: (event: any) => void) => {
+						v2PermissionHook = callback
+					},
+				},
+			} as never)
+			const allowed = {
+				action: "external_directory",
+				resources: [join(root, "tasks/example")],
+				effect: "ask",
+			}
+			v2PermissionHook?.(allowed)
+			expect(allowed.effect).toBe("allow")
+			await v2Hooks.get("prompt")?.({
+				sessionID: "v2-worker-session",
+				prompt: {
+					text: `Agency worker launch target: ${launchTarget}. Start the task.`,
+				},
+			})
+			const v2System = {
+				sessionID: "v2-worker-session",
+				system: [] as Array<{ type?: string; text: string }>,
+			}
+			await v2Hooks.get("context")?.(v2System)
+			expect(v2System.system).toEqual([
+				{ type: "text", text: "Managed Agency instructions\n" },
+				expect.objectContaining({
+					text: expect.stringContaining(`active worker for ${launchTarget}`),
+				}),
+			])
 		} finally {
 			Bun.spawn = originalSpawn
 		}
@@ -445,40 +551,81 @@ describe("IntegrationService", () => {
 			phase: "build",
 		}))
 
-	test("registers the workbase reference through the OpenCode V2 API", async () => {
+	test("registers V2 references and skills with normalized metadata", async () => {
 		const path = join(root, ".opencode/plugins/agency-repository-skills.ts")
+		const checkout = join(root, "code/agency")
+		const skillPath = join(checkout, ".agents/skills/release/SKILL.md")
+		const minimalSkillPath = join(checkout, ".agents/skills/EVALS.md")
+		await write(
+			root,
+			"code/agency/.agents/skills/release/SKILL.md",
+			'---\nname: Release\ndescription: "Prepare a release"\n---\n\nShip it.\n',
+		)
+		await write(
+			root,
+			"code/agency/.agents/skills/EVALS.md",
+			"Evaluate the repository without frontmatter.\n",
+		)
 		await write(
 			root,
 			".opencode/plugins/agency-repository-skills.ts",
 			managedWorkbaseOpencodePlugin,
 		)
 		const generated = await import(`${pathToFileURL(path).href}?v2-setup`)
+		const previousCheckout = process.env.AGENCY_WRITABLE_CHECKOUT
+		process.env.AGENCY_WRITABLE_CHECKOUT = checkout
 		let reference:
 			| {
 					name: string
 					source: { type: string; path: string; description: string }
 			  }
 			| undefined
+		const skills: Array<Record<string, unknown>> = []
 
-		await generated.default.setup({
-			reference: {
-				transform: async (callback: (references: unknown) => void) =>
-					callback({
-						list: () => [],
-						add: (
-							name: string,
-							source: {
-								type: string
-								path: string
-								description: string
+		try {
+			await generated.default.setup({
+				location: { directory: root },
+				reference: {
+					transform: async (callback: (references: unknown) => void) =>
+						callback({
+							list: () => [],
+							add: (
+								name: string,
+								source: {
+									type: string
+									path: string
+									description: string
+								},
+							) => {
+								reference = { name, source }
 							},
-						) => {
-							reference = { name, source }
-						},
-					}),
-			},
-			skill: { transform: async () => {} },
-		})
+						}),
+				},
+				skill: {
+					transform: async (callback: (skills: any) => void) =>
+						callback({
+							add: (skill: Record<string, unknown>) => {
+								if (typeof skill.path !== "string") {
+									throw new Error("Skill path must be a string")
+								}
+								if (
+									"description" in skill &&
+									typeof skill.description !== "string"
+								) {
+									throw new Error("Skill description must be a string")
+								}
+								skills.push(skill)
+							},
+						}),
+				},
+				session: { hook: async () => {} },
+				permission: { hook: async () => {} },
+			})
+		} finally {
+			if (previousCheckout === undefined)
+				delete process.env.AGENCY_WRITABLE_CHECKOUT
+			else process.env.AGENCY_WRITABLE_CHECKOUT = previousCheckout
+		}
 
 		expect(reference).toEqual({
 			name: "workbase",
@@ -489,6 +636,24 @@ describe("IntegrationService", () => {
 					"Complete Agency workbase context; write authority still comes only from agency context",
 			},
 		})
+		expect(skills).toEqual(
+			expect.arrayContaining([
+				{
+					id: "EVALS",
+					name: "EVALS",
+					path: minimalSkillPath,
+					content: "Evaluate the repository without frontmatter.\n",
+				},
+				{
+					id: "release",
+					name: "Release",
+					description: "Prepare a release",
+					path: skillPath,
+					content: "\nShip it.\n",
+				},
+			]),
+		)
+		expect(skills).toHaveLength(2)
 	})
 
 	test("registers a TUI-only /agency-debug diagnostic", async () => {
@@ -600,6 +765,167 @@ describe("IntegrationService", () => {
 		).toBe(true)
 	})
 
+	test("distinguishes native V2 prompt submission from companion recovery", async () => {
+		const path = join(root, ".opencode/plugins/agency-tui/tui.ts")
+		await write(
+			root,
+			".opencode/plugins/agency-tui/tui.ts",
+			managedWorkbaseOpencodeV2TuiPlugin,
+		)
+		const module = await import(`${pathToFileURL(path).href}?autosubmit`)
+		const previousMarker = process.env.AGENCY_TUI_AUTOSUBMIT
+		const previousPrompt = process.env.AGENCY_PROMPT
+		let route: { type: string; sessionID?: string } = {
+			type: "session",
+			sessionID: "native",
+		}
+		let messages: Record<string, any[]> = {
+			native: [
+				{
+					type: "user",
+					text: "Start the task.",
+				},
+			],
+		}
+		let commands: { name: string }[] = [{ name: "prompt.submit" }]
+		const dispatched: string[] = []
+		const toasts: { variant: string; message: string }[] = []
+		type Observation = {
+			event: string
+			detail?: string
+			dispatches: number
+		}
+		const observations: Observation[] = []
+		const waiters: {
+			predicate: (observation: Observation) => boolean
+			resolve: (observation: Observation) => void
+		}[] = []
+		const observe = (observation: Observation) => {
+			observations.push(observation)
+			for (let index = waiters.length - 1; index >= 0; index -= 1) {
+				const waiter = waiters[index]
+				if (!waiter?.predicate(observation)) continue
+				waiters.splice(index, 1)
+				waiter.resolve(observation)
+			}
+		}
+		const waitFor = (predicate: (observation: Observation) => boolean) => {
+			const existing = observations.find(predicate)
+			if (existing) return Promise.resolve(existing)
+			return new Promise<Observation>((resolve) => {
+				waiters.push({ predicate, resolve })
+			})
+		}
+		const api = {
+			keymap: {
+				dispatch: (name: string) => {
+					dispatched.push(name)
+					if (dispatched.length < 2) return
+					route = { type: "session", sessionID: "companion" }
+					messages.companion = [
+						{
+							info: { role: "user" },
+							parts: [{ type: "text", text: "Start the task." }],
+						},
+					]
+				},
+				commands: () => commands.map(({ name: id }) => ({ id })),
+			},
+			data: {
+				session: {
+					message: {
+						sync: async () => {},
+						list: (sessionID: string) => messages[sessionID],
+					},
+				},
+			},
+			ui: {
+				router: { current: () => route },
+				toast: {
+					show: (input: { variant: string; message: string }) =>
+						toasts.push(input),
+				},
+			},
+		}
+
+		try {
+			delete process.env.AGENCY_TUI_AUTOSUBMIT
+			process.env.AGENCY_PROMPT = "Start the task."
+			module.createAgencyAutosubmit({ timeoutMs: 100, retryMs: 1 })(api)
+			expect(dispatched).toEqual([])
+
+			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			const nativeSubmitted = waitFor(
+				(observation) =>
+					observation.event === "submitted" &&
+					observation.detail === "native OpenCode submission observed",
+			)
+			module.createAgencyAutosubmit({
+				timeoutMs: 100,
+				retryMs: 1,
+				observe,
+			})(api)
+			expect(dispatched).toEqual([])
+			expect(await nativeSubmitted).toMatchObject({
+				event: "submitted",
+				detail: "native OpenCode submission observed",
+				dispatches: 0,
+			})
+			expect(toasts).toEqual([])
+			expect(process.env.AGENCY_TUI_AUTOSUBMIT).toBeUndefined()
+
+			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			route = { type: "home" }
+			messages = {}
+			const companionSubmitted = waitFor(
+				(observation) =>
+					observation.event === "submitted" &&
+					observation.detail ===
+						"submitted message observed after companion dispatch",
+			)
+			module.createAgencyAutosubmit({
+				timeoutMs: 100,
+				retryMs: 1,
+				observe,
+			})(api)
+			const companionObservation = await companionSubmitted
+			expect(dispatched).toEqual(["prompt.submit", "prompt.submit"])
+			expect(companionObservation).toMatchObject({
+				event: "submitted",
+				detail: "submitted message observed after companion dispatch",
+				dispatches: 2,
+			})
+			expect(toasts).toEqual([])
+
+			process.env.AGENCY_TUI_AUTOSUBMIT = "1"
+			route = { type: "plugin" }
+			commands = []
+			const timedOut = waitFor((observation) => observation.event === "timeout")
+			module.createAgencyAutosubmit({
+				timeoutMs: 0,
+				retryMs: 1,
+				observe,
+			})(api)
+			expect(await timedOut).toMatchObject({
+				event: "timeout",
+				detail: "route=plugin, dispatches=0",
+			})
+			expect(toasts).toEqual([
+				expect.objectContaining({
+					variant: "error",
+					message: expect.stringContaining("Press Enter"),
+				}),
+			])
+			expect(process.env.AGENCY_TUI_AUTOSUBMIT).toBeUndefined()
+			expect(process.env.AGENCY_PROMPT).toBe("Start the task.")
+		} finally {
+			if (previousMarker === undefined) delete process.env.AGENCY_TUI_AUTOSUBMIT
+			else process.env.AGENCY_TUI_AUTOSUBMIT = previousMarker
+			if (previousPrompt === undefined) delete process.env.AGENCY_PROMPT
+			else process.env.AGENCY_PROMPT = previousPrompt
+		}
+	})
+
 	test("generates context-first safety and execution closeout guidance", () => {
 		const body = managedBody(managedWorkbaseAgents)
 
@@ -623,7 +949,7 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toContain("Never invent entity IDs")
 		expect(body).toContain("Preserve parent backlinks")
-		expect(body).toContain("dirty-worktree, active-claim, revision")
+		expect(body).toContain("dirty-worktree, revision")
 		expect(body).toContain("`agency work` is the human launch flow")
 		expect(body).toContain("Agency worker launch target: <target>.")
 		expect(body).toContain("environment variables and a generated")
@@ -633,7 +959,7 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toMatch(/If\s+the prompt\s+and context disagree/)
 		expect(body).toContain("marks execution work")
-		expect(body).toContain("without creating a claim")
+		expect(body).toContain("marks execution work")
 		expect(body).toContain("formatting, type checks, build, dead-code checks")
 		expect(body).toContain("Review and commit the diff")
 		expect(body).toContain("Use `agency push`")
@@ -647,7 +973,7 @@ describe("IntegrationService", () => {
 		expect(body).toContain("marking it ready")
 		expect(body).toMatch(/completing\s+a refinement loop/)
 		expect(body).toContain("pausing or handing off")
-		expect(body).toContain("`agency finish`")
+		expect(body).toContain("update status")
 		expect(body).toContain("`agency sync`")
 		expect(body).toContain("`--no-pull-request --summary <text>`")
 		expect(body).toContain("`TASK.md` or `PHASE.md`")
@@ -681,19 +1007,11 @@ describe("IntegrationService", () => {
 		)
 	})
 
-	test("configures Agency agents with complete workbase access", () => {
+	test("configures Agency planning with complete workbase access", () => {
 		const config = JSON.parse(managedBody(managedWorkbaseOpencode))
 
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
 		expect(config.agent).toEqual({
-			agency: {
-				description:
-					"Handles Agency workbase orchestration and workflow operations with the Agency CLI",
-				mode: "subagent",
-				prompt: expect.stringMatching(
-					/agency context \. --json[\s\S]+agency work prepare[\s\S]+never pass `--work` or `--auto`/,
-				),
-			},
 			plan: {
 				disable: true,
 			},
@@ -716,18 +1034,15 @@ describe("IntegrationService", () => {
 				},
 			},
 		})
-		expect(config.agent.agency.model).toBeUndefined()
-		expect(config.agent.agency.permission).toBeUndefined()
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Explicit-new intent overrides reuse",
 		)
-		expect(config.agent.agency.hidden).toBeUndefined()
-		expect(config.agent.agency.steps).toBeUndefined()
-		expect(config.agent.agency.prompt).toContain(
-			"Return the prepared execution contract to the caller",
-		)
+		expect(config.agent.agency).toBeUndefined()
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"Start with `agency context . --json`",
+		)
+		expect(config.agent["agency-plan"].prompt).toContain(
+			"Pass `--full` only when document prose or low-level VCS details are needed",
 		)
 		expect(config.agent["agency-plan"].prompt).toContain(
 			"decompose it into independently deliverable tasks",
@@ -814,6 +1129,7 @@ describe("IntegrationService", () => {
 			{ name: "opencode-plugin", state: "managed", changed: true },
 			{ name: "opencode-tui", state: "managed", changed: true },
 			{ name: "opencode-tui-plugin", state: "managed", changed: true },
+			{ name: "opencode-v2-tui-plugin", state: "managed", changed: true },
 		])
 		expect(await Bun.file(join(root, "AGENTS.md")).text()).toBe(
 			customRootAgents,
@@ -838,6 +1154,19 @@ describe("IntegrationService", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
 		).toBe(managedWorkbaseOpencodeTuiPlugin)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/package.json"),
+			).text(),
+		).toBe(managedWorkbaseOpencodeV2TuiPackage)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/index.ts"),
+			).text(),
+		).toBe(managedWorkbaseOpencodeV2TuiIndex)
+		expect(
+			await Bun.file(join(root, ".opencode/plugins/agency-tui/tui.ts")).text(),
+		).toBe(managedWorkbaseOpencodeV2TuiPlugin)
 
 		await unlink(join(root, ".agency/AGENTS.md"))
 		const second = await sync(root)
@@ -981,6 +1310,27 @@ describe("IntegrationService", () => {
 		expect(
 			await Bun.file(join(root, ".opencode/tui/agency-debug.ts")).text(),
 		).toBe(customPlugin)
+	})
+
+	test("preserves a customized OpenCode V2 TUI companion", async () => {
+		const custom = "export default { id: 'custom.tui', setup() {} }\n"
+		await write(root, ".opencode/plugins/agency-tui/tui.ts", custom)
+
+		const result = await sync(root)
+
+		expect(result.files.at(-1)).toMatchObject({
+			name: "opencode-v2-tui-plugin",
+			state: "customized",
+			changed: false,
+		})
+		expect(
+			await Bun.file(join(root, ".opencode/plugins/agency-tui/tui.ts")).text(),
+		).toBe(custom)
+		expect(
+			await Bun.file(
+				join(root, ".opencode/plugins/agency-tui/package.json"),
+			).exists(),
+		).toBe(false)
 	})
 
 	test("removes a checksum-valid legacy command and preserves a customized file", async () => {

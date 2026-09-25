@@ -4,7 +4,14 @@ import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { AgencyGraph } from "../graph-schema"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+	trackDocumentReadConcurrency,
+} from "../test-utils"
+import { documentLoadConcurrency } from "../workbase/document-loading"
+import { FileSystemService } from "./FileSystemService"
 import { GraphService } from "./GraphService"
 import {
 	VersionControlService,
@@ -209,6 +216,33 @@ describe("GraphService", () => {
 		expect(await getGraph(root)).toEqual(graph)
 	})
 
+	test("bounds document reads across nested task and phase traversal", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		await Promise.all(
+			Array.from({ length: documentLoadConcurrency + 8 }, (_, index) =>
+				write(
+					root,
+					`tasks/ship/phases/extra-${index}/PHASE.md`,
+					`---\nrepo: agency\nbranch: extra-${index}\nbase: main\npr: null\nstatus: open\n---\n`,
+				),
+			),
+		)
+		const fs = await Effect.runPromise(
+			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+		)
+		const tracked = trackDocumentReadConcurrency(fs)
+
+		await runTestEffect(
+			GraphService.pipe(
+				Effect.flatMap((service) => service.get({ cwd: root })),
+				Effect.provideService(FileSystemService, tracked.fs),
+			),
+		)
+
+		expect(tracked.maximum()).toBe(documentLoadConcurrency)
+	})
+
 	test("does not resolve a VCS backend when git details are not requested", async () => {
 		const root = await createWorkbase()
 		roots.push(root)
@@ -230,7 +264,18 @@ describe("GraphService", () => {
 		expect(calls).toBe(0)
 	})
 
-	test("never reports claimed or terminal execution units as ready", async () => {
+	test("propagates directory discovery failures", async () => {
+		const root = await createTempDir()
+		roots.push(root)
+		await write(root, "agency.json", '{"version":2}\n')
+		await write(root, "tasks", "not a directory")
+
+		await expect(getGraph(root)).rejects.toThrow(
+			`Failed to read directory: ${join(root, "tasks")}`,
+		)
+	})
+
+	test("never reports active or terminal execution units as ready", async () => {
 		const root = await createWorkbase()
 		roots.push(root)
 		const path = "tasks/ship/phases/implement/PHASE.md"

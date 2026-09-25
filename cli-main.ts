@@ -40,7 +40,6 @@ import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
 import { GraphService } from "./src/services/GraphService"
-import { ClaimService } from "./src/services/ClaimService"
 import { SyncService } from "./src/services/SyncService"
 import { ReadinessService } from "./src/services/ReadinessService"
 import { GraphMutationService } from "./src/services/GraphMutationService"
@@ -53,18 +52,16 @@ import {
 import { review, help as reviewHelp } from "./src/commands/review"
 import { act, help as actHelp } from "./src/commands/act"
 import {
-	claimCommand,
-	claimHelp,
-	releaseHelp,
-	finishHelp,
-} from "./src/commands/claim"
-import {
 	collectCommandResult,
 	errorEnvelope,
 	successEnvelope,
 	writeEnvelope,
 } from "./src/protocol"
-import { exportUsageEvents, recordUsageEvent } from "./src/usage-log"
+import {
+	exportUsageEvents,
+	recordUsageEvent,
+	usageOutcomeCode,
+} from "./src/usage-log"
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
@@ -83,7 +80,6 @@ const CliLayer = Layer.mergeAll(
 	IntegrationService.Default,
 	ContextService.Default,
 	GraphService.Default,
-	ClaimService.Default,
 	SyncService.Default,
 	ReadinessService.Default,
 	GraphMutationService.Default,
@@ -183,6 +179,7 @@ const commands: Record<string, Command> = {
 			if (options.help) return console.log(actHelp)
 			await runCommand(
 				act({
+					action: options.action,
 					directory: args[0],
 					auto: options.auto,
 					draft: options.draft,
@@ -192,67 +189,7 @@ const commands: Record<string, Command> = {
 					taskId: options.task,
 					phaseId: options.phase,
 					inputAllowed: options.inputAllowed,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
-	claim: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) return console.log(claimHelp)
-			await runCommand(
-				claimCommand({
-					operation: "claim",
-					taskId: args[0],
-					phaseId: args[1],
-					claimant: options.claimant,
-					agent: options.agent,
-					sessionId: options["session-id"],
-					revision: options.revision,
-					expiresAt: options["expires-at"],
-					json: options.json,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
-	release: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) return console.log(releaseHelp)
-			await runCommand(
-				claimCommand({
-					operation: "release",
-					taskId: args[0],
-					phaseId: args[1],
-					sessionId: options["session-id"],
-					revision: options.revision,
-					json: options.json,
-					silent: options.silent,
-					verbose: options.verbose,
-					cwd: options.cwd,
-				}),
-			)
-		},
-	},
-	finish: {
-		run: async (args: string[], options: Record<string, any>) => {
-			if (options.help) return console.log(finishHelp)
-			await runCommand(
-				claimCommand({
-					operation: "finish",
-					taskId: args[0],
-					phaseId: args[1],
-					sessionId: options["session-id"],
-					revision: options.revision,
-					outcome: options.outcome,
-					noPullRequest: options["no-pull-request"],
-					summary: options.summary,
-					evidenceUrl: options["evidence-url"],
-					json: options.json,
+					exitOnEscape: options.exitOnEscape,
 					silent: options.silent,
 					verbose: options.verbose,
 					cwd: options.cwd,
@@ -598,6 +535,7 @@ const commands: Record<string, Command> = {
 					auto: options.auto,
 					printCommand: options["print-command"],
 					force: options.force,
+					allowWorkingDependencies: options["allow-working-dependencies"],
 					inputAllowed: options.inputAllowed,
 					cwd: options.cwd,
 					taskId: options.task,
@@ -618,6 +556,7 @@ const commands: Record<string, Command> = {
 					subcommand: args[0],
 					args: args.slice(1),
 					dryRun: options["dry-run"],
+					force: options.force,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -770,17 +709,16 @@ agency v${VERSION}
 
 Usage: agency <command> [options]
 
+Run agency without a command to open the TUI.
+
 Commands:
-  act                    Interactively choose and act on work
+  act                    Open the interactive workbase
   init [path]            Initialize an Agency workbase
   workbase <subcommand>  Manage registered workbases
   integration <command> Inspect or sync managed integration files
   usage export          Export local usage events as JSON Lines
   epic <subcommand>      Manage epics
   phase <subcommand>     Manage task phases
-  claim <task> [phase]   Claim an execution unit
-  release <task> [phase] Release an execution unit
-  finish <task> [phase]  Finish an execution unit
   archive <type>         Archive a work item
   task <subcommand>      Manage tasks
   work [directory|task]  Work on an epic, task, or phase
@@ -823,24 +761,59 @@ const machineMode = process.argv
 const invocationStartedAt = performance.now()
 const rawArguments = process.argv.slice(2)
 let usageCommandPath = "invalid"
-let usageFlagNames = rawArguments
-	.filter((argument) => argument.startsWith("--"))
-	.map((argument) => argument.slice(2).split("=", 1)[0]!)
+let usageFlagNames: string[] = []
+
+const pushUsageDetails = (error?: unknown) => {
+	if (usageCommandPath !== "push") return {}
+	const seen = new Set<object>()
+	const visit = (
+		value: unknown,
+	): { stage?: string; category?: string } | null => {
+		if (typeof value !== "object" || value === null || seen.has(value))
+			return null
+		seen.add(value)
+		if (
+			"stage" in value &&
+			typeof value.stage === "string" &&
+			"category" in value &&
+			typeof value.category === "string"
+		) {
+			return { stage: value.stage, category: value.category }
+		}
+		for (const nestedValue of [
+			...Object.values(value),
+			...Object.getOwnPropertySymbols(value).map(
+				(symbol) => (value as Record<symbol, unknown>)[symbol],
+			),
+		]) {
+			const nested = visit(nestedValue)
+			if (nested) return nested
+		}
+		return null
+	}
+	const details = error ? visit(error) : null
+	return {
+		vcs: "git" as const,
+		terminalStage: details?.stage ?? (error ? "unknown" : "publish"),
+		category: details?.category ?? (error ? "unknown" : "success"),
+	}
+}
 
 try {
+	const parsed = parseCli(rawArguments)
 	const {
 		commandName,
+		commandPath,
 		args: commandArgs,
 		passthrough,
 		values,
-	} = parseCli(rawArguments)
-	usageCommandPath =
-		[commandName, commandArgs[0]]
-			.filter(
-				(part): part is string =>
-					typeof part === "string" && part.length > 0 && !part.startsWith("-"),
-			)
-			.join("/") || "root"
+	} = {
+		...parsed,
+		...(!parsed.commandName && !parsed.values.help && !parsed.values.version
+			? { commandName: "act", commandPath: "act" }
+			: {}),
+	}
+	usageCommandPath = commandPath
 	usageFlagNames = Object.entries(values)
 		.filter(([, value]) => value !== undefined && value !== false)
 		.map(([name]) => name)
@@ -858,6 +831,7 @@ try {
 				flagNames: usageFlagNames,
 				durationMs: performance.now() - invocationStartedAt,
 				outcome: "success",
+				outcomeCode: "SUCCESS",
 				exitStatus: 0,
 			},
 			VERSION,
@@ -876,6 +850,7 @@ try {
 				flagNames: usageFlagNames,
 				durationMs: performance.now() - invocationStartedAt,
 				outcome: exitStatus === 0 ? "success" : "failure",
+				outcomeCode: exitStatus === 0 ? "SUCCESS" : "NONZERO_EXIT",
 				exitStatus,
 			},
 			VERSION,
@@ -909,6 +884,7 @@ try {
 			...values,
 			cwd,
 			inputAllowed,
+			exitOnEscape: Boolean(parsed.commandName),
 			passthrough,
 		})
 	}
@@ -919,18 +895,30 @@ try {
 			flagNames: usageFlagNames,
 			durationMs: performance.now() - invocationStartedAt,
 			outcome: exitStatus === 0 ? "success" : "failure",
+			outcomeCode: exitStatus === 0 ? "SUCCESS" : "NONZERO_EXIT",
 			exitStatus,
+			...pushUsageDetails(),
 		},
 		VERSION,
 	)
 } catch (error) {
+	if (
+		typeof error === "object" &&
+		error !== null &&
+		"commandPath" in error &&
+		typeof error.commandPath === "string"
+	) {
+		usageCommandPath = error.commandPath
+	}
 	await recordUsageEvent(
 		{
 			commandPath: usageCommandPath,
 			flagNames: usageFlagNames,
 			durationMs: performance.now() - invocationStartedAt,
 			outcome: "failure",
+			outcomeCode: usageOutcomeCode(error),
 			exitStatus: 1,
+			...pushUsageDetails(error),
 		},
 		VERSION,
 	)

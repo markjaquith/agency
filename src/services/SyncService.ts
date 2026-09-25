@@ -1,21 +1,29 @@
 import { Data, Effect, Either } from "effect"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import type {
-	ClaimRecord,
 	PhaseFrontmatter,
 	RepositoryReference,
 	TaskFrontmatter,
 	WorkStatus,
 	PullRequestRecord,
 } from "../workbase/schemas"
+import { documentRevision } from "../workbase/document-revision"
+import {
+	formatMarkdownDocument,
+	parseFrontmatterSync,
+} from "../workbase/frontmatter"
 import {
 	normalizePullRequestRecord,
+	parseGitHubPullRequest,
+	parseGitHubPullRequestList,
 	parseOptionalPullRequestRecord,
-	recordFromGitHubJson,
 	resolveDeliveryCommand,
 } from "../workbase/delivery-command"
-import { ClaimService } from "./ClaimService"
 import { FileSystemService } from "./FileSystemService"
+import {
+	documentWriteStep,
+	runLifecycleTransaction,
+} from "./LifecycleTransaction"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
 import {
@@ -37,6 +45,7 @@ interface ExecutionRecord {
 	readonly taskId: string
 	readonly phaseId?: string
 	readonly path: string
+	readonly content: string
 	readonly revision: string
 	readonly data: ExecutionData
 }
@@ -49,11 +58,7 @@ interface RegisteredWorktree {
 }
 
 interface SyncChange {
-	readonly kind:
-		| "materialize-workspace"
-		| "release-stale-claim"
-		| "record-pr"
-		| "mark-done"
+	readonly kind: "materialize-workspace" | "record-pr" | "mark-done"
 	readonly target: string
 	readonly message: string
 	readonly status: "planned" | "applied"
@@ -84,7 +89,6 @@ interface ExecutionSyncState {
 	readonly status: WorkStatus
 	readonly branch: string | null
 	readonly base: string | null
-	readonly claim: ClaimRecord | null
 	readonly checkouts: readonly CheckoutState[]
 	readonly pr: Record<string, unknown>
 	readonly review?: {
@@ -132,19 +136,6 @@ const parseWorktrees = (output: string): RegisteredWorktree[] => {
 	return worktrees
 }
 
-const parseJson = <T>(value: string, fallback: T): T => {
-	try {
-		return JSON.parse(value) as T
-	} catch {
-		return fallback
-	}
-}
-
-const isExpired = (claim: ClaimRecord | undefined, now: Date) =>
-	claim?.state === "active" &&
-	claim.expiresAt !== undefined &&
-	Date.parse(claim.expiresAt) <= now.getTime()
-
 const isCommitId = (ref: string) => /^[0-9a-f]{40,64}$/i.test(ref)
 
 const originRef = (ref: string) =>
@@ -174,17 +165,18 @@ interface PullRequestQuery {
 const mergedPullRequestFromGitHub = (
 	data: ExecutionData,
 	query: PullRequestQuery | undefined,
+	details: readonly PullRequestRecord[] | undefined,
 ) => {
-	if (!query?.result || query.result.exitCode !== 0) return null
+	if (!query?.result || query.result.exitCode !== 0 || !details) return null
 	const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
-	const details = existing
-		? [parseJson<Record<string, unknown>>(query.result.stdout, {})]
-		: parseJson<Record<string, unknown>[]>(query.result.stdout, []).filter(
+	const matches = existing
+		? details
+		: details.filter(
 				(item) =>
-					item.headRefName === data.branch && item.baseRefName === data.base,
+					item.headBranch === data.branch && item.baseBranch === data.base,
 			)
-	if (details.length !== 1) return null
-	const current = recordFromGitHubJson(details[0]!)
+	if (matches.length !== 1) return null
+	const current = matches[0]!
 	if (
 		current.merged !== true ||
 		current.headRepository?.toLowerCase() !==
@@ -199,13 +191,32 @@ const mergedPullRequestFromGitHub = (
 	return current
 }
 
+const mutateExecution = (
+	root: string,
+	record: ExecutionRecord,
+	revision: string,
+	data: ExecutionData,
+) => {
+	const parsed = parseFrontmatterSync(record.content, record.path)
+	const content = formatMarkdownDocument(data, parsed.body)
+	return runLifecycleTransaction({
+		root,
+		preconditions: [{ path: record.path, revision }],
+		steps: [documentWriteStep(root, [{ path: record.path, content }])],
+	}).pipe(
+		Effect.as({ data, revision: documentRevision(content) }),
+		Effect.catchTag("LifecycleTransactionError", (error) =>
+			Effect.fail(new SyncError({ message: error.message })),
+		),
+	)
+}
+
 export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 	sync: () => ({
 		reconcile: (
 			options: {
 				readonly cwd?: string
 				readonly apply?: boolean
-				readonly now?: Date
 				readonly onProgress?: (progress: SyncProgress) => void
 				readonly taskId?: string
 				readonly phaseId?: string
@@ -215,10 +226,16 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				const fs = yield* FileSystemService
 				const workbase = yield* WorkbaseService
 				const worktrees = yield* WorktreeService
-				const claims = yield* ClaimService
 				const repositories = yield* RepositoryService
 				const versionControl = yield* VersionControlService
-				const { root, config } = yield* workbase.loadConfig(options.cwd)
+				const cwd = resolve(options.cwd ?? process.cwd())
+				const candidate = resolve(cwd, options.taskId ?? ".")
+				const candidateExists = !options.phaseId
+					? yield* fs.exists(candidate)
+					: false
+				const { root, config } = yield* workbase.loadConfig(
+					candidateExists ? candidate : cwd,
+				)
 				const backend = yield* versionControl.forWorkbase(root)
 				const validation = yield* workbase.validate(root, {
 					includeDocuments: true,
@@ -236,45 +253,76 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					})
 				}
 				const documents = validation.documents!
-				const allTaskRecords = documents.tasks
-				const taskRecords = options.taskId
-					? allTaskRecords.filter((task) => task.id === options.taskId)
-					: allTaskRecords
-				if (options.taskId && taskRecords.length === 0) {
+				let taskId = options.taskId
+				let phaseId = options.phaseId
+				let epicId: string | undefined
+				const existingTaskSelector =
+					options.taskId !== undefined &&
+					documents.tasks.some((task) => task.id === options.taskId)
+				if (candidateExists && !existingTaskSelector) {
+					const canonicalPath = yield* fs.realPath(candidate)
+					const canonicalRoot = yield* fs.realPath(root)
+					const parts = relative(canonicalRoot, canonicalPath).split(sep)
+					if (parts[0] === "epics" && parts[1]) {
+						epicId = parts[1]
+						taskId = undefined
+					} else if (parts[0] === "tasks" && parts[1]) {
+						taskId = parts[1]
+						phaseId = parts[2] === "phases" && parts[3] ? parts[3] : undefined
+					} else if (options.taskId !== undefined) {
+						return yield* new SyncError({
+							message: `Sync path does not identify an active task, phase, or epic: ${canonicalPath}`,
+						})
+					}
+				}
+				if (epicId && !documents.epics.some((epic) => epic.id === epicId)) {
 					return yield* new SyncError({
-						message: `Task '${options.taskId}' does not exist`,
+						message: `Epic '${epicId}' does not exist`,
+					})
+				}
+				const allTaskRecords = documents.tasks
+				const taskRecords = taskId
+					? allTaskRecords.filter((task) => task.id === taskId)
+					: epicId
+						? allTaskRecords.filter((task) => task.data.epic === epicId)
+						: allTaskRecords
+				if (taskId && taskRecords.length === 0) {
+					return yield* new SyncError({
+						message: `Task '${taskId}' does not exist`,
 					})
 				}
 				const records: ExecutionRecord[] = []
 				for (const task of taskRecords) {
 					if ("phases" in task.data) {
 						for (const phase of documents.phasesByTask.get(task.id) ?? []) {
-							if (options.phaseId && phase.id !== options.phaseId) continue
+							if (phaseId && phase.id !== phaseId) continue
 							records.push({
 								key: `phase:${task.id}/${phase.id}`,
 								taskId: task.id,
 								phaseId: phase.id,
 								path: phase.path,
+								content: phase.content,
 								revision: phase.revision,
 								data: phase.data,
 							})
 						}
-					} else if (!options.phaseId && !("review" in task.data)) {
+					} else if (!phaseId && !("review" in task.data)) {
 						records.push({
 							key: `task:${task.id}`,
 							taskId: task.id,
 							path: task.path,
+							content: task.content,
 							revision: task.revision,
 							data: task.data,
 						})
 					}
 				}
-				const reviewRecords = options.phaseId
+				const reviewRecords = phaseId
 					? []
 					: taskRecords.filter((task) => "review" in task.data)
-				if (options.phaseId && records.length === 0) {
+				if (phaseId && records.length === 0) {
 					return yield* new SyncError({
-						message: `Phase '${options.taskId}/${options.phaseId}' does not exist`,
+						message: `Phase '${taskId}/${phaseId}' does not exist`,
 					})
 				}
 				const repositoryAliases = new Set<string>()
@@ -287,10 +335,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					if ("review" in task.data)
 						repositoryAliases.add(task.data.review.repo)
 				}
+				if (epicId) {
+					const epic = documents.epics.find((record) => record.id === epicId)!
+					for (const reference of epic.data.repos)
+						repositoryAliases.add(reference.repo)
+				}
 				const repositorySetup = yield* repositories.setup({
 					cwd: root,
 					apply: options.apply === true,
-					...(options.taskId ? { aliases: [...repositoryAliases] } : {}),
+					...(taskId || epicId ? { aliases: [...repositoryAliases] } : {}),
 				})
 				options.onProgress?.({
 					stage: "repositories",
@@ -299,7 +352,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 				})
 
 				const apply = options.apply === true
-				const now = options.now ?? new Date()
 				const changes: SyncChange[] = []
 				const warnings: SyncNotice[] = []
 				const unresolved: SyncNotice[] = []
@@ -476,6 +528,65 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						{ concurrency: 8 },
 					),
 				)
+				const githubResponses = new Map<
+					string,
+					| {
+							readonly ok: true
+							readonly details: readonly PullRequestRecord[]
+					  }
+					| { readonly ok: false; readonly message: string }
+				>()
+				if (!config.delivery) {
+					for (const record of queryRecords) {
+						const query = prQueries.get(record.key)
+						if (query?.result?.exitCode !== 0) continue
+						try {
+							githubResponses.set(record.key, {
+								ok: true,
+								details: record.data.pr
+									? [parseGitHubPullRequest(query.result.stdout)]
+									: parseGitHubPullRequestList(query.result.stdout),
+							})
+						} catch (cause) {
+							const message =
+								cause instanceof Error ? cause.message : String(cause)
+							githubResponses.set(record.key, { ok: false, message })
+							warnings.push({
+								kind: "pr-provider-invalid-output",
+								target: record.key,
+								message,
+							})
+						}
+					}
+				}
+				const reviewSourceQueries = new Map(
+					yield* Effect.forEach(
+						reviewRecords,
+						(task) =>
+							Effect.gen(function* () {
+								if (!("review" in task.data)) return [task.id, null] as const
+								const repositoryPath = join(
+									root,
+									"repos",
+									task.data.review.repo,
+								)
+								const remote = yield* backend.remoteUrl(
+									repositoryPath,
+									"origin",
+								)
+								const source = yield* runExternal([
+									"git",
+									"ls-remote",
+									remote ?? "origin",
+									task.data.review.source.kind === "pull-request"
+										? task.data.review.source.fetchRef
+										: originRef(task.data.review.source.ref),
+								])
+								return [task.id, source] as const
+							}),
+						{ concurrency: 8 },
+					),
+				)
 				const executionTotal = records.length + reviewRecords.length
 				let reconciledExecutions = 0
 				const reportExecution = (target: string) => {
@@ -487,6 +598,57 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						target,
 					})
 				}
+				const checkoutRecords = records.filter((record) => {
+					if (record.data.completion) return false
+					const githubResponse = githubResponses.get(record.key)
+					const merged = config.delivery
+						? null
+						: mergedPullRequestFromGitHub(
+								record.data,
+								prQueries.get(record.key),
+								githubResponse?.ok ? githubResponse.details : undefined,
+							)
+					return merged === null
+				})
+				const checkoutCandidates = checkoutRecords.flatMap((record) => {
+					const codePath = join(dirname(record.path), "code")
+					return [
+						{ repo: record.data.repo, path: join(codePath, record.data.repo) },
+						...(record.data.repos ?? []).map((reference) => ({
+							repo: reference.repo,
+							path: join(codePath, reference.repo),
+						})),
+					]
+				})
+				const checkoutRepositoryPaths = [
+					...new Set(
+						checkoutCandidates.map(({ repo }) => join(root, "repos", repo)),
+					),
+				]
+				yield* Effect.forEach(checkoutRepositoryPaths, listRegistered, {
+					concurrency: 8,
+				})
+				const dirtyByCheckoutPath = new Map<string, boolean | null>()
+				yield* Effect.forEach(
+					checkoutCandidates,
+					({ repo, path }) =>
+						Effect.gen(function* () {
+							if (!(yield* fs.isDirectory(path))) return
+							const repositoryPath = join(root, "repos", repo)
+							const registered = registeredByRepository.get(repositoryPath)
+							if (!registered) return
+							const expectedPath = yield* fs.realPath(path)
+							const atPath = registered.find(
+								(item) => item.path === expectedPath,
+							)
+							if (!atPath) return
+							dirtyByCheckoutPath.set(
+								path,
+								atPath.dirty ?? (yield* backend.workspaceDirty(path)),
+							)
+						}),
+					{ concurrency: 8 },
+				)
 
 				for (const record of records.sort((a, b) =>
 					a.key.localeCompare(b.key),
@@ -496,12 +658,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					const codePath = join(dirname(record.path), "code")
 					const checkoutStates: CheckoutState[] = []
 					const query = prQueries.get(record.key)
+					const githubResponse = githubResponses.get(record.key)
+					const githubDetails = githubResponse?.ok
+						? githubResponse.details
+						: undefined
 					const remoteMergedPr = config.delivery
 						? null
-						: mergedPullRequestFromGitHub(data, query)
+						: mergedPullRequestFromGitHub(data, query, githubDetails)
 					const skipCheckoutReconciliation =
-						Boolean(data.completion) ||
-						(remoteMergedPr !== null && data.claim?.state !== "active")
+						Boolean(data.completion) || remoteMergedPr !== null
 					let materialize = false
 					let workspaceConflict = false
 					const declared: readonly (
@@ -650,8 +815,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 
 						const dirty =
 							exists && atPath
-								? (atPath.dirty ??
-									(yield* backend.workspaceDirty(checkoutPath)))
+								? atPath.dirty !== undefined
+									? atPath.dirty
+									: dirtyByCheckoutPath.has(checkoutPath)
+										? dirtyByCheckoutPath.get(checkoutPath)!
+										: yield* backend.workspaceDirty(checkoutPath)
 								: null
 						if (exists && atPath && dirty === null) {
 							warnings.push({
@@ -764,57 +932,12 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						})
 					}
 
-					if (
-						isExpired(data.claim, now) &&
-						(data.status === "working" || data.status === "delegated")
-					) {
-						const sessionId = data.claim!.sessionId
-						if (apply) {
-							const expired = yield* claims.expire(
-								{
-									taskId: record.taskId,
-									phaseId: record.phaseId,
-									revision,
-									now,
-								},
-								root,
-							)
-							data = expired.data as ExecutionData
-							revision = expired.revision
-						} else {
-							const claim: ClaimRecord = {
-								...data.claim!,
-								state: "released",
-								releasedAt: now.toISOString(),
-							}
-							data = { ...data, status: "open", claim }
-						}
-						changes.push({
-							kind: "release-stale-claim",
-							target: record.key,
-							message: `Release expired claim '${sessionId}'`,
-							status: apply ? "applied" : "planned",
-						})
-					} else if (
-						data.claim?.state === "active" &&
-						data.status !== "working" &&
-						data.status !== "delegated"
-					) {
-						unresolved.push({
-							kind: "claim-status-conflict",
-							target: record.key,
-							message: `Active claim conflicts with '${data.status}' status`,
-							action: "Release or finish the claim explicitly",
-						})
-					}
-
 					if (data.completion) {
 						executions.push({
 							target: record.key,
 							status: data.status,
 							branch: data.branch,
 							base: data.base,
-							claim: data.claim ?? null,
 							checkouts: checkoutStates,
 							pr: { url: null, state: "none" },
 						})
@@ -896,27 +1019,25 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					} else if (existing) {
 						const viewed = query.result!
 						if (viewed.exitCode === 0) {
-							const detail = parseJson<Record<string, unknown>>(
-								viewed.stdout,
-								{},
-							)
-							current = recordFromGitHubJson(detail)
-							pr = { ...detail, ...current }
-							if (
-								current.headRepository?.toLowerCase() !==
-									remoteRepository.toLowerCase() ||
-								current.headBranch !== data.branch ||
-								current.baseRepository?.toLowerCase() !==
-									current.repository.toLowerCase() ||
-								current.baseBranch !== data.base
-							) {
-								prConflict = true
-								unresolved.push({
-									kind: "pr-repository-conflict",
-									target: record.key,
-									message: `Recorded PR head does not match '${remoteRepository}:${data.branch}' or base '${current.repository}:${data.base}'`,
-									action: "Correct the declaration or recorded PR URL",
-								})
+							if (githubDetails) {
+								current = githubDetails[0]!
+								pr = current
+								if (
+									current.headRepository?.toLowerCase() !==
+										remoteRepository.toLowerCase() ||
+									current.headBranch !== data.branch ||
+									current.baseRepository?.toLowerCase() !==
+										current.repository.toLowerCase() ||
+									current.baseBranch !== data.base
+								) {
+									prConflict = true
+									unresolved.push({
+										kind: "pr-repository-conflict",
+										target: record.key,
+										message: `Recorded PR head does not match '${remoteRepository}:${data.branch}' or base '${current.repository}:${data.base}'`,
+										action: "Correct the declaration or recorded PR URL",
+									})
+								}
 							}
 						} else {
 							pr = { url: existing.url, state: "unavailable" }
@@ -929,17 +1050,14 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					} else {
 						const listed = query.result!
 						if (listed.exitCode === 0) {
-							const matches = parseJson<Record<string, unknown>[]>(
-								listed.stdout,
-								[],
-							).filter(
+							const matches = (githubDetails ?? []).filter(
 								(item) =>
-									item.headRefName === data.branch &&
-									item.baseRefName === data.base,
+									item.headBranch === data.branch &&
+									item.baseBranch === data.base,
 							)
 							if (matches.length === 1) {
-								current = recordFromGitHubJson(matches[0]!)
-								pr = { ...matches[0], ...current }
+								current = matches[0]!
+								pr = current
 								if (
 									current.headRepository?.toLowerCase() !==
 										remoteRepository.toLowerCase() ||
@@ -976,16 +1094,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 
 					if (current && JSON.stringify(current) !== JSON.stringify(existing)) {
 						if (apply) {
-							const recorded = yield* claims.reconcile(
-								{
-									taskId: record.taskId,
-									phaseId: record.phaseId,
-									revision,
-									pr: current,
-								},
-								root,
-							)
-							data = recorded.data as ExecutionData
+							const recorded = yield* mutateExecution(root, record, revision, {
+								...data,
+								pr: current,
+							})
+							data = recorded.data
 							revision = recorded.revision
 						}
 						changes.push({
@@ -1002,35 +1115,20 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						data.status !== "done" &&
 						data.status !== "dropped"
 					) {
-						if (data.claim?.state === "active") {
-							unresolved.push({
-								kind: "merged-with-active-claim",
-								target: record.key,
-								message:
-									"Pull request is merged while the execution unit remains claimed",
-								action: "Finish or release the active claim",
+						if (apply) {
+							const completed = yield* mutateExecution(root, record, revision, {
+								...data,
+								status: "done",
 							})
-						} else {
-							if (apply) {
-								const completed = yield* claims.reconcile(
-									{
-										taskId: record.taskId,
-										phaseId: record.phaseId,
-										revision,
-										status: "done",
-									},
-									root,
-								)
-								data = completed.data as ExecutionData
-								revision = completed.revision
-							}
-							changes.push({
-								kind: "mark-done",
-								target: record.key,
-								message: "Mark execution unit done from merged pull request",
-								status: apply ? "applied" : "planned",
-							})
+							data = completed.data
+							revision = completed.revision
 						}
+						changes.push({
+							kind: "mark-done",
+							target: record.key,
+							message: "Mark execution unit done from merged pull request",
+							status: apply ? "applied" : "planned",
+						})
 					}
 
 					executions.push({
@@ -1038,7 +1136,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						status: data.status,
 						branch: data.branch,
 						base: data.base,
-						claim: data.claim ?? null,
 						checkouts: checkoutStates,
 						pr,
 					})
@@ -1047,27 +1144,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 
 				for (const task of reviewRecords) {
 					if (!("review" in task.data)) continue
-					let data = task.data
-					let revision = task.revision
-					if (
-						isExpired(data.claim, now) &&
-						(data.status === "working" || data.status === "delegated")
-					) {
-						if (apply) {
-							const expired = yield* claims.expire(
-								{ taskId: task.id, revision, now },
-								root,
-							)
-							if ("review" in expired.data) data = expired.data
-							revision = expired.revision
-						}
-						changes.push({
-							kind: "release-stale-claim",
-							target: `task:${task.id}`,
-							message: `Release expired claim '${data.claim?.sessionId ?? "unknown"}'`,
-							status: apply ? "applied" : "planned",
-						})
-					}
+					const data = task.data
 					const inspection = yield* worktrees.inspect(task.id, undefined, root)
 					for (const conflict of inspection.conflicts) {
 						unresolved.push({
@@ -1091,20 +1168,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							status: apply ? "applied" : "planned",
 						})
 					}
-					const repositoryPath = join(root, "repos", data.review.repo)
-					const reviewRemote = yield* backend.remoteUrl(
-						repositoryPath,
-						"origin",
-					)
-					const source = yield* runExternal([
-						"git",
-						"ls-remote",
-						reviewRemote ?? "origin",
-						data.review.source.kind === "pull-request"
-							? data.review.source.fetchRef
-							: originRef(data.review.source.ref),
-					])
-					const sourceCommit = source.stdout.trim().split(/\s+/)[0] || null
+					const source = reviewSourceQueries.get(task.id)
+					const sourceCommit = source?.stdout.trim().split(/\s+/)[0] || null
 					if (!sourceCommit) {
 						warnings.push({
 							kind: "review-source-unavailable",
@@ -1118,7 +1183,6 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						status: data.status,
 						branch: null,
 						base: null,
-						claim: data.claim ?? null,
 						checkouts: checkout
 							? [
 									{

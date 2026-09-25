@@ -46,22 +46,13 @@ const executionNodeId = (taskId: string, phaseId?: string) =>
 		? `execution-unit:phase/${taskId}/${phaseId}`
 		: `execution-unit:task/${taskId}`
 
-const hasActiveClaim = (node: GraphNode) =>
-	node.kind !== "epic" &&
-	node.kind !== "repository" &&
-	"claim" in node.data &&
-	node.data.claim?.state === "active"
-
 const isResumableWork = (node: GraphNode) =>
 	node.kind !== "repository" &&
 	node.status === "working" &&
-	!hasActiveClaim(node) &&
 	node.readiness.blockers.every((blocker) => blocker.kind !== "validation")
 
 const isWorkTarget = (node: GraphNode) =>
-	node.kind !== "repository" &&
-	!hasActiveClaim(node) &&
-	(node.readiness.ready || isResumableWork(node))
+	node.kind !== "repository" && (node.readiness.ready || isResumableWork(node))
 
 const itemFor = (
 	node: ExecutionNode,
@@ -184,8 +175,16 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 				target: string,
 				cwd: string = process.cwd(),
 				override = false,
+				options: { readonly allowWorkingDependencies?: boolean } = {},
 			) =>
 				Effect.gen(function* () {
+					if (override && options.allowWorkingDependencies) {
+						return yield* Effect.fail(
+							new Error(
+								"Cannot combine --force with --allow-working-dependencies",
+							),
+						)
+					}
 					const graphs = yield* GraphService
 					const graph = yield* graphs.get({ cwd })
 					const node = graph.nodes.find((candidate) => candidate.id === target)
@@ -200,17 +199,19 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 							blockers: [],
 						})
 					}
-					if (hasActiveClaim(node)) {
-						return yield* new ExecutionGuardError({
-							message: `Cannot work on '${node.key}': it has an active claim. Use agency release or agency finish first.`,
-							action: "work",
-							target,
-							status: node.status!,
-							blockedBy: node.readiness!.blockedBy,
-							blockers: node.readiness!.blockers,
-						})
-					}
 					if (override) return
+					if (
+						options.allowWorkingDependencies &&
+						node.kind === "execution-unit" &&
+						node.status === "open" &&
+						!node.readiness.terminal &&
+						node.readiness.blockers.length > 0 &&
+						node.readiness.blockers.every(
+							(blocker) =>
+								blocker.kind === "dependency" && blocker.status === "working",
+						)
+					)
+						return
 					if (!node.readiness.ready && !isResumableWork(node)) {
 						const item = {
 							key: node.key,

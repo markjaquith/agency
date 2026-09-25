@@ -344,7 +344,6 @@
         "base": { "type": "string" },
         "pr": { "type": ["string", "null"] },
         "status": { "$ref": "#/$defs/status" },
-        "claim": { "$ref": "#/$defs/claim" },
         "sha256": { "type": "string" }
       }
     },
@@ -424,7 +423,6 @@
         "handoff": { "$ref": "#/$defs/taskHandoff" },
         "review": { "$ref": "#/$defs/reviewRecord" },
         "status": { "$ref": "#/$defs/status" },
-        "claim": { "$ref": "#/$defs/claim" },
         "sha256": { "type": "string" }
       }
     },
@@ -443,7 +441,6 @@
         "base": { "type": "string" },
         "pr": { "type": ["string", "null"] },
         "status": { "$ref": "#/$defs/status" },
-        "claim": { "$ref": "#/$defs/claim" },
         "sha256": { "type": "string" }
       }
     },
@@ -469,8 +466,7 @@
             "branch": { "type": "string" },
             "base": { "type": "string" },
             "pr": { "type": ["string", "null"] },
-            "status": { "$ref": "#/$defs/status" },
-            "claim": { "$ref": "#/$defs/claim" }
+            "status": { "$ref": "#/$defs/status" }
           }
         },
         {
@@ -485,8 +481,7 @@
             "purpose": { "$ref": "#/$defs/taskPurpose" },
             "handoff": { "$ref": "#/$defs/taskHandoff" },
             "review": { "$ref": "#/$defs/reviewRecord" },
-            "status": { "$ref": "#/$defs/status" },
-            "claim": { "$ref": "#/$defs/claim" }
+            "status": { "$ref": "#/$defs/status" }
           }
         }
       ]
@@ -532,30 +527,6 @@
           ]
         },
         "sourceRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
-      }
-    },
-    "claim": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "claimant",
-        "agent",
-        "sessionId",
-        "startedAt",
-        "targetRevision",
-        "state"
-      ],
-      "properties": {
-        "claimant": { "type": "string", "minLength": 1 },
-        "agent": { "type": "string", "minLength": 1 },
-        "sessionId": { "type": "string", "minLength": 1 },
-        "startedAt": { "type": "string", "format": "date-time" },
-        "targetRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "expiresAt": { "type": "string", "format": "date-time" },
-        "state": { "enum": ["active", "released", "finished"] },
-        "releasedAt": { "type": "string", "format": "date-time" },
-        "finishedAt": { "type": "string", "format": "date-time" },
-        "outcome": { "enum": ["done", "dropped"] }
       }
     },
     "repositoryData": {

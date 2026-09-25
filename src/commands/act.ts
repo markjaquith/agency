@@ -1,311 +1,253 @@
+import { Schema } from "@effect/schema"
 import { Effect } from "effect"
-import { isAbsolute, relative, resolve, sep } from "node:path"
-import type { GraphNode } from "../graph-schema"
-import { isTerminalStatus } from "../readiness"
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
+import { ActDiscovery } from "../act-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
+import { WorktreeService } from "../services/WorktreeService"
 import type { BaseCommandOptions } from "../utils/command"
-import { choose, type Choice } from "../utils/chooser"
+import type { Choice } from "../utils/chooser"
 import { createLoggers } from "../utils/effect"
 import { macchiato } from "../utils/theme"
-import { archive as archiveCommand } from "./archive"
-import { phase as phaseCommand } from "./phase"
-import { prCreate as createPullRequest } from "./pr"
-import { task as taskCommand } from "./task"
+import { workKindStyle, workStatusStyle } from "../workbase/work-target"
+import {
+	actionGroups,
+	actActions,
+	actionOutput,
+	isActActionId,
+	type ActAction,
+	type ActEntity,
+	type ActCheckoutState,
+} from "./act-actions"
+import {
+	ActCancelled,
+	actionPrompts,
+	wizardInputs,
+	actTabs,
+	defaultInteraction,
+	openActSession,
+	type ActInteraction,
+} from "./act-prompts"
 import { work as startWork, type StartWork } from "./work"
 
-type EntityNode = Extract<
-	GraphNode,
-	{ readonly kind: "epic" | "task" | "phase" }
->
-
-type ActAction = "work" | "pr" | "reopen" | "drop" | "archive"
-
-export interface ActInteraction {
-	readonly select: <T>(
-		prompt: string,
-		choices: readonly Choice<T>[],
-		command?: readonly string[],
-	) => Effect.Effect<T | null, Error>
-}
+export type { ActInteraction } from "./act-prompts"
 
 interface ActOptions extends BaseCommandOptions {
+	readonly action?: string
 	readonly directory?: string
 	readonly auto?: boolean
 	readonly draft?: boolean
 	readonly dryRun?: boolean
-	readonly json?: boolean
 	readonly epicId?: string
 	readonly taskId?: string
 	readonly phaseId?: string
-}
-
-const defaultInteraction: ActInteraction = {
-	select: (prompt, choices, command) => choose(prompt, choices, command),
-}
-
-const entityKey = (node: EntityNode) => `${node.kind}:${node.key}`
-
-const entityDescription = (node: EntityNode) =>
-	"description" in node.data && node.data.description
-		? ` - ${node.data.description}`
-		: ""
-
-const orderedEntities = (
-	nodes: readonly EntityNode[],
-	edges: readonly {
-		readonly kind: string
-		readonly from: string
-		readonly to: string
-	}[],
-) => {
-	const byId = new Map(nodes.map((node) => [node.id, node]))
-	const children = new Map<string, EntityNode[]>()
-	const owned = new Set<string>()
-	for (const edge of edges) {
-		if (edge.kind !== "owns") continue
-		const parent = byId.get(edge.from)
-		const child = byId.get(edge.to)
-		if (!parent || !child) continue
-		children.set(edge.from, [...(children.get(edge.from) ?? []), child])
-		owned.add(child.id)
-	}
-
-	const ordered: { readonly node: EntityNode; readonly depth: number }[] = []
-	const append = (node: EntityNode, depth: number) => {
-		ordered.push({ node, depth })
-		for (const child of children.get(node.id) ?? []) append(child, depth + 1)
-	}
-	for (const node of nodes) {
-		if (!owned.has(node.id)) append(node, 0)
-	}
-	return ordered
+	readonly exitOnEscape?: boolean
 }
 
 const entityChoices = (
-	nodes: readonly EntityNode[],
-	edges: readonly {
-		readonly kind: string
-		readonly from: string
-		readonly to: string
-	}[],
-): readonly Choice<string>[] =>
-	orderedEntities(nodes, edges).map(({ node, depth }, index) => ({
-		key: String(index),
-		label: `[${node.status}] ${node.kind} ${node.key}${entityDescription(node)}`,
-		depth,
-		segments: [
-			{ text: `[${node.status}] `, color: macchiato.overlay1 },
-			{ text: `${node.kind} `, color: macchiato.sapphire },
-			{ text: node.key },
-			...(entityDescription(node)
-				? [{ text: entityDescription(node), color: macchiato.overlay0 }]
-				: []),
-		],
-		value: entityKey(node),
-	}))
-
-const activeClaim = (node: EntityNode) =>
-	"claim" in node.data && node.data.claim?.state === "active"
-
-const executionNode = (
-	node: EntityNode,
-	executions: ReadonlyMap<
-		string,
-		Extract<GraphNode, { readonly kind: "execution-unit" }>
-	>,
-): Extract<GraphNode, { readonly kind: "execution-unit" }> | undefined => {
-	if (node.kind === "epic") return undefined
-	if (node.kind === "task" && "phases" in node.data) return undefined
-	return executions.get(node.id)
-}
-
-const canWork = (
-	node: EntityNode,
-	executions: Parameters<typeof executionNode>[1],
-) => {
-	if (node.kind === "epic" || (node.kind === "task" && "phases" in node.data)) {
-		return node.readiness.ready
-	}
-	const execution = executionNode(node, executions)
-	return Boolean(
-		execution &&
-		!activeClaim(node) &&
-		(execution.readiness.ready ||
-			(execution.status === "working" &&
-				execution.readiness.blockers.every(
-					(blocker) => blocker.kind !== "validation",
-				))),
+	nodes: readonly ActEntity[],
+	twoRows = false,
+): Choice<string>[] => {
+	const name = (node: ActEntity) =>
+		node.kind === "phase"
+			? node.key.slice(node.key.lastIndexOf("/") + 1)
+			: node.key
+	const nameWidth = Math.min(
+		32,
+		Math.max(0, ...nodes.map((node) => name(node).length)),
 	)
-}
-
-const canCreatePr = (
-	node: EntityNode,
-	executions: Parameters<typeof executionNode>[1],
-) => {
-	const execution = executionNode(node, executions)
-	return Boolean(
-		execution &&
-		!execution.readiness.terminal &&
-		!("pr" in execution.data && execution.data.pr) &&
-		!execution.readiness.blockers.some(
-			(blocker) =>
-				blocker.kind === "dependency" || blocker.kind === "validation",
-		),
-	)
-}
-
-const actionChoices = (
-	node: EntityNode,
-	executions: Parameters<typeof executionNode>[1],
-): readonly Choice<ActAction>[] => {
-	const choices: Choice<ActAction>[] = []
-	const execution = executionNode(node, executions)
-	if (canWork(node, executions)) {
-		choices.push({ key: "work", label: "Work on this item", value: "work" })
-	}
-	if (canCreatePr(node, executions)) {
-		choices.push({ key: "pr", label: "Create pull request", value: "pr" })
-	}
-	if (execution && isTerminalStatus(node.status) && !activeClaim(node)) {
-		choices.push({ key: "reopen", label: "Reopen", value: "reopen" })
-	}
-	if (execution && !isTerminalStatus(node.status) && !activeClaim(node)) {
-		choices.push({ key: "drop", label: "Drop", value: "drop" })
-	}
-	if (node.readiness.terminal) {
-		choices.push({ key: "archive", label: "Archive", value: "archive" })
-	}
-	return choices
-}
-
-const entityParts = (node: EntityNode) => {
-	if (node.kind !== "phase") return { taskId: node.key }
-	const separator = node.key.indexOf("/")
-	return {
-		taskId: node.key.slice(0, separator),
-		phaseId: node.key.slice(separator + 1),
-	}
-}
-
-const actionCommand = (
-	node: EntityNode,
-	action: ActAction,
-	options: Pick<ActOptions, "auto" | "draft">,
-): readonly string[] => {
-	const { taskId, phaseId } = entityParts(node)
-	switch (action) {
-		case "work":
-			return [
-				"agency",
-				"work",
-				...(node.kind === "epic"
-					? ["--epic", node.key]
-					: ["--task", taskId, ...(phaseId ? ["--phase", phaseId] : [])]),
-				...(options.auto ? ["--auto"] : []),
+	const shorten = (text: string, width: number) =>
+		text.length > width ? `${text.slice(0, width - 1)}…` : text
+	return nodes
+		.toSorted((a, b) => a.key.localeCompare(b.key))
+		.map((node) => {
+			const description = (
+				"description" in node.data ? node.data.description : ""
+			)
+				?.replace(/\s+/g, " ")
+				.trim()
+			const parent =
+				node.kind === "phase"
+					? node.key.slice(0, node.key.lastIndexOf("/"))
+					: undefined
+			const blocked = node.readiness.blockers.some(
+				(blocker) =>
+					blocker.kind === "dependency" || blocker.kind === "validation",
+			)
+			const state = blocked
+				? { icon: "󰀦", color: macchiato.yellow }
+				: workStatusStyle[node.status]
+			const segments = [
+				{
+					text: `${workKindStyle[node.kind].icon}  `,
+					color: workKindStyle[node.kind].color,
+				},
+				{
+					text: shorten(name(node), nameWidth).padEnd(nameWidth),
+					color: macchiato.text,
+				},
+				{
+					text: `  ${state.icon}  ${(blocked ? "blocked" : node.status).padEnd(9)}`,
+					color: state.color,
+				},
+				...(parent
+					? [{ text: `  in ${shorten(parent, 24)}`, color: macchiato.subtext0 }]
+					: []),
+				...(node.repositories.length
+					? [
+							{
+								text: `    ${node.repositories.join(", ")}`,
+								color: macchiato.overlay1,
+							},
+						]
+					: []),
+				...(description
+					? [{ text: `  — ${description}`, color: macchiato.overlay0 }]
+					: []),
 			]
-		case "pr":
-			return [
-				"agency",
-				"pr",
-				"create",
-				taskId,
-				...(phaseId ? [phaseId] : []),
-				...(options.draft ? ["--draft"] : []),
-			]
-		case "reopen":
-		case "drop": {
-			const status = action === "reopen" ? "open" : "dropped"
-			return phaseId
-				? ["agency", "phase", "status", taskId, phaseId, status]
-				: ["agency", "task", "status", taskId, status]
-		}
-		case "archive":
-			return node.kind === "phase"
-				? ["agency", "archive", "phase", taskId, phaseId!]
-				: ["agency", "archive", node.kind, node.key]
-	}
+			return {
+				key: node.id,
+				value: node.id,
+				segments,
+				...(twoRows
+					? {
+							details: {
+								title: [
+									{
+										text: `${workKindStyle[node.kind].icon}  `,
+										color: workKindStyle[node.kind].color,
+									},
+									{ text: node.key, color: macchiato.text },
+								],
+								metadata: [
+									{
+										text: `  ${"repo" in node.data ? node.data.repo : (node.repositories[0] ?? "—")}  `,
+										color: macchiato.overlay1,
+									},
+									{
+										text: `${state.icon}  ${blocked ? "blocked" : node.status}`,
+										color: state.color,
+									},
+								],
+								description: description ?? "",
+							},
+						}
+					: {}),
+				label: segments.map((segment) => segment.text).join(""),
+				plainLabel: `[${node.status}] ${node.kind} ${node.key}${blocked ? " blocked" : ""} ${node.repositories.join(" ")}${description ? ` — ${description}` : ""}`,
+			}
+		})
 }
 
-const shellCommand = (command: readonly string[]) =>
-	command
-		.map((argument) =>
-			/^[A-Za-z0-9_./:=+@%-]+$/.test(argument)
-				? argument
-				: `'${argument.replaceAll("'", `'\\''`)}'`,
-		)
-		.join(" ")
-
-const targetOutput = (
-	node: EntityNode,
-	executions: Parameters<typeof executionNode>[1],
-	options: Pick<ActOptions, "auto" | "draft">,
-) => ({
-	kind: node.kind,
-	id: node.id,
-	key: node.key,
-	status: node.status,
-	readiness: node.readiness,
-	revision: node.data.sha256,
-	actions: actionChoices(node, executions).map((choice) => ({
-		id: choice.value,
-		label: choice.label,
-		command: actionCommand(node, choice.value, options),
-	})),
-})
-
-const executionNodes = (nodes: readonly GraphNode[]) => {
-	const executions = new Map<
-		string,
-		Extract<GraphNode, { readonly kind: "execution-unit" }>
-	>()
-	for (const node of nodes) {
-		if (node.kind !== "execution-unit") continue
-		const key =
-			"phaseId" in node.data
-				? `phase:${node.data.taskId}/${node.data.phaseId}`
-				: `task:${node.data.taskId}`
-		executions.set(key, node)
-	}
-	return executions
-}
-
-const selectedEntityKey = (options: ActOptions) =>
-	options.epicId
-		? `epic:${options.epicId}`
-		: options.phaseId
-			? `phase:${options.taskId}/${options.phaseId}`
-			: options.taskId
-				? `task:${options.taskId}`
-				: undefined
-
-const pathEntityKey = (
-	directory: string | undefined,
-	isDirectory: boolean,
-	root: string,
-	startPath: string,
-) => {
-	if (!directory) return undefined
-	if (!isDirectory) return `task:${directory}`
-	const path = relative(root, startPath)
+const pathEntityKey = (root: string, path: string) => {
+	const local = relative(root, path)
 	const parts =
-		!path || isAbsolute(path) || path.startsWith(`..${sep}`)
+		!local || isAbsolute(local) || local.startsWith(`..${sep}`)
 			? []
-			: path.split(sep)
+			: local.split(sep)
 	if (parts[0] === "epics" && parts[1]) return `epic:${parts[1]}`
 	if (parts[0] !== "tasks" || !parts[1]) return undefined
 	return parts[2] === "phases" && parts[3]
 		? `phase:${parts[1]}/${parts[3]}`
 		: `task:${parts[1]}`
 }
+const shellCommand = (argv: readonly string[]) =>
+	argv
+		.map((arg) =>
+			/^[A-Za-z0-9_./:=+@%-]+$/.test(arg)
+				? arg
+				: `'${arg.replaceAll("'", `'\\''`)}'`,
+		)
+		.join(" ")
+const creationDefaults = (config: {
+	readonly branchNameCommand?: readonly string[]
+}) => ({
+	branch: config.branchNameCommand
+		? {
+				configured: true as const,
+				guidance:
+					"Omit --branch to use the workbase branchNameCommand; pass it only for an explicit override.",
+			}
+		: {
+				configured: false as const,
+				task: "task/<id>",
+				phase: "task/<task-id>-<phase-id>",
+			},
+})
+const available = (action: ActAction) => !action.blockedReason
+const checkoutState = (inspection: {
+	readonly checkouts: readonly {
+		readonly exists: boolean
+		readonly path: string
+		readonly registeredPath: string | null
+		readonly dirty: boolean | null
+	}[]
+	readonly conflicts: readonly {
+		readonly kind: string
+		readonly message: string
+	}[]
+}): ActCheckoutState => ({
+	paths: inspection.checkouts.flatMap((checkout) =>
+		checkout.exists
+			? [checkout.path]
+			: checkout.registeredPath
+				? [checkout.registeredPath]
+				: [],
+	),
+	conflicts: inspection.conflicts
+		.filter((conflict) => conflict.kind !== "stale-registration")
+		.map((conflict) => conflict.message),
+	dirty: inspection.checkouts.some(
+		(checkout) => checkout.exists && checkout.dirty !== false,
+	),
+})
+const entitySummary = (node: ActEntity) => ({
+	kind: node.kind,
+	id: node.id,
+	key: node.key,
+	status: node.status,
+	description: "description" in node.data ? node.data.description : undefined,
+	repo: "repo" in node.data ? node.data.repo : undefined,
+	repositories: node.repositories,
+	readiness: node.readiness,
+	revision: node.data.sha256,
+})
 
-const sameActions = (
-	left: readonly Choice<ActAction>[],
-	right: readonly Choice<ActAction>[],
-) =>
-	left.map((choice) => choice.value).join("\0") ===
-	right.map((choice) => choice.value).join("\0")
+const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
+	actions.map(({ id, label, description, icon, color, blockedReason }) => {
+		const availability = blockedReason ? ` — unavailable: ${blockedReason}` : ""
+		return {
+			key: id,
+			value: id,
+			label: `${icon}  ${label} — ${description}${availability}`,
+			plainLabel: `${label} — ${description}${availability}`,
+			segments: [
+				{ text: `${icon}  `, color },
+				{ text: label },
+				{ text: ` — ${description}`, color: macchiato.overlay0 },
+				...(blockedReason
+					? [
+							{
+								text: availability,
+								color: macchiato.yellow,
+							},
+						]
+					: []),
+			],
+		}
+	})
+
+interface ActState {
+	session?: Effect.Effect.Success<ReturnType<typeof openActSession>>
+	recap: string[]
+	root?: string
+	view: "home" | "item-menu" | "goal-menu" | "flow"
+	native: boolean
+	notice: string
+	item?: string
+	goal?: string
+}
 
 export const act = (
 	options: ActOptions = {},
@@ -313,228 +255,549 @@ export const act = (
 	work: StartWork = startWork,
 ) =>
 	Effect.gen(function* () {
-		if (!options.json && options.inputAllowed === false) {
+		const state: ActState = {
+			recap: [],
+			view: "home",
+			native: false,
+			notice: "",
+		}
+		let nextOptions = options
+		const { log } = createLoggers(options)
+		yield* Effect.gen(function* () {
+			while (true) {
+				state.view = "home"
+				const keepGoing = yield* actStep(
+					nextOptions,
+					interaction,
+					work,
+					state,
+				).pipe(
+					Effect.tap(() =>
+						Effect.sync(() => {
+							state.goal = undefined
+							state.item = undefined
+						}),
+					),
+					Effect.as(true),
+					Effect.catchAll((error) => {
+						if (error instanceof ActCancelled) {
+							if (state.view === "item-menu") state.item = undefined
+							if (state.view === "goal-menu") state.goal = undefined
+							return Effect.succeed(
+								state.view !== "home" || options.exitOnEscape === false,
+							)
+						}
+						if (!state.native || state.view === "home")
+							return Effect.fail(error)
+						state.goal = undefined
+						state.notice = `󰅖  ${error instanceof Error ? error.message : String(error)}`
+						return Effect.succeed(true)
+					}),
+				)
+				if (
+					(!state.native && options.exitOnEscape !== false) ||
+					!keepGoing ||
+					state.session?.quitRequested
+				)
+					break
+				state.session?.resetCancellation()
+				if (state.session?.takeNavigation()) {
+					state.item = undefined
+					state.goal = undefined
+				}
+				state.session?.notice(state.notice)
+				nextOptions = {
+					...options,
+					cwd: state.root,
+					directory: undefined,
+					epicId: state.item?.startsWith("epic:")
+						? state.item.slice(5)
+						: undefined,
+					taskId: state.item?.startsWith("phase:")
+						? state.item.slice(6).split("/")[0]
+						: state.item?.startsWith("task:")
+							? state.item.slice(5)
+							: undefined,
+					phaseId: state.item?.startsWith("phase:")
+						? state.item.slice(6).split("/")[1]
+						: undefined,
+					action: undefined,
+				}
+			}
+		}).pipe(
+			Effect.scoped,
+			Effect.ensuring(
+				Effect.sync(() => {
+					if (state.recap.length)
+						log(
+							`\n  Agency\n\n${state.recap.map((line) => `  ${line}`).join("\n")}\n`,
+						)
+				}),
+			),
+		)
+	})
+
+const actStep = (
+	options: ActOptions,
+	interaction: ActInteraction,
+	work: StartWork,
+	state: ActState,
+) =>
+	Effect.gen(function* () {
+		if (!options.json && options.inputAllowed === false)
 			return yield* Effect.fail(
 				new Error(
 					"agency act requires interactive input; use --json to list actions for automation",
 				),
 			)
-		}
-		const cwd = options.cwd ?? process.cwd()
 		const fs = yield* FileSystemService
 		const workbase = yield* WorkbaseService
 		const graphs = yield* GraphService
+		const worktrees = yield* WorktreeService
 		const { log } = createLoggers(options)
-		const directoryPath = options.directory
-			? resolve(cwd, options.directory)
-			: undefined
-		const isDirectory = directoryPath
-			? yield* fs.isDirectory(directoryPath)
-			: false
-		const startPath = isDirectory && directoryPath ? directoryPath : cwd
-		const { root, config } = yield* workbase.loadConfig(startPath)
+		const cwd = options.cwd ?? process.cwd()
+		const path = resolve(cwd, options.directory ?? ".")
+		const isDirectory = yield* fs.isDirectory(path)
+		const isPath =
+			isDirectory || Boolean(options.directory && (yield* fs.exists(path)))
+		const { root, config } = yield* workbase.loadConfig(
+			isDirectory ? path : isPath ? dirname(path) : cwd,
+		)
+		state.root = root
 		const graph = yield* graphs.get({
 			cwd: root,
 			loadedConfig: { root, config },
+			include: ["workspace"],
 		})
-		const executions = executionNodes(graph.nodes)
+		const checkoutStates = new Map<string, ActCheckoutState>()
+		for (const node of graph.nodes) {
+			if (node.kind !== "execution-unit" || !node.workspace?.materialized)
+				continue
+			const id =
+				"phaseId" in node.data
+					? `phase:${node.data.taskId}/${node.data.phaseId}`
+					: `task:${node.data.taskId}`
+			checkoutStates.set(id, {
+				paths: [node.workspace.checkoutPath],
+				conflicts: [],
+				dirty: false,
+			})
+		}
+		if (options.json && checkoutStates.size > 0) {
+			checkoutStates.clear()
+			for (const inspection of yield* worktrees.list(root, {
+				materializedOnly: true,
+			})) {
+				const id =
+					inspection.owner.kind === "phase"
+						? `phase:${inspection.owner.taskId}/${inspection.owner.phaseId}`
+						: `task:${inspection.owner.taskId}`
+				checkoutStates.set(id, checkoutState(inspection))
+			}
+		}
 		const nodes = graph.nodes.filter(
-			(node): node is EntityNode =>
+			(node): node is ActEntity =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
 		)
-		if (nodes.length === 0) {
-			if (options.json) {
-				log(JSON.stringify({ targets: [] }, null, 2))
-				return
-			}
-			return yield* Effect.fail(
-				new Error("No active work items found in this workbase"),
-			)
+		const recap = state.recap
+		const session =
+			state.session ??
+			(!options.json &&
+			interaction === defaultInteraction &&
+			!config.chooserCommand &&
+			process.stdin.isTTY &&
+			process.stdout.isTTY
+				? yield* Effect.acquireRelease(openActSession(), (session) =>
+						session.close(),
+					)
+				: undefined)
+		state.session = session
+		state.native = Boolean(session)
+		session?.notice(state.notice)
+		const ui = session?.interaction ?? interaction
+		const nativeOptions = {
+			cwd: root,
+			auto: options.auto,
+			draft: options.draft,
+			inputAllowed: options.inputAllowed,
+			silent: session ? true : options.silent,
+			verbose: options.verbose,
+			checkoutStates,
 		}
-
-		const requestedKey =
-			selectedEntityKey(options) ??
-			pathEntityKey(options.directory, isDirectory, root, startPath)
-		const matchingNodes = requestedKey
-			? nodes.filter((node) => entityKey(node) === requestedKey)
-			: nodes
-		if (requestedKey && matchingNodes.length === 0) {
+		const runWork: StartWork = session
+			? (args) => work({ ...args, silent: options.silent })
+			: work
+		const globals = actActions(graph.nodes, nativeOptions, runWork)
+		const catalog = new Map(
+			nodes.map((node) => [
+				node.id,
+				actActions(graph.nodes, nativeOptions, runWork, node),
+			]),
+		)
+		let selectedKey = options.epicId
+			? `epic:${options.epicId}`
+			: options.phaseId
+				? `phase:${options.taskId}/${options.phaseId}`
+				: options.taskId
+					? `task:${options.taskId}`
+					: options.directory
+						? isPath
+							? pathEntityKey(root, path)
+							: `task:${options.directory}`
+						: pathEntityKey(root, path)
+		let actionId = options.action
+		if (session && options.directory && isPath && !selectedKey && !actionId)
+			session.activateTab("workbase")
+		state.view = !selectedKey && !actionId ? "home" : "flow"
+		if (actionId && !isActActionId(actionId))
 			return yield* Effect.fail(
-				new Error(`Selected work item '${requestedKey}' was not found`),
+				new Error(
+					`Unknown action '${actionId}'; use agency act --json to discover actions`,
+				),
 			)
+		const globalAction = globals.find((action) => action.id === actionId)
+		if (selectedKey && globalAction)
+			return yield* Effect.fail(
+				new Error("Workbase actions do not accept an item selector"),
+			)
+		if (
+			selectedKey &&
+			!catalog.has(selectedKey) &&
+			state.item === selectedKey
+		) {
+			state.item = undefined
+			selectedKey = undefined
+			state.view = "home"
 		}
+		if (selectedKey && !catalog.has(selectedKey))
+			return yield* Effect.fail(
+				new Error(`Selected work item '${selectedKey}' was not found`),
+			)
 		if (options.json) {
+			const matches = (action: ActAction) => !actionId || action.id === actionId
 			log(
 				JSON.stringify(
-					{
-						targets: matchingNodes.map((node) =>
-							targetOutput(node, executions, options),
-						),
-					},
+					yield* Schema.decodeUnknown(ActDiscovery)({
+						creationDefaults: creationDefaults(config),
+						workbase: {
+							root,
+							repositories: graph.nodes
+								.filter((node) => node.kind === "repository")
+								.map((node) => node.key),
+							actions: globals
+								.filter(matches)
+								.map((action) => actionOutput(action, options.auto)),
+						},
+						currentWork: nodes
+							.filter((node) => node.status === "working")
+							.map(entitySummary),
+						targets: globalAction
+							? []
+							: nodes
+									.filter((node) => !selectedKey || node.id === selectedKey)
+									.map((node) => {
+										const actions = catalog.get(node.id)!.filter(matches)
+										return {
+											...entitySummary(node),
+											actions: actions
+												.filter(available)
+												.map((action) => actionOutput(action, options.auto)),
+											blockedActions: actions
+												.filter((action) => !available(action))
+												.map((action) => actionOutput(action, options.auto)),
+										}
+									}),
+					}),
 					null,
 					2,
 				),
 			)
 			return
 		}
-
-		const selectableNodes = nodes.filter(
-			(node) => actionChoices(node, executions).length > 0,
-		)
-		if (!requestedKey && selectableNodes.length === 0) {
-			return yield* Effect.fail(
-				new Error(
-					"No work items with available actions found in this workbase",
-				),
-			)
-		}
-		const selectedKey =
-			requestedKey ??
-			(yield* interaction.select(
-				"Act on",
-				entityChoices(selectableNodes, graph.edges),
-				config.chooserCommand,
-			))
-		if (selectedKey === null) return
-		const selected = nodes.find((node) => entityKey(node) === selectedKey)
-		if (!selected) {
-			return yield* Effect.fail(
-				new Error("Selected work item is no longer available"),
-			)
-		}
-		const offeredActions = actionChoices(selected, executions)
-		if (offeredActions.length === 0) {
-			return yield* Effect.fail(
-				new Error(
-					`No actions are currently available for ${selected.kind} '${selected.key}'`,
-				),
-			)
-		}
-		const action = yield* interaction.select(
-			`Act on ${selected.kind} ${selected.key}`,
-			offeredActions,
-			config.chooserCommand,
-		)
-		if (action === null) return
-
-		const refreshed = yield* graphs.get({ cwd })
-		const refreshedExecutions = executionNodes(refreshed.nodes)
-		const current = refreshed.nodes.find(
-			(node): node is EntityNode =>
-				(node.kind === "epic" ||
-					node.kind === "task" ||
-					node.kind === "phase") &&
-				entityKey(node) === selectedKey,
-		)
-		if (!current) {
-			return yield* Effect.fail(
-				new Error(
-					"Selected work item changed or was removed; run agency act again",
-				),
-			)
+		const select = <T>(prompt: string, choices: readonly Choice<T>[]) =>
+			Effect.gen(function* () {
+				const answer = yield* ui.select(prompt, choices, config.chooserCommand)
+				if (answer === null) return yield* Effect.fail(new ActCancelled())
+				return answer
+			})
+		if (!selectedKey && !actionId) {
+			const goals = actionGroups.map(({ id, label, icon }) => ({
+				key: id,
+				label: `${icon}  ${label}`,
+				plainLabel: label,
+				value: id,
+				segments: [
+					{ text: `${icon}  `, color: macchiato.overlay1 },
+					{ text: label },
+				],
+			}))
+			let goal: string | undefined = state.goal
+			if (goal) {
+				state.view = "flow"
+			} else if (ui.tabs) {
+				type HomeChoice = { kind: "goal" | "item"; id: string }
+				const chosen = yield* ui.tabs<HomeChoice>([
+					{
+						...actTabs[0],
+						emptyLabel: "No tasks or phases yet",
+						choices: entityChoices(
+							nodes.filter(
+								(node) => node.kind === "task" || node.kind === "phase",
+							),
+							true,
+						).map((choice) => ({
+							...choice,
+							value: { kind: "item", id: choice.value },
+						})),
+					},
+					{
+						...actTabs[1],
+						choices: goals
+							.filter(
+								(choice) =>
+									!["browse", "split", "handoff"].includes(choice.value),
+							)
+							.map((choice) => ({
+								...choice,
+								value: { kind: "goal", id: choice.value },
+							})),
+					},
+				])
+				if (!chosen) return yield* Effect.fail(new ActCancelled())
+				state.view = "flow"
+				if (chosen.kind === "item") selectedKey = chosen.id
+				else goal = chosen.id
+			} else {
+				goal = yield* select("Choose an action", goals)
+				state.view = "flow"
+			}
+			if (goal === "browse") {
+				if (!nodes.length)
+					return yield* Effect.fail(
+						new Error("No work items yet; choose Create a task first"),
+					)
+				selectedKey = yield* select("Choose an item", entityChoices(nodes))
+			} else if (goal) {
+				const group = actionGroups.find((group) => group.id === goal)!
+				const all = [...globals, ...Array.from(catalog.values()).flat()]
+				const choices = group.actions.flatMap((id) => {
+					const action = all.find((action) => action.id === id)
+					return action ? [action] : []
+				})
+				if (!choices.length)
+					return yield* Effect.fail(
+						new Error("No work items yet; choose Create a task first"),
+					)
+				if (session && choices.length > 1) state.goal = goal
+				state.view = "goal-menu"
+				actionId =
+					choices.length === 1
+						? choices[0]!.id
+						: yield* select(group.label, actionChoices(choices))
+				state.view = "flow"
+			}
 		}
 		if (
-			current.data.sha256 !== selected.data.sha256 ||
-			!sameActions(offeredActions, actionChoices(current, refreshedExecutions))
+			!selectedKey &&
+			actionId &&
+			!globals.some((action) => action.id === actionId)
 		) {
-			return yield* Effect.fail(
-				new Error("Selected work item changed; run agency act again"),
+			const eligible = nodes.filter((node) =>
+				catalog
+					.get(node.id)!
+					.some((action) => action.id === actionId && available(action)),
 			)
+			if (!eligible.length)
+				return yield* Effect.fail(
+					new Error(
+						`No eligible items for '${actionId}'; use agency act --action ${actionId} --json for blocked reasons`,
+					),
+				)
+			selectedKey = yield* select("Choose an item", entityChoices(eligible))
 		}
-		const { taskId, phaseId } = entityParts(current)
+		const selected = nodes.find((node) => node.id === selectedKey)
+		if (selected && session) {
+			state.goal = undefined
+			state.item = selected.id
+			session.activateTab("workstream")
+		}
+		let actions = selected ? catalog.get(selected.id)! : globals
+		if (!actionId) {
+			state.view = "item-menu"
+			const menuActions = actions.filter(
+				(action) =>
+					available(action) ||
+					(action.id === "worktree-remove" &&
+						action.blockedReason !== "Local checkout is not materialized"),
+			)
+			actionId = yield* select(
+				`Act on ${selected!.kind} ${selected!.key}`,
+				actionChoices(menuActions),
+			)
+			state.view = "flow"
+		}
+		if (
+			selected &&
+			selected.kind !== "epic" &&
+			actionId === "worktree-remove" &&
+			!options.json
+		) {
+			const inspection = yield* worktrees.inspect(
+				selected.kind === "phase"
+					? selected.key.slice(0, selected.key.lastIndexOf("/"))
+					: selected.key,
+				selected.kind === "phase"
+					? selected.key.slice(selected.key.lastIndexOf("/") + 1)
+					: undefined,
+				root,
+			)
+			checkoutStates.set(selected.id, checkoutState(inspection))
+			actions = actActions(graph.nodes, nativeOptions, runWork, selected)
+		}
+		const action = actions.find((action) => action.id === actionId)
+		if (!action || action.blockedReason)
+			return yield* Effect.fail(
+				new Error(
+					`Action '${actionId}' is unavailable: ${action?.blockedReason ?? "not found"}`,
+				),
+			)
+		const prepare = (interaction: ActInteraction) =>
+			action.prepare(
+				actionPrompts(
+					interaction,
+					graph.nodes
+						.filter((node) => node.kind === "repository")
+						.map((node) => node.key),
+					nodes.map((node) => node.key),
+					config.chooserCommand,
+				),
+			)
+		const plan = yield* session
+			? wizardInputs(
+					ui,
+					prepare,
+					() => !session.quitRequested && !session.navigationRequested,
+					(message) => session.notice(message ? `󰀦  ${message}` : state.notice),
+				)
+			: prepare(ui)
+		if (selected) {
+			const fresh = yield* graphs.get({ cwd: root })
+			const current = fresh.nodes.find(
+				(node): node is ActEntity =>
+					node.id === selected.id &&
+					(node.kind === "task" ||
+						node.kind === "phase" ||
+						node.kind === "epic"),
+			)
+			if (
+				!current ||
+				current.data.sha256 !== selected.data.sha256 ||
+				!actActions(fresh.nodes, nativeOptions, work, current).some(
+					(candidate) => candidate.id === actionId && available(candidate),
+				)
+			)
+				return yield* Effect.fail(
+					new Error("Selected work item changed; run agency act again"),
+				)
+		}
 		if (options.dryRun) {
-			log(shellCommand(actionCommand(current, action, options)))
+			for (const command of [plan.command, ...(plan.followUpCommands ?? [])])
+				if (session) recap.push(`  Preview: ${shellCommand(command)}`)
+				else log(shellCommand(command))
+			state.notice = `  Preview: ${shellCommand(plan.command)}`
 			return
 		}
-
-		switch (action) {
-			case "work":
-				yield* work({
-					...(current.kind === "epic"
-						? { epicId: current.key }
-						: { taskId, ...(phaseId ? { phaseId } : {}) }),
-					auto: options.auto,
-					cwd,
-					inputAllowed: options.inputAllowed,
-					silent: options.silent,
-					verbose: options.verbose,
-				})
-				return
-			case "pr":
-				yield* createPullRequest({
-					taskId,
-					phaseId,
-					draft: options.draft,
-					cwd,
-					silent: options.silent,
-					verbose: options.verbose,
-				})
-				return
-			case "reopen":
-				if (phaseId) {
-					yield* phaseCommand({
-						subcommand: "status",
-						args: [taskId, phaseId, "open"],
-						cwd,
-						silent: options.silent,
-						verbose: options.verbose,
-					})
-				} else {
-					yield* taskCommand({
-						subcommand: "status",
-						args: [taskId, "open"],
-						cwd,
-						silent: options.silent,
-						verbose: options.verbose,
-					})
+		session?.show(`󰔟  ${action.label}…`)
+		// An interactive worker must receive a restored terminal.
+		if (action.id === "work" && session) {
+			yield* session.close()
+			state.session = undefined
+		}
+		yield* (
+			session && action.id !== "work"
+				? Effect.raceFirst(plan.run, session.cancelled)
+				: plan.run
+		).pipe(
+			Effect.tapError((error) =>
+				Effect.sync(() => {
+					if (session) {
+						recap.push(
+							`󰅖  ${action.label} ${error instanceof ActCancelled ? "interrupted; check item state before retrying" : "failed"}${selected ? ` — ${selected.key}` : ""}`,
+						)
+						state.notice = recap[recap.length - 1]!
+					}
+				}),
+			),
+		)
+		if (session) {
+			recap.push(`󰄬  ${action.label}${selected ? ` — ${selected.key}` : ""}`)
+			state.notice = recap[recap.length - 1]!
+			if (plan.next) {
+				recap.push(
+					`Item: ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`,
+				)
+				state.notice += ` — ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`
+			}
+			recap.push(`Command: ${shellCommand(plan.command)}`)
+			if (action.id === "current-work") {
+				const current = nodes.filter((node) => node.status === "working")
+				state.notice = current.length
+					? `  Working: ${current.map((node) => node.key).join(", ")}`
+					: "  No work is in progress."
+				recap.push(
+					...(current.length
+						? current.map(
+								(node) =>
+									`${node.kind} ${node.key} · ${node.repositories.join(", ")}${"description" in node.data && node.data.description ? ` — ${node.data.description}` : ""}`,
+							)
+						: ["No work is in progress."]),
+				)
+			}
+		}
+		if (plan.next) {
+			const next = yield* select("Created. What next?", [
+				{
+					key: "finish",
+					label: session
+						? "Keep for later — return to tabs"
+						: "Finish — keep this item for later",
+					value: "finish",
+				},
+				{ key: "work", label: "Work on the new item now", value: "work" },
+			])
+			if (next === "work") {
+				if (session) {
+					yield* session.close()
+					state.session = undefined
 				}
-				return
-			case "drop":
-				if (phaseId) {
-					yield* phaseCommand({
-						subcommand: "status",
-						args: [taskId, phaseId, "dropped"],
-						cwd,
-						silent: options.silent,
-						verbose: options.verbose,
-					})
-				} else {
-					yield* taskCommand({
-						subcommand: "status",
-						args: [taskId, "dropped"],
-						cwd,
-						silent: options.silent,
-						verbose: options.verbose,
-					})
-				}
-				return
-			case "archive":
-				yield* archiveCommand({
-					type: current.kind,
-					args: current.kind === "phase" ? [taskId, phaseId!] : [current.key],
-					cwd,
-					silent: options.silent,
-					verbose: options.verbose,
-				})
+				yield* work({ ...nativeOptions, silent: options.silent, ...plan.next })
+				if (session) recap.push("󰄬  Work handoff completed")
+			} else if (session) recap.push("Kept for later — work was not started.")
 		}
 	})
 
 export const help = `
-Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--dry-run | --json] [--auto] [--draft]
+Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]
 
-Interactively choose an active work item and a state-aware lifecycle action.
-An existing positional directory selects its containing epic, task, or phase;
-otherwise the positional value is a task ID. Selectors skip work-item selection.
---dry-run prints the selected action's exact
-Agency command without executing it. --json lists targets, available actions,
-and command argv without prompting or executing.
+Choose a task/phase in Workstream, or press Tab for Workbase actions. Guided
+creation offers an explicit Work choice afterward; creation alone never starts work.
+Completed item actions return to a freshly loaded Workstream. Escape clears input,
+then steps back through
+wizard prompts, the action menu, and Workstream,
+or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
+An existing directory or file selects its containing epic, task, or phase.
+A workbase path opens Workbase actions. Otherwise the positional value is a
+task ID. Selectors skip item selection.
+JSON discovery includes creation defaults identifying when callers should omit
+--branch so the workbase branchNameCommand can choose it.
 
 Options:
-	--epic <id>           Select an epic
-	--task <id>           Select a task
-	--phase <id>          Select a phase; requires --task
-	--dry-run             Select an action and print its command without executing
-	--json                List available actions and command argv as JSON
+  --action <id>         Start an action or filter discovery (IDs from --json)
+  --epic <id>           Select an epic
+  --task <id>           Select a task
+  --phase <id>          Select a phase; requires --task
+  --dry-run             Collect inputs and print commands without executing
+  --json                Discover actions, required inputs, argv, and blocked reasons
   --auto                Pass --auto when starting or continuing work
   --draft               Create a draft pull request
 `

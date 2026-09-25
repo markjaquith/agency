@@ -27,10 +27,10 @@ describe("readiness model", () => {
 			blockedBy: ["task:one"],
 			terminal: true,
 		})
-		expect(readinessState("working", [{ id: "claim:self" }])).toEqual({
+		expect(readinessState("working", [{ id: "dependency:self" }])).toEqual({
 			ready: false,
 			blocked: true,
-			blockedBy: ["claim:self"],
+			blockedBy: ["dependency:self"],
 			terminal: false,
 		})
 	})

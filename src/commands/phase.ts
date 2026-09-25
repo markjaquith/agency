@@ -7,6 +7,8 @@ import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 import { GraphMutationService } from "../services/GraphMutationService"
 import { work as startWork, type StartWork } from "./work"
+import { TaskService } from "../services/TaskService"
+import { resolveBranchName } from "../workbase/branch-name-command"
 
 interface PhaseOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -39,6 +41,7 @@ interface PhaseOptions extends BaseCommandOptions {
 export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 	Effect.gen(function* () {
 		const phases = yield* PhaseService
+		const tasks = yield* TaskService
 		const mutations = yield* GraphMutationService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
@@ -47,19 +50,26 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 		switch (options.subcommand) {
 			case "new":
 			case "create": {
-				if (
-					!taskId ||
-					!phaseId ||
-					!options.repo ||
-					!options.branch ||
-					!options.base
-				) {
+				if (!taskId || !phaseId || !options.repo || !options.base) {
 					return yield* Effect.fail(
 						new Error(
-							"Usage: agency phase create <task-id> <phase-id> --repo <alias> --branch <name> --base <name>",
+							"Usage: agency phase create <task-id> <phase-id> --repo <alias> --base <name> [--branch <name>]",
 						),
 					)
 				}
+				const parent = yield* tasks.show(taskId, cwd)
+				const branch =
+					options.branch ??
+					(yield* resolveBranchName({
+						id: phaseId,
+						taskId,
+						phaseId,
+						ticketUrl: parent.data.ticketUrl,
+						repo: options.repo,
+						base: options.base,
+						defaultBranch: `task/${taskId}-${phaseId}`,
+						startPath: cwd,
+					}))
 				const record = yield* phases.create(
 					{
 						taskId,
@@ -67,7 +77,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						description: options.description,
 						repo: options.repo,
 						repos: parseRepositoryReferences(options.references),
-						branch: options.branch,
+						branch,
 						base: options.base,
 						dependsOn: options.dependsOn,
 						firstPhase: options.firstPhase,
@@ -311,7 +321,7 @@ Create options:
   --repo <alias>        Writable repository
   --reference <alias>:<ref>
                         Read-only repository reference; repeatable
-  --branch <name>       Working branch
+  --branch <name>       Working branch (default: configured resolver or task/<task>-<phase>)
   --base <name>         Base branch
   --depends-on <id>     Phase dependency; repeatable
   --first-phase <id>    Existing execution phase ID when converting a task

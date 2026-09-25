@@ -3,7 +3,6 @@ import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
 	PullRequestRecord,
-	ClaimRecord,
 	ReviewRecord,
 	TaskHandoff,
 	TaskFrontmatter,
@@ -96,7 +95,6 @@ export const GraphExecutionData = Schema.Union(
 		handoff: Schema.optional(TaskHandoff),
 		review: ReviewRecord,
 		status: WorkStatus,
-		claim: Schema.optional(ClaimRecord),
 	}),
 )
 

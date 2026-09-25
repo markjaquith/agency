@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	mock,
+	spyOn,
+	test,
+} from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir } from "../src/test-utils"
@@ -92,7 +100,15 @@ describe("global Pi extension", () => {
 		)
 		expect(prompt.systemPrompt).toContain("# Managed instructions")
 		expect(prompt.systemPrompt).toContain(
-			`${checkout} as the default implementation directory`,
+			`rooted in Agency's authoritative writable checkout at ${checkout}`,
+		)
+
+		const taskPrompt = await handlers.get("before_agent_start")?.(
+			{ systemPrompt: "Base" },
+			{ cwd: task },
+		)
+		expect(taskPrompt.systemPrompt).toContain(
+			`change the working directory to that checkout`,
 		)
 	})
 
@@ -113,5 +129,76 @@ describe("global Pi extension", () => {
 				{ cwd: root },
 			),
 		).toBeUndefined()
+	})
+
+	test("deduplicates lookups, retries failures, refreshes, and invalidates sessions", async () => {
+		await Bun.write(join(root, "agency.json"), '{"version":2}\n')
+		const checkout = join(root, "checkout")
+		const skills = join(checkout, ".agents", "skills")
+		await mkdir(skills, { recursive: true })
+
+		let now = 0
+		const clock = spyOn(Date, "now").mockImplementation(() => now)
+		const pending = Promise.withResolvers<{ code: number; stdout: string }>()
+		const exec = mock(() => pending.promise)
+		const handlers = new Map<string, (...args: any[]) => any>()
+		agencyExtension({
+			exec,
+			on: (name: string, handler: (...args: any[]) => any) => {
+				handlers.set(name, handler)
+			},
+		} as never)
+
+		const discover = () =>
+			handlers.get("resources_discover")?.({ cwd: root, reason: "startup" })
+		const prompt = () =>
+			handlers.get("before_agent_start")?.(
+				{ systemPrompt: "Base" },
+				{ cwd: root },
+			)
+		const contextResponse = {
+			code: 0,
+			stdout: JSON.stringify({
+				ok: true,
+				result: {
+					workbase: { root },
+					target: { kind: "task", taskId: "example" },
+					authority: {
+						mode: "execution",
+						writable: { checkoutPath: checkout },
+					},
+					documents: { task: { data: { status: "working" } } },
+					validation: { valid: true },
+				},
+			}),
+		}
+
+		try {
+			const resources = discover()
+			const before = prompt()
+			expect(exec).toHaveBeenCalledTimes(1)
+			pending.reject(new Error("temporary failure"))
+			await Promise.all([resources, before])
+
+			now = 999
+			await discover()
+			expect(exec).toHaveBeenCalledTimes(1)
+			exec.mockResolvedValue(contextResponse)
+			now = 1000
+			expect((await discover()).skillPaths).toEqual([skills])
+			expect((await prompt()).systemPrompt).toContain(checkout)
+			expect(exec).toHaveBeenCalledTimes(2)
+
+			await handlers.get("session_start")?.({ reason: "reload" })
+			await Promise.all([discover(), prompt()])
+			expect(exec).toHaveBeenCalledTimes(3)
+
+			now += 60_000
+			exec.mockResolvedValue({ code: 1, stdout: "" })
+			expect(await discover()).toBeUndefined()
+			expect(exec).toHaveBeenCalledTimes(4)
+		} finally {
+			clock.mockRestore()
+		}
 	})
 })

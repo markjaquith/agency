@@ -45,11 +45,7 @@ describe("init command", () => {
 		).text()
 		const config = JSON.parse(opencode.slice(opencode.indexOf("\n\n") + 2))
 		expect(config.instructions).toEqual([".agency/AGENTS.md"])
-		expect(config.agent.agency).toMatchObject({
-			description: expect.stringContaining("Agency workbase orchestration"),
-			mode: "subagent",
-			prompt: expect.stringContaining("agency context . --json"),
-		})
+		expect(config.agent.agency).toBeUndefined()
 		expect(config.agent.plan).toEqual({ disable: true })
 		expect(config.agent["agency-plan"]).toMatchObject({
 			mode: "primary",
@@ -88,6 +84,11 @@ describe("init command", () => {
 		expect(tuiPlugin).toContain('slashName: "agency-debug"')
 		expect(tuiPlugin).toContain("api.ui.toast")
 		expect(tuiPlugin).not.toContain("chat.message")
+		const v2TuiPlugin = await Bun.file(
+			join(root, ".opencode/plugins/agency-tui/tui.ts"),
+		).text()
+		expect(v2TuiPlugin).toContain('context.keymap.dispatch("prompt.submit")')
+		expect(v2TuiPlugin).toContain("AGENCY_TUI_AUTOSUBMIT")
 		expect(
 			await Bun.file(join(root, ".pi/extensions/agency-workbase.ts")).exists(),
 		).toBe(false)

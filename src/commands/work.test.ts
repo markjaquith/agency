@@ -50,6 +50,7 @@ const taskDirectory = "/workbase/tasks/example"
 const phaseDirectory = `${taskDirectory}/phases/implementation`
 
 interface HarnessOptions {
+	readonly openCodeV2?: boolean
 	readonly workspace?: ExecutionWorkspace
 	readonly materializeError?: Error
 	readonly available?: Readonly<Record<string, boolean>>
@@ -84,6 +85,8 @@ interface HarnessOptions {
 		Record<string, "open" | "working" | "delegated" | "done" | "dropped">
 	>
 	readonly taskRepo?: string
+	readonly existingPaths?: readonly string[]
+	readonly validationIssues?: readonly { path: string; message: string }[]
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -93,7 +96,11 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const shownTasks: string[] = []
 	const progressUpdates: string[] = []
 	let integrationSyncs = 0
-	const guards: Array<{ target: string; override?: boolean }> = []
+	const guards: Array<{
+		target: string
+		override?: boolean
+		allowWorkingDependencies?: boolean
+	}> = []
 	const launches: Array<{
 		cli: string
 		args: readonly string[]
@@ -142,15 +149,17 @@ const createHarness = (options: HarnessOptions = {}) => {
 				},
 			}),
 		repositoryAliases: () => Effect.succeed(["agency"]),
-		validate: () =>
-			Effect.succeed({
+		validate: () => {
+			const issues = options.validationIssues ?? []
+			return Effect.succeed({
 				root: "/workbase",
-				issues: [],
+				issues,
 				epicCount: 0,
 				taskCount: 1,
 				phaseCount: 0,
-				valid: true,
-			}),
+				valid: issues.length === 0,
+			})
+		},
 	}
 	const epics = {
 		show: (id: string) =>
@@ -237,9 +246,20 @@ const createHarness = (options: HarnessOptions = {}) => {
 					],
 				),
 			),
-		guardWorkTarget: (target: string, _root: string, override?: boolean) => {
+		guardWorkTarget: (
+			target: string,
+			_root: string,
+			override?: boolean,
+			guardOptions?: { allowWorkingDependencies?: boolean },
+		) => {
 			if (options.guardError || override) events.push("guard")
-			guards.push({ target, override })
+			guards.push({
+				target,
+				override,
+				...(guardOptions?.allowWorkingDependencies
+					? { allowWorkingDependencies: true }
+					: {}),
+			})
 			return options.guardError && !override
 				? Effect.fail(options.guardError)
 				: Effect.void
@@ -281,9 +301,29 @@ const createHarness = (options: HarnessOptions = {}) => {
 		readFile: (path: string) =>
 			Effect.succeed(path.endsWith("agency.json") ? '{"version":2}\n' : ""),
 		readDirectory: () => Effect.succeed([]),
-		exists: () => Effect.succeed(false),
+		exists: (path: string) =>
+			Effect.succeed(options.existingPaths?.includes(path) ?? false),
 		realPath: (path: string) => Effect.succeed(path),
 		runCommand: (args: readonly string[]) => {
+			if (args[1] === "--version")
+				return Effect.succeed({
+					exitCode: 0,
+					stdout: options.openCodeV2 ? "opencode v2.0.1" : "1.18.29",
+					stderr: "",
+				})
+			if (args[1] === "api") {
+				events.push(`api:${args[2]}`)
+				const body = args[5] ? JSON.parse(args[5]) : {}
+				const data =
+					args[3] === "/api/session"
+						? { id: "ses_work", location: body.location }
+						: { id: "msg_server", sessionID: "ses_work", type: "user" }
+				return Effect.succeed({
+					exitCode: 0,
+					stdout: args[2] === "put" ? "" : JSON.stringify({ data }),
+					stderr: "",
+				})
+			}
 			const cli = args[1]!
 			events.push(`probe:${cli}`)
 			probes.push(cli)
@@ -569,6 +609,160 @@ describe("work command", () => {
 		).rejects.toThrow("Recalled repository conflicts")
 	})
 
+	test("resolves task and phase document paths", async () => {
+		const taskDocument = "/workbase/tasks/example/TASK.md"
+		const taskHarness = createHarness({
+			existingDirectories: [],
+			existingPaths: [taskDocument],
+		})
+
+		await taskHarness.runPrepare({
+			directory: taskDocument,
+			dryRun: true,
+			silent: true,
+		})
+		expect(taskHarness.guards[0]?.target).toBe("execution-unit:task/example")
+		expect(taskHarness.shownTasks).toEqual(["example", "example"])
+
+		const phaseDocument =
+			"/workbase/tasks/example/phases/implementation/PHASE.md"
+		const phaseHarness = createHarness({
+			existingDirectories: [],
+			existingPaths: [phaseDocument],
+			multiPhaseTasks: ["example"],
+			workspace: multiPhaseWorkspace,
+		})
+
+		await phaseHarness.runPrepare({
+			directory: phaseDocument,
+			dryRun: true,
+			silent: true,
+		})
+		expect(phaseHarness.guards[0]?.target).toBe(
+			"execution-unit:phase/example/implementation",
+		)
+		expect(phaseHarness.materializeOptions).toHaveLength(1)
+	})
+
+	test("prepare defaults to the execution unit containing the current directory", async () => {
+		const harness = createHarness()
+
+		await harness.runPrepare({
+			cwd: "/workbase/tasks/example/code/agency/src",
+			dryRun: true,
+			silent: true,
+		})
+
+		expect(harness.guards[0]?.target).toBe("execution-unit:task/example")
+		expect(harness.materializeOptions).toHaveLength(1)
+	})
+
+	test("returns structured validation issues before readiness or materialization", async () => {
+		const harness = createHarness({
+			existingDirectories: [],
+			validationIssues: [
+				{
+					path: "tasks/example/TASK.md",
+					message: "Repository alias 'missing' is not configured",
+				},
+			],
+		})
+
+		await expect(
+			harness.runPrepare({
+				cwd: "/workbase",
+				directory: "example",
+				dryRun: true,
+			}),
+		).rejects.toThrow(
+			"Workbase validation failed with 1 issue:\n- tasks/example/TASK.md: Repository alias 'missing' is not configured",
+		)
+		expect(harness.guards).toEqual([])
+		expect(harness.events).toEqual([])
+	})
+
+	test("force prepares a phase blocked by an active dependency without launching or changing status", async () => {
+		const blocked = createHarness({
+			workspace: multiPhaseWorkspace,
+			multiPhaseTasks: ["example"],
+			guardError: new Error("Phase dependency is working"),
+		})
+		await expect(
+			blocked.runPrepare({
+				cwd: "/workbase",
+				taskId: "example",
+				phaseId: "implementation",
+			}),
+		).rejects.toThrow("Phase dependency is working")
+		expect(blocked.events).toEqual(["guard"])
+
+		const forced = createHarness({
+			workspace: multiPhaseWorkspace,
+			multiPhaseTasks: ["example"],
+			guardError: new Error("Phase dependency is working"),
+		})
+		await forced.runPrepare({
+			cwd: "/workbase",
+			taskId: "example",
+			phaseId: "implementation",
+			force: true,
+			silent: true,
+		})
+
+		expect(forced.guards).toEqual([
+			{
+				target: "execution-unit:phase/example/implementation",
+				override: true,
+			},
+		])
+		expect(forced.events).toEqual(["guard", "materialize"])
+		expect(forced.materializeOptions[0]).toMatchObject({
+			force: true,
+			validationAlreadyPerformed: true,
+		})
+		expect(forced.launches).toEqual([])
+		expect(forced.statusUpdates).toEqual([])
+	})
+
+	test("forwards the narrow opt-in without force or skipping validation", async () => {
+		for (const preparing of [false, true]) {
+			const harness = createHarness()
+			await (preparing ? harness.runPrepare : harness.run)({
+				taskId: "example",
+				allowWorkingDependencies: true,
+				silent: true,
+			})
+			expect(harness.guards).toEqual([
+				{
+					target: "execution-unit:task/example",
+					override: undefined,
+					allowWorkingDependencies: true,
+				},
+			])
+			expect(harness.materializeOptions[0]?.force).not.toBe(true)
+			expect(harness.materializeOptions[0]?.validationAlreadyPerformed).toBe(
+				true,
+			)
+		}
+	})
+
+	test("rejects opt-in force combinations and implicit targets before side effects", async () => {
+		for (const preparing of [false, true]) {
+			for (const options of [{ taskId: "example", force: true }, {}]) {
+				const harness = createHarness()
+				await expect(
+					(preparing ? harness.runPrepare : harness.run)({
+						...options,
+						allowWorkingDependencies: true,
+					}),
+				).rejects.toThrow()
+				expect(harness.events).toEqual([])
+				expect(harness.integrationSyncs).toBe(0)
+				expect(harness.guards).toEqual([])
+			}
+		}
+	})
+
 	test("launches an epic agent from an epic directory", async () => {
 		const harness = createHarness()
 
@@ -651,7 +845,6 @@ describe("work command", () => {
 
 		await harness.run({
 			cwd: "/workbase/tasks/example/phases/implementation/code/agency/src",
-			directory: ".",
 			opencode: true,
 			auto: true,
 		})
@@ -681,11 +874,14 @@ describe("work command", () => {
 
 		await harness.run({
 			cwd: "/workbase/tasks/example/code/agency/src",
-			directory: ".",
 			opencode: true,
 		})
 
-		expect(harness.events[0]).toBe("materialize")
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"launch:opencode",
+		])
 		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
 		expect(harness.launchEnvironments[0]?.OPENCODE_CONFIG).toBeUndefined()
 	})
@@ -717,7 +913,7 @@ describe("work command", () => {
 				choices.find((choice) => choice.label.includes("build"))!.target,
 			)
 
-		await harness.run({ cwd: "/workbase/tasks/example", opencode: true }, pick)
+		await harness.run({ cwd: "/workbase", opencode: true }, pick)
 
 		expect(harness.events).toEqual([
 			"materialize",
@@ -890,6 +1086,24 @@ describe("work command", () => {
 		expect(harness.launches[0]?.cwd).toBe(phaseDirectory)
 	})
 
+	test("submits V2 startup before launching the exact session without a prompt", async () => {
+		const harness = createHarness({ openCodeV2: true })
+		await harness.run({ taskId: "example", opencode: true, auto: true })
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode",
+			"--session",
+			"ses_work",
+		])
+		expect(harness.events).toEqual([
+			"materialize",
+			"probe:opencode",
+			"api:post",
+			"api:put",
+			"api:post",
+			"launch:opencode",
+		])
+	})
+
 	test("sends the generated prompt only with --auto", async () => {
 		const harness = createHarness()
 
@@ -988,12 +1202,10 @@ describe("work command", () => {
 		})
 		expect(harness.launchEnvironments[0]).toMatchObject({
 			AGENCY_AGENT: "custom",
-			AGENCY_CLAIMANT: process.env.USER ?? "agency",
 			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:task/example",
 			AGENCY_TASK_ID: "example",
 			AGENCY_PHASE_ID: "",
-			AGENCY_CLAIM_REVISION: "",
 			CUSTOM_TARGET: "execution-unit:task/example",
 		})
 	})
@@ -1089,6 +1301,60 @@ describe("work command", () => {
 		).toBeUndefined()
 	})
 
+	test("launches OpenCode V2 from the writable task checkout", async () => {
+		const harness = createHarness({ openCodeV2: true })
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]).toEqual({
+			cli: "opencode",
+			args: ["opencode"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
+	})
+
+	test("launches OpenCode V2 from the writable phase checkout", async () => {
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			openCodeV2: true,
+		})
+		await harness.run({
+			taskId: "example",
+			phaseId: "implementation",
+			opencode: true,
+		})
+
+		expect(harness.launches[0]?.cwd).toBe(multiPhaseWorkspace.writablePath!)
+	})
+
+	test("prints the OpenCode V2 checkout in the command contract", async () => {
+		const harness = createHarness({
+			workspace: multiPhaseWorkspace,
+			openCodeV2: true,
+		})
+		const output = await captureLogs(() =>
+			harness.run({
+				taskId: "example",
+				phaseId: "implementation",
+				opencode: true,
+				printCommand: true,
+			}),
+		)
+
+		expect(JSON.parse(output.join("\n")).cwd).toBe(
+			multiPhaseWorkspace.writablePath,
+		)
+	})
+
+	test("keeps configured OpenCode agents in the task directory", async () => {
+		const harness = createHarness({
+			openCodeV2: true,
+			agents: { opencode: { command: ["opencode"] } },
+		})
+		await harness.run({ taskId: "example", opencode: true })
+
+		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
+	})
+
 	test("automatically prefers opencode2", async () => {
 		const harness = createHarness()
 
@@ -1100,6 +1366,32 @@ describe("work command", () => {
 			args: ["opencode2"],
 			cwd: taskDirectory,
 		})
+	})
+
+	test("marks V2 autonomous prompts for TUI submission", async () => {
+		const harness = createHarness()
+
+		await harness.run({ taskId: "example", auto: true })
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode2",
+			"--prompt",
+			"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(harness.launchEnvironments[0]?.AGENCY_TUI_AUTOSUBMIT).toBe("1")
+	})
+
+	test("continues V2 autonomous work in a fresh TUI session", async () => {
+		const harness = createHarness({ taskStatus: "working" })
+
+		await harness.run({ taskId: "example", auto: true })
+
+		expect(harness.launches[0]?.args).toEqual([
+			"opencode2",
+			"--prompt",
+			"Agency worker launch target: execution-unit:task/example. Continue the task. Read /workbase/tasks/example/TASK.md.",
+		])
+		expect(harness.launchEnvironments[0]?.AGENCY_TUI_AUTOSUBMIT).toBe("1")
 	})
 
 	test("automatically falls back from opencode2 to opencode", async () => {
@@ -1138,7 +1430,11 @@ describe("work command", () => {
 		await harness.run({ taskId: "example" })
 
 		expect(harness.probes).toEqual(["opencode2", "opencode", "pi"])
-		expect(harness.launches[0]).toMatchObject({ cli: "pi", args: ["pi"] })
+		expect(harness.launches[0]).toEqual({
+			cli: "pi",
+			args: ["pi"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
 	})
 
 	test("uses the global agent before automatic detection", async () => {
@@ -1147,7 +1443,11 @@ describe("work command", () => {
 		await harness.run({ taskId: "example" })
 
 		expect(harness.probes).toEqual(["pi"])
-		expect(harness.launches[0]).toMatchObject({ cli: "pi", args: ["pi"] })
+		expect(harness.launches[0]).toEqual({
+			cli: "pi",
+			args: ["pi"],
+			cwd: singlePhaseWorkspace.writablePath!,
+		})
 	})
 
 	test("lets an invocation agent override the global agent", async () => {

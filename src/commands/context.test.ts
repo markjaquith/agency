@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { mkdir, readFile as nodeReadFile, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { Effect } from "effect"
 import {
 	captureLogs,
 	cleanupTempDir,
 	createTempDir,
 	runTestEffect,
+	trackDocumentReadConcurrency,
 } from "../test-utils"
+import { documentLoadConcurrency } from "../workbase/document-loading"
+import { ContextService } from "../services/ContextService"
+import { FileSystemService } from "../services/FileSystemService"
 import { context } from "./context"
 
 const write = async (root: string, path: string, content: string) => {
@@ -157,6 +162,33 @@ Phase prose.
 		])
 	})
 
+	test("bounds document reads across nested task and phase traversal", async () => {
+		await Promise.all(
+			Array.from({ length: documentLoadConcurrency + 8 }, (_, index) =>
+				write(
+					root,
+					`tasks/agent-contract/phases/extra-${index}/PHASE.md`,
+					`---\nrepo: agency\nbranch: extra-${index}\nbase: main\npr: null\nstatus: open\n---\n`,
+				),
+			),
+		)
+		const fs = await Effect.runPromise(
+			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+		)
+		const tracked = trackDocumentReadConcurrency(fs)
+
+		await runTestEffect(
+			ContextService.pipe(
+				Effect.flatMap((service) =>
+					service.get({ cwd: root, target: "foundations" }),
+				),
+				Effect.provideService(FileSystemService, tracked.fs),
+			),
+		)
+
+		expect(tracked.maximum()).toBe(documentLoadConcurrency)
+	})
+
 	afterEach(async () => {
 		await cleanupTempDir(root)
 	})
@@ -282,6 +314,20 @@ status: dropped
 	})
 
 	test("reads each workbase document at most once per invocation", async () => {
+		const unrelatedArchive = join(root, "archive/tasks/unrelated/TASK.md")
+		await write(
+			root,
+			"archive/tasks/unrelated/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: unrelated
+base: main
+pr: null
+status: done
+---
+`,
+		)
 		const reads = new Map<string, number>()
 		const originalFile = Bun.file
 		Bun.file = mock((path: string) => {
@@ -304,6 +350,94 @@ status: dropped
 		)
 		expect(documents.length).toBeGreaterThan(0)
 		expect(documents.every(([, count]) => count === 1)).toBe(true)
+		expect(reads.has(unrelatedArchive)).toBe(false)
+	})
+
+	test("limits repository inspection and overlaps independent Git observations", async () => {
+		const commands: string[][] = []
+		let activeGitCommands = 0
+		let maxActiveGitCommands = 0
+		const originalSpawn = Bun.spawn
+		;(Bun as { spawn: unknown }).spawn = mock(((
+			args: string[],
+			options: Parameters<typeof Bun.spawn>[1],
+		) => {
+			const command = [...args]
+			const child = originalSpawn(command, options)
+			if (command[0] !== "git") return child
+			commands.push(command)
+			activeGitCommands += 1
+			maxActiveGitCommands = Math.max(maxActiveGitCommands, activeGitCommands)
+			const exited = child.exited.finally(() => {
+				activeGitCommands -= 1
+			})
+			return new Proxy(child, {
+				get(target, property) {
+					return property === "exited"
+						? exited
+						: Reflect.get(target, property, target)
+				},
+			})
+		}) as unknown as typeof Bun.spawn)
+		try {
+			await readContext(root, "tasks/agent-contract/phases/context-command")
+		} finally {
+			;(Bun as { spawn: unknown }).spawn = originalSpawn
+		}
+
+		expect(
+			commands.some(
+				(command) =>
+					command.includes("config") && command.includes("--show-origin"),
+			),
+		).toBe(false)
+		expect(maxActiveGitCommands).toBeGreaterThanOrEqual(3)
+	})
+
+	test("does not load unrelated archived documents for an active target", async () => {
+		await write(
+			root,
+			"archive/tasks/old-task/TASK.md",
+			`---
+ticketUrl: null
+repo: agency
+branch: old-task
+base: main
+pr: null
+status: done
+---
+
+# Old task
+`,
+		)
+		await write(
+			root,
+			"archive/tasks/old-task/phases/old-phase/PHASE.md",
+			`---
+repo: agency
+branch: old-phase
+base: main
+pr: null
+status: done
+---
+
+# Old phase
+`,
+		)
+
+		const archiveReads: string[] = []
+		const originalFile = Bun.file
+		Bun.file = mock((path: string) => {
+			if (path.includes(join(root, "archive", "tasks"))) archiveReads.push(path)
+			return originalFile(path)
+		}) as unknown as typeof Bun.file
+		try {
+			await readContext(root, "tasks/agent-contract/phases/context-command")
+		} finally {
+			Bun.file = originalFile
+		}
+
+		expect(archiveReads).toEqual([])
 	})
 
 	test("resolves a bare task ID and returns root discovery context", async () => {

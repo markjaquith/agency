@@ -6,6 +6,7 @@ import { WorktreeService } from "../services/WorktreeService"
 interface WorktreeOptions extends BaseCommandOptions {
 	readonly subcommand?: string
 	readonly args?: readonly string[]
+	readonly force?: boolean
 }
 
 const targetLabel = (owner: {
@@ -134,5 +135,6 @@ Options:
   --task <id>          Select a task without positional IDs
   --phase <id>         Select a phase with --task
   --dry-run            Preflight and report changes without applying them
+  --force              Override an existing worktree operation lock
   --json               Print structured output
 `

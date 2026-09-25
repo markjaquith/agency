@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { mkdir } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import {
 	captureLogs,
 	cleanupTempDir,
@@ -9,9 +9,16 @@ import {
 	runTestEffect,
 } from "../test-utils"
 import type { Choice } from "../utils/chooser"
+import { epic } from "./epic"
 import { phase } from "./phase"
 import { task } from "./task"
 import { act, type ActInteraction } from "./act"
+import { worktree } from "./worktree"
+import { parseCli } from "../cli-parser"
+import { FileSystemService } from "../services/FileSystemService"
+import { SyncService } from "../services/SyncService"
+import { WorktreeService } from "../services/WorktreeService"
+import { macchiato } from "../utils/theme"
 
 const scriptedInteraction = (
 	selections: readonly (string | null)[],
@@ -51,22 +58,129 @@ describe("act command", () => {
 
 	afterEach(async () => cleanupTempDir(root))
 
-	test("rejects non-interactive and empty invocations cleanly", async () => {
+	test("rejects non-interactive input and allows cancellation in an empty workbase", async () => {
 		await expect(
 			runTestEffect(act({ cwd: root, inputAllowed: false })),
 		).rejects.toThrow("requires interactive input")
-		await expect(
-			runTestEffect(
-				act({ cwd: root, inputAllowed: true }, scriptedInteraction([])),
-			),
-		).rejects.toThrow("No active work items")
+		await runTestEffect(
+			act({ cwd: root, inputAllowed: true }, scriptedInteraction([])),
+		)
 	})
 
 	test("returns an empty target list as JSON without interactive input", async () => {
 		const logs = await captureLogs(() =>
 			runTestEffect(act({ cwd: root, inputAllowed: false, json: true })),
 		)
-		expect(JSON.parse(logs[0]!)).toEqual({ targets: [] })
+		expect(JSON.parse(logs[0]!)).toMatchObject({
+			creationDefaults: {
+				branch: {
+					configured: false,
+					task: "task/<id>",
+					phase: "task/<task-id>-<phase-id>",
+				},
+			},
+			targets: [],
+			workbase: {
+				actions: expect.arrayContaining([
+					expect.objectContaining({ id: "task-create", command: null }),
+					expect.objectContaining({ id: "repo-add" }),
+				]),
+			},
+		})
+	})
+
+	test("Workstream offers non-archived tasks and phases and dispatches its selected item", async () => {
+		await createTask("archived")
+		for (const action of ["drop", "archive"])
+			await runTestEffect(
+				act(
+					{ cwd: root, action, taskId: "archived", silent: true },
+					scriptedInteraction([]),
+				),
+			)
+		await createTask("single")
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "build"],
+				repo: "agency",
+				branch: "task/multi-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const prompts: string[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, silent: true },
+				{
+					...scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+					tabs: (tabs) => {
+						expect(tabs.map((tab) => tab.id)).toEqual([
+							"workstream",
+							"workbase",
+						])
+						expect(tabs.map((tab) => tab.prompt)).toEqual(["", ""])
+						for (const key of ["browse", "split", "handoff"])
+							expect(
+								tabs[1]!.choices.some((choice) => choice.key === key),
+							).toBe(false)
+						const workstream = tabs[0]!.choices
+						expect(workstream.every((choice) => choice.details)).toBe(true)
+						expect(
+							workstream.find((choice) => choice.key === "phase:multi/build")
+								?.details,
+						).toMatchObject({
+							metadata: [{ text: "  agency  " }, { text: "󰄱  open" }],
+						})
+						expect(workstream.map((choice) => choice.key)).toEqual([
+							"task:multi",
+							"phase:multi/build",
+							"task:single",
+						])
+						return Effect.succeed(
+							workstream.find((choice) => choice.key === "phase:multi/build")!
+								.value,
+						)
+					},
+				},
+			),
+		)
+		expect(prompts).toEqual(["Act on phase multi/build"])
+		expect(
+			await Bun.file(join(root, "tasks/multi/phases/build/PHASE.md")).text(),
+		).toContain("status: dropped")
+	})
+
+	test("Workbase tab choices reuse the goal workflow with an empty Workstream", async () => {
+		let selected = false
+		await runTestEffect(
+			act(
+				{ cwd: root, silent: true },
+				{
+					...scriptedInteraction(["current-work"]),
+					tabs: (tabs) => {
+						selected = true
+						expect(tabs[0]!.choices).toEqual([])
+						return Effect.succeed(
+							tabs[1]!.choices.find((choice) => choice.key === "current-work")!
+								.value,
+						)
+					},
+				},
+			),
+		)
+		expect(selected).toBe(true)
 	})
 
 	test("cancellation exits without changing the selected item", async () => {
@@ -85,16 +199,113 @@ describe("act command", () => {
 			runTestEffect(
 				act(
 					{ cwd: root, inputAllowed: true },
-					scriptedInteraction(["task:example", "drop"], (_prompt, choices) => {
-						offered.push(choices.map((choice) => String(choice.value)))
-					}),
+					scriptedInteraction(
+						["browse", "task:example", "drop"],
+						(prompt, choices) => {
+							offered.push(choices.map((choice) => String(choice.value)))
+							if (prompt === "Act on task example") {
+								expect(
+									choices.every(
+										(choice) =>
+											choice.plainLabel && choice.segments?.[0]?.color,
+									),
+								).toBe(true)
+								expect(
+									choices.find((choice) => choice.key === "drop")
+										?.segments?.[0],
+								).toEqual({ text: "󰅖  ", color: macchiato.red })
+							}
+						},
+					),
 				),
 			),
 		)
 
-		expect(offered[1]).toEqual(["work", "pr", "drop"])
+		expect(offered[2]).toEqual([
+			"work",
+			"pr",
+			"drop",
+			"split",
+			"complete",
+			"sync",
+			"rename",
+			"move-to-epic",
+		])
 		expect(logs).toEqual(["Marked task 'example' as dropped"])
 		expect(await readTaskStatus("example")).toBe("dropped")
+	})
+
+	test("refreshes every changed item before returning to Workstream", async () => {
+		await createTask("example")
+		let visits = 0
+		let refreshedStatus = ""
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						inputAllowed: true,
+						exitOnEscape: false,
+						silent: true,
+					},
+					{
+						...scriptedInteraction(["drop"]),
+						tabs: (tabs) => {
+							const example = tabs[0]!.choices.find(
+								(choice) => choice.key === "task:example",
+							)!
+							if (visits++ === 0) return Effect.succeed(example.value)
+							refreshedStatus = example.details!.metadata[1]!.text
+							return Effect.fail(new Error("stop after refresh"))
+						},
+					},
+				),
+			),
+		).rejects.toThrow("stop after refresh")
+
+		expect(refreshedStatus).toBe("󰅖  dropped")
+	})
+
+	test("removes archived items before returning to Workstream", async () => {
+		await createTask("archived")
+		await createTask("remaining")
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["archived", "dropped"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		let visits = 0
+		let refreshedItems: string[] = []
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						inputAllowed: true,
+						exitOnEscape: false,
+						silent: true,
+					},
+					{
+						...scriptedInteraction(["archive"]),
+						tabs: (tabs) => {
+							const choices = tabs[0]!.choices
+							if (visits++ === 0)
+								return Effect.succeed(
+									choices.find((choice) => choice.key === "task:archived")!
+										.value,
+								)
+							refreshedItems = choices.map((choice) => choice.key)
+							return Effect.fail(new Error("stop after refresh"))
+						},
+					},
+				),
+			),
+		).rejects.toThrow("stop after refresh")
+
+		expect(refreshedItems).toEqual(["task:remaining"])
 	})
 
 	test("accepts an explicit selector and prints dry-run command without mutation", async () => {
@@ -115,7 +326,11 @@ describe("act command", () => {
 		)
 
 		expect(prompts).toEqual(["Act on task example"])
-		expect(logs).toEqual(["agency task status example dropped"])
+		expect(logs).toEqual([
+			expect.stringMatching(
+				/^agency task status example dropped --if-revision [a-f0-9]{64}$/,
+			),
+		])
 		expect(await readTaskStatus("example")).toBe("open")
 	})
 
@@ -123,8 +338,11 @@ describe("act command", () => {
 		await createTask("example")
 		await mkdir(join(root, "tasks/example/code/agency"), { recursive: true })
 		for (const options of [
+			{ cwd: join(root, "tasks/example") },
 			{ cwd: join(root, "tasks/example"), directory: "." },
 			{ cwd: join(root, "tasks/example"), directory: "code/agency" },
+			{ cwd: root, directory: "tasks/example/TASK.md" },
+			{ cwd: dirname(root), directory: join(root, "tasks/example/TASK.md") },
 			{ cwd: root, directory: "example" },
 		]) {
 			const prompts: string[] = []
@@ -159,24 +377,31 @@ describe("act command", () => {
 				silent: true,
 			}),
 		)
-		const prompts: string[] = []
-		await runTestEffect(
-			act(
-				{
-					cwd: join(root, "tasks/multi/phases/build"),
-					directory: ".",
-					inputAllowed: true,
-					dryRun: true,
-					silent: true,
-				},
-				scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
-			),
-		)
+		for (const directory of [
+			undefined,
+			".",
+			"PHASE.md",
+			join(root, "tasks/multi/phases/build/PHASE.md"),
+		]) {
+			const prompts: string[] = []
+			await runTestEffect(
+				act(
+					{
+						cwd: join(root, "tasks/multi/phases/build"),
+						directory,
+						inputAllowed: true,
+						dryRun: true,
+						silent: true,
+					},
+					scriptedInteraction(["drop"], (prompt) => prompts.push(prompt)),
+				),
+			)
 
-		expect(prompts).toEqual(["Act on phase multi/build"])
+			expect(prompts).toEqual(["Act on phase multi/build"])
+		}
 	})
 
-	test("orders owned items hierarchically and omits items without actions", async () => {
+	test("Browse shows flat colored rows with prominent names and secondary parent context", async () => {
 		await runTestEffect(
 			task({
 				subcommand: "create",
@@ -201,16 +426,39 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true },
-				scriptedInteraction([null], (_prompt, offered) => {
+				scriptedInteraction(["browse", null], (_prompt, offered) => {
 					choices = offered
 				}),
 			),
 		)
 
-		expect(choices.map((choice) => [choice.value, choice.depth])).toEqual([
-			["task:multi", 0],
-			["phase:multi/build", 1],
+		expect(choices.map((choice) => choice.value)).toEqual([
+			"task:multi",
+			"phase:multi/build",
 		])
+		expect(choices.every((choice) => choice.depth === undefined)).toBe(true)
+		expect(choices.map((choice) => choice.label).join("\n")).not.toMatch(
+			/[╭│├╰─]/,
+		)
+		expect(choices[0]?.segments?.[0]).toEqual({
+			text: "󰗡  ",
+			color: macchiato.overlay1,
+		})
+		expect(choices[1]?.segments?.[0]).toEqual({
+			text: "  ",
+			color: macchiato.overlay1,
+		})
+		expect(choices[1]?.segments).toContainEqual({
+			text: "build",
+			color: macchiato.text,
+		})
+		expect(choices[1]?.segments).toContainEqual({
+			text: "  in multi",
+			color: macchiato.subtext0,
+		})
+		expect(choices[1]?.label).toContain("󰄱  open")
+		expect(choices[1]?.label).toContain("  agency")
+		expect(choices[1]?.plainLabel).toContain("phase multi/build")
 	})
 
 	test("returns structured actions and argv for agents", async () => {
@@ -229,25 +477,40 @@ describe("act command", () => {
 		)
 
 		expect(JSON.parse(logs[0]!)).toMatchObject({
+			creationDefaults: {
+				branch: {
+					configured: false,
+					task: "task/<id>",
+					phase: "task/<task-id>-<phase-id>",
+				},
+			},
 			targets: [
 				{
 					kind: "task",
 					key: "example",
 					status: "open",
-					actions: [
-						{
+					actions: expect.arrayContaining([
+						expect.objectContaining({
 							id: "work",
 							command: ["agency", "work", "--task", "example", "--auto"],
-						},
-						{
+						}),
+						expect.objectContaining({
 							id: "pr",
 							command: ["agency", "pr", "create", "example", "--draft"],
-						},
-						{
+						}),
+						expect.objectContaining({
 							id: "drop",
-							command: ["agency", "task", "status", "example", "dropped"],
-						},
-					],
+							command: [
+								"agency",
+								"task",
+								"status",
+								"example",
+								"dropped",
+								"--if-revision",
+								expect.stringMatching(/^[a-f0-9]{64}$/),
+							],
+						}),
+					]),
 				},
 			],
 		})
@@ -267,15 +530,24 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true },
-				scriptedInteraction(["task:example", null], (prompt, choices) => {
-					if (prompt.startsWith("Act on task")) {
-						actions = choices.map((choice) => String(choice.value))
-					}
-				}),
+				scriptedInteraction(
+					["browse", "task:example", null],
+					(prompt, choices) => {
+						if (prompt.startsWith("Act on task")) {
+							actions = choices.map((choice) => String(choice.value))
+						}
+					},
+				),
 			),
 		)
 
-		expect(actions).toEqual(["reopen", "archive"])
+		expect(actions).toEqual([
+			"reopen",
+			"archive",
+			"sync",
+			"rename",
+			"move-to-epic",
+		])
 	})
 
 	test("dispatches phase actions with the parent task identifier", async () => {
@@ -305,7 +577,7 @@ describe("act command", () => {
 			act(
 				{ cwd: root, inputAllowed: true, silent: true },
 				scriptedInteraction(
-					["phase:multi/build", "drop"],
+					["browse", "phase:multi/build", "drop"],
 					(prompt, choices) => {
 						if (prompt.startsWith("Act on phase")) {
 							actions = choices.map((choice) => String(choice.value))
@@ -315,7 +587,16 @@ describe("act command", () => {
 			),
 		)
 
-		expect(actions).toEqual(["work", "pr", "drop"])
+		expect(actions).toEqual([
+			"work",
+			"pr",
+			"drop",
+			"complete",
+			"sync",
+			"rename",
+			"dependency-add",
+			"dependency-remove",
+		])
 		const content = await Bun.file(
 			join(root, "tasks/multi/phases/build/PHASE.md"),
 		).text()
@@ -328,7 +609,7 @@ describe("act command", () => {
 		await runTestEffect(
 			act(
 				{ cwd: root, inputAllowed: true, auto: true },
-				scriptedInteraction(["task:example", "work"]),
+				scriptedInteraction(["browse", "task:example", "work"]),
 				((options) => {
 					workCalls.push(options)
 					return Effect.void
@@ -355,8 +636,11 @@ describe("act command", () => {
 								return Effect.fail(new Error("stop before external PR command"))
 							}
 							return Effect.succeed(
-								choices.find((choice) => choice.value === "task:example")
-									?.value ?? null,
+								choices.find(
+									(choice) =>
+										choice.value ===
+										(prompt === "Choose an action" ? "browse" : "task:example"),
+								)?.value ?? null,
 							)
 						},
 					},
@@ -373,6 +657,11 @@ describe("act command", () => {
 			select: (_prompt, choices) => {
 				selection++
 				if (selection === 1) {
+					return Effect.succeed(
+						choices.find((choice) => choice.value === "browse")?.value ?? null,
+					)
+				}
+				if (selection === 2) {
 					return Effect.succeed(
 						choices.find((choice) => choice.value === "task:example")?.value ??
 							null,
@@ -398,6 +687,1023 @@ describe("act command", () => {
 		expect(await readTaskStatus("example")).toBe("open")
 	})
 
+	test("action-first selection narrows targets and dispatches work once", async () => {
+		await createTask("example")
+		let calls = 0
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true },
+				scriptedInteraction(["work", "task:example"]),
+				(() => {
+					calls++
+					return Effect.void
+				}) as Parameters<typeof act>[2],
+			),
+		)
+		expect(calls).toBe(1)
+	})
+
+	test("creates an investigation through guided input", async () => {
+		const text = ["A useful outcome", "guided", ""]
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act(
+					{ cwd: root, action: "investigation-create", inputAllowed: true },
+					{
+						...scriptedInteraction(["finish"]),
+						text: () => Effect.succeed(text.shift() ?? null),
+					},
+				),
+			),
+		)
+		expect(logs[0]).toContain("Created task 'guided'")
+		const content = await Bun.file(join(root, "tasks/guided/TASK.md")).text()
+		expect(content).toContain("purpose: investigation")
+		expect(content).toContain("base: main")
+		expect(content).toContain("A useful outcome")
+		expect(
+			await Bun.file(join(root, "tasks/guided/code/agency/.git")).exists(),
+		).toBe(false)
+	})
+
+	test("repository and review previews quote inputs and never mutate", async () => {
+		for (const [action, answers, selections, expected] of [
+			[
+				"repo-add",
+				["new-repo", "https://example.com/a repo.git"],
+				[],
+				"agency repo add new-repo 'https://example.com/a repo.git'",
+			],
+			[
+				"review",
+				["https://github.com/org/repo/pull/9", "review-change"],
+				[],
+				"agency task create review-change --review agency --pull-request https://github.com/org/repo/pull/9",
+			],
+		] as const) {
+			const values = [...answers]
+			const logs = await captureLogs(() =>
+				runTestEffect(
+					act(
+						{ cwd: root, action, dryRun: true, inputAllowed: true },
+						{
+							...scriptedInteraction(selections),
+							text: () => Effect.succeed(values.shift() ?? null),
+						},
+					),
+				),
+			)
+			expect(logs).toEqual([expected])
+		}
+		expect(
+			await Bun.file(join(root, "tasks/review-change/TASK.md")).exists(),
+		).toBe(false)
+	})
+
+	test("splits existing work and keeps branch ancestry separate from ordering", async () => {
+		await createTask("example")
+		const values = ["next", "first", "task/example", "task/example-next", ""]
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					silent: true,
+					inputAllowed: true,
+				},
+				{
+					...scriptedInteraction(["split", "finish"]),
+					tabs: (tabs) =>
+						Effect.succeed(
+							tabs
+								.find((tab) => tab.id === "workstream")!
+								.choices.find((choice) => choice.key === "task:example")!.value,
+						),
+					text: () => Effect.succeed(values.shift() ?? null),
+				},
+			),
+		)
+		const content = await Bun.file(
+			join(root, "tasks/example/phases/next/PHASE.md"),
+		).text()
+		expect(content).toContain("base: task/example")
+		expect(content).not.toContain("dependsOn:")
+		expect(
+			await Bun.file(
+				join(root, "tasks/example/phases/first/PHASE.md"),
+			).exists(),
+		).toBe(true)
+	})
+
+	test("creates a distinct linked implementation follow-up from investigation", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["investigate"],
+				repo: "agency",
+				purpose: "investigation",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const before = await Bun.file(
+			join(root, "tasks/investigate/TASK.md"),
+		).text()
+		const values = ["implement", ""]
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					silent: true,
+					inputAllowed: true,
+				},
+				{
+					...scriptedInteraction(["handoff", "finish"]),
+					tabs: (tabs) =>
+						Effect.succeed(
+							tabs
+								.find((tab) => tab.id === "workstream")!
+								.choices.find((choice) => choice.key === "task:investigate")!
+								.value,
+						),
+					text: () => Effect.succeed(values.shift() ?? null),
+				},
+			),
+		)
+		const content = await Bun.file(join(root, "tasks/implement/TASK.md")).text()
+		expect(content).toContain("purpose: implementation")
+		expect(content).toContain("taskId: investigate")
+		expect(content).toContain("sourceRevision:")
+		expect(await Bun.file(join(root, "tasks/investigate/TASK.md")).text()).toBe(
+			before,
+		)
+	})
+
+	test("completes a non-PR outcome with evidence and archives through lifecycle commands", async () => {
+		await createTask("example")
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "example",
+					action: "complete",
+					silent: true,
+					inputAllowed: true,
+				},
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed("Investigation found no change needed"),
+				},
+			),
+		)
+		expect(await readTaskStatus("example")).toBe("done")
+		expect(
+			await Bun.file(join(root, "tasks/example/TASK.md")).text(),
+		).toContain("Investigation found no change needed")
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "example",
+					action: "archive",
+					silent: true,
+					inputAllowed: true,
+				},
+				scriptedInteraction([]),
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/example/TASK.md")).exists()).toBe(
+			false,
+		)
+	})
+
+	test("rejects stale guided input and cancels without mutation", async () => {
+		await createTask("example")
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "example",
+					action: "complete",
+					inputAllowed: true,
+				},
+				{ ...scriptedInteraction([]), text: () => Effect.succeed(null) },
+			),
+		)
+		expect(await readTaskStatus("example")).toBe("open")
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						taskId: "example",
+						action: "complete",
+						inputAllowed: true,
+					},
+					{
+						...scriptedInteraction([]),
+						text: () =>
+							Effect.promise(async () => {
+								const path = join(root, "tasks/example/TASK.md")
+								await Bun.write(
+									path,
+									(await Bun.file(path).text()) + "\nChanged during input\n",
+								)
+								return "Complete"
+							}),
+					},
+				),
+			),
+		).rejects.toThrow("Selected work item changed")
+		expect(await readTaskStatus("example")).toBe("open")
+	})
+
+	test("distinguishes provider refresh from GitHub mutations and their bookkeeping", async () => {
+		await createTask("example")
+		await runTestEffect(
+			task({
+				subcommand: "update",
+				args: ["example"],
+				prUrl: "https://github.com/org/repo/pull/9",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		for (const action of ["sync", "pr-ready", "pr-close"]) {
+			const logs = await captureLogs(() =>
+				runTestEffect(
+					act(
+						{
+							cwd: root,
+							taskId: "example",
+							action,
+							dryRun: true,
+							inputAllowed: true,
+						},
+						scriptedInteraction([]),
+					),
+				),
+			)
+			expect(logs).toEqual(
+				action === "sync"
+					? ["agency sync example"]
+					: [
+							`agency pr ${action.slice(3)} https://github.com/org/repo/pull/9`,
+							"agency sync example",
+						],
+			)
+		}
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						taskId: "example",
+						action: "complete",
+						inputAllowed: true,
+					},
+					scriptedInteraction([]),
+				),
+			),
+		).rejects.toThrow("unavailable")
+	})
+
+	test("filtered discovery exposes current work, required inputs, and blocked reasons", async () => {
+		await createTask("example")
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["example", "working"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act({ cwd: root, action: "handoff", json: true, inputAllowed: false }),
+			),
+		)
+		const output = JSON.parse(logs[0]!)
+		expect(output.currentWork[0]).toMatchObject({
+			id: "task:example",
+			key: "example",
+			status: "working",
+			repo: "agency",
+			repositories: ["agency"],
+		})
+		expect(output.targets[0]).toMatchObject(output.currentWork[0])
+		expect(output.targets[0].actions).toEqual([])
+		expect(output.targets[0].blockedActions).toEqual([
+			expect.objectContaining({
+				id: "handoff",
+				available: false,
+				blockedReason: "Select an investigation execution unit",
+			}),
+		])
+		const creationLogs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, action: "task-create", json: true })),
+		)
+		const creation = JSON.parse(creationLogs[0]!)
+		expect(creation.targets).toEqual([])
+		expect(creation.workbase.actions).toHaveLength(1)
+		expect(creation.workbase.actions[0]).toMatchObject({
+			command: null,
+			inputs: expect.arrayContaining([
+				expect.objectContaining({ id: "id", required: true }),
+			]),
+		})
+		expect(() =>
+			parseCli(["act", "--action", "handoff", "--json"]),
+		).not.toThrow()
+		await expect(
+			runTestEffect(act({ cwd: root, action: "typo", json: true })),
+		).rejects.toThrow("Unknown action")
+	})
+
+	test("discovers checkout cleanup and reports active and dirty blockers", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+
+		const available = await discoverAction("cleanup", "worktree-remove")
+		expect(available.actions).toEqual([
+			expect.objectContaining({
+				id: "worktree-remove",
+				label: "Clear local checkout",
+				command: ["agency", "worktree", "remove", "cleanup"],
+			}),
+		])
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["multi", "build"],
+				repo: "agency",
+				branch: "task/multi-build",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await materializeTask("multi", "build")
+		const phaseAction = await discoverAction(
+			"multi",
+			"worktree-remove",
+			"build",
+		)
+		expect(phaseAction.actions[0].command).toEqual([
+			"agency",
+			"worktree",
+			"remove",
+			"multi",
+			"build",
+		])
+
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["cleanup", "working"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const working = await discoverAction("cleanup", "worktree-remove")
+		expect(working.blockedActions[0].blockedReason).toContain(
+			"active 'working' ownership",
+		)
+		let blockedLabel = ""
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true },
+				scriptedInteraction(
+					["browse", "task:cleanup", null],
+					(prompt, choices) => {
+						if (prompt !== "Act on task cleanup") return
+						blockedLabel =
+							choices.find((choice) => choice.key === "worktree-remove")
+								?.plainLabel ?? ""
+					},
+				),
+			),
+		)
+		expect(blockedLabel).toContain("unavailable: Item has active 'working'")
+
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["cleanup", "open"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await Bun.write(
+			join(root, "tasks/cleanup/code/agency/dirty.txt"),
+			"dirty\n",
+		)
+		const dirty = await discoverAction("cleanup", "worktree-remove")
+		expect(dirty.blockedActions[0].blockedReason).toBe(
+			"Local checkout has uncommitted changes",
+		)
+		await expect(
+			runTestEffect(
+				act(
+					{ cwd: root, inputAllowed: true },
+					scriptedInteraction(["browse", "task:cleanup", "worktree-remove"]),
+				),
+			),
+		).rejects.toThrow("Local checkout has uncommitted changes")
+	})
+
+	test("opens without inspecting every materialized checkout", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+		let listCalls = 0
+
+		await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((worktrees) =>
+					act(
+						{ cwd: root, inputAllowed: true },
+						scriptedInteraction([null]),
+					).pipe(
+						Effect.provideService(WorktreeService, {
+							...worktrees,
+							list: (...args: Parameters<typeof worktrees.list>) => {
+								listCalls++
+								return worktrees.list(...args)
+							},
+						} as WorktreeService),
+					),
+				),
+			),
+		)
+
+		expect(listCalls).toBe(0)
+	})
+
+	test("confirms checkout paths, dispatches removal, and refreshes availability", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+		const checkoutPath = join(root, "tasks/cleanup/code/agency")
+		let visits = 0
+		let confirmed = false
+
+		await expect(
+			runTestEffect(
+				act(
+					{
+						cwd: root,
+						exitOnEscape: false,
+						silent: true,
+					},
+					{
+						tabs: (tabs) => {
+							visits++
+							return Effect.succeed(
+								tabs[0]!.choices.find(
+									(choice) => choice.key === "task:cleanup",
+								)!.value,
+							)
+						},
+						select: (prompt, choices) => {
+							if (prompt.startsWith("Clear these local worktrees?")) {
+								expect(prompt).toContain(checkoutPath)
+								confirmed = true
+								return Effect.succeed(
+									choices.find((choice) => choice.key === "confirm")!.value,
+								)
+							}
+							const cleanup = choices.find(
+								(choice) => choice.value === "worktree-remove",
+							)
+							if (!cleanup)
+								return Effect.fail(new Error("refreshed checkout is absent"))
+							return Effect.succeed(cleanup.value)
+						},
+					},
+				),
+			),
+		).rejects.toThrow("refreshed checkout is absent")
+
+		expect(confirmed).toBe(true)
+		expect(visits).toBe(2)
+		expect(await Bun.file(checkoutPath).exists()).toBe(false)
+		expect(await readTaskStatus("cleanup")).toBe("open")
+		const refreshed = await discoverAction("cleanup", "worktree-remove")
+		expect(refreshed.blockedActions[0].blockedReason).toBe(
+			"Local checkout is not materialized",
+		)
+	})
+
+	test("suggests safe IDs, skips the only repository, and works only after explicit selection", async () => {
+		await createTask("make-task-id-suggestions-shorter")
+		const values = [
+			"Make task ID suggestions shorter than this entire sentence",
+			"",
+			"",
+		]
+		const prompts: string[] = []
+		const workCalls: unknown[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, action: "task-create", inputAllowed: true, silent: true },
+				{
+					...scriptedInteraction(["work"], (prompt) => prompts.push(prompt)),
+					text: (prompt) => {
+						prompts.push(prompt)
+						return Effect.succeed(values.shift() ?? null)
+					},
+				},
+				((options) => {
+					workCalls.push(options)
+					return Effect.void
+				}) as Parameters<typeof act>[2],
+			),
+		)
+		expect(prompts).toContain(
+			"New task ID [make-task-id-suggestions-shorter-2]: ",
+		)
+		expect(prompts).not.toContain("Repository alias")
+		expect(workCalls).toEqual([
+			expect.objectContaining({
+				taskId: "make-task-id-suggestions-shorter-2",
+				cwd: root,
+			}),
+		])
+		expect(await readTaskStatus("make-task-id-suggestions-shorter-2")).toBe(
+			"open",
+		)
+	})
+
+	test("GitHub mutation dispatch targets the recorded URL and reconciles only after success", async () => {
+		await createTask("example")
+		await runTestEffect(
+			task({
+				subcommand: "update",
+				args: ["example"],
+				prUrl: "https://github.com/org/repo/pull/9",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		for (const exitCode of [0, 3]) {
+			const calls: string[] = []
+			await expect(
+				runTestEffect(
+					Effect.gen(function* () {
+						const fs = yield* FileSystemService
+						const sync = yield* SyncService
+						yield* act(
+							{
+								cwd: root,
+								taskId: "example",
+								action: "pr-ready",
+								silent: true,
+								inputAllowed: true,
+							},
+							scriptedInteraction([]),
+						).pipe(
+							Effect.provideService(FileSystemService, {
+								...fs,
+								runCommand: (args, options) => {
+									if (args[0] !== "gh") return fs.runCommand(args, options)
+									calls.push(args.join(" "))
+									return Effect.succeed({ exitCode, stdout: "", stderr: "" })
+								},
+							}),
+							Effect.provideService(SyncService, {
+								...sync,
+								reconcile: () => {
+									calls.push("sync")
+									return Effect.fail(new Error("reconciled after mutation"))
+								},
+							}),
+						)
+					}),
+				),
+			).rejects.toThrow(
+				exitCode ? "GitHub PR ready failed (3)" : "reconciled after mutation",
+			)
+			expect(calls).toEqual([
+				"gh pr ready https://github.com/org/repo/pull/9",
+				...(exitCode ? [] : ["sync"]),
+			])
+		}
+	})
+
+	test("phase investigation handoff Work targets the new task without leaking source selectors", async () => {
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["research"],
+				multiPhase: true,
+				purpose: "investigation",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			phase({
+				subcommand: "create",
+				args: ["research", "findings"],
+				repo: "agency",
+				branch: "task/research-findings",
+				base: "main",
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const workCalls: unknown[] = []
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					directory: "tasks/research/phases/findings",
+					action: "handoff",
+					inputAllowed: true,
+					silent: true,
+				},
+				{
+					...scriptedInteraction(["work"]),
+					text: () => Effect.succeed(""),
+				},
+				((options) => {
+					workCalls.push(options)
+					return Effect.void
+				}) as Parameters<typeof act>[2],
+			),
+		)
+		expect(workCalls).toEqual([
+			expect.objectContaining({
+				taskId: "research-implementation",
+				cwd: root,
+			}),
+		])
+		for (const key of ["directory", "phaseId", "epicId"])
+			expect(workCalls[0]).not.toHaveProperty(key)
+		const content = await Bun.file(
+			join(root, "tasks/research-implementation/TASK.md"),
+		).text()
+		expect(content).toContain("phaseId: findings")
+	})
+
+	test("the front menu contains goals and Browse, independent of the item count", async () => {
+		await createTask("example")
+		let offered: readonly Choice<unknown>[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true },
+				scriptedInteraction([null], (_prompt, choices) => {
+					offered = choices
+				}),
+			),
+		)
+		expect(offered.map((choice) => choice.value)).toEqual([
+			"create",
+			"work",
+			"review",
+			"split",
+			"handoff",
+			"current-work",
+			"browse",
+			"pull-request",
+			"archive",
+			"repository",
+			"health",
+			"organize",
+		])
+		expect(
+			offered.every(
+				(choice) => choice.segments?.[0]?.color && choice.plainLabel,
+			),
+		).toBe(true)
+		expect(offered.some((choice) => choice.label.includes("example"))).toBe(
+			false,
+		)
+	})
+
+	test("standard and investigation discovery templates run by substituting required inputs only", async () => {
+		for (const action of ["task-create", "investigation-create"]) {
+			const logs = await captureLogs(() =>
+				runTestEffect(act({ cwd: root, action, json: true })),
+			)
+			const descriptor = JSON.parse(logs[0]!).workbase.actions[0]
+			const values: Record<string, string> = {
+				id: action,
+				repo: "agency",
+				base: "main",
+				description: "Machine-created outcome\nWith a second line",
+			}
+			const argv = descriptor.commandTemplate.map(
+				(argument: string) => values[argument.slice(1, -1)] ?? argument,
+			)
+			expect(
+				descriptor.inputs.map((input: { id: string }) => input.id),
+			).toEqual(["description", "id", "repo", "base"])
+			expect(descriptor.inputs[0].multiline).toBe(true)
+			expect(descriptor.nextActions[0]).toMatchObject({
+				id: "work",
+				requiresSelection: true,
+			})
+			expect(
+				descriptor.inputs.every(
+					(input: { required: boolean }) => input.required,
+				),
+			).toBe(true)
+			expect(argv.includes("--purpose")).toBe(action === "investigation-create")
+			expect(() => parseCli(argv.slice(1))).not.toThrow()
+			const result = Bun.spawnSync(
+				[
+					process.execPath,
+					join(import.meta.dir, "../../cli.ts"),
+					...argv.slice(1),
+					"--json",
+				],
+				{ cwd: root, stdout: "pipe", stderr: "pipe" },
+			)
+			expect(result.exitCode).toBe(0)
+			expect(await readTaskStatus(action)).toBe("open")
+			const discovered = await captureLogs(() =>
+				runTestEffect(act({ cwd: root, taskId: action, json: true })),
+			)
+			const target = JSON.parse(discovered[0]!).targets[0]
+			expect(target).toMatchObject({
+				id: `task:${action}`,
+				status: "open",
+				description: values.description,
+				repo: "agency",
+				repositories: ["agency"],
+			})
+			expect(
+				target.actions.find(
+					(candidate: { id: string }) => candidate.id === "complete",
+				).inputs[0].multiline,
+			).toBe(true)
+		}
+	})
+
+	test("discovery covers workbase maintenance with presentation metadata", async () => {
+		await createTask("example")
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, taskId: "example", json: true })),
+		)
+		const output = JSON.parse(logs[0]!)
+		const globalIds = output.workbase.actions.map(
+			(candidate: { id: string }) => candidate.id,
+		)
+		expect(globalIds).toEqual([
+			"repo-add",
+			"repo-link",
+			"task-create",
+			"multi-phase-create",
+			"investigation-create",
+			"epic-create",
+			"review",
+			"review-ref",
+			"current-work",
+			"ready-work",
+			"repo-setup",
+			"repo-materialize",
+			"repo-fetch",
+			"repo-verify",
+			"repo-rename",
+			"repo-remote",
+			"repo-unlink",
+			"repo-remove",
+			"validate",
+			"doctor",
+			"sync-all",
+			"integration-status",
+			"integration-sync",
+		])
+		for (const descriptor of [
+			...output.workbase.actions,
+			...output.targets[0].actions,
+			...output.targets[0].blockedActions,
+		]) {
+			expect(descriptor).toMatchObject({
+				description: expect.stringMatching(/\.$/),
+				icon: expect.any(String),
+				color: expect.stringMatching(/^#[a-f0-9]{6}$/),
+			})
+			expect(descriptor.icon).not.toBe("")
+			const argv = descriptor.command ?? descriptor.commandTemplate
+			if (argv) expect(() => parseCli(argv.slice(1))).not.toThrow()
+		}
+	})
+
+	test("creates multi-phase tasks and epics through guided actions", async () => {
+		const taskAnswers = ["Deliver in stages", "staged"]
+		await runTestEffect(
+			act(
+				{ cwd: root, action: "multi-phase-create", silent: true },
+				{
+					...scriptedInteraction(["finish"]),
+					text: () => Effect.succeed(taskAnswers.shift() ?? null),
+				},
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/staged/TASK.md")).text()).toContain(
+			"phases: []",
+		)
+
+		const epicAnswers = [
+			"Coordinate a rollout",
+			"rollout",
+			"https://example.com/TICKET-1",
+			"main",
+		]
+		await runTestEffect(
+			act(
+				{ cwd: root, action: "epic-create", silent: true },
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed(epicAnswers.shift() ?? null),
+				},
+			),
+		)
+		const epicContent = await Bun.file(
+			join(root, "epics/rollout/EPIC.md"),
+		).text()
+		expect(epicContent).toContain("ticketUrl: https://example.com/TICKET-1")
+		expect(epicContent).toContain("repo: agency\n    ref: main")
+
+		const childAnswers = ["Deliver one part", "child", "main"]
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					epicId: "rollout",
+					action: "task-create-in-epic",
+					silent: true,
+				},
+				{
+					...scriptedInteraction(["finish"]),
+					text: () => Effect.succeed(childAnswers.shift() ?? null),
+				},
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/child/TASK.md")).text()).toContain(
+			"epic: rollout",
+		)
+	})
+
+	test("renames items and manages phase dependencies through guarded actions", async () => {
+		await createTask("rename-me")
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "rename-me",
+					action: "rename",
+					silent: true,
+				},
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed("renamed"),
+				},
+			),
+		)
+		expect(await Bun.file(join(root, "tasks/renamed/TASK.md")).exists()).toBe(
+			true,
+		)
+		await runTestEffect(
+			epic({
+				subcommand: "create",
+				args: ["parent"],
+				ticketUrl: "https://example.com/parent",
+				repos: ["agency:main"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		await runTestEffect(
+			act(
+				{
+					cwd: root,
+					taskId: "renamed",
+					action: "move-to-epic",
+					silent: true,
+				},
+				{
+					...scriptedInteraction([]),
+					text: () => Effect.succeed("parent"),
+				},
+			),
+		)
+		expect(
+			await Bun.file(join(root, "tasks/renamed/TASK.md")).text(),
+		).toContain("epic: parent")
+		await runTestEffect(
+			act({
+				cwd: root,
+				taskId: "renamed",
+				action: "remove-from-epic",
+				silent: true,
+			}),
+		)
+		expect(
+			(await Bun.file(join(root, "tasks/renamed/TASK.md")).text()).includes(
+				"epic:",
+			),
+		).toBe(false)
+
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["multi"],
+				multiPhase: true,
+				cwd: root,
+				silent: true,
+			}),
+		)
+		for (const id of ["build", "deploy"])
+			await runTestEffect(
+				phase({
+					subcommand: "create",
+					args: ["multi", id],
+					repo: "agency",
+					branch: `task/multi-${id}`,
+					base: "main",
+					cwd: root,
+					silent: true,
+				}),
+			)
+		for (const action of ["dependency-add", "dependency-remove"]) {
+			await runTestEffect(
+				act(
+					{
+						cwd: root,
+						taskId: "multi",
+						phaseId: "deploy",
+						action,
+						silent: true,
+					},
+					{
+						...scriptedInteraction([]),
+						text: () => Effect.succeed("build"),
+					},
+				),
+			)
+			const content = await Bun.file(join(root, "tasks/multi/TASK.md")).text()
+			expect(content.includes("dependsOn:\n      - build")).toBe(
+				action === "dependency-add",
+			)
+		}
+	})
+
+	test("offers target-aware publication and review maintenance actions", async () => {
+		await createTask("example")
+		await runTestEffect(
+			task({
+				subcommand: "status",
+				args: ["example", "working"],
+				cwd: root,
+				silent: true,
+			}),
+		)
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, taskId: "example", json: true })),
+		)
+		const target = JSON.parse(logs[0]!).targets[0]
+		expect(
+			target.actions.find((action: { id: string }) => action.id === "push"),
+		).toMatchObject({
+			command: ["agency", "--cwd", join(root, "tasks/example"), "push"],
+		})
+		expect(
+			target.blockedActions.find(
+				(action: { id: string }) => action.id === "review-refresh",
+			),
+		).toMatchObject({ blockedReason: "Select a review task" })
+	})
+
+	test("optional ordering is separate from the executable split template", async () => {
+		await createTask("example")
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act({ cwd: root, taskId: "example", action: "split", json: true }),
+			),
+		)
+		const descriptor = JSON.parse(logs[0]!).targets[0].actions[0]
+		expect(descriptor.commandTemplate).not.toContain("--depends-on")
+		expect(descriptor.inputs).toContainEqual({
+			id: "dependsOn",
+			label: "Completion dependency",
+			required: false,
+			option: "--depends-on",
+		})
+	})
+
 	const createTask = (id: string) =>
 		runTestEffect(
 			task({
@@ -410,6 +1716,50 @@ describe("act command", () => {
 				silent: true,
 			}),
 		)
+
+	const seedRepository = async () => {
+		const seed = join(root, "seed")
+		await mkdir(seed, { recursive: true })
+		for (const args of [
+			["init", "--initial-branch=main"],
+			["config", "user.email", "agency@example.com"],
+			["config", "user.name", "Agency Tests"],
+		] as const) {
+			const result = Bun.spawnSync(["git", "-C", seed, ...args])
+			if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+		}
+		await Bun.write(join(seed, "README.md"), "# Test repository\n")
+		for (const args of [
+			["add", "README.md"],
+			["commit", "-m", "Initial commit"],
+			["remote", "add", "origin", join(root, "repos/agency")],
+			["push", "origin", "main"],
+		] as const) {
+			const result = Bun.spawnSync(["git", "-C", seed, ...args])
+			if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+		}
+	}
+
+	const materializeTask = (id: string, phaseId?: string) =>
+		runTestEffect(
+			worktree({
+				cwd: root,
+				subcommand: "prepare",
+				args: [id, ...(phaseId ? [phaseId] : [])],
+				silent: true,
+			}),
+		)
+
+	const discoverAction = async (
+		taskId: string,
+		action: string,
+		phaseId?: string,
+	) => {
+		const logs = await captureLogs(() =>
+			runTestEffect(act({ cwd: root, taskId, phaseId, action, json: true })),
+		)
+		return JSON.parse(logs[0]!).targets[0]
+	}
 
 	const readTaskStatus = async (id: string) => {
 		const content = await Bun.file(join(root, `tasks/${id}/TASK.md`)).text()

@@ -10,6 +10,7 @@ const stageMessage = {
 	inspect: "Selecting the publication tip",
 	validate: "Validating outgoing changes",
 	publish: "Publishing the declared branch",
+	reconcile: "Confirming the remote publication outcome",
 } as const
 
 export const push = (
@@ -22,6 +23,7 @@ export const push = (
 		const showProgress = !options.silent
 		const result = yield* publications
 			.publish(options.cwd ?? process.cwd(), {
+				forwardOutput: options.verbose,
 				onProgress: showProgress
 					? (stage) => progress.start(stageMessage[stage])
 					: undefined,

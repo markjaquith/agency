@@ -16,7 +16,6 @@ import { ArchiveService } from "./services/ArchiveService"
 import { IntegrationService } from "./services/IntegrationService"
 import { ContextService } from "./services/ContextService"
 import { GraphService } from "./services/GraphService"
-import { ClaimService } from "./services/ClaimService"
 import { SyncService } from "./services/SyncService"
 import { ReadinessService } from "./services/ReadinessService"
 import { GraphMutationService } from "./services/GraphMutationService"
@@ -31,6 +30,26 @@ export const createTempDir = () => mkdtemp(join(tmpdir(), "agency-test-"))
 
 export const cleanupTempDir = (path: string) =>
 	rm(path, { recursive: true, force: true })
+
+export const trackDocumentReadConcurrency = (fs: FileSystemService) => {
+	let active = 0
+	let maximum = 0
+	return {
+		fs: {
+			...fs,
+			readFile: (path: string) => {
+				if (!/(?:EPIC|TASK|PHASE)\.md$/.test(path)) return fs.readFile(path)
+				return Effect.gen(function* () {
+					active += 1
+					maximum = Math.max(maximum, active)
+					yield* Effect.sleep(5)
+					return yield* fs.readFile(path)
+				}).pipe(Effect.ensuring(Effect.sync(() => (active -= 1))))
+			},
+		} satisfies FileSystemService,
+		maximum: () => maximum,
+	}
+}
 
 const TestLayer = Layer.mergeAll(
 	FileSystemService.Default,
@@ -48,7 +67,6 @@ const TestLayer = Layer.mergeAll(
 	IntegrationService.Default,
 	ContextService.Default,
 	GraphService.Default,
-	ClaimService.Default,
 	SyncService.Default,
 	ReadinessService.Default,
 	GraphMutationService.Default,

@@ -23,6 +23,12 @@ class FileNotFoundError extends Data.TaggedError("FileNotFoundError")<{
 	path: string
 }> {}
 
+const isFileNotFound = (error: unknown) =>
+	typeof error === "object" &&
+	error !== null &&
+	"code" in error &&
+	error.code === "ENOENT"
+
 // FileSystem Service using Effect.Service pattern
 export class FileSystemService extends Effect.Service<FileSystemService>()(
 	"FileSystemService",
@@ -88,7 +94,13 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 			readFile: (path: string) =>
 				Effect.tryPromise({
 					try: () => Bun.file(path).text(),
-					catch: () => new FileNotFoundError({ path }),
+					catch: (error) =>
+						isFileNotFound(error)
+							? new FileNotFoundError({ path })
+							: new FileSystemError({
+									message: `Failed to read file: ${path}`,
+									cause: error,
+								}),
 				}),
 
 			inspectFile: (path: string) =>
@@ -184,10 +196,12 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 						}))
 					},
 					catch: (error) =>
-						new FileSystemError({
-							message: `Failed to read directory: ${path}`,
-							cause: error,
-						}),
+						isFileNotFound(error)
+							? new FileNotFoundError({ path })
+							: new FileSystemError({
+									message: `Failed to read directory: ${path}`,
+									cause: error,
+								}),
 				}),
 
 			deleteDirectory: (path: string) =>
@@ -245,6 +259,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 					readonly forwardOutput?: boolean
 					readonly passthrough?: boolean
 					readonly env?: Record<string, string>
+					readonly timeoutMs?: number
 				},
 			) =>
 				pipe(
@@ -264,6 +279,7 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 								? "tee"
 								: "pipe",
 						env: options?.env,
+						timeoutMs: options?.timeoutMs,
 					}),
 					Effect.mapError(
 						(processError) =>
@@ -299,8 +315,16 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 						}
 						return await readlink(path)
 					},
-					catch: () => null,
-				}).pipe(Effect.catchAll(() => Effect.succeed(null))),
+					catch: (error) =>
+						isFileNotFound(error)
+							? new FileNotFoundError({ path })
+							: new FileSystemError({
+									message: `Failed to read symlink target: ${path}`,
+									cause: error,
+								}),
+				}).pipe(
+					Effect.catchTag("FileNotFoundError", () => Effect.succeed(null)),
+				),
 		}),
 	},
 ) {}

@@ -89,16 +89,28 @@ describe("PullRequestService", () => {
 		stdout = "",
 		stderr = "",
 		exitCode = 0,
+		listStdouts = ["[]"],
 	}: {
 		stdout?: string
 		stderr?: string
 		exitCode?: number
+		listStdouts?: readonly string[]
 	}) => {
 		const path = join(root, "bin", "gh")
 		await Bun.write(
 			path,
 			`#!/usr/bin/env bun
-await Bun.write(${JSON.stringify(ghCallPath)}, JSON.stringify({ args: Bun.argv.slice(2), cwd: process.cwd() }))
+const args = Bun.argv.slice(2)
+const callFile = Bun.file(${JSON.stringify(ghCallPath)})
+const calls = await callFile.exists() ? await callFile.json() : []
+const listIndex = calls.filter((call) => call.args[1] === "list").length
+calls.push({ args, cwd: process.cwd() })
+await Bun.write(${JSON.stringify(ghCallPath)}, JSON.stringify(calls))
+if (args[1] === "list") {
+  const responses = ${JSON.stringify(listStdouts)}
+  process.stdout.write(responses[Math.min(listIndex, responses.length - 1)] ?? "[]")
+  process.exit(0)
+}
 process.stdout.write(${JSON.stringify(stdout)})
 process.stderr.write(${JSON.stringify(stderr)})
 process.exit(${exitCode})
@@ -108,10 +120,33 @@ process.exit(${exitCode})
 	}
 
 	const readGhCall = async () =>
+		(
+			(await Bun.file(ghCallPath).json()) as {
+				args: string[]
+				cwd: string
+			}[]
+		).at(-1)!
+
+	const readGhCalls = async () =>
 		(await Bun.file(ghCallPath).json()) as {
 			args: string[]
 			cwd: string
-		}
+		}[]
+
+	const githubRecord = (
+		number: number,
+		branch = "task/example",
+		base = "main",
+	) => ({
+		number,
+		url: `https://github.com/example/agency/pull/${number}`,
+		state: "OPEN",
+		isDraft: false,
+		headRefName: branch,
+		baseRefName: base,
+		headRepository: { nameWithOwner: "example/agency" },
+		mergeable: "UNKNOWN",
+	})
 
 	const expectRemoteBranch = async (branch: string, exists = true) => {
 		const result = await runCommand([
@@ -233,7 +268,17 @@ process.exit(${exitCode})
 		await expectRemoteBranch("task/example")
 		const ghCall = await readGhCall()
 		expect(ghCall).toEqual({
-			args: ["pr", "create", "--fill", "--base", "main"],
+			args: [
+				"pr",
+				"create",
+				"--fill",
+				"--repo",
+				remotePath.replace(/\.git$/, ""),
+				"--base",
+				"main",
+				"--head",
+				"task/example",
+			],
 			cwd: await realpath(join(root, "tasks", "example", "code", "agency")),
 		})
 		const updated = await Bun.file(taskPath).text()
@@ -254,8 +299,12 @@ process.exit(${exitCode})
 			"pr",
 			"create",
 			"--fill",
+			"--repo",
+			remotePath.replace(/\.git$/, ""),
 			"--base",
 			"main",
+			"--head",
+			"task/example",
 			"--draft",
 		])
 	})
@@ -279,6 +328,8 @@ process.exit(${exitCode})
 			"--fill",
 			"--title",
 			"Ship the workflow",
+			"--repo",
+			remotePath.replace(/\.git$/, ""),
 			"--base",
 			"main",
 			"--head",
@@ -289,6 +340,94 @@ process.exit(${exitCode})
 			"--label",
 			"platform",
 		])
+	})
+
+	test("records an existing matching GitHub PR without creating another", async () => {
+		await createTask()
+		const existing = githubRecord(46)
+		await writeFakeGh({ listStdouts: [JSON.stringify([existing])] })
+
+		expect(await createPullRequest()).toBe(existing.url)
+		const calls = await readGhCalls()
+		expect(calls).toHaveLength(1)
+		expect(calls[0]!.args).toEqual([
+			"pr",
+			"list",
+			"--repo",
+			remotePath.replace(/\.git$/, ""),
+			"--head",
+			"task/example",
+			"--base",
+			"main",
+			"--state",
+			"all",
+			"--json",
+			"number,state,isDraft,headRefName,baseRefName,headRepository,url,mergedAt,mergeable",
+		])
+	})
+
+	test("recovers a matching GitHub PR after an ambiguous create failure", async () => {
+		await createTask()
+		const recovered = githubRecord(47)
+		await writeFakeGh({
+			stderr: "a pull request already exists",
+			exitCode: 1,
+			listStdouts: ["[]", JSON.stringify([recovered])],
+		})
+
+		expect(await createPullRequest()).toBe(recovered.url)
+		expect((await readGhCalls()).map((call) => call.args[1])).toEqual([
+			"list",
+			"create",
+			"list",
+		])
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect("pr" in task.data && task.data.pr).toMatchObject({
+			url: recovered.url,
+			headBranch: "task/example",
+			baseBranch: "main",
+		})
+	})
+
+	test("recovers a matching GitHub PR after create output is lost", async () => {
+		await createTask()
+		const recovered = githubRecord(48)
+		await writeFakeGh({
+			stdout: "Pull request created successfully",
+			listStdouts: ["[]", JSON.stringify([recovered])],
+		})
+
+		expect(await createPullRequest()).toBe(recovered.url)
+		expect((await readGhCalls()).map((call) => call.args[1])).toEqual([
+			"list",
+			"create",
+			"list",
+		])
+	})
+
+	test("does not adopt a GitHub PR with mismatched refs", async () => {
+		await createTask()
+		await writeFakeGh({
+			stdout: "Pull request created successfully",
+			listStdouts: [
+				JSON.stringify([githubRecord(49, "task/other")]),
+				JSON.stringify([githubRecord(49, "task/other")]),
+			],
+		})
+
+		await expect(createPullRequest()).rejects.toThrow(
+			"GitHub CLI did not return a pull request URL",
+		)
+		const task = await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) => service.show("example", root)),
+			),
+		)
+		expect("pr" in task.data && task.data.pr).toBeNull()
 	})
 
 	test("rejects task-aware head and base values that contradict declarations", async () => {

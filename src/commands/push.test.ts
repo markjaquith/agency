@@ -28,8 +28,9 @@ describe("push command", () => {
 						publish: (_cwd: string, options: any) => {
 							for (const stage of [
 								"context",
-								"fetch",
 								"inspect",
+								"validate",
+								"fetch",
 								"validate",
 								"publish",
 							] as const)
@@ -44,8 +45,9 @@ describe("push command", () => {
 		expect(logs).toEqual([JSON.stringify(result, null, 2)])
 		expect(updates).toEqual([
 			"start:Inspecting Agency execution context",
-			"start:Fetching remote state",
 			"start:Selecting the publication tip",
+			"start:Validating outgoing changes",
+			"start:Fetching remote state",
 			"start:Validating outgoing changes",
 			"start:Publishing the declared branch",
 			"succeed:Published task/example to origin",

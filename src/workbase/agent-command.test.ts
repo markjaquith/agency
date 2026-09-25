@@ -12,9 +12,7 @@ const variables = {
 	target: "execution-unit:phase/task/build",
 	task: "task",
 	phase: "build",
-	claimant: "orchestrator",
 	sessionId: "session-1",
-	claimRevision: "revision-1",
 }
 
 describe("agent commands", () => {
@@ -49,7 +47,7 @@ describe("agent commands", () => {
 		).toEqual(["opencode2", "--prompt", "Read the task."])
 		expect(
 			resolveAgentCommand("opencode2", undefined, variables, true, true).argv,
-		).toEqual(["opencode2", "--continue", "--prompt", "Read the task."])
+		).toEqual(["opencode2", "--prompt", "Read the task."])
 		expect(
 			resolveAgentCommand("opencode", undefined, variables, false, true).argv,
 		).toEqual(["opencode", "--prompt", "Read the task."])
@@ -116,7 +114,7 @@ describe("agent commands", () => {
 
 		expect(environment).toMatchObject({
 			AGENCY_AGENT: "custom",
-			AGENCY_CLAIMANT: "orchestrator",
+			AGENCY_INVOCATION_SOURCE: "agent",
 			AGENCY_SESSION_ID: "session-1",
 			AGENCY_WORKBASE: "/workbase",
 			AGENCY_TARGET: "execution-unit:phase/task/build",
@@ -124,6 +122,14 @@ describe("agent commands", () => {
 			AGENCY_PHASE_ID: "build",
 			AGENCY_PROMPT: "Read the task.",
 		})
+		expect("AGENCY_TUI_AUTOSUBMIT" in environment).toBe(false)
+		expect(agentEnvironment("opencode2", variables).AGENCY_TUI_AUTOSUBMIT).toBe(
+			"1",
+		)
+		expect(
+			agentEnvironment("opencode2", { ...variables, prompt: "" })
+				.AGENCY_TUI_AUTOSUBMIT,
+		).toBeUndefined()
 		expect(printableEnvironment(environment).VISIBLE).toBe("yes")
 		expect(printableEnvironment(environment).ACCESS_TOKEN).toBeUndefined()
 	})

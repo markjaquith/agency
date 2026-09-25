@@ -58,6 +58,17 @@ export interface VersionControlBackend {
 	) => Effect.Effect<void, unknown, any>
 }
 
+const ignoredUntrackedGitPath = /^(?:.*\/)?\.DS_Store$/
+
+export const isDirtyGitStatus = (output: string): boolean =>
+	(output.includes("\0") ? output.split("\0") : output.split(/\r?\n/)).some(
+		(line) => {
+			if (!line) return false
+			if (!line.startsWith("?? ")) return true
+			return !ignoredUntrackedGitPath.test(line.slice(3))
+		},
+	)
+
 class VersionControlError extends Data.TaggedError("VersionControlError")<{
 	readonly message: string
 }> {}
@@ -171,7 +182,15 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 						yield* requireSuccess(
 							"Failed to clone Git repository",
 							fs.runCommand(
-								["git", "clone", "--bare", "--", source, destination],
+								[
+									"git",
+									"clone",
+									"--bare",
+									"--no-hardlinks",
+									"--",
+									source,
+									destination,
+								],
 								{
 									captureOutput: true,
 								},
@@ -259,10 +278,20 @@ export class GitVersionControlService extends Effect.Service<GitVersionControlSe
 					Effect.gen(function* () {
 						const fs = yield* FileSystemService
 						const result = yield* fs.runCommand(
-							["git", "-C", workspacePath, "status", "--porcelain"],
+							[
+								"git",
+								"-C",
+								workspacePath,
+								"status",
+								"--porcelain=v1",
+								"-z",
+								"--untracked-files=all",
+							],
 							{ captureOutput: true },
 						)
-						return result.exitCode === 0 ? result.stdout.length > 0 : null
+						return result.exitCode === 0
+							? isDirtyGitStatus(result.stdout)
+							: null
 					}),
 				fetch: (repositoryPath, remote = "origin", branch) =>
 					Effect.gen(function* () {

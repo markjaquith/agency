@@ -6,9 +6,7 @@ export interface AgentCommandVariables {
 	readonly target: string
 	readonly task: string
 	readonly phase: string
-	readonly claimant: string
 	readonly sessionId: string
-	readonly claimRevision: string
 }
 
 interface AgentDefinition {
@@ -25,9 +23,7 @@ const PLACEHOLDERS = new Set<keyof AgentCommandVariables>([
 	"target",
 	"task",
 	"phase",
-	"claimant",
 	"sessionId",
-	"claimRevision",
 ])
 
 const BUILTIN_AGENTS: Readonly<Record<string, AgentDefinition>> = {
@@ -35,7 +31,7 @@ const BUILTIN_AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		command: ["opencode2"],
 		autoCommand: ["opencode2", "--prompt", "{prompt}"],
 		resumeCommand: ["opencode2", "--continue"],
-		autoResumeCommand: ["opencode2", "--continue", "--prompt", "{prompt}"],
+		autoResumeCommand: ["opencode2", "--prompt", "{prompt}"],
 	},
 	opencode: {
 		command: ["opencode"],
@@ -122,14 +118,16 @@ export const agentEnvironment = (
 	variables: AgentCommandVariables,
 ): Record<string, string> => ({
 	AGENCY_AGENT: agent,
-	AGENCY_CLAIMANT: variables.claimant,
+	AGENCY_INVOCATION_SOURCE: "agent",
 	AGENCY_SESSION_ID: variables.sessionId,
-	AGENCY_CLAIM_REVISION: variables.claimRevision,
 	AGENCY_WORKBASE: variables.workbase,
 	AGENCY_TARGET: variables.target,
 	AGENCY_TASK_ID: variables.task,
 	AGENCY_PHASE_ID: variables.phase,
 	AGENCY_PROMPT: variables.prompt,
+	...(agent === "opencode2" && variables.prompt
+		? { AGENCY_TUI_AUTOSUBMIT: "1" }
+		: {}),
 })
 
 const SECRET_NAME =

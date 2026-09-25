@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir } from "../test-utils"
 import {
 	documentWriteStep,
 	runLifecycleTransaction,
+	transactionEffect,
 } from "./LifecycleTransaction"
 
 describe("lifecycle transactions", () => {
@@ -25,14 +26,16 @@ describe("lifecycle transactions", () => {
 					steps: [
 						{
 							label: "write marker",
-							apply: () => Bun.write(marker, "applied").then(() => undefined),
+							apply: transactionEffect(async () => {
+								await Bun.write(marker, "applied")
+							}),
 						},
 						{
 							label: "reject plan",
-							preflight: async () => {
+							preflight: Effect.sync(() => {
 								throw new Error("preflight rejected")
-							},
-							apply: async () => undefined,
+							}),
+							apply: Effect.void,
 						},
 					],
 				}),
@@ -57,9 +60,9 @@ describe("lifecycle transactions", () => {
 					]),
 					{
 						label: "fail after documents",
-						apply: async () => {
+						apply: Effect.sync(() => {
 							throw new Error("injected failure")
-						},
+						}),
 					},
 				],
 			}).pipe(Effect.either),
@@ -83,17 +86,17 @@ describe("lifecycle transactions", () => {
 				steps: [
 					{
 						label: "external mutation",
-						apply: async () => undefined,
-						rollback: async () => {
+						apply: Effect.void,
+						rollback: Effect.sync(() => {
 							throw new Error("rollback failed")
-						},
+						}),
 						manualRecovery: "undo external mutation",
 					},
 					{
 						label: "injected failure",
-						apply: async () => {
+						apply: Effect.sync(() => {
 							throw new Error("apply failed")
-						},
+						}),
 					},
 				],
 			}).pipe(Effect.either),
@@ -103,5 +106,40 @@ describe("lifecycle transactions", () => {
 		expect(failure.completed).toEqual(["external mutation"])
 		expect(failure.rolledBack).toEqual([])
 		expect(failure.manualRecovery).toEqual(["undo external mutation"])
+	})
+
+	test("waits for rollback and lock release when interrupted", async () => {
+		const events: string[] = []
+		const blocked = await Effect.runPromise(Deferred.make<void>())
+		const fiber = Effect.runFork(
+			runLifecycleTransaction({
+				root,
+				steps: [
+					{
+						label: "external mutation",
+						apply: Effect.sync(() => events.push("applied")),
+						rollback: transactionEffect(async () => {
+							events.push("rollback started")
+							await Bun.sleep(20)
+							events.push("rollback finished")
+						}),
+					},
+					{
+						label: "block",
+						apply: Deferred.succeed(blocked, undefined).pipe(
+							Effect.zipRight(Effect.never),
+						),
+					},
+				],
+			}),
+		)
+		await Effect.runPromise(Deferred.await(blocked))
+
+		await Effect.runPromise(Fiber.interrupt(fiber))
+
+		expect(events).toEqual(["applied", "rollback started", "rollback finished"])
+		expect(
+			await Bun.file(join(root, ".agency-graph-mutation.lock")).exists(),
+		).toBe(false)
 	})
 })

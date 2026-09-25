@@ -4,6 +4,55 @@ This directory is an Agency workbase. Epics, tasks, and phases are durable
 Markdown documents; repository aliases and generated Git worktrees provide code
 access.
 
+## Discover Actions First
+
+After the `agency context . --json` bootstrap, use `agency act --json` as the
+primary way to discover what Agency can do. Prefer its live action catalog over
+searching command help, reading implementation code, or guessing commands from
+memory. It reports available actions, blocked reasons, required inputs, exact
+argv/templates, document revisions, and explicit follow-up choices.
+
+Keep discovery focused on the work at hand:
+
+- Current task: `agency act --task <context-task-id> --json`.
+- Current phase: `agency act --task <context-task-id> --phase <context-phase-id> --json`.
+- One operation: add `--action <action-id>` to either selector.
+- Workbase-level creation or repository actions: use
+  `agency act --action <action-id> --json` without an item selector.
+- Unsure which action or item applies: `agency act --json`.
+
+Use selectors returned by context, not IDs inferred from checkout or branch
+names. Execute an available `command` as argv from the returned workbase root.
+For a `commandTemplate`, substitute required input placeholders; append optional
+inputs using their declared `option`. Preserve multiline input as one argv value.
+Re-discover after mutations because availability and revisions may change.
+
+Discovery is read-only and does not grant consent. `followUpCommands` describe
+the action's bookkeeping; `nextActions` require a separate explicit choice.
+Creation never implies starting Work. Respect blocked reasons and the consent
+boundaries below. The command fast paths remain useful when the exact operation
+and arguments are already established; do not rediscover between every known
+step or use help unless discovery does not cover the operation.
+
+### Current Work and Branch Context
+
+When the request concerns this execution unit, target its context task/phase
+rather than browsing the entire workbase. Use `authority.writable.checkoutPath`
+for repository work and the declared delivery branch for publication.
+
+For new work that builds on the current implementation (a follow-up, additional
+phase, or explicitly requested continuation), prefer the current execution's
+declared branch as `--base` when that matches the user's intent. Do not blindly
+copy `main` from examples or accept a wizard default. Confirm the branch from
+Agency context; when checking the live Git branch is necessary, do so in the
+writable checkout, not the workbase root. An explicit user base takes precedence.
+Unrelated new work should use its intended integration base instead.
+
+Branch ancestry is not a completion dependency. Choosing the current branch as
+the base does not add `--depends-on`, reuse the current item for explicitly new
+work, switch branches, or expand write authority. Pass the chosen base as the
+discovered `base` input to the native creation/handoff command.
+
 ## Command Fast Paths
 
 When a request clearly matches one of these intents, use the exact recipe without
@@ -24,7 +73,7 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
 4. Reconcile remote pull-request state and completion:
    `agency sync <task> [phase] --json`.
 5. Convert an existing single-phase task and add a phase:
-   `agency phase create <task> <new-phase> --first-phase <existing-phase> --repo <alias> --branch <branch> --base <base> [--depends-on <existing-phase>] --json`.
+   `agency phase create <task> <new-phase> --first-phase <existing-phase> --repo <alias> --base <base> [--depends-on <existing-phase>] --json`.
 6. Archive terminal work: first run `agency archive task <task> --dry-run --json`,
    `agency archive phase <task> <phase> --dry-run --json`, or
    `agency archive epic <epic> --dry-run --json`; if the preflight is safe,
@@ -46,16 +95,14 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
     `agency push --json`. Create and record a pull request with
     `agency pr create <task> [phase] [--draft] [--title <title>] [--label <label>] --json`;
     do not run a separate push first because `pr create` owns publication.
-12. Complete genuine non-PR work. For an active claim, run
-    `agency finish <task> [phase] --session-id <id> --revision <revision> --outcome done --no-pull-request --summary <text> [--evidence-url <url>]`.
-    Without a claim, run
+12. Complete genuine non-PR work. Run
     `agency task status <task> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`
     or
     `agency phase status <task> <phase> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`.
 13. Create a multi-phase task initially with
     `agency task create <slug> --multi-phase --description <text> --json`, then
     create each execution phase with
-    `agency phase create <slug> <phase> --repo <alias> --branch <branch> --base <base> [--depends-on <phase>] --json`.
+    `agency phase create <slug> <phase> --repo <alias> --base <base> [--depends-on <phase>] --json`.
 14. Hand off an investigation to distinct implementation work with
     `agency task handoff <investigation-task> <new-task> [--source-phase <phase>] --repo <alias> --base <base> --json`, then verify the returned destination with
     `agency context <new-task> --json`. Do not prepare or start it unless requested.
@@ -67,6 +114,9 @@ Never pass `--work` or `--auto` to `agency task create`. Do not run separate
 or `agency repo list` commands before these recipes when the required parameters
 are already known. `agency work prepare` owns validation, readiness checks,
 workspace materialization, and the versioned `agency-execution-v1` contract.
+Do not pass `--branch` merely to reproduce a default: when the workbase has a
+`branchNameCommand`, omitting the option lets that policy choose and record the
+branch. Pass `--branch` only when the user explicitly requires an override.
 
 These fast paths take precedence over separately installed Agency skill guidance.
 Use `agency <command> --help` only as a recovery step when no recipe matches or a
@@ -79,10 +129,10 @@ commands without prescribing an execution environment.
 Start every session with one read-only command:
 
 ```bash
-agency context . --full --json
+agency context . --json
 ```
 
-Workers use full context here because they need the assigned document prose. Use
+Pass `--full` only when document prose or low-level VCS details are needed. Use
 the returned target, document paths and revisions, dependency readiness,
 authority, checkout state, PR state, and validation result. Do not infer these
 from directory names or stale prose.
@@ -162,14 +212,14 @@ revision stale, and Agency must not silently rewrite that evidence.
 
 ## Safety
 
-- Stop on validation errors, dependency blockers, an unexpected writable
-  repository, or a conflicting active claim.
+- Stop on validation errors, dependency blockers, or an unexpected writable
+  repository.
 - Do not manually create, move, or remove worktrees under `code/`.
 - Use `agency archive`, rather than moving work item folders manually.
 - Do not edit bare repositories or repository symlinks under `repos/`.
 - Never invent entity IDs, revisions, PR state, dependency completion, or
   checkout state. Preserve parent backlinks and dependency declarations.
-- Do not bypass dirty-worktree, active-claim, revision, or readiness protections.
+- Do not bypass dirty-worktree, revision, or readiness protections.
 - Do not run `agency work` from an active agent session unless the user
   explicitly asks to launch another agent.
 - Run `agency validate` before worktree or pull-request operations.
@@ -189,10 +239,8 @@ resolve its reported commits and remediation commands before retrying.
 
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work
-`working` without creating a claim, and starts the agent. Epic and multi-phase
-task launches remain orchestration-only. External orchestrators instead claim
-an execution unit, launch and monitor their agent separately, and finish or
-release the claim with the current document revision.
+`working`, and starts the agent. Epic and multi-phase task launches remain
+orchestration-only.
 
 An Agency-launched agent receives process-local worker identity through both
 the `AGENCY_SESSION_ID` and `AGENCY_TARGET` environment variables and a generated
@@ -211,10 +259,11 @@ recursively launch. External session state is never part of worker identity. If
 the prompt and context disagree, stop and ask the user rather than launching.
 
 For OpenCode, Agency's managed plugin validates the generated marker against
-`agency context`, binds that identity to the OpenCode session, injects an
-active-worker system instruction, and supplies Agency identity to that session's
-shell environment. This avoids relying on the environment of OpenCode's
-long-lived server process.
+`agency context`, binds that identity to the OpenCode session, and injects an
+active-worker system instruction. The V1 integration also supplies Agency
+identity to that session's shell environment. OpenCode V2's shell hook does not
+identify the invoking session, so the plugin does not leak one session's identity
+into another and instead retains the validated prompt fallback.
 
 ## Closeout
 
@@ -228,13 +277,11 @@ intent, `--no-pull-request`, and a durable outcome summary.
 At each closeout trigger (creating or updating a PR, marking it ready, completing
 a refinement loop, or pausing or handing off completed implementation work):
 
-- Finish an active claim with the current revision via `agency finish`; a
-  successful claim outcome leaves unmerged work `working`. For unclaimed work,
-  keep the execution unit `working` through review and merge.
+- Keep the execution unit `working` through review and merge.
 - After merge, run `agency sync` to reconcile the execution unit to
   `done`.
-- For an approved non-PR outcome, finish an active claim or update unclaimed
-  status with `--no-pull-request --summary <text>` and optional supporting URL.
+- For an approved non-PR outcome, update status with
+  `--no-pull-request --summary <text>` and an optional supporting URL.
 - Refresh durable delivery context in `TASK.md` or `PHASE.md`, including recorded
   PR state, current head, diff summary, and verification results after later
   pushes when those details are maintained there.
@@ -244,9 +291,11 @@ a refinement loop, or pausing or handing off completed implementation work):
 
 `agency integration status` reports `managed`, `drifted`, `customized`, or
 `missing` generated files. Agency keeps these instructions in
-`.agency/AGENTS.md`, and its managed OpenCode config loads them automatically.
+`.agency/AGENTS.md`, and its managed OpenCode integration loads them automatically.
 It also installs a managed server plugin that exposes skills from the
-authoritative writable checkout and an explicitly registered TUI companion
+authoritative writable checkout. In OpenCode V2 it injects these managed
+instructions through a session context hook because configured instruction paths
+are not currently loaded. The V1 integration also registers a TUI companion
 providing `/agency-debug` without submitting an LLM prompt.
 The workbase-root `AGENTS.md`, when present, belongs entirely to the workbase
 owner and composes with these instructions through OpenCode's normal discovery.
@@ -257,9 +306,12 @@ before launching an agent.
 
 OpenCode can access the complete workbase tree, but this filesystem permission
 does not expand Agency write authority beyond the checkout reported by
-`agency context`. OpenCode remains rooted in the task or epic directory so the
-workbase instructions and config compose normally. The managed plugin resolves
-the writable checkout from launch context or `agency context`, then adds its
-supported skill directories through `skills.paths`; this does not make other
-checkout-local OpenCode configuration authoritative. Agents must follow the
-authority reported by `agency context`.
+`agency context`. Pi and OpenCode V2 execution units launched by `agency work`
+are rooted in the authoritative writable checkout so their project and Git
+status reflect the implementation repository; OpenCode V1 remains rooted in the
+task or phase directory. Orchestration remains rooted in its
+Agency document directory. The managed integrations resolve the writable
+checkout from launch context or `agency context`, guide task-directory sessions
+to use it for implementation, and expose its supported skill directories through
+the applicable plugin API; this does not make other checkout-local configuration
+authoritative. Agents must follow the authority reported by `agency context`.
