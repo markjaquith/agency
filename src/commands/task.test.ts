@@ -8,6 +8,7 @@ import {
 	createTempDir,
 	runTestEffect,
 } from "../test-utils"
+import { errorEnvelope } from "../protocol"
 import { task, type TaskInteraction } from "./task"
 
 describe("task creation input", () => {
@@ -128,6 +129,125 @@ describe("task creation input", () => {
 		expect(content).toContain("ticketUrl: null")
 		expect(content).toContain("branch: task/scripted-task")
 		expect(content).toContain("base: main")
+	})
+
+	test("resolves a configured branch name when creation omits --branch", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: [
+					"sh",
+					"-c",
+					'printf "%s" "$1"',
+					"resolver",
+					"custom/{repo}/{ticket}",
+				],
+			}),
+		)
+
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["configured"],
+				repo: "agency",
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		expect(
+			await Bun.file(join(root, "tasks/configured/TASK.md")).text(),
+		).toContain("branch: custom/agency/configured")
+	})
+
+	test("fails immediately when the configured resolver fails or returns an invalid ref", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: ["sh", "-c", "echo resolver-error >&2; exit 7"],
+			}),
+		)
+		const failure = await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["failed"],
+				repo: "agency",
+				cwd: root,
+				silent: true,
+			}),
+		).catch((error: unknown) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "BRANCH_NAME_COMMAND_FAILED",
+			message: expect.stringContaining(
+				"branchNameCommand failed with exit code 7: resolver-error",
+			),
+			fields: { exitCode: 7 },
+		})
+
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: ["sh", "-c", "printf 'bad branch'"],
+			}),
+		)
+		await expect(
+			runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["invalid"],
+					repo: "agency",
+					cwd: root,
+					silent: true,
+				}),
+			),
+		).rejects.toThrow("produced invalid Git branch name 'bad branch'")
+
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: ["sh", "-c", "exit 0"],
+			}),
+		)
+		await expect(
+			runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["empty"],
+					repo: "agency",
+					cwd: root,
+					silent: true,
+				}),
+			),
+		).rejects.toThrow("produced an empty branch name")
+	})
+
+	test("lets an explicit --branch bypass the configured resolver", async () => {
+		await Bun.write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				branchNameCommand: ["sh", "-c", "exit 9"],
+			}),
+		)
+
+		await runTestEffect(
+			task({
+				subcommand: "create",
+				args: ["explicit"],
+				repo: "agency",
+				branch: "chosen/explicit",
+				cwd: root,
+				silent: true,
+			}),
+		)
+
+		expect(
+			await Bun.file(join(root, "tasks/explicit/TASK.md")).text(),
+		).toContain("branch: chosen/explicit")
 	})
 
 	test("returns revision-bound validation evidence and normalized recalled context", async () => {

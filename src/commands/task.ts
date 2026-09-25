@@ -16,6 +16,7 @@ import {
 	buildValidationEvidence,
 	normalizeRecalledContext,
 } from "../workbase/execution-contract"
+import { resolveBranchName } from "../workbase/branch-name-command"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -188,6 +189,19 @@ export const task = (
 					}
 				}
 
+				const base = options.base ?? "main"
+				const branch =
+					multiPhase || options.branch
+						? options.branch
+						: yield* resolveBranchName({
+								id,
+								taskId: id,
+								ticketUrl,
+								repo: repo!,
+								base,
+								defaultBranch: `task/${id}`,
+								startPath: cwd,
+							})
 				const record = yield* tasks.create(
 					{
 						id,
@@ -197,8 +211,8 @@ export const task = (
 						multiPhase,
 						repo,
 						repos: parseRepositoryReferences(options.references),
-						branch: multiPhase ? undefined : (options.branch ?? `task/${id}`),
-						base: multiPhase ? undefined : (options.base ?? "main"),
+						branch: multiPhase ? undefined : branch,
+						base: multiPhase ? undefined : base,
 						purpose: options.purpose as "investigation" | undefined,
 					},
 					cwd,
@@ -275,10 +289,23 @@ export const task = (
 							cwd,
 						)
 					: undefined
+				const ticketUrl = options.ticketUrl?.trim() || null
+				const branch =
+					multiPhase || review || options.branch
+						? options.branch
+						: yield* resolveBranchName({
+								id,
+								taskId: id,
+								ticketUrl,
+								repo: repo!,
+								base,
+								defaultBranch: `task/${id}`,
+								startPath: cwd,
+							})
 				const record = yield* tasks.create(
 					{
 						id,
-						ticketUrl: options.ticketUrl?.trim() || null,
+						ticketUrl,
 						description: options.description?.trim() || undefined,
 						epic: options.epic,
 						multiPhase,
@@ -287,10 +314,7 @@ export const task = (
 						repos: review
 							? undefined
 							: parseRepositoryReferences(options.references),
-						branch:
-							multiPhase || review
-								? undefined
-								: (options.branch ?? `task/${id}`),
+						branch: multiPhase || review ? undefined : branch,
 						base: multiPhase || review ? undefined : base,
 						purpose: options.purpose as "investigation" | undefined,
 					},
@@ -337,18 +361,31 @@ export const task = (
 						new Error("Writable repository is required for task handoff"),
 					)
 				}
+				const ticketUrl = options.ticketUrl?.trim() || null
+				const base = options.base ?? "main"
+				const branch =
+					options.branch ??
+					(yield* resolveBranchName({
+						id,
+						taskId: id,
+						ticketUrl,
+						repo: options.repo,
+						base,
+						defaultBranch: `task/${id}`,
+						startPath: cwd,
+					}))
 				const output = yield* tasks.handoff(
 					{
 						sourceTaskId,
 						sourcePhaseId: options.sourcePhase,
 						id,
-						ticketUrl: options.ticketUrl?.trim() || null,
+						ticketUrl,
 						description: options.description?.trim() || undefined,
 						epic: options.epic,
 						repo: options.repo,
 						repos: parseRepositoryReferences(options.references),
-						branch: options.branch ?? `task/${id}`,
-						base: options.base ?? "main",
+						branch,
+						base,
 					},
 					cwd,
 				)
@@ -591,7 +628,7 @@ Create options:
   --repo <alias>        Writable repository
   --reference <alias>:<ref>
                         Read-only repository reference; repeatable
-  --branch <name>       Working branch (default: task/<id>)
+  --branch <name>       Working branch (default: configured resolver or task/<id>)
   --base <name>         Base branch (default: main)
 	--context-repo <alias> Recalled repository; must agree with --repo
 	--context-base <name>  Recalled base; must agree with --base

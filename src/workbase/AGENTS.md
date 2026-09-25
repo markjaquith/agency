@@ -73,7 +73,7 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
 4. Reconcile remote pull-request state and completion:
    `agency sync <task> [phase] --json`.
 5. Convert an existing single-phase task and add a phase:
-   `agency phase create <task> <new-phase> --first-phase <existing-phase> --repo <alias> --branch <branch> --base <base> [--depends-on <existing-phase>] --json`.
+   `agency phase create <task> <new-phase> --first-phase <existing-phase> --repo <alias> --base <base> [--depends-on <existing-phase>] --json`.
 6. Archive terminal work: first run `agency archive task <task> --dry-run --json`,
    `agency archive phase <task> <phase> --dry-run --json`, or
    `agency archive epic <epic> --dry-run --json`; if the preflight is safe,
@@ -102,7 +102,7 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
 13. Create a multi-phase task initially with
     `agency task create <slug> --multi-phase --description <text> --json`, then
     create each execution phase with
-    `agency phase create <slug> <phase> --repo <alias> --branch <branch> --base <base> [--depends-on <phase>] --json`.
+    `agency phase create <slug> <phase> --repo <alias> --base <base> [--depends-on <phase>] --json`.
 14. Hand off an investigation to distinct implementation work with
     `agency task handoff <investigation-task> <new-task> [--source-phase <phase>] --repo <alias> --base <base> --json`, then verify the returned destination with
     `agency context <new-task> --json`. Do not prepare or start it unless requested.
@@ -114,6 +114,9 @@ Never pass `--work` or `--auto` to `agency task create`. Do not run separate
 or `agency repo list` commands before these recipes when the required parameters
 are already known. `agency work prepare` owns validation, readiness checks,
 workspace materialization, and the versioned `agency-execution-v1` contract.
+Do not pass `--branch` merely to reproduce a default: when the workbase has a
+`branchNameCommand`, omitting the option lets that policy choose and record the
+branch. Pass `--branch` only when the user explicitly requires an override.
 
 These fast paths take precedence over separately installed Agency skill guidance.
 Use `agency <command> --help` only as a recovery step when no recipe matches or a

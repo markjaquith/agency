@@ -187,6 +187,48 @@ Existing version 2 workbases without `repositories` remain valid. Run
 unambiguous. Workbase configuration may also provide a custom writable-worktree
 creation command.
 
+### Custom Branch Names
+
+Set `branchNameCommand` to an argv template to choose the branch recorded for a
+new execution unit when `--branch` is omitted:
+
+```json
+{
+	"version": 2,
+	"branchNameCommand": ["wt-resolve-new-branch-name", "{ticket}"]
+}
+```
+
+Agency invokes the command directly, without a shell, from the workbase root and
+uses its trimmed stdout as the branch name. The command has 120 seconds to
+finish. A non-zero exit, empty output, timeout, or output rejected by
+`git check-ref-format --branch` fails creation without falling back. Explicit
+`--branch` always wins. Multi-phase task containers and review tasks do not have
+writable branches and therefore do not invoke this command.
+
+Available placeholders are:
+
+| Placeholder      | Value                                              |
+| ---------------- | -------------------------------------------------- |
+| `{id}`           | ID of the task or phase being created              |
+| `{ticket}`       | Task ticket URL, or `{id}` when there is no ticket |
+| `{ticketUrl}`    | Task ticket URL, or an empty string when absent    |
+| `{repo}`         | Writable repository alias                          |
+| `{base}`         | Base branch                                        |
+| `{workbaseRoot}` | Absolute workbase root                             |
+| `{taskId}`       | Task ID                                            |
+| `{phaseId}`      | Phase ID, or an empty string when creating a task  |
+
+Resolver failures are reported with the `BRANCH_NAME_COMMAND_FAILED` error code
+in JSON output.
+
+Matching `AGENCY_ID`, `AGENCY_TICKET`, `AGENCY_TICKET_URL`, `AGENCY_REPO`,
+`AGENCY_BASE`, `AGENCY_WORKBASE_ROOT`, `AGENCY_TASK_ID`, and `AGENCY_PHASE_ID`
+environment variables are also set. Without `branchNameCommand`, task branches
+remain `task/<id>` and phase branches default to `task/<task-id>-<phase-id>`.
+Callers should omit `--branch` when they want the workbase policy; do not pass a
+hard-coded value merely to reproduce Agency's built-in default.
+
 ### Custom Worktree Command
 
 Git workbases create worktrees with Git. Set `worktreeCreateCommand` to an
