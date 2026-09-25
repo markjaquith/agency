@@ -109,6 +109,7 @@ export const WorkbaseConfig = Schema.Struct({
 	),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
+	worktreeRemoveCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	agents: Schema.optional(
 		Schema.Record({
 			key: EntityId,

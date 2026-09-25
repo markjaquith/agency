@@ -462,6 +462,25 @@ status: done
 		).rejects.toThrow("{worktree}")
 	})
 
+	test("rejects an invalid worktree remove command template", async () => {
+		await write(
+			root,
+			"agency.json",
+			JSON.stringify({
+				version: 2,
+				worktreeRemoveCommand: ["tool", "{repo}", "{worktree}", "{path}"],
+			}),
+		)
+
+		await expect(
+			runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.discover(root)),
+				),
+			),
+		).rejects.toThrow("Unknown worktreeRemoveCommand placeholder: {path}")
+	})
+
 	test("rejects an unknown post-checkout command placeholder", async () => {
 		await write(
 			root,

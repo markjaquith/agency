@@ -24,5 +24,17 @@
     "--no-cd",
     "--format",
     "json"
+  ],
+  "worktreeRemoveCommand": [
+    "wt",
+    "-C",
+    "{repo}",
+    "-y",
+    "remove",
+    "{worktree}",
+    "--no-delete-branch",
+    "--foreground",
+    "--format",
+    "json"
   ]
 }

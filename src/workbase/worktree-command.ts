@@ -5,15 +5,20 @@ interface WorktreeCommandVariables {
 	readonly base: string
 }
 
+type WorktreeCommandSetting = "worktreeCreateCommand" | "worktreeRemoveCommand"
+
 const REQUIRED_PLACEHOLDERS = ["repo", "worktree"] as const
 const PLACEHOLDERS = new Set(["repo", "worktree", "branch", "base"])
 
-export const validateWorktreeCreateCommand = (command: readonly string[]) => {
+export const validateWorktreeCommand = (
+	setting: WorktreeCommandSetting,
+	command: readonly string[],
+) => {
 	const template = command.join("\u0000")
 	for (const placeholder of REQUIRED_PLACEHOLDERS) {
 		if (!template.includes(`{${placeholder}}`)) {
 			throw new Error(
-				`worktreeCreateCommand must include the {${placeholder}} placeholder`,
+				`${setting} must include the {${placeholder}} placeholder`,
 			)
 		}
 	}
@@ -21,19 +26,18 @@ export const validateWorktreeCreateCommand = (command: readonly string[]) => {
 		for (const match of argument.matchAll(/\{([^{}]+)\}/g)) {
 			const placeholder = match[1]!
 			if (!PLACEHOLDERS.has(placeholder)) {
-				throw new Error(
-					`Unknown worktreeCreateCommand placeholder: {${placeholder}}`,
-				)
+				throw new Error(`Unknown ${setting} placeholder: {${placeholder}}`)
 			}
 		}
 	}
 }
 
-export const expandWorktreeCreateCommand = (
+export const expandWorktreeCommand = (
+	setting: WorktreeCommandSetting,
 	command: readonly string[],
 	variables: WorktreeCommandVariables,
 ): string[] => {
-	validateWorktreeCreateCommand(command)
+	validateWorktreeCommand(setting, command)
 
 	return command.map((argument) =>
 		argument.replaceAll(/\{([^{}]+)\}/g, (match, placeholder: string) => {
