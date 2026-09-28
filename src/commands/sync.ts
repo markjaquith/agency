@@ -138,6 +138,7 @@ Options:
 
 Sync may materialize declared repositories and unambiguous missing checkouts,
 adopt legacy repositories with portable origins, record a uniquely matched PR,
-and mark merged work done. Dirty, stale, or
+adopt a recorded PR's retargeted base or renamed head branch, and mark merged
+work done. Dirty, stale, or
 conflicting checkouts are always left unresolved.
 `
