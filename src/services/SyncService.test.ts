@@ -982,6 +982,254 @@ JSON
 		})
 	})
 
+	describe("recorded PR head and base changes", () => {
+		const createRecorded = async (
+			id: string,
+			branch: string,
+			base: string,
+			options: { readonly materialize?: boolean } = {},
+		) => {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{ id, ticketUrl: null, repo: "agency", branch, base },
+							root,
+						),
+					),
+				),
+			)
+			if (options.materialize)
+				await runTestEffect(
+					WorktreeService.pipe(
+						Effect.flatMap((service) =>
+							service.materialize(id, undefined, root),
+						),
+					),
+				)
+			await git(
+				["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+				join(root, "repos/agency"),
+			)
+			await runTestEffect(
+				PullRequestService.pipe(
+					Effect.flatMap((service) =>
+						service.setUrl(
+							id,
+							undefined,
+							"https://github.com/example/agency/pull/42",
+							root,
+						),
+					),
+				),
+			)
+		}
+		const stubPullRequest = async (
+			head: string,
+			base: string,
+			state: "OPEN" | "MERGED" = "OPEN",
+		) => {
+			await Bun.write(
+				join(root, "bin", "gh"),
+				`#!/bin/sh
+cat <<'JSON'
+{"number":42,"state":"${state}","title":"Ship","isDraft":false,"headRefName":"${head}","baseRefName":"${base}","headRepository":{"nameWithOwner":"example/agency"},"url":"https://github.com/example/agency/pull/42","mergedAt":${state === "MERGED" ? '"2100-01-01T00:00:00Z"' : "null"},"mergeCommit":null,"mergeable":"MERGEABLE"}
+JSON
+`,
+			)
+			await chmod(join(root, "bin", "gh"), 0o755)
+		}
+		const reconcile = (apply: boolean, taskId: string) =>
+			runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) =>
+						service.reconcile({
+							cwd: root,
+							apply,
+							taskId,
+						}),
+					),
+				),
+			)
+		const show = (id: string) =>
+			runTestEffect(
+				TaskService.pipe(Effect.flatMap((service) => service.show(id, root))),
+			)
+		const output = async (args: string[], cwd: string) => {
+			const process = Bun.spawn(["git", ...args], {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			await process.exited
+			return (await new Response(process.stdout).text()).trim()
+		}
+
+		beforeEach(async () => {
+			const repository = join(root, "repos/agency")
+			await git(["branch", "task/parent", "main"], repository)
+			await git(["branch", "task/parent", "main"], join(root, "source"))
+		})
+
+		test("adopts a stacked PR retargeted to its parent's base", async () => {
+			await createRecorded("child", "task/child", "task/parent", {
+				materialize: true,
+			})
+			await stubPullRequest("task/child", "main")
+			const before = await show("child")
+
+			const planned = await reconcile(false, "child")
+			expect(planned.unresolved).toEqual([])
+			expect(planned.changes).toContainEqual(
+				expect.objectContaining({
+					kind: "adopt-pr-base",
+					target: "task:child",
+					status: "planned",
+				}),
+			)
+			expect((await show("child")).revision).toBe(before.revision)
+
+			const applied = await reconcile(true, "child")
+			expect(applied.unresolved).toEqual([])
+			expect(applied.changes.map((change) => change.kind)).toEqual([
+				"adopt-pr-base",
+				"record-pr",
+			])
+			expect(applied.executions[0]).toMatchObject({
+				branch: "task/child",
+				base: "main",
+			})
+			expect((await show("child")).data).toMatchObject({
+				branch: "task/child",
+				base: "main",
+				status: "open",
+				pr: { headBranch: "task/child", baseBranch: "main" },
+			})
+
+			const repeated = await reconcile(true, "child")
+			expect(repeated.changes).toEqual([])
+			expect(repeated.unresolved).toEqual([])
+		})
+
+		test("marks a merged retargeted PR done", async () => {
+			await createRecorded("merged-child", "task/child", "task/parent")
+			await stubPullRequest("task/child", "main", "MERGED")
+
+			const applied = await reconcile(true, "merged-child")
+			expect(applied.unresolved).toEqual([])
+			expect(applied.changes.map((change) => change.kind)).toEqual([
+				"adopt-pr-base",
+				"record-pr",
+				"mark-done",
+			])
+			expect((await show("merged-child")).data).toMatchObject({
+				base: "main",
+				status: "done",
+			})
+		})
+
+		test("adopts a renamed PR head and renames the local branch", async () => {
+			await createRecorded("renamed", "task/old-name", "main", {
+				materialize: true,
+			})
+			await stubPullRequest("task/new-name", "main")
+			const repository = join(root, "repos/agency")
+			const checkout = join(root, "tasks/renamed/code/agency")
+
+			const planned = await reconcile(false, "renamed")
+			expect(planned.unresolved).toEqual([])
+			expect(planned.changes).toContainEqual(
+				expect.objectContaining({ kind: "adopt-pr-branch", status: "planned" }),
+			)
+			expect(await output(["symbolic-ref", "--short", "HEAD"], checkout)).toBe(
+				"task/old-name",
+			)
+
+			const applied = await reconcile(true, "renamed")
+			expect(applied.unresolved).toEqual([])
+			expect(applied.changes.map((change) => change.kind)).toEqual([
+				"adopt-pr-branch",
+				"record-pr",
+			])
+			expect(applied.executions[0]?.checkouts[0]).toMatchObject({
+				requestedRef: "task/new-name",
+				branch: "task/new-name",
+			})
+			expect((await show("renamed")).data).toMatchObject({
+				branch: "task/new-name",
+				base: "main",
+			})
+			expect(await output(["symbolic-ref", "--short", "HEAD"], checkout)).toBe(
+				"task/new-name",
+			)
+			expect(
+				await output(["branch", "--list", "task/old-name"], repository),
+			).toBe("")
+
+			const repeated = await reconcile(true, "renamed")
+			expect(repeated.changes).toEqual([])
+			expect(repeated.unresolved).toEqual([])
+		})
+
+		test("does not overwrite an existing local branch for a renamed head", async () => {
+			await createRecorded("collision", "task/old-name", "main", {
+				materialize: true,
+			})
+			await git(["branch", "task/new-name", "main"], join(root, "repos/agency"))
+			await stubPullRequest("task/new-name", "main")
+
+			const applied = await reconcile(true, "collision")
+			expect(applied.unresolved).toEqual([
+				expect.objectContaining({
+					kind: "pr-branch-conflict",
+					target: "task:collision",
+				}),
+			])
+			expect(
+				applied.changes.some((change) => change.kind === "adopt-pr-branch"),
+			).toBe(false)
+			expect((await show("collision")).data).toMatchObject({
+				branch: "task/old-name",
+			})
+		})
+
+		test("does not adopt a head owned by other work", async () => {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id: "owner",
+								ticketUrl: null,
+								repo: "agency",
+								branch: "task/taken",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			await createRecorded("claimant", "task/mine", "main")
+			await stubPullRequest("task/taken", "main", "MERGED")
+			const applied = await reconcile(true, "claimant")
+			expect(applied.unresolved).toEqual([
+				expect.objectContaining({
+					kind: "pr-branch-conflict",
+					target: "task:claimant",
+					message: "Recorded PR head 'task/taken' is declared by 'task:owner'",
+				}),
+			])
+			expect(
+				applied.changes.some((change) => change.kind === "mark-done"),
+			).toBe(false)
+			expect((await show("claimant")).data).toMatchObject({
+				branch: "task/mine",
+				status: "open",
+			})
+		})
+	})
+
 	test("leaves non-PR completion unchanged when a matching PR is discoverable", async () => {
 		await runTestEffect(
 			TaskService.pipe(

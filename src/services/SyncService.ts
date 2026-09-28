@@ -58,7 +58,12 @@ interface RegisteredWorktree {
 }
 
 interface SyncChange {
-	readonly kind: "materialize-workspace" | "record-pr" | "mark-done"
+	readonly kind:
+		| "materialize-workspace"
+		| "adopt-pr-branch"
+		| "adopt-pr-base"
+		| "record-pr"
+		| "mark-done"
 	readonly target: string
 	readonly message: string
 	readonly status: "planned" | "applied"
@@ -162,14 +167,34 @@ interface PullRequestQuery {
 		| undefined
 }
 
+const canonicalRecord = (record: PullRequestRecord | null) =>
+	record
+		? JSON.stringify(
+				Object.entries(record)
+					.filter(([, value]) => value !== undefined)
+					.sort(([a], [b]) => a.localeCompare(b)),
+			)
+		: null
+
+const samePullRequestRecord = (
+	current: PullRequestRecord,
+	existing: PullRequestRecord | null,
+) => canonicalRecord(current) === canonicalRecord(existing)
+
+const belongsToWritableRepository = (
+	current: PullRequestRecord,
+	remoteRepository: string,
+) =>
+	current.headRepository?.toLowerCase() === remoteRepository.toLowerCase() &&
+	current.baseRepository?.toLowerCase() === current.repository.toLowerCase()
+
 const mergedPullRequestFromGitHub = (
 	data: ExecutionData,
 	query: PullRequestQuery | undefined,
 	details: readonly PullRequestRecord[] | undefined,
 ) => {
 	if (!query?.result || query.result.exitCode !== 0 || !details) return null
-	const existing = data.pr ? normalizePullRequestRecord(data.pr) : null
-	const matches = existing
+	const matches = data.pr
 		? details
 		: details.filter(
 				(item) =>
@@ -177,18 +202,10 @@ const mergedPullRequestFromGitHub = (
 			)
 	if (matches.length !== 1) return null
 	const current = matches[0]!
-	if (
-		current.merged !== true ||
-		current.headRepository?.toLowerCase() !==
-			query.remoteRepository.toLowerCase() ||
-		current.headBranch !== data.branch ||
-		current.baseRepository?.toLowerCase() !==
-			current.repository.toLowerCase() ||
-		current.baseBranch !== data.base
-	) {
-		return null
-	}
-	return current
+	return current.merged === true &&
+		belongsToWritableRepository(current, query.remoteRepository)
+		? current
+		: null
 }
 
 const mutateExecution = (
@@ -650,6 +667,22 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					{ concurrency: 8 },
 				)
 
+				const branchOwners = new Map<string, string>()
+				const branchKey = (repo: string, branch: string) =>
+					JSON.stringify([repo, branch])
+				for (const task of allTaskRecords) {
+					if ("repo" in task.data)
+						branchOwners.set(
+							branchKey(task.data.repo, task.data.branch),
+							`task:${task.id}`,
+						)
+					for (const phase of documents.phasesByTask.get(task.id) ?? [])
+						branchOwners.set(
+							branchKey(phase.data.repo, phase.data.branch),
+							`phase:${task.id}/${phase.id}`,
+						)
+				}
+
 				for (const record of records.sort((a, b) =>
 					a.key.localeCompare(b.key),
 				)) {
@@ -662,6 +695,126 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					const githubDetails = githubResponse?.ok
 						? githubResponse.details
 						: undefined
+					let renamedFrom: string | null = null
+					let adoptionConflict = false
+					const recordedPr =
+						!config.delivery && data.pr ? githubDetails?.[0] : undefined
+					if (
+						query &&
+						recordedPr?.headBranch &&
+						recordedPr.baseBranch &&
+						belongsToWritableRepository(recordedPr, query.remoteRepository) &&
+						(recordedPr.headBranch !== data.branch ||
+							recordedPr.baseBranch !== data.base)
+					) {
+						const previous = { branch: data.branch, base: data.base }
+						const adopted = {
+							branch: recordedPr.headBranch,
+							base: recordedPr.baseBranch,
+						}
+						const repositoryPath = join(root, "repos", data.repo)
+						let renameLocal = false
+						if (adopted.branch !== previous.branch) {
+							const owner = branchOwners.get(
+								branchKey(data.repo, adopted.branch),
+							)
+							const [previousLocal, adoptedLocal] = yield* Effect.all([
+								backend.resolveRevision(
+									repositoryPath,
+									`refs/heads/${previous.branch}`,
+								),
+								backend.resolveRevision(
+									repositoryPath,
+									`refs/heads/${adopted.branch}`,
+								),
+							])
+							if (owner && owner !== record.key) {
+								adoptionConflict = true
+								unresolved.push({
+									kind: "pr-branch-conflict",
+									target: record.key,
+									message: `Recorded PR head '${adopted.branch}' is declared by '${owner}'`,
+									action:
+										"Correct the recorded PR URL or the other declaration",
+								})
+							} else if (previousLocal && adoptedLocal) {
+								adoptionConflict = true
+								unresolved.push({
+									kind: "pr-branch-conflict",
+									target: record.key,
+									message: `Cannot rename local branch '${previous.branch}' to recorded PR head '${adopted.branch}' because it already exists`,
+									action: `Reconcile or delete local branch '${adopted.branch}' manually`,
+								})
+							} else {
+								renameLocal = previousLocal !== null
+							}
+						}
+						if (!adoptionConflict && apply) {
+							const renameBranch = (from: string, to: string) =>
+								runExternal(["git", "branch", "-m", from, to], {
+									cwd: repositoryPath,
+								})
+							const renamed = renameLocal
+								? yield* renameBranch(previous.branch, adopted.branch)
+								: null
+							if (renamed && renamed.exitCode !== 0) {
+								adoptionConflict = true
+								unresolved.push({
+									kind: "pr-branch-rename-failed",
+									target: record.key,
+									message: `Could not rename local branch '${previous.branch}' to '${adopted.branch}': ${commandErrorSummary(renamed.stderr, "git branch failed")}`,
+									action: "Rename the local branch manually",
+								})
+							} else {
+								const updated = yield* mutateExecution(root, record, revision, {
+									...data,
+									...adopted,
+								}).pipe(
+									Effect.tapError(() =>
+										renamed
+											? renameBranch(adopted.branch, previous.branch)
+											: Effect.void,
+									),
+								)
+								data = updated.data
+								revision = updated.revision
+								const cached = registeredByRepository.get(repositoryPath)
+								for (const [index, item] of (cached ?? []).entries()) {
+									if (item.branch === `refs/heads/${previous.branch}`)
+										cached![index] = {
+											...item,
+											branch: `refs/heads/${adopted.branch}`,
+										}
+								}
+							}
+						} else if (!adoptionConflict) {
+							data = { ...data, ...adopted }
+							if (renameLocal) renamedFrom = previous.branch
+						}
+						if (!adoptionConflict) {
+							if (adopted.branch !== previous.branch) {
+								branchOwners.delete(branchKey(data.repo, previous.branch))
+								branchOwners.set(
+									branchKey(data.repo, adopted.branch),
+									record.key,
+								)
+								changes.push({
+									kind: "adopt-pr-branch",
+									target: record.key,
+									message: `Adopt pull request head '${adopted.branch}' (was '${previous.branch}')`,
+									status: apply ? "applied" : "planned",
+								})
+							}
+							if (adopted.base !== previous.base) {
+								changes.push({
+									kind: "adopt-pr-base",
+									target: record.key,
+									message: `Adopt pull request base '${adopted.base}' (was '${previous.base}')`,
+									status: apply ? "applied" : "planned",
+								})
+							}
+						}
+					}
 					const remoteMergedPr = config.delivery
 						? null
 						: mergedPullRequestFromGitHub(data, query, githubDetails)
@@ -838,7 +991,12 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 								action: "Review and preserve or discard local changes manually",
 							})
 						}
-						if (atPath && branchRef && atPath.branch !== branchRef) {
+						if (
+							atPath &&
+							branchRef &&
+							atPath.branch !== branchRef &&
+							!(renamedFrom && atPath.branch === `refs/heads/${renamedFrom}`)
+						) {
 							unresolved.push({
 								kind: "wrong-branch",
 								target: record.key,
@@ -1022,21 +1180,26 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							if (githubDetails) {
 								current = githubDetails[0]!
 								pr = current
-								if (
-									current.headRepository?.toLowerCase() !==
-										remoteRepository.toLowerCase() ||
-									current.headBranch !== data.branch ||
-									current.baseRepository?.toLowerCase() !==
-										current.repository.toLowerCase() ||
-									current.baseBranch !== data.base
-								) {
+								if (!belongsToWritableRepository(current, remoteRepository)) {
 									prConflict = true
 									unresolved.push({
 										kind: "pr-repository-conflict",
 										target: record.key,
-										message: `Recorded PR head does not match '${remoteRepository}:${data.branch}' or base '${current.repository}:${data.base}'`,
+										message: `Recorded PR repositories do not match writable repository '${remoteRepository}' and base '${current.repository}'`,
 										action: "Correct the declaration or recorded PR URL",
 									})
+								} else if (
+									current.headBranch !== data.branch ||
+									current.baseBranch !== data.base
+								) {
+									prConflict = true
+									if (!adoptionConflict)
+										unresolved.push({
+											kind: "pr-branch-conflict",
+											target: record.key,
+											message: `Recorded PR head '${current.headBranch ?? "unknown"}' or base '${current.baseBranch ?? "unknown"}' could not be adopted`,
+											action: "Correct the declaration or recorded PR URL",
+										})
 								}
 							}
 						} else {
@@ -1092,7 +1255,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 						}
 					}
 
-					if (current && JSON.stringify(current) !== JSON.stringify(existing)) {
+					if (current && !samePullRequestRecord(current, existing)) {
 						if (apply) {
 							const recorded = yield* mutateExecution(root, record, revision, {
 								...data,
