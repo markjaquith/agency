@@ -237,6 +237,62 @@ describe("ReviewService", () => {
 		).rejects.toThrow("dirty or structurally unexpected")
 	})
 
+	test("finishes a review without a summary and guards its revision and status", async () => {
+		const created = await createReview()
+		const finish = (taskId: string, ifRevision?: string) =>
+			runTestEffect(
+				ReviewService.pipe(
+					Effect.flatMap((service) => service.finish(taskId, root, ifRevision)),
+				),
+			)
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("review", "done", root),
+					),
+				),
+			),
+		).rejects.toThrow("agency review finish review")
+		await expect(finish("review", "0".repeat(64))).rejects.toThrow(
+			"Revision conflict",
+		)
+		const finished = await finish("review", created.revision)
+		expect(finished.data.status).toBe("done")
+		expect(finished.data).not.toHaveProperty("completion")
+		const content = await Bun.file(join(root, "tasks/review/TASK.md")).text()
+		expect(content).toContain("status: done")
+		expect(content).not.toContain("completion:")
+		await expect(finish("review")).rejects.toThrow("reopen it first")
+
+		await runTestEffect(
+			TaskService.pipe(
+				Effect.flatMap((service) =>
+					service.create(
+						{
+							id: "delivery",
+							ticketUrl: null,
+							repo: "agency",
+							branch: "delivery",
+							base: "main",
+						},
+						root,
+					),
+				),
+			),
+		)
+		await expect(finish("delivery")).rejects.toThrow("is not a review task")
+		await expect(
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("delivery", "done", root),
+					),
+				),
+			),
+		).rejects.toThrow("--no-pull-request --summary <text>")
+	})
+
 	test("rejects unsafe branch sources and mixed create inputs", async () => {
 		for (const ref of [
 			"HEAD",

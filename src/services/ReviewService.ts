@@ -424,6 +424,51 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 						}),
 					)
 				}),
+
+			finish: (
+				taskId: string,
+				startPath: string = process.cwd(),
+				ifRevision?: string,
+			) =>
+				Effect.gen(function* () {
+					const workbase = yield* WorkbaseService
+					const tasks = yield* TaskService
+					const root = yield* workbase.discover(startPath)
+					const task = yield* tasks.show(taskId, root)
+					if (!("review" in task.data)) {
+						return yield* new ReviewError({
+							message: `Task '${taskId}' is not a review task`,
+						})
+					}
+					if (ifRevision && task.revision !== ifRevision) {
+						return yield* new RevisionConflictError({
+							path: task.path,
+							target: `task '${taskId}'`,
+							expectedRevision: ifRevision,
+							currentRevision: task.revision,
+							message: `Revision conflict for task '${taskId}'`,
+						})
+					}
+					if (task.data.status === "done" || task.data.status === "dropped") {
+						return yield* new ReviewError({
+							message: `Cannot finish review task '${taskId}' from ${task.data.status}; reopen it first`,
+						})
+					}
+					const parsed = yield* parseFrontmatter(task.content, task.path)
+					const data = { ...task.data, status: "done" as const }
+					const content = formatMarkdownDocument(data, parsed.body)
+					yield* runLifecycleTransaction({
+						root,
+						preconditions: [{ path: task.path, revision: task.revision }],
+						steps: [documentWriteStep(root, [{ path: task.path, content }])],
+					})
+					return {
+						id: taskId,
+						path: task.path,
+						revision: documentRevision(content),
+						data,
+					}
+				}),
 		}),
 	},
 ) {}

@@ -234,6 +234,11 @@ const actionPresentation: Record<
 		icon: "󰑐",
 		color: macchiato.sapphire,
 	},
+	"finish-review": {
+		description: "Mark this review done; no completion summary is required.",
+		icon: "󰄬",
+		color: macchiato.green,
+	},
 	reopen: {
 		description: "Return terminal work to open status.",
 		icon: "󰑓",
@@ -371,7 +376,7 @@ export const actionGroups = [
 		id: "review",
 		label: "Review someone else's work",
 		icon: "󰍉",
-		actions: ["review", "review-ref"],
+		actions: ["review", "review-ref", "finish-review"],
 	},
 	{
 		id: "split",
@@ -875,6 +880,7 @@ export const actActions = (
 	const purpose =
 		parent && "purpose" in parent.data ? parent.data.purpose : undefined
 	const terminal = node.status === "done" || node.status === "dropped"
+	const isReview = node.kind === "task" && "review" in node.data
 	const blockers = (execution ?? node).readiness.blockers
 	const validation = blockers.find(
 		(blocker) => blocker.kind === "validation",
@@ -1044,9 +1050,7 @@ export const actActions = (
 			details(
 				"review-refresh",
 				"Refresh review source",
-				node.kind === "task" && "review" in node.data
-					? null
-					: "Select a review task",
+				isReview ? null : "Select a review task",
 			),
 			{
 				command: [
@@ -1060,6 +1064,33 @@ export const actActions = (
 				run: review({
 					...options,
 					subcommand: "refresh",
+					taskId: target.taskId,
+					ifRevision: node.data.sha256,
+				}),
+			},
+		),
+		immediate(
+			details(
+				"finish-review",
+				"Finish review",
+				!isReview
+					? "Select a review task"
+					: terminal
+						? "Review is already terminal"
+						: null,
+			),
+			{
+				command: [
+					"agency",
+					"review",
+					"finish",
+					target.taskId,
+					"--if-revision",
+					node.data.sha256,
+				],
+				run: review({
+					...options,
+					subcommand: "finish",
 					taskId: target.taskId,
 					ifRevision: node.data.sha256,
 				}),
@@ -1300,11 +1331,13 @@ export const actActions = (
 					"complete",
 					"Complete without a pull request",
 					noExecution ??
-						(terminal
-							? "Item is already terminal"
-							: prUrl
-								? "Reconcile the recorded pull request instead"
-								: null),
+						(isReview
+							? "Use Finish review for review tasks"
+							: terminal
+								? "Item is already terminal"
+								: prUrl
+									? "Reconcile the recorded pull request instead"
+									: null),
 				),
 				inputs: [
 					input("summary", "Completed outcome summary", { multiline: true }),

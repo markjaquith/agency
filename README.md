@@ -710,7 +710,7 @@ external chooser continues to offer goals and **Browse items** through that choo
 | Split work                           | Add a phase / split this task; name the existing work's first phase                         | `split`                                                                                                                                            |
 | Work on a task or phase              | Work on this item                                                                           | `work`                                                                                                                                             |
 | Move from investigation to execution | Create implementation follow-up                                                             | `handoff`                                                                                                                                          |
-| Review someone else's work           | Review a PR, or a remote branch/commit                                                      | `review`, `review-ref`                                                                                                                             |
+| Review someone else's work           | Review a PR, or a remote branch/commit; finish a review                                     | `review`, `review-ref`, `finish-review`                                                                                                            |
 | Publish or update PR status          | Push without a PR, refresh provider state, create a PR, mark a GitHub PR ready, or close it | `push`, `sync`, `pr`, `pr-ready`, `pr-close`                                                                                                       |
 | Maintain review work                 | Fetch and repin a review task to its current source                                         | `review-refresh`                                                                                                                                   |
 | Organize work                        | Rename an item, move a task into/out of an epic, or add/remove a sibling dependency         | `rename`, `move-to-epic`, `remove-from-epic`, `dependency-add`, `dependency-remove`                                                                |
@@ -723,7 +723,9 @@ on the new item now** or **Finish**. Only choosing Work prepares checkouts and
 launches the configured runner; creation alone leaves the item for later.
 Investigation handoff creates a distinct implementation item with source and
 revision provenance. Completing a non-PR outcome requires a durable summary.
-PR-backed completion comes from provider reconciliation after merge.
+**Finish review** marks a review task done without a summary; review tasks offer
+it instead of non-PR completion. PR-backed completion comes from provider
+reconciliation after merge.
 
 **Refresh Agency state** reads the provider and reconciles local records. The
 explicit **GitHub PR ready/close** actions mutate the recorded GitHub URL, then
@@ -1060,6 +1062,7 @@ Create a pinned, read-only review task from the selected alias's origin:
 agency task create <id> --review <alias> --pull-request <url-or-number>
 agency task create <id> --review <alias> --ref <remote-ref>
 agency review refresh <id> [--if-revision <hash>] [--json]
+agency review finish <id> [--if-revision <hash>] [--json]
 ```
 
 Review creation fetches the source and records its exact 40-character commit.
@@ -1069,7 +1072,10 @@ detached checkout and no writable branch. Source movement is observed separately
 from the pin and applied only by `review refresh`; sync, doctor, work, cleanup,
 and archive never move the pin implicitly. Dirty or structurally unexpected
 review checkouts block refresh and cleanup. Review tasks support the normal status
-lifecycle, but reject phase conversion and delivery PR operations.
+lifecycle, but reject phase conversion and delivery PR operations. Because a
+review has no delivery pull request, `review finish` marks an open, working, or
+delegated review done without the `--no-pull-request --summary` requirement
+that applies to other work.
 Each active or archived review task owns one internal task-scoped pin ref. A
 refresh advances that ref transactionally; failed creation removes it. Archiving
 retains the pin so a deleted source can still be restored and inspected.
