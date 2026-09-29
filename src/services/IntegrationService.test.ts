@@ -945,7 +945,10 @@ describe("IntegrationService", () => {
 		)
 		expect(body).toContain("changing repository")
 		expect(body).toMatch(
-			/archiving, restoring,\s+dropping, reopening, or completing work without a pull request/,
+			/archiving, restoring,\s+dropping, reopening, finishing a review, or completing work without a pull\s+request/,
+		)
+		expect(body).toContain(
+			"`agency review finish <task> --if-revision <revision> --json`",
 		)
 		expect(body).toContain("Never invent entity IDs")
 		expect(body).toContain("Preserve parent backlinks")

@@ -1687,6 +1687,105 @@ describe("act command", () => {
 		).toMatchObject({ blockedReason: "Select a review task" })
 	})
 
+	test("finishes a review task without a completion summary", async () => {
+		await createReviewTask("review-change")
+		const target = await discoverAction("review-change", "finish-review")
+		const revision = target.revision
+		expect(target.actions).toEqual([
+			expect.objectContaining({
+				id: "finish-review",
+				label: "Finish review",
+				inputs: [],
+				command: [
+					"agency",
+					"review",
+					"finish",
+					"review-change",
+					"--if-revision",
+					revision,
+				],
+			}),
+		])
+		expect(() => parseCli(target.actions[0].command.slice(1))).not.toThrow()
+		expect(
+			(await discoverAction("review-change", "complete")).blockedActions,
+		).toEqual([
+			expect.objectContaining({
+				id: "complete",
+				blockedReason: "Use Finish review for review tasks",
+			}),
+		])
+
+		const logs = await captureLogs(() =>
+			runTestEffect(
+				act(
+					{ cwd: root, inputAllowed: true },
+					scriptedInteraction([
+						"browse",
+						"task:review-change",
+						"finish-review",
+					]),
+				),
+			),
+		)
+		expect(logs).toContain("Finished review 'review-change'")
+		expect(await readTaskStatus("review-change")).toBe("done")
+		const content = await Bun.file(
+			join(root, "tasks/review-change/TASK.md"),
+		).text()
+		expect(content).not.toContain("completion:")
+		expect(
+			(await discoverAction("review-change", "finish-review")).blockedActions,
+		).toEqual([
+			expect.objectContaining({
+				id: "finish-review",
+				blockedReason: "Review is already terminal",
+			}),
+		])
+	})
+
+	test("finish review is review-specific and leaves non-PR completion unchanged", async () => {
+		await createTask("example")
+		const target = await discoverAction("example", "finish-review")
+		expect(target.blockedActions).toEqual([
+			expect.objectContaining({
+				id: "finish-review",
+				blockedReason: "Select a review task",
+			}),
+		])
+		const complete = (await discoverAction("example", "complete")).actions[0]
+		expect(complete).toMatchObject({
+			id: "complete",
+			command: null,
+			inputs: [expect.objectContaining({ id: "summary", required: true })],
+		})
+	})
+
+	test("the review goal offers finish review for eligible review tasks", async () => {
+		await createReviewTask("review-change")
+		await createTask("example")
+		const prompts: { prompt: string; values: unknown[] }[] = []
+		await runTestEffect(
+			act(
+				{ cwd: root, inputAllowed: true, silent: true },
+				scriptedInteraction(
+					["review", "finish-review", "task:review-change"],
+					(prompt, choices) =>
+						prompts.push({
+							prompt,
+							values: choices.map((choice) => choice.value),
+						}),
+				),
+			),
+		)
+		expect(prompts[1]?.values).toContain("finish-review")
+		expect(prompts[2]).toEqual({
+			prompt: "Choose an item",
+			values: ["task:review-change"],
+		})
+		expect(await readTaskStatus("review-change")).toBe("done")
+	})
+
 	test("optional ordering is separate from the executable split template", async () => {
 		await createTask("example")
 		const logs = await captureLogs(() =>
@@ -1765,4 +1864,26 @@ describe("act command", () => {
 		const content = await Bun.file(join(root, `tasks/${id}/TASK.md`)).text()
 		return content.match(/^status: (.+)$/m)?.[1]
 	}
+
+	const createReviewTask = (id: string, status = "working") =>
+		Bun.write(
+			join(root, `tasks/${id}/TASK.md`),
+			[
+				"---",
+				"ticketUrl: null",
+				"description: Review a change",
+				"review:",
+				"  repo: agency",
+				"  source:",
+				"    kind: branch",
+				"    ref: refs/heads/review-me",
+				`  commit: ${"a".repeat(40)}`,
+				"  refreshedAt: 2026-01-01T00:00:00.000Z",
+				`status: ${status}`,
+				"---",
+				"",
+				"# Review",
+				"",
+			].join("\n"),
+		)
 })

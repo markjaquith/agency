@@ -652,6 +652,15 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					!canTransitionStatus(record.data.status, validStatus) &&
 					!completionResult
 				) {
+					if (
+						validStatus === "done" &&
+						"review" in record.data &&
+						record.data.status !== "dropped"
+					) {
+						return yield* new TaskError({
+							message: `Finish review task '${id}' with 'agency review finish ${id}'; reviews do not require a completion summary`,
+						})
+					}
 					if (validStatus === "done") {
 						return yield* new TaskError({
 							message:

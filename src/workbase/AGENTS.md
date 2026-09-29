@@ -108,6 +108,8 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
     `agency context <new-task> --json`. Do not prepare or start it unless requested.
 15. Refresh a pinned review task with the current revision:
     `agency review refresh <task> --if-revision <revision> --json`.
+16. Finish a review task with the current revision; no summary is required:
+    `agency review finish <task> --if-revision <revision> --json`.
 
 Never pass `--work` or `--auto` to `agency task create`. Do not run separate
 `agency validate`, `agency worktree prepare`, `agency graph`, `agency task list`,
@@ -182,8 +184,8 @@ agency validate --json
 Require explicit user intent before initializing a workbase; changing repository
 aliases or applying repository setup or workbase sync changes; launching another
 agent from an active agent session; creating a pull request; archiving, restoring,
-dropping, reopening, or completing work without a pull request; or using `--force`
-to override readiness.
+dropping, reopening, finishing a review, or completing work without a pull
+request; or using `--force` to override readiness.
 
 ## Investigation Handoffs
 
@@ -272,7 +274,9 @@ its pull request is open. It becomes `done` only after its authoritative pull
 request is merged and Agency reconciles that state. Do not mark committed or
 review-ready work `done` manually. A genuine investigation, operational action,
 or no-change result may complete without a pull request only with explicit user
-intent, `--no-pull-request`, and a durable outcome summary.
+intent, `--no-pull-request`, and a durable outcome summary. A review task has no
+delivery pull request; with explicit user intent, finish it with
+`agency review finish` instead, which requires no summary.
 
 At each closeout trigger (creating or updating a PR, marking it ready, completing
 a refinement loop, or pausing or handing off completed implementation work):

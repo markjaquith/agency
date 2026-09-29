@@ -726,7 +726,7 @@ Commands:
   next                   List or select ready execution units
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
-  review refresh         Explicitly refresh a pinned review task
+  review refresh|finish  Refresh or finish a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
   doctor                 Diagnose workbase health and integrations

@@ -101,6 +101,18 @@ describe("strict CLI parsing", () => {
 		).not.toThrow()
 		expect(() =>
 			parseCli([
+				"review",
+				"finish",
+				"review-it",
+				"--if-revision",
+				"a".repeat(64),
+			]),
+		).not.toThrow()
+		expect(() =>
+			parseCli(["review", "finish", "review-it", "--summary", "done"]),
+		).toThrow()
+		expect(() =>
+			parseCli([
 				"task",
 				"create",
 				"review-it",
