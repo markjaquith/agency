@@ -416,6 +416,19 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 					return { root, config: decoded.value }
 				}),
 
+			setAutoArchive: (enabled: boolean, startPath: string = process.cwd()) =>
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const fs = yield* FileSystemService
+					const { root, config } = yield* service.loadConfig(startPath)
+					const updated = { ...config, autoArchive: enabled }
+					yield* fs.writeFile(
+						join(root, "agency.json"),
+						`${JSON.stringify(updated, null, 2)}\n`,
+					)
+					return { root, autoArchive: enabled }
+				}),
+
 			repositoryAliases: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const service = yield* WorkbaseService

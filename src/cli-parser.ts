@@ -958,6 +958,18 @@ const commands = {
 			options: ["select", "json"],
 		},
 	},
+	config: {
+		usage: "agency config auto-archive [on|off] [--json]",
+		options: outputOptions,
+		subcommands: {
+			"auto-archive": {
+				usage: "agency config auto-archive [on|off] [--json]",
+				minArgs: 0,
+				maxArgs: 1,
+				options: ["json"],
+			},
+		},
+	},
 	status: {
 		usage: "agency status [filters] [--json]",
 		options: { ...outputOptions, ...viewOptions },

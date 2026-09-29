@@ -31,6 +31,7 @@ import {
 	type RepositorySetupResult,
 } from "./RepositoryService"
 import { VersionControlService } from "./VersionControlService"
+import { autoArchiveTask, type AutoArchiveResult } from "./auto-archive"
 
 class SyncError extends Data.TaggedError("SyncError")<{
 	readonly message: string
@@ -111,6 +112,7 @@ interface SyncResult {
 	readonly unresolved: readonly SyncNotice[]
 	readonly executions: readonly ExecutionSyncState[]
 	readonly repositories: RepositorySetupResult
+	readonly autoArchive: readonly AutoArchiveResult[]
 }
 
 export interface SyncProgress {
@@ -370,6 +372,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 
 				const apply = options.apply === true
 				const changes: SyncChange[] = []
+				const completedTasks = new Set<string>()
 				const warnings: SyncNotice[] = []
 				const unresolved: SyncNotice[] = []
 				for (const issue of repositorySetup.unresolved) {
@@ -1285,6 +1288,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							})
 							data = completed.data
 							revision = completed.revision
+							completedTasks.add(record.taskId)
 						}
 						changes.push({
 							kind: "mark-done",
@@ -1372,6 +1376,11 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					reportExecution(`task:${task.id}`)
 				}
 
+				const autoArchive: AutoArchiveResult[] = []
+				if (apply && config.autoArchive) {
+					for (const taskId of completedTasks)
+						autoArchive.push(yield* autoArchiveTask(taskId, root))
+				}
 				return {
 					root,
 					mode: apply ? "apply" : "dry-run",
@@ -1380,6 +1389,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					unresolved,
 					executions,
 					repositories: repositorySetup,
+					autoArchive,
 				} satisfies SyncResult
 			}),
 	}),

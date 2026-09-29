@@ -7,6 +7,7 @@ import { PhaseService } from "./PhaseService"
 import { RepositoryService } from "./RepositoryService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
+import { autoArchiveTask } from "./auto-archive"
 import {
 	WorktreeService,
 	type WorktreeRemovalSnapshot,
@@ -467,6 +468,7 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 						path: task.path,
 						revision: documentRevision(content),
 						data,
+						autoArchive: yield* autoArchiveTask(taskId, root),
 					}
 				}),
 		}),

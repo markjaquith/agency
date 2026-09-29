@@ -22,7 +22,8 @@ import {
 	parseFrontmatter,
 	parseFrontmatterSync,
 } from "../workbase/frontmatter"
-import { canTransitionStatus } from "../readiness"
+import { canTransitionStatus, isTerminalStatus } from "../readiness"
+import { autoArchiveTask, type AutoArchiveResult } from "./auto-archive"
 import { documentRevision } from "../workbase/document-revision"
 import { archivedTaskDirectory } from "../workbase/archive"
 import {
@@ -47,6 +48,7 @@ export interface TaskRecord {
 	readonly content: string
 	readonly revision: string
 	readonly data: TaskData
+	readonly autoArchive?: AutoArchiveResult
 }
 
 export interface CreateTaskInput {
@@ -684,11 +686,15 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 						: { ...record.data, status: validStatus }
 				const content = formatMarkdownDocument(data, parsed.body)
 				yield* fs.writeFile(record.path, content)
+				const autoArchive = isTerminalStatus(data.status)
+					? yield* autoArchiveTask(id, startPath)
+					: undefined
 				return {
 					...record,
 					content,
 					revision: documentRevision(content),
 					data,
+					...(autoArchive ? { autoArchive } : {}),
 				} satisfies TaskRecord
 			}),
 	}),

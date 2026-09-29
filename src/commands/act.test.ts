@@ -81,9 +81,13 @@ describe("act command", () => {
 			},
 			targets: [],
 			workbase: {
+				autoArchive: false,
 				actions: expect.arrayContaining([
 					expect.objectContaining({ id: "task-create", command: null }),
 					expect.objectContaining({ id: "repo-add" }),
+					expect.objectContaining({ id: "auto-archive-show" }),
+					expect.objectContaining({ id: "auto-archive-enable" }),
+					expect.objectContaining({ id: "auto-archive-disable" }),
 				]),
 			},
 		})
@@ -1479,6 +1483,9 @@ describe("act command", () => {
 			"repo-remote",
 			"repo-unlink",
 			"repo-remove",
+			"auto-archive-show",
+			"auto-archive-enable",
+			"auto-archive-disable",
 			"validate",
 			"doctor",
 			"sync-all",
@@ -1498,6 +1505,33 @@ describe("act command", () => {
 			expect(descriptor.icon).not.toBe("")
 			const argv = descriptor.command ?? descriptor.commandTemplate
 			if (argv) expect(() => parseCli(argv.slice(1))).not.toThrow()
+		}
+	})
+
+	test("discovers and executes auto-archive configuration through the native catalog", async () => {
+		for (const [action, enabled] of [
+			["auto-archive-enable", true],
+			["auto-archive-disable", false],
+		] as const) {
+			await runTestEffect(
+				act({ cwd: root, action, silent: true }, scriptedInteraction([])),
+			)
+			expect(
+				(await Bun.file(join(root, "agency.json")).json()).autoArchive,
+			).toBe(enabled)
+			const logs = await captureLogs(() =>
+				runTestEffect(
+					act({ cwd: root, action: "auto-archive-show", json: true }),
+				),
+			)
+			const output = JSON.parse(logs[0]!)
+			expect(output.workbase.autoArchive).toBe(enabled)
+			expect(output.workbase.actions).toEqual([
+				expect.objectContaining({
+					id: "auto-archive-show",
+					command: ["agency", "config", "auto-archive"],
+				}),
+			])
 		}
 	})
 

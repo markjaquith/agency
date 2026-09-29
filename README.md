@@ -1229,6 +1229,35 @@ parent epic implicitly. Versioned lifecycle provenance preserves parent
 declarations and dependency edges for restoration. Archived IDs are reserved
 until restored.
 
+#### Automatic archiving
+
+```text
+agency config auto-archive                 # show the effective setting
+agency config auto-archive on              # enable for this workbase
+agency config auto-archive off             # disable
+```
+
+The boolean `autoArchive` setting in the workbase's `agency.json` defaults to
+`false`. Enabling it authorizes automatic task archiving on future terminal
+transitions; it does not sweep existing terminal work. `agency act --json`
+lists these configuration commands, and context/status JSON includes the
+effective setting.
+
+Explicit `task status` / `phase status` changes to `done` or `dropped`, non-PR
+completion, `review finish`, and merged-PR reconciliation automatically
+attempt to archive the owning task. A multi-phase task waits until every phase
+is terminal; individual phases and epics are never auto-archived. Sync defers
+cleanup until its reconciliation pass finishes, and `sync --dry-run` never
+archives anything.
+
+Automatic cleanup uses the same preflight as `archive task --dry-run`, without
+forcing past dirty checkouts, retained dependents, or other safety
+failures. A blocked attempt leaves the terminal status intact and the task
+unarchived, with the reason reported in human output and the triggering command's
+JSON `autoArchive` result (`sync` returns an array). After resolving the blocker,
+use explicit `archive` to retry safely. Successful automatic archiving removes
+clean managed checkouts, so paths inside the task may cease to exist.
+
 ### Work, Publication, and Pull Requests
 
 ```text

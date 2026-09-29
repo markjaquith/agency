@@ -10,6 +10,7 @@ import { push, help as pushHelp } from "./src/commands/push"
 import { work, workPrepare, help as workHelp } from "./src/commands/work"
 import { worktree, help as worktreeHelp } from "./src/commands/worktree"
 import { status, help as statusHelp } from "./src/commands/status"
+import { config, help as configHelp } from "./src/commands/config"
 import { doctor, help as doctorHelp } from "./src/commands/doctor"
 import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
@@ -579,6 +580,23 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	config: {
+		async run(args: string[], options: Record<string, any>) {
+			if (options.help) {
+				console.log(configHelp)
+				return
+			}
+			await runCommand(
+				config({
+					silent: options.silent,
+					verbose: options.verbose,
+					json: options.json,
+					cwd: options.cwd,
+					args,
+				}),
+			)
+		},
+	},
 	status: {
 		run: async (_args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -729,6 +747,7 @@ Commands:
   review refresh|finish  Refresh or finish a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase
+  config                 Show or change workbase settings
   doctor                 Diagnose workbase health and integrations
   validate [path]        Validate a workbase
   context [target]       Return complete target context

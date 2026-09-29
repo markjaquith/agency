@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { ReviewService } from "../services/ReviewService"
+import { autoArchiveMessage } from "../services/auto-archive"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 
@@ -33,6 +34,8 @@ export const review = (options: ReviewOptions) =>
 					? JSON.stringify(result, null, 2)
 					: `Finished review '${options.taskId}'`,
 			)
+			const notice = autoArchiveMessage(result.autoArchive)
+			if (!options.json && notice) log(notice)
 			return
 		}
 		const result = yield* service.refresh(

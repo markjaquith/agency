@@ -64,6 +64,7 @@ export const ActDiscovery = Schema.Struct({
 	}),
 	workbase: Schema.Struct({
 		root: Schema.String,
+		autoArchive: Schema.optional(Schema.Boolean),
 		repositories: Argv,
 		actions: Schema.Array(Action),
 	}),

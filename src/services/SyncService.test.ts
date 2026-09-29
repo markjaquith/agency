@@ -6,6 +6,7 @@ import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { PullRequestService } from "./PullRequestService"
 import { ReviewService } from "./ReviewService"
 import { SyncService } from "./SyncService"
+import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -78,6 +79,71 @@ JSON
 		await cleanupTempDir(root)
 	})
 
+	for (const dirty of [false, true])
+		test(`auto archives merged work${dirty ? " only after dirty-checkout safety passes" : " after reconciliation"}`, async () => {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{
+								id: "example",
+								ticketUrl: null,
+								repo: "agency",
+								branch: "feat/example",
+								base: "main",
+							},
+							root,
+						),
+					),
+				),
+			)
+			const workspace = await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("example", undefined, root),
+					),
+				),
+			)
+			await git(
+				["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+				join(root, "repos/agency"),
+			)
+			await Bun.write(
+				join(root, "agency.json"),
+				'{"version":2,"autoArchive":true}\n',
+			)
+			if (dirty)
+				await Bun.write(join(workspace.writablePath!, "dirty.txt"), "preserve")
+			const plan = await runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) => service.reconcile({ cwd: root })),
+				),
+			)
+			expect(plan.autoArchive).toEqual([])
+			expect(await Bun.file(join(root, "tasks/example/TASK.md")).exists()).toBe(
+				true,
+			)
+			const result = await runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) =>
+						service.reconcile({ cwd: root, apply: true }),
+					),
+				),
+			)
+			expect(result.autoArchive).toHaveLength(1)
+			expect(result.autoArchive[0]?.status).toBe(dirty ? "skipped" : "archived")
+			expect(result.executions[0]?.status).toBe("done")
+			expect(
+				await Bun.file(join(root, "archive/tasks/example/TASK.md")).exists(),
+			).toBe(!dirty)
+			if (dirty) {
+				expect(result.autoArchive[0]?.reason).toMatch(/dirty|uncommitted/i)
+				expect(
+					await Bun.file(join(root, "tasks/example/TASK.md")).text(),
+				).toContain("status: done")
+			}
+		})
+
 	test("validates before applying repository setup", async () => {
 		await rm(join(root, "repos/agency"), { recursive: true, force: true })
 		await Bun.write(
@@ -113,6 +179,86 @@ pr: null
 		).rejects.toThrow("Unknown repository alias 'unknown'")
 		expect(await Bun.file(join(root, "repos/agency")).exists()).toBe(false)
 	})
+
+	for (const completeLast of [false, true])
+		test(`sync ${completeLast ? "defers whole-task archival until its remaining terminal phase has been inspected" : "does not archive a multi-phase task with remaining open work"}`, async () => {
+			await runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.create(
+							{ id: "multi", ticketUrl: null, multiPhase: true },
+							root,
+						),
+					),
+				),
+			)
+			for (const id of ["first", "last"]) {
+				await runTestEffect(
+					PhaseService.pipe(
+						Effect.flatMap((service) =>
+							service.create(
+								{
+									taskId: "multi",
+									id,
+									repo: "agency",
+									branch: id === "first" ? "feat/example" : "feat/last",
+									base: "main",
+								},
+								root,
+							),
+						),
+					),
+				)
+				await runTestEffect(
+					WorktreeService.pipe(
+						Effect.flatMap((service) => service.materialize("multi", id, root)),
+					),
+				)
+			}
+			if (completeLast)
+				await runTestEffect(
+					PhaseService.pipe(
+						Effect.flatMap((service) =>
+							service.setStatus("multi", "last", "done", root, {
+								summary: "Complete",
+							}),
+						),
+					),
+				)
+			await git(
+				["remote", "set-url", "origin", "git@github.com:example/agency.git"],
+				join(root, "repos/agency"),
+			)
+			await Bun.write(
+				join(root, "agency.json"),
+				'{"version":2,"autoArchive":true}\n',
+			)
+			const result = await runTestEffect(
+				SyncService.pipe(
+					Effect.flatMap((service) =>
+						service.reconcile({
+							cwd: root,
+							apply: true,
+							taskId: "multi",
+							...(completeLast ? {} : { phaseId: "first" }),
+						}),
+					),
+				),
+			)
+			expect(result.executions).toHaveLength(completeLast ? 2 : 1)
+			expect(result.autoArchive).toEqual([
+				expect.objectContaining({
+					taskId: "multi",
+					status: completeLast ? "archived" : "non-terminal",
+				}),
+			])
+			expect(await Bun.file(join(root, "tasks/multi/TASK.md")).exists()).toBe(
+				!completeLast,
+			)
+			expect(
+				await Bun.file(join(root, "archive/tasks/multi/TASK.md")).exists(),
+			).toBe(completeLast)
+		})
 
 	test("observes drift without mutation and applies only safe transitions", async () => {
 		await runTestEffect(

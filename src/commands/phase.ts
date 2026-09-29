@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { autoArchiveMessage } from "../services/auto-archive"
 import type { BaseCommandOptions } from "../utils/command"
 import { PhaseService } from "../services/PhaseService"
 import { createLoggers } from "../utils/effect"
@@ -199,6 +200,8 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						? JSON.stringify(output, null, 2)
 						: `Marked phase '${phaseId}' as ${record.data.status}`,
 				)
+				const notice = autoArchiveMessage(record.autoArchive)
+				if (!options.json && notice) log(notice)
 				return
 			}
 			case "update": {
