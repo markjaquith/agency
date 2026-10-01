@@ -17,7 +17,8 @@ import {
 	formatWorkDocumentBody,
 	parseFrontmatter,
 } from "../workbase/frontmatter"
-import { canTransitionStatus } from "../readiness"
+import { canTransitionStatus, isTerminalStatus } from "../readiness"
+import { autoArchiveTask, type AutoArchiveResult } from "./auto-archive"
 import { documentRevision } from "../workbase/document-revision"
 import { archivedPhaseDirectory } from "../workbase/archive"
 import {
@@ -43,6 +44,7 @@ export interface PhaseRecord {
 	readonly content: string
 	readonly revision: string
 	readonly data: PhaseData
+	readonly autoArchive?: AutoArchiveResult
 }
 
 export interface CreatePhaseInput {
@@ -573,11 +575,15 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 							: { ...record.data, status: validStatus }
 					const content = formatMarkdownDocument(data, parsed.body)
 					yield* fs.writeFile(record.path, content)
+					const autoArchive = isTerminalStatus(data.status)
+						? yield* autoArchiveTask(taskId, startPath)
+						: undefined
 					return {
 						...record,
 						content,
 						revision: documentRevision(content),
 						data,
+						...(autoArchive ? { autoArchive } : {}),
 					} satisfies PhaseRecord
 				}),
 		}),

@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { autoArchiveMessage } from "../services/auto-archive"
 import type { BaseCommandOptions } from "../utils/command"
 import { TaskService } from "../services/TaskService"
 import { EpicService } from "../services/EpicService"
@@ -491,6 +492,8 @@ export const task = (
 						? JSON.stringify(output, null, 2)
 						: `Marked task '${id}' as ${record.data.status}`,
 				)
+				const notice = autoArchiveMessage(record.autoArchive)
+				if (!options.json && notice) log(notice)
 				return
 			}
 			case "update": {

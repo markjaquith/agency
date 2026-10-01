@@ -13,6 +13,9 @@ import { PhaseService } from "./PhaseService"
 import { ArchiveService } from "./ArchiveService"
 import { SyncService } from "./SyncService"
 import { task as taskCommand } from "../commands/task"
+import { WorkbaseService } from "./WorkbaseService"
+import { review as reviewCommand } from "../commands/review"
+import { captureLogs } from "../test-utils"
 
 const git = async (args: string[], cwd?: string) => {
 	const child = Bun.spawn(["git", ...args], {
@@ -65,6 +68,50 @@ describe("ReviewService", () => {
 			),
 		)
 	}
+
+	for (const dirty of [false, true])
+		test(`finishing a review ${dirty ? "retains a dirty checkout and reports why" : "auto-archives its clean pinned checkout"}`, async () => {
+			const created = await createReview()
+			const workspace = await runTestEffect(
+				WorktreeService.pipe(
+					Effect.flatMap((service) =>
+						service.materialize("review", undefined, root),
+					),
+				),
+			)
+			if (dirty)
+				await Bun.write(join(workspace.reviewPath!, "dirty.txt"), "keep")
+			await runTestEffect(
+				WorkbaseService.pipe(
+					Effect.flatMap((service) => service.setAutoArchive(true, root)),
+				),
+			)
+			const logs = await captureLogs(() =>
+				runTestEffect(
+					reviewCommand({
+						subcommand: "finish",
+						taskId: "review",
+						ifRevision: created.revision,
+						cwd: root,
+						json: true,
+					}),
+				),
+			)
+			expect(JSON.parse(logs[0]!).autoArchive.status).toBe(
+				dirty ? "skipped" : "archived",
+			)
+			expect(
+				await Bun.file(join(root, "archive/tasks/review/TASK.md")).exists(),
+			).toBe(!dirty)
+			if (dirty) {
+				expect(
+					await Bun.file(join(root, "tasks/review/TASK.md")).text(),
+				).toContain("status: done")
+				expect(JSON.parse(logs[0]!).autoArchive.reason).toMatch(
+					/dirty|uncommitted/i,
+				)
+			}
+		})
 
 	test("pins, materializes, reports, and explicitly refreshes a branch review", async () => {
 		const created = await createReview()

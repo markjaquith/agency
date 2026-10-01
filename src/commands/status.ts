@@ -34,7 +34,13 @@ export const status = (options: StatusOptions = {}) =>
 					pr: options.pr,
 				})).executionRows
 			: []
-		const data = { ...report, repositories: repos, work: executionRows }
+		const { config } = yield* workbase.loadConfig(cwd)
+		const data = {
+			...report,
+			autoArchive: config.autoArchive ?? false,
+			repositories: repos,
+			work: executionRows,
+		}
 
 		if (options.json) {
 			log(JSON.stringify(data, null, 2))

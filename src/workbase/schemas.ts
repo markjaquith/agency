@@ -103,6 +103,7 @@ const DeliveryProvider = Schema.Struct({
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
 	vcs: Schema.optional(Schema.Literal("git")),
+	autoArchive: Schema.optional(Schema.Boolean),
 	repositories: Schema.optional(
 		Schema.Record({ key: RepositoryAlias, value: RepositoryDeclaration }),
 	),

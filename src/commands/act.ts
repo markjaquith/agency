@@ -481,6 +481,7 @@ const actStep = (
 						creationDefaults: creationDefaults(config),
 						workbase: {
 							root,
+							autoArchive: config.autoArchive ?? false,
 							repositories: graph.nodes
 								.filter((node) => node.kind === "repository")
 								.map((node) => node.key),
@@ -790,6 +791,7 @@ A workbase path opens Workbase actions. Otherwise the positional value is a
 task ID. Selectors skip item selection.
 JSON discovery includes creation defaults identifying when callers should omit
 --branch so the workbase branchNameCommand can choose it.
+JSON discovery also includes the effective auto-archive setting and its commands.
 
 Options:
   --action <id>         Start an action or filter discovery (IDs from --json)

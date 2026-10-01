@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { SyncService } from "../services/SyncService"
+import { autoArchiveMessage } from "../services/auto-archive"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 import { createProgress, type Progress } from "../utils/progress"
@@ -86,6 +87,10 @@ export const sync = (
 			log(
 				`${change.status === "applied" ? "Applied" : "Planned"} ${change.kind} '${change.target}': ${change.message}`,
 			)
+		}
+		for (const archive of result.autoArchive) {
+			const notice = autoArchiveMessage(archive)
+			if (notice) log(notice)
 		}
 		for (const { notice: warning, targets } of groupedNotices(
 			result.warnings,

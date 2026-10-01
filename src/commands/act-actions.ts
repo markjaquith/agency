@@ -14,6 +14,7 @@ import { phase } from "./phase"
 import { push } from "./push"
 import { sync } from "./sync"
 import { status } from "./status"
+import { config } from "./config"
 import { pr, prCreate } from "./pr"
 import { validate } from "./validate"
 import { work as startWork, type StartWork } from "./work"
@@ -33,6 +34,7 @@ type NativeOperation =
 	| ReturnType<typeof push>
 	| ReturnType<typeof sync>
 	| ReturnType<typeof status>
+	| ReturnType<typeof config>
 	| ReturnType<typeof doctor>
 	| ReturnType<typeof integration>
 	| ReturnType<typeof validate>
@@ -187,6 +189,22 @@ const actionPresentation: Record<
 		description: "Validate workbase documents and relationships.",
 		icon: "󰄬",
 		color: macchiato.green,
+	},
+	"auto-archive-show": {
+		description: "Show the effective automatic archive setting.",
+		icon: "",
+		color: macchiato.blue,
+	},
+	"auto-archive-enable": {
+		description:
+			"Automatically archive tasks on future terminal transitions, subject to safety checks.",
+		icon: "",
+		color: macchiato.green,
+	},
+	"auto-archive-disable": {
+		description: "Leave terminal tasks active until explicitly archived.",
+		icon: "",
+		color: macchiato.yellow,
 	},
 	doctor: {
 		description: "Diagnose workbase, repository, and integration health.",
@@ -441,6 +459,9 @@ export const actionGroups = [
 			"sync-all",
 			"integration-status",
 			"integration-sync",
+			"auto-archive-show",
+			"auto-archive-enable",
+			"auto-archive-disable",
 		],
 	},
 	{
@@ -830,6 +851,25 @@ export const actActions = (
 					}),
 				),
 			),
+			...(["show", "enable", "disable"] as const).map((operation) => {
+				const args = [
+					"auto-archive",
+					...(operation === "show"
+						? []
+						: [operation === "enable" ? "on" : "off"]),
+				]
+				return immediate(
+					{
+						id: `auto-archive-${operation}`,
+						label: `${operation === "show" ? "Show" : operation === "enable" ? "Enable" : "Disable"} auto archive`,
+						blockedReason: null,
+					},
+					{
+						command: ["agency", "config", ...args],
+						run: config({ ...options, args }),
+					},
+				)
+			}),
 			immediate(
 				{ id: "validate", label: "Validate workbase", blockedReason: null },
 				{

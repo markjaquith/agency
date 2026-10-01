@@ -187,6 +187,16 @@ agent from an active agent session; creating a pull request; archiving, restorin
 dropping, reopening, finishing a review, or completing work without a pull
 request; or using `--force` to override readiness.
 
+The workbase's `autoArchive` setting defaults to off. Enabling it with
+`agency config auto-archive on` is standing consent for automatic task archiving
+on terminal transitions, including merged-PR sync and explicit non-PR completion.
+Show or disable it with `agency config auto-archive [off]`; context/status JSON
+reports its effective value. Multi-phase tasks wait until every phase is terminal.
+Archive preflight safeguards still apply: inspect the triggering command's
+`autoArchive` result for skips, resolve their reasons, and never force cleanup.
+Successful auto-archive can remove the current task directory and clean checkouts;
+continue lifecycle commands from the workbase root rather than a removed path.
+
 ## Investigation Handoffs
 
 An explicit request for a new, separate, or follow-up item overrides reuse of
