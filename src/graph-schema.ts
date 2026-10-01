@@ -1,4 +1,4 @@
-import { Schema } from "@effect/schema"
+import { Schema, Tuple } from "effect"
 import {
 	EpicFrontmatter,
 	PhaseFrontmatter,
@@ -11,25 +11,30 @@ import {
 
 export const GRAPH_VERSION = 1 as const
 
-export const GraphNodeKind = Schema.Literal(
+export const GraphNodeKind = Schema.Literals([
 	"epic",
 	"task",
 	"phase",
 	"repository",
 	"execution-unit",
-)
+])
 
-export const GraphEdgeKind = Schema.Literal(
+export const GraphEdgeKind = Schema.Literals([
 	"owns",
 	"depends_on",
 	"writes",
 	"references",
-)
+])
 
-export const GraphInclude = Schema.Literal("bodies", "workspace", "git", "pr")
+export const GraphInclude = Schema.Literals([
+	"bodies",
+	"workspace",
+	"git",
+	"pr",
+])
 
 export const GraphBlocker = Schema.Struct({
-	kind: Schema.Literal("dependency", "validation", "status"),
+	kind: Schema.Literals(["dependency", "validation", "status"]),
 	id: Schema.String,
 	status: Schema.optional(WorkStatus),
 	reason: Schema.String,
@@ -68,20 +73,21 @@ export const GraphFilters = Schema.Struct({
 	kinds: Schema.Array(GraphNodeKind),
 })
 
-const DocumentHash = Schema.Struct({ sha256: Schema.String })
-export const GraphEpicData = Schema.extend(EpicFrontmatter, DocumentHash)
-export const GraphTaskData = Schema.extend(TaskFrontmatter, DocumentHash)
-export const GraphPhaseData = Schema.extend(PhaseFrontmatter, DocumentHash)
-export const GraphExecutionData = Schema.Union(
-	Schema.extend(
-		PhaseFrontmatter,
-		Schema.Struct({
+const withDocumentHash = Schema.fieldsAssign({ sha256: Schema.String })
+export const GraphEpicData = EpicFrontmatter.pipe(withDocumentHash)
+export const GraphTaskData = TaskFrontmatter.mapMembers(
+	Tuple.map(withDocumentHash),
+)
+export const GraphPhaseData = PhaseFrontmatter.pipe(withDocumentHash)
+export const GraphExecutionData = Schema.Union([
+	PhaseFrontmatter.pipe(
+		Schema.fieldsAssign({
 			taskId: Schema.String,
 			phaseId: Schema.optional(Schema.String),
 			ticketUrl: Schema.optional(Schema.NullOr(Schema.String)),
 			epic: Schema.optional(Schema.String),
 			purpose: Schema.optional(
-				Schema.Literal("investigation", "implementation"),
+				Schema.Literals(["investigation", "implementation"]),
 			),
 			handoff: Schema.optional(TaskHandoff),
 		}),
@@ -91,12 +97,14 @@ export const GraphExecutionData = Schema.Union(
 		ticketUrl: Schema.NullOr(Schema.String),
 		description: Schema.optional(Schema.String),
 		epic: Schema.optional(Schema.String),
-		purpose: Schema.optional(Schema.Literal("investigation", "implementation")),
+		purpose: Schema.optional(
+			Schema.Literals(["investigation", "implementation"]),
+		),
 		handoff: Schema.optional(TaskHandoff),
 		review: ReviewRecord,
 		status: WorkStatus,
 	}),
-)
+])
 
 export const GraphDocumentWorkspace = Schema.Struct({
 	documentPath: Schema.String,
@@ -112,12 +120,12 @@ export const GraphExecutionWorkspace = Schema.Struct({
 	materialized: Schema.Boolean,
 })
 export const GraphRepositoryGit = Schema.Struct({
-	kind: Schema.NullOr(Schema.Literal("bare", "repository")),
+	kind: Schema.NullOr(Schema.Literals(["bare", "repository"])),
 	remote: Schema.NullOr(Schema.String),
 	head: Schema.NullOr(Schema.String),
 	branch: Schema.NullOr(Schema.String),
 })
-export const GraphExecutionGit = Schema.Union(
+export const GraphExecutionGit = Schema.Union([
 	Schema.Struct({
 		branch: Schema.String,
 		base: Schema.String,
@@ -134,12 +142,12 @@ export const GraphExecutionGit = Schema.Union(
 		checkoutBranch: Schema.NullOr(Schema.String),
 		dirty: Schema.NullOr(Schema.Boolean),
 	}),
-)
-export const GraphPr = Schema.Union(
+])
+export const GraphPr = Schema.Union([
 	Schema.Struct({ url: Schema.Null, state: Schema.Literal("none") }),
 	Schema.Struct({ url: Schema.String, state: Schema.Literal("unavailable") }),
 	PullRequestRecord,
-)
+])
 
 const NodeIdentity = {
 	id: Schema.String,
@@ -159,7 +167,7 @@ const DocumentNode = {
 	workspace: Schema.optional(GraphDocumentWorkspace),
 }
 
-export const GraphNode = Schema.Union(
+export const GraphNode = Schema.Union([
 	Schema.Struct({
 		...DocumentNode,
 		kind: Schema.Literal("epic"),
@@ -193,7 +201,7 @@ export const GraphNode = Schema.Union(
 		git: Schema.optional(GraphExecutionGit),
 		pr: Schema.optional(GraphPr),
 	}),
-)
+])
 
 export const GraphEdge = Schema.Struct({
 	id: Schema.String,

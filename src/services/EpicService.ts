@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -29,26 +28,24 @@ export interface EpicRecord {
 }
 
 const decodeEpic = (input: unknown) => {
-	const result = Schema.decodeUnknownEither(EpicFrontmatter, {
+	const result = Schema.decodeUnknownResult(EpicFrontmatter, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
-		? Effect.fail(
-				new EpicError({ message: TreeFormatter.formatErrorSync(result.left) }),
-			)
-		: Effect.succeed(result.right)
+	return Result.isFailure(result)
+		? Effect.fail(new EpicError({ message: result.failure.message }))
+		: Effect.succeed(result.success)
 }
 
 const decodeId = (id: string) => {
-	const result = Schema.decodeUnknownEither(EntityId)(id)
-	return Either.isLeft(result)
+	const result = Schema.decodeUnknownResult(EntityId)(id)
+	return Result.isFailure(result)
 		? Effect.fail(new EpicError({ message: `Invalid epic ID '${id}'` }))
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
-export class EpicService extends Effect.Service<EpicService>()("EpicService", {
-	sync: () => ({
+export class EpicService extends Context.Service<EpicService>()("EpicService", {
+	make: Effect.sync(() => ({
 		create: (
 			id: string,
 			ticketUrl: string,
@@ -152,5 +149,7 @@ export class EpicService extends Effect.Service<EpicService>()("EpicService", {
 				}
 				return record
 			}),
-	}),
-}) {}
+	})),
+}) {
+	static readonly layer = Layer.effect(this, this.make)
+}

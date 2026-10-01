@@ -1,4 +1,4 @@
-import { Schema } from "@effect/schema"
+import { Schema } from "effect"
 import { GraphReadiness } from "./graph-schema"
 import { WorkStatus } from "./workbase/schemas"
 
@@ -35,7 +35,7 @@ const Action = Schema.Struct({
 		),
 	),
 })
-const Kind = Schema.Literal("epic", "task", "phase")
+const Kind = Schema.Literals(["epic", "task", "phase"])
 const EntityFields = {
 	kind: Kind,
 	id: Schema.String,
@@ -50,7 +50,7 @@ const EntityFields = {
 
 export const ActDiscovery = Schema.Struct({
 	creationDefaults: Schema.Struct({
-		branch: Schema.Union(
+		branch: Schema.Union([
 			Schema.Struct({
 				configured: Schema.Literal(true),
 				guidance: Schema.String,
@@ -60,7 +60,7 @@ export const ActDiscovery = Schema.Struct({
 				task: Schema.String,
 				phase: Schema.String,
 			}),
-		),
+		]),
 	}),
 	workbase: Schema.Struct({
 		root: Schema.String,

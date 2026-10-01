@@ -40,7 +40,7 @@ describe("withWorktreeLocks", () => {
 		await enteredPromise
 
 		const conflict = await Effect.runPromise(
-			Effect.either(
+			Effect.result(
 				withWorktreeLocks(root, [{ taskId: "alpha" }], Effect.void),
 			),
 		)
@@ -51,8 +51,8 @@ describe("withWorktreeLocks", () => {
 			`.agency-worktree-${Buffer.from("alpha:task").toString("hex")}.lock`,
 		)
 		expect(conflict).toMatchObject({
-			_tag: "Left",
-			left: {
+			_tag: "Failure",
+			failure: {
 				_tag: "WorktreeLockError",
 				message: `Another worktree operation is in progress for 'alpha'. Retry with --force or remove the stale sentinel with: rm '${lockPath}'`,
 			},
@@ -125,13 +125,13 @@ describe("withWorktreeLocks", () => {
 		await first
 
 		const conflict = await Effect.runPromise(
-			Effect.either(
+			Effect.result(
 				withWorktreeLocks(root, [{ taskId: "alpha" }], Effect.void),
 			),
 		)
 		expect(conflict).toMatchObject({
-			_tag: "Left",
-			left: { _tag: "WorktreeLockError" },
+			_tag: "Failure",
+			failure: { _tag: "WorktreeLockError" },
 		})
 
 		forcedRelease()
@@ -144,7 +144,7 @@ describe("withWorktreeLocks", () => {
 		const failure = new Error("operation failed")
 
 		const result = await Effect.runPromise(
-			Effect.either(
+			Effect.result(
 				withWorktreeLocks(
 					root,
 					[{ taskId: "alpha", phaseId: "build" }],
@@ -152,8 +152,8 @@ describe("withWorktreeLocks", () => {
 				),
 			),
 		)
-		expect(result._tag).toBe("Left")
-		if (result._tag === "Left") expect(result.left).toBe(failure)
+		expect(result._tag).toBe("Failure")
+		if (result._tag === "Failure") expect(result.failure).toBe(failure)
 		await expect(
 			Effect.runPromise(
 				withWorktreeLocks(
@@ -176,7 +176,7 @@ describe("withWorktreeLocks", () => {
 			withWorktreeLocks(
 				root,
 				[{ taskId: "interrupted" }],
-				Effect.sync(entered).pipe(Effect.zipRight(Effect.never)),
+				Effect.sync(entered).pipe(Effect.andThen(Effect.never)),
 			),
 		)
 		await enteredPromise

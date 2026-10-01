@@ -173,7 +173,7 @@ Phase prose.
 			),
 		)
 		const fs = await Effect.runPromise(
-			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+			FileSystemService.pipe(Effect.provide(FileSystemService.layer)),
 		)
 		const tracked = trackDocumentReadConcurrency(fs)
 

@@ -38,7 +38,7 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 		const invocationCwd = resolve(cwd)
 		const context = yield* contexts
 			.get({ cwd: invocationCwd, target: ".", compact: true })
-			.pipe(Effect.catchAll(() => Effect.succeed(null)))
+			.pipe(Effect.catch(() => Effect.succeed(null)))
 		const writableCheckout =
 			context?.validation.valid && context.workspace?.writable?.materialized
 				? context.authority.writable?.checkoutPath

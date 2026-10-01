@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Schema } from "@effect/schema"
+import { Schema } from "effect"
 import errorFixture from "../fixtures/protocol/error.json"
 import successFixture from "../fixtures/protocol/success.json"
 import jsonSchema from "../schemas/agency-envelope-v1.schema.json"

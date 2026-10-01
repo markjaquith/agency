@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Schema } from "@effect/schema"
-import { Effect } from "effect"
+import { Schema, Effect } from "effect"
 import { mkdir } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { AgencyGraph } from "../graph-schema"
@@ -229,7 +228,7 @@ describe("GraphService", () => {
 			),
 		)
 		const fs = await Effect.runPromise(
-			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+			FileSystemService.pipe(Effect.provide(FileSystemService.layer)),
 		)
 		const tracked = trackDocumentReadConcurrency(fs)
 
@@ -251,7 +250,6 @@ describe("GraphService", () => {
 			GraphService.pipe(
 				Effect.flatMap((service) => service.get({ cwd: root })),
 				Effect.provideService(VersionControlService, {
-					_tag: "VersionControlService",
 					forWorkbase: () => {
 						calls += 1
 						throw new Error("unexpected VCS lookup")

@@ -277,7 +277,7 @@ describe("task and phase command JSON output", () => {
 			}),
 		)
 		const fs = await Effect.runPromise(
-			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+			FileSystemService.pipe(Effect.provide(FileSystemService.layer)),
 		)
 		const readPaths: string[] = []
 		const countingFs = {
@@ -289,9 +289,9 @@ describe("task and phase command JSON output", () => {
 		}
 		const program = PhaseService.pipe(
 			Effect.flatMap((service) => service.show("multi", "second", root)),
-			Effect.provide(PhaseService.Default),
-			Effect.provide(TaskService.Default),
-			Effect.provide(WorkbaseService.Default),
+			Effect.provide(PhaseService.layer),
+			Effect.provide(TaskService.layer),
+			Effect.provide(WorkbaseService.layer),
 			Effect.provide(Layer.succeed(FileSystemService, countingFs)),
 		)
 

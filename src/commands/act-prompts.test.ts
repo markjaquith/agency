@@ -123,7 +123,7 @@ test("wizard propagates input failures without replaying the collector", async (
 	const failure = new Error("Terminal unavailable")
 	let runs = 0
 	const result = await Effect.runPromise(
-		Effect.either(
+		Effect.result(
 			wizardInputs(
 				{
 					select: () => Effect.succeed(null),
@@ -138,8 +138,8 @@ test("wizard propagates input failures without replaying the collector", async (
 			),
 		),
 	)
-	expect(result._tag).toBe("Left")
-	if (result._tag === "Left") expect(result.left).toBe(failure)
+	expect(result._tag).toBe("Failure")
+	if (result._tag === "Failure") expect(result.failure).toBe(failure)
 	expect(runs).toBe(1)
 })
 
@@ -198,7 +198,7 @@ test("wizard leaves cancellation at the first prompt and global navigation alone
 	for (const global of [false, true]) {
 		let calls = 0
 		const result = await Effect.runPromise(
-			Effect.either(
+			Effect.result(
 				wizardInputs(
 					{
 						select: () => Effect.succeed(null),
@@ -215,7 +215,8 @@ test("wizard leaves cancellation at the first prompt and global navigation alone
 				),
 			),
 		)
-		expect(result._tag).toBe("Left")
-		if (result._tag === "Left") expect(result.left).toBeInstanceOf(ActCancelled)
+		expect(result._tag).toBe("Failure")
+		if (result._tag === "Failure")
+			expect(result.failure).toBeInstanceOf(ActCancelled)
 	}
 })

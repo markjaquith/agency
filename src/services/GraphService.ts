@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { join, relative } from "node:path"
 import {
 	GRAPH_VERSION,
@@ -90,29 +89,33 @@ const taskExecutionNodeId = (taskId: string) => `execution-unit:task/${taskId}`
 const phaseExecutionNodeId = (taskId: string, phaseId: string) =>
 	`execution-unit:phase/${taskId}/${phaseId}`
 
-const decode = <S extends Schema.Schema.AnyNoContext>(
+const decode = <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	input: unknown,
 ) => {
-	const result = Schema.decodeUnknownEither(schema, {
+	const result = Schema.decodeUnknownResult(schema, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
-		? { ok: false as const, error: TreeFormatter.formatErrorSync(result.left) }
-		: { ok: true as const, value: result.right }
+	return Result.isFailure(result)
+		? { ok: false as const, error: result.failure.message }
+		: { ok: true as const, value: result.success }
 }
 
-const run = (fs: FileSystemService, args: readonly string[], cwd?: string) =>
+const run = (
+	fs: FileSystemService["Service"],
+	args: readonly string[],
+	cwd?: string,
+) =>
 	fs.runCommand(args, { cwd, captureOutput: true }).pipe(
 		Effect.map((result) =>
 			result.exitCode === 0 ? result.stdout.trim() || null : null,
 		),
-		Effect.catchAll(() => Effect.succeed(null)),
+		Effect.catch(() => Effect.succeed(null)),
 	)
 
 const runText = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	args: readonly string[],
 	cwd?: string,
 ) =>
@@ -120,7 +123,7 @@ const runText = (
 		Effect.map((result) =>
 			result.exitCode === 0 ? result.stdout.trim() : null,
 		),
-		Effect.catchAll(() => Effect.succeed(null)),
+		Effect.catch(() => Effect.succeed(null)),
 	)
 
 const edge = (
@@ -129,10 +132,10 @@ const edge = (
 	to: string,
 ): GraphEdge => ({ id: `${kind}:${from}->${to}`, kind, from, to })
 
-export class GraphService extends Effect.Service<GraphService>()(
+export class GraphService extends Context.Service<GraphService>()(
 	"GraphService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			get: (options: GraphOptions = {}) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -162,7 +165,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 							Effect.catchTag("FileNotFoundError", () => Effect.succeed([])),
 						)
 
-					const readDocument = <S extends Schema.Schema.AnyNoContext>(
+					const readDocument = <S extends Schema.Decoder<unknown>>(
 						id: string,
 						path: string,
 						schema: S,
@@ -187,7 +190,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 								sha256: documentRevision(content),
 								data: decoded.value,
 								body: parsed.body,
-							} satisfies Document<Schema.Schema.Type<S>>
+							} satisfies Document<S["Type"]>
 						})
 
 					const epicIds = yield* directories(join(root, "epics"))
@@ -682,7 +685,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 						if (cached) return cached
 						const workspaces = backend
 							.listWorkspaces(path)
-							.pipe(Effect.catchAll(() => Effect.succeed([])))
+							.pipe(Effect.catch(() => Effect.succeed([])))
 						repositoryWorkspaces.set(path, workspaces)
 						return workspaces
 					}
@@ -777,7 +780,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 														)
 														?.branch?.replace(/^refs\/heads\//, "") ?? null,
 											),
-											Effect.catchAll(() => Effect.succeed(null)),
+											Effect.catch(() => Effect.succeed(null)),
 										)
 									: null
 								result.git =
@@ -837,7 +840,7 @@ export class GraphService extends Effect.Service<GraphService>()(
 
 					const executionDetailsByKey = new Map<
 						string,
-						Effect.Effect.Success<ReturnType<typeof executionDetails>>
+						Effect.Success<ReturnType<typeof executionDetails>>
 					>()
 					const executionDocuments: readonly (readonly [
 						string,
@@ -1031,6 +1034,8 @@ export class GraphService extends Effect.Service<GraphService>()(
 						},
 					} satisfies AgencyGraph
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

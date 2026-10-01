@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { Effect, Either, Layer } from "effect"
+import { Effect, Result, Layer } from "effect"
 import { join, resolve } from "node:path"
 import { parseCli } from "./src/cli-parser"
 import { init, help as initHelp } from "./src/commands/init"
@@ -66,26 +66,26 @@ import {
 
 // Create CLI layer with all services
 const CliLayer = Layer.mergeAll(
-	FileSystemService.Default,
-	WorkbaseService.Default,
-	GitVersionControlService.Default,
-	VersionControlService.Default,
-	RepositoryService.Default,
-	EpicService.Default,
-	TaskService.Default,
-	PhaseService.Default,
-	WorktreeService.Default,
-	PullRequestService.Default,
-	PushService.Default,
-	ArchiveService.Default,
-	IntegrationService.Default,
-	ContextService.Default,
-	GraphService.Default,
-	SyncService.Default,
-	ReadinessService.Default,
-	GraphMutationService.Default,
-	DoctorService.Default,
-	ReviewService.Default,
+	FileSystemService.layer,
+	WorkbaseService.layer,
+	GitVersionControlService.layer,
+	VersionControlService.layer,
+	RepositoryService.layer,
+	EpicService.layer,
+	TaskService.layer,
+	PhaseService.layer,
+	WorktreeService.layer,
+	PullRequestService.layer,
+	PushService.layer,
+	ArchiveService.layer,
+	IntegrationService.layer,
+	ContextService.layer,
+	GraphService.layer,
+	SyncService.layer,
+	ReadinessService.layer,
+	GraphMutationService.layer,
+	DoctorService.layer,
+	ReviewService.layer,
 )
 
 /**
@@ -115,12 +115,12 @@ async function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
 
 	const result = await Effect.runPromise(
 		providedEffect.pipe(
-			Effect.catchAllDefect((defect) => Effect.fail(toError(defect))),
-			Effect.either,
+			Effect.catchDefect((defect) => Effect.fail(toError(defect))),
+			Effect.result,
 		),
 	)
-	if (Either.isLeft(result)) throw result.left
-	return result.right
+	if (Result.isFailure(result)) throw result.failure
+	return result.success
 }
 
 const runCommand = <E>(effect: Effect.Effect<void, E, any>) => runEffect(effect)
@@ -947,30 +947,7 @@ try {
 	}
 	if (error instanceof Error) {
 		let message = error.message
-		let details: any = error
-
-		// Handle Effect FiberFailure errors that wrap tagged errors
-		// When the message is generic "An error has occurred", try to extract the actual error
-		if (message === "An error has occurred") {
-			// Try to extract the actual error from Effect's Cause structure
-			const causeSymbol = Object.getOwnPropertySymbols(error).find((s) =>
-				s.toString().includes("Cause"),
-			)
-			if (causeSymbol) {
-				const cause = (error as any)[causeSymbol]
-				if (cause && cause._tag === "Fail" && cause.failure) {
-					const failure = cause.failure
-					details = failure
-					// Try common error message patterns
-					message =
-						failure.message ||
-						failure.stderr ||
-						(failure._tag
-							? `${failure._tag}: ${JSON.stringify(failure)}`
-							: JSON.stringify(failure))
-				}
-			}
-		}
+		const details: any = error
 		for (const [field, label] of [
 			["completed", "Completed"],
 			["rolledBack", "Rolled back"],

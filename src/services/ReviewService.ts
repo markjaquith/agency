@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Context, Layer } from "effect"
 import { randomUUID } from "node:crypto"
 import { lstat, mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
@@ -198,10 +198,10 @@ const fetchCommit = (repoPath: string, sourceRef: string) =>
 		return commit
 	})
 
-export class ReviewService extends Effect.Service<ReviewService>()(
+export class ReviewService extends Context.Service<ReviewService>()(
 	"ReviewService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			resolve: (
 				repo: string,
 				input: { readonly pullRequest?: string; readonly ref?: string },
@@ -351,10 +351,10 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 										})
 										.pipe(
 											Effect.asVoid,
-											Effect.catchAllCause((cause) =>
+											Effect.catchCause((cause) =>
 												transactionEffect(() =>
 													restoreSnapshots(snapshots),
-												).pipe(Effect.zipRight(Effect.failCause(cause))),
+												).pipe(Effect.andThen(Effect.failCause(cause))),
 											),
 										),
 									rollback: transactionEffect(() =>
@@ -471,6 +471,8 @@ export class ReviewService extends Effect.Service<ReviewService>()(
 						autoArchive: yield* autoArchiveTask(taskId, root),
 					}
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

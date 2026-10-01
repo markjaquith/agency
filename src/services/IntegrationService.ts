@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Context, Layer } from "effect"
 import { createHash } from "node:crypto"
 import { dirname, join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
@@ -404,10 +404,10 @@ const canRemoveLegacyOpencodeCommand = (root: string) =>
 		return createHash("sha256").update(canonical).digest("hex") === match[1]
 	})
 
-export class IntegrationService extends Effect.Service<IntegrationService>()(
+export class IntegrationService extends Context.Service<IntegrationService>()(
 	"IntegrationService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			status: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
@@ -541,6 +541,8 @@ export class IntegrationService extends Effect.Service<IntegrationService>()(
 
 					return { root, files }
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

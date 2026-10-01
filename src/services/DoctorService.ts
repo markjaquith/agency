@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect"
+import { Effect, Result, Context, Layer } from "effect"
 import { constants } from "node:fs"
 import { access } from "node:fs/promises"
 import { isAbsolute, join, resolve } from "node:path"
@@ -55,13 +55,13 @@ const executableAvailable = (executable: string, root: string) =>
 			return Bun.which(executable) !== null
 		},
 		catch: () => false,
-	}).pipe(Effect.catchAll(() => Effect.succeed(false)))
+	}).pipe(Effect.catch(() => Effect.succeed(false)))
 
 const permissionAvailable = (path: string, mode: number) =>
 	Effect.tryPromise({
 		try: () => access(path, mode).then(() => true),
 		catch: () => false,
-	}).pipe(Effect.catchAll(() => Effect.succeed(false)))
+	}).pipe(Effect.catch(() => Effect.succeed(false)))
 
 const messageOf = (error: unknown) =>
 	error instanceof Error
@@ -73,10 +73,10 @@ const messageOf = (error: unknown) =>
 			? error.message
 			: String(error)
 
-export class DoctorService extends Effect.Service<DoctorService>()(
+export class DoctorService extends Context.Service<DoctorService>()(
 	"DoctorService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			inspect: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -480,25 +480,25 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 									),
 								)
 							: undefined
-						const inspected = yield* Effect.either(
+						const inspected = yield* Effect.result(
 							worktrees.list(root, {
 								materializedOnly: true,
 								tasks,
 								phasesByTask,
 							}),
 						)
-						if (Either.isLeft(inspected)) {
+						if (Result.isFailure(inspected)) {
 							add({
 								id: "worktree.inspection",
 								category: "worktree",
 								level: "warning",
 								status: "fail",
-								message: `Worktree inspection failed: ${messageOf(inspected.left)}`,
+								message: `Worktree inspection failed: ${messageOf(inspected.failure)}`,
 								remediation:
 									"Remediation is unknown; inspect repositories with 'agency worktree list --json'.",
 							})
 						} else {
-							for (const inspection of inspected.right) {
+							for (const inspection of inspected.success) {
 								const target =
 									inspection.owner.kind === "phase"
 										? `${inspection.owner.taskId}.${inspection.owner.phaseId}`
@@ -540,6 +540,8 @@ export class DoctorService extends Effect.Service<DoctorService>()(
 						checks,
 					} satisfies DoctorReport
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

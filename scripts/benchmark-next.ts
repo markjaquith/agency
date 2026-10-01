@@ -15,11 +15,11 @@ const sampleCount = 7
 const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const cliPath = join(projectRoot, "cli.ts")
 const benchmarkLayer = Layer.mergeAll(
-	FileSystemService.Default,
-	WorkbaseService.Default,
-	GitVersionControlService.Default,
-	VersionControlService.Default,
-	GraphService.Default,
+	FileSystemService.layer,
+	WorkbaseService.layer,
+	GitVersionControlService.layer,
+	VersionControlService.layer,
+	GraphService.layer,
 )
 
 const run = async (root: string) => {

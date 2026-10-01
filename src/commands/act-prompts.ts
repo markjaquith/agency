@@ -1,5 +1,4 @@
-import { Data, Effect } from "effect"
-import { Schema } from "@effect/schema"
+import { Data, Effect, Schema } from "effect"
 import { EntityId } from "../workbase/schemas"
 import { choose, type Choice } from "../utils/chooser"
 
@@ -90,7 +89,7 @@ export const wizardInputs = <T>(
 							return Effect.sync(() => {
 								answers.length = cursor - 1
 								onInputError(error.message)
-							}).pipe(Effect.zipRight(run()))
+							}).pipe(Effect.andThen(run()))
 						},
 					),
 					Effect.catchIf(

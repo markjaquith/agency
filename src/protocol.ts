@@ -1,11 +1,8 @@
-import { Schema } from "@effect/schema"
+import { Schema } from "effect"
 
 export const PROTOCOL_VERSION = 1 as const
 
-const ErrorFields = Schema.Record({
-	key: Schema.String,
-	value: Schema.Unknown,
-})
+const ErrorFields = Schema.Record(Schema.String, Schema.Unknown)
 
 export const SuccessEnvelope = Schema.Struct({
 	version: Schema.Literal(PROTOCOL_VERSION),
@@ -27,7 +24,7 @@ export const ErrorEnvelope = Schema.Struct({
 	error: ErrorDetail,
 })
 
-export const AgencyEnvelope = Schema.Union(SuccessEnvelope, ErrorEnvelope)
+export const AgencyEnvelope = Schema.Union([SuccessEnvelope, ErrorEnvelope])
 
 export type SuccessEnvelope = Schema.Schema.Type<typeof SuccessEnvelope>
 export type ErrorEnvelope = Schema.Schema.Type<typeof ErrorEnvelope>

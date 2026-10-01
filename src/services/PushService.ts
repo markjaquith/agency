@@ -1,4 +1,4 @@
-import { Data, Effect, Either } from "effect"
+import { Data, Effect, Result, Context, Layer } from "effect"
 import { ContextService } from "./ContextService"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
@@ -169,7 +169,7 @@ const classifyGitFailure = (
 }
 
 const requireCommand = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	args: readonly string[],
 	cwd: string,
 	label: string,
@@ -219,7 +219,7 @@ const requireCommand = (
 	})
 
 const git = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	cwd: string,
 	args: readonly string[],
 	label: string,
@@ -228,7 +228,7 @@ const git = (
 ) => requireCommand(fs, ["git", ...args], cwd, label, stage, options)
 
 const gitRevision = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	cwd: string,
 	revision: string,
 	stage: PushStage = "inspect",
@@ -260,7 +260,7 @@ const gitRevision = (
 		)
 
 const gitAncestor = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	cwd: string,
 	ancestor: string,
 	descendant: string,
@@ -340,7 +340,7 @@ const gitEnvironment = (): Record<string, string> => ({
 })
 
 const publishGit = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	checkout: string,
 	remote: string,
 	branch: string,
@@ -440,7 +440,7 @@ const publishGit = (
 				"fetch",
 				{ timeoutMs: fetchTimeoutMs, env },
 			).pipe(
-				Effect.catchAll((error) =>
+				Effect.catch((error) =>
 					attempt < 2 && ["timeout", "transport"].includes(error.category)
 						? Effect.sleep(retryDelayMs + Math.floor(Math.random() * 100)).pipe(
 								Effect.flatMap(() => fetchRemote(attempt + 1)),
@@ -517,7 +517,7 @@ const publishGit = (
 			`Failed to configure remote '${remote}' tracking`,
 			"publish",
 		)
-		const pushed = yield* Effect.either(
+		const pushed = yield* Effect.result(
 			git(
 				fs,
 				checkout,
@@ -537,9 +537,9 @@ const publishGit = (
 				},
 			),
 		)
-		if (Either.isLeft(pushed)) {
+		if (Result.isFailure(pushed)) {
 			onProgress?.("reconcile")
-			const reconciled = yield* Effect.either(
+			const reconciled = yield* Effect.result(
 				git(
 					fs,
 					checkout,
@@ -549,14 +549,14 @@ const publishGit = (
 					{ timeoutMs: fetchTimeoutMs, env },
 				),
 			)
-			if (Either.isLeft(reconciled)) {
+			if (Result.isFailure(reconciled)) {
 				return yield* pushError(
-					`Publication outcome is unknown after '${pushed.left.message}' and remote reconciliation also failed: ${reconciled.left.message}`,
+					`Publication outcome is unknown after '${pushed.failure.message}' and remote reconciliation also failed: ${reconciled.failure.message}`,
 					"ambiguous_publication",
 					"reconcile",
 				)
 			}
-			const reconciledTip = reconciled.right.stdout.split(/\s+/, 1)[0] || null
+			const reconciledTip = reconciled.success.stdout.split(/\s+/, 1)[0] || null
 			if (reconciledTip === tip) return { tip }
 			if (reconciledTip !== remoteTip) {
 				return yield* pushError(
@@ -565,13 +565,13 @@ const publishGit = (
 					"reconcile",
 				)
 			}
-			return yield* pushed.left
+			return yield* pushed.failure
 		}
 		return { tip }
 	})
 
-export class PushService extends Effect.Service<PushService>()("PushService", {
-	sync: () => ({
+export class PushService extends Context.Service<PushService>()("PushService", {
+	make: Effect.sync(() => ({
 		publish: (startPath: string = process.cwd(), options: PushOptions = {}) =>
 			Effect.gen(function* () {
 				options.onProgress?.("context")
@@ -684,5 +684,7 @@ export class PushService extends Effect.Service<PushService>()("PushService", {
 					...published,
 				} satisfies PushResult
 			}),
-	}),
-}) {}
+	})),
+}) {
+	static readonly layer = Layer.effect(this, this.make)
+}

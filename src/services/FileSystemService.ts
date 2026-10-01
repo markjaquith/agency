@@ -1,4 +1,4 @@
-import { Effect, Data, pipe } from "effect"
+import { Effect, Data, pipe, Context, Layer } from "effect"
 import {
 	mkdir,
 	lstat,
@@ -29,11 +29,11 @@ const isFileNotFound = (error: unknown) =>
 	"code" in error &&
 	error.code === "ENOENT"
 
-// FileSystem Service using Effect.Service pattern
-export class FileSystemService extends Effect.Service<FileSystemService>()(
+// FileSystem Service using Context.Service pattern
+export class FileSystemService extends Context.Service<FileSystemService>()(
 	"FileSystemService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			exists: (path: string) =>
 				Effect.tryPromise({
 					try: async () => {
@@ -325,6 +325,8 @@ export class FileSystemService extends Effect.Service<FileSystemService>()(
 				}).pipe(
 					Effect.catchTag("FileNotFoundError", () => Effect.succeed(null)),
 				),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

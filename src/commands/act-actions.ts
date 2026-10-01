@@ -44,8 +44,8 @@ type NativeOperation =
 	| ReturnType<StartWork>
 type Operation = Effect.Effect<
 	unknown,
-	Effect.Effect.Error<NativeOperation>,
-	Effect.Effect.Context<NativeOperation>
+	Effect.Error<NativeOperation>,
+	Effect.Services<NativeOperation>
 >
 interface Plan {
 	readonly command: readonly string[]

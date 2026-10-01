@@ -75,7 +75,7 @@ const harness = (
 				stderr: "",
 			})
 		},
-	} as unknown as FileSystemService)
+	} as unknown as FileSystemService["Service"])
 	return {
 		calls,
 		run: () =>

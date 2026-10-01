@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Context, Layer } from "effect"
 import type { AgencyGraph, GraphBlocker, GraphNode } from "../graph-schema"
 import type { WorkStatus } from "../workbase/schemas"
 import { GraphService } from "./GraphService"
@@ -129,10 +129,10 @@ const guardMessage = (
 	return `Cannot ${action === "work" ? "work on" : "create a pull request for"} '${item.key}': ${reasons.length > 0 ? reasons.join("; ") : `status is ${item.status}`}. Use --force to override.`
 }
 
-export class ReadinessService extends Effect.Service<ReadinessService>()(
+export class ReadinessService extends Context.Service<ReadinessService>()(
 	"ReadinessService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			getReadyWorkTargetIds: (cwd: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const graphs = yield* GraphService
@@ -273,6 +273,8 @@ export class ReadinessService extends Effect.Service<ReadinessService>()(
 						})
 					}
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

@@ -1,6 +1,4 @@
-import { Schema } from "@effect/schema"
-import { TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { homedir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
@@ -81,18 +79,18 @@ type DecodeResult<T> =
 	| { readonly success: true; readonly value: T }
 	| { readonly success: false; readonly error: string }
 
-const decode = <S extends Schema.Schema.AnyNoContext>(
+const decode = <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	input: unknown,
-): DecodeResult<Schema.Schema.Type<S>> => {
-	const result = Schema.decodeUnknownEither(schema, {
+): DecodeResult<S["Type"]> => {
+	const result = Schema.decodeUnknownResult(schema, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
 
-	return Either.isLeft(result)
-		? { success: false, error: TreeFormatter.formatErrorSync(result.left) }
-		: { success: true, value: result.right }
+	return Result.isFailure(result)
+		? { success: false, error: result.failure.message }
+		: { success: true, value: result.success }
 }
 
 const registryPath = (configDirectory?: string) =>
@@ -197,10 +195,10 @@ const findRegistration = (
 		return { path, registry, entry }
 	})
 
-export class WorkbaseService extends Effect.Service<WorkbaseService>()(
+export class WorkbaseService extends Context.Service<WorkbaseService>()(
 	"WorkbaseService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			loadGlobalConfig: (configDirectory?: string) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -445,10 +443,11 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 				}),
 
 			hasRepositoryAlias: (alias: string, startPath: string = process.cwd()) =>
-				WorkbaseService.pipe(
-					Effect.flatMap((service) => service.repositoryAliases(startPath)),
-					Effect.map((aliases) => aliases.includes(alias)),
-				),
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const aliases = yield* service.repositoryAliases(startPath)
+					return aliases.includes(alias)
+				}),
 
 			register: (startPath: string, configDirectory?: string, name?: string) =>
 				Effect.gen(function* () {
@@ -734,7 +733,7 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 						}
 					}
 
-					const readDocument = <S extends Schema.Schema.AnyNoContext>(
+					const readDocument = <S extends Schema.Decoder<unknown>>(
 						path: string,
 						schema: S,
 					) =>
@@ -751,15 +750,15 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 								return null
 							}
 							const documentContent = content
-							const parsed = yield* Effect.either(
+							const parsed = yield* Effect.result(
 								parseFrontmatter(documentContent, path),
 							)
-							if (Either.isLeft(parsed)) {
-								issue(path, parsed.left.message)
+							if (Result.isFailure(parsed)) {
+								issue(path, parsed.failure.message)
 								return null
 							}
 
-							const decoded = decode(schema, parsed.right.data)
+							const decoded = decode(schema, parsed.success.data)
 							if (!decoded.success) {
 								issue(path, decoded.error)
 								return null
@@ -1053,6 +1052,8 @@ export class WorkbaseService extends Effect.Service<WorkbaseService>()(
 							: {}),
 					} satisfies ValidationReport
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

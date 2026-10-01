@@ -14,8 +14,8 @@ import type { PickWorkTarget } from "../workbase/work-target"
 import type { PickWorkbase } from "../workbase/workbase-choice"
 import type { Progress } from "../utils/progress"
 
-type ExecutionWorkspace = Effect.Effect.Success<
-	ReturnType<WorktreeService["materialize"]>
+type ExecutionWorkspace = Effect.Success<
+	ReturnType<WorktreeService["Service"]["materialize"]>
 >
 
 const singlePhaseWorkspace: ExecutionWorkspace = {
@@ -110,7 +110,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 	const launchProcessEnvironments: Array<Record<string, string | undefined>> =
 		[]
 	const materializeOptions: Array<
-		Parameters<WorktreeService["materialize"]>[3]
+		Parameters<WorktreeService["Service"]["materialize"]>[3]
 	> = []
 	const taskStatuses = { ...options.taskStatuses }
 	const phaseStatuses = { ...options.phaseStatuses }
@@ -119,7 +119,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 			_taskId: string,
 			_phaseId?: string,
 			_root?: string,
-			commandOptions?: Parameters<WorktreeService["materialize"]>[3],
+			commandOptions?: Parameters<WorktreeService["Service"]["materialize"]>[3],
 		) => {
 			events.push("materialize")
 			materializeOptions.push(commandOptions)

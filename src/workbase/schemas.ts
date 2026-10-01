@@ -1,24 +1,30 @@
-import { Schema } from "@effect/schema"
+import { Effect, Schema } from "effect"
 
-const NonEmptyString = Schema.String.pipe(Schema.minLength(1))
+const NonEmptyString = Schema.String.pipe(Schema.check(Schema.isMinLength(1)))
 const EnvironmentName = NonEmptyString.pipe(
-	Schema.pattern(/^[A-Za-z_][A-Za-z0-9_]*$/),
+	Schema.check(Schema.isPattern(/^[A-Za-z_][A-Za-z0-9_]*$/)),
 )
 
 const Description = Schema.optional(NonEmptyString)
 
 const IdPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
-export const EntityId = NonEmptyString.pipe(Schema.pattern(IdPattern))
+export const EntityId = NonEmptyString.pipe(
+	Schema.check(Schema.isPattern(IdPattern)),
+)
 
-export const RepositoryAlias = NonEmptyString.pipe(Schema.pattern(IdPattern))
+export const RepositoryAlias = NonEmptyString.pipe(
+	Schema.check(Schema.isPattern(IdPattern)),
+)
 
 // Portable declarations must be usable after cloning the workbase elsewhere.
 // Local paths, file URLs, and credential-bearing HTTP URLs are intentionally
 // excluded; SSH usernames are identities and remain supported.
 export const RepositoryRemote = NonEmptyString.pipe(
-	Schema.pattern(
-		/^(?!-)(?![a-zA-Z]:[\\/])(?!https?:\/\/[^/@\s]+@)(?![a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]*@)(?:(?:https?|ssh|git):\/\/[^\s?#]+|(?![^\s]*::)(?:[^@\s/:]+@)?[a-zA-Z0-9_.][^@\s/:]*:(?!\/\/)[^\s?#]+)$/,
+	Schema.check(
+		Schema.isPattern(
+			/^(?!-)(?![a-zA-Z]:[\\/])(?!https?:\/\/[^/@\s]+@)(?![a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/@\s]*:[^/@\s]*@)(?:(?:https?|ssh|git):\/\/[^\s?#]+|(?![^\s]*::)(?:[^@\s/:]+@)?[a-zA-Z0-9_.][^@\s/:]*:(?!\/\/)[^\s?#]+)$/,
+		),
 	),
 )
 
@@ -32,40 +38,48 @@ export const RepositoryReference = Schema.Struct({
 	ref: NonEmptyString,
 })
 
-export const WorkStatus = Schema.Literal(
+export const WorkStatus = Schema.Literals([
 	"open",
 	"working",
 	"delegated",
 	"done",
 	"dropped",
-)
+])
 
 const IsoTimestamp = NonEmptyString.pipe(
-	Schema.pattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
-	Schema.filter(
-		(value) => {
-			const timestamp = Date.parse(value)
-			return (
-				Number.isFinite(timestamp) &&
-				new Date(timestamp).toISOString() === value
-			)
-		},
-		{
-			message: () => "Expected a canonical ISO-8601 timestamp",
-		},
+	Schema.check(
+		Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/),
+	),
+	Schema.check(
+		Schema.makeFilter(
+			(value) => {
+				const timestamp = Date.parse(value)
+				return (
+					Number.isFinite(timestamp) &&
+					new Date(timestamp).toISOString() === value
+				)
+			},
+			{ message: "Expected a canonical ISO-8601 timestamp" },
+		),
 	),
 )
 
-const GitCommit = Schema.String.pipe(Schema.pattern(/^[a-f0-9]{40}$/))
-
-export const DocumentRevision = Schema.String.pipe(
-	Schema.pattern(/^[a-f0-9]{64}$/),
+const GitCommit = Schema.String.pipe(
+	Schema.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
 )
 
-const Url = NonEmptyString.pipe(Schema.pattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/))
+export const DocumentRevision = Schema.String.pipe(
+	Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+)
+
+const Url = NonEmptyString.pipe(
+	Schema.check(Schema.isPattern(/^[a-zA-Z][a-zA-Z0-9+.-]*:/)),
+)
 
 const GitHubPullRequestUrl = NonEmptyString.pipe(
-	Schema.pattern(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/),
+	Schema.check(
+		Schema.isPattern(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+\/?$/),
+	),
 )
 
 export const PullRequestRecord = Schema.Struct({
@@ -77,7 +91,7 @@ export const PullRequestRecord = Schema.Struct({
 	baseBranch: Schema.optional(NonEmptyString),
 	identifier: NonEmptyString,
 	url: Url,
-	state: Schema.Literal("open", "closed", "merged"),
+	state: Schema.Literals(["open", "closed", "merged"]),
 	draft: Schema.Boolean,
 	merged: Schema.Boolean,
 	mergeable: Schema.optional(Schema.NullOr(Schema.Boolean)),
@@ -95,9 +109,7 @@ const DeliveryProvider = Schema.Struct({
 	remote: Schema.optional(NonEmptyString),
 	createCommand: Schema.NonEmptyArray(NonEmptyString),
 	queryCommand: Schema.NonEmptyArray(NonEmptyString),
-	environment: Schema.optional(
-		Schema.Record({ key: EnvironmentName, value: Schema.String }),
-	),
+	environment: Schema.optional(Schema.Record(EnvironmentName, Schema.String)),
 })
 
 export const WorkbaseConfig = Schema.Struct({
@@ -105,16 +117,16 @@ export const WorkbaseConfig = Schema.Struct({
 	vcs: Schema.optional(Schema.Literal("git")),
 	autoArchive: Schema.optional(Schema.Boolean),
 	repositories: Schema.optional(
-		Schema.Record({ key: RepositoryAlias, value: RepositoryDeclaration }),
+		Schema.Record(RepositoryAlias, RepositoryDeclaration),
 	),
 	chooserCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	branchNameCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeCreateCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	worktreeRemoveCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 	agents: Schema.optional(
-		Schema.Record({
-			key: EntityId,
-			value: Schema.Struct({
+		Schema.Record(
+			EntityId,
+			Schema.Struct({
 				command: Schema.NonEmptyArray(NonEmptyString),
 				autoCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
 				resumeCommand: Schema.optional(Schema.NonEmptyArray(NonEmptyString)),
@@ -122,10 +134,10 @@ export const WorkbaseConfig = Schema.Struct({
 					Schema.NonEmptyArray(NonEmptyString),
 				),
 				environment: Schema.optional(
-					Schema.Record({ key: EnvironmentName, value: Schema.String }),
+					Schema.Record(EnvironmentName, Schema.String),
 				),
 			}),
-		}),
+		),
 	),
 	delivery: Schema.optional(DeliveryProvider),
 })
@@ -149,7 +161,7 @@ export const WorkbaseRegistry = Schema.Struct({
 
 export const GlobalConfig = Schema.Struct({
 	agent: Schema.optional(
-		Schema.Literal("opencode2", "opencode", "pi", "claude"),
+		Schema.Literals(["opencode2", "opencode", "pi", "claude"]),
 	),
 })
 
@@ -163,14 +175,16 @@ const ExecutionUnit = {
 	repos: Schema.optional(Schema.Array(RepositoryReference)),
 	branch: NonEmptyString,
 	base: NonEmptyString,
-	pr: Schema.NullOr(Schema.Union(GitHubPullRequestUrl, PullRequestRecord)),
-	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
+	pr: Schema.NullOr(Schema.Union([GitHubPullRequestUrl, PullRequestRecord])),
+	status: WorkStatus.pipe(
+		Schema.withDecodingDefaultType(Effect.succeed("open" as const)),
+	),
 	completion: Schema.optional(CompletionRecord),
 }
 
-export const TaskPurpose = Schema.Literal("investigation", "implementation")
+export const TaskPurpose = Schema.Literals(["investigation", "implementation"])
 
-export const TaskHandoffSource = Schema.Union(
+export const TaskHandoffSource = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("task"),
 		taskId: EntityId,
@@ -180,7 +194,7 @@ export const TaskHandoffSource = Schema.Union(
 		taskId: EntityId,
 		phaseId: EntityId,
 	}),
-)
+])
 
 export const TaskHandoff = Schema.Struct({
 	source: TaskHandoffSource,
@@ -219,17 +233,17 @@ export const ReviewPullRequestSource = Schema.Struct({
 	kind: Schema.Literal("pull-request"),
 	provider: Schema.Literal("github"),
 	repository: NonEmptyString,
-	identifier: NonEmptyString.pipe(Schema.pattern(/^\d+$/)),
+	identifier: NonEmptyString.pipe(Schema.check(Schema.isPattern(/^\d+$/))),
 	url: GitHubPullRequestUrl,
 	fetchRef: NonEmptyString,
-}).pipe(
-	Schema.filter(
+}).check(
+	Schema.makeFilter(
 		(source) =>
 			source.url ===
 				`https://github.com/${source.repository}/pull/${source.identifier}` &&
 			source.fetchRef === `refs/pull/${source.identifier}/head`,
 		{
-			message: () =>
+			message:
 				"Pull request review source URL, repository, identifier, and fetch ref must agree",
 		},
 	),
@@ -238,16 +252,18 @@ export const ReviewPullRequestSource = Schema.Struct({
 export const ReviewBranchSource = Schema.Struct({
 	kind: Schema.Literal("branch"),
 	ref: NonEmptyString.pipe(
-		Schema.pattern(
-			/^refs\/heads\/(?!HEAD$)(?!.*(?:\.\.|@\{|[ ~^:?*\[\\\]]))(?!.*\/\/)(?!.*(?:^|\/)\.)(?!.*\/$)(?!.*\.lock(?:\/|$))[A-Za-z0-9._\/-]+$/,
+		Schema.check(
+			Schema.isPattern(
+				/^refs\/heads\/(?!HEAD$)(?!.*(?:\.\.|@\{|[ ~^:?*\[\\\]]))(?!.*\/\/)(?!.*(?:^|\/)\.)(?!.*\/$)(?!.*\.lock(?:\/|$))[A-Za-z0-9._\/-]+$/,
+			),
 		),
 	),
 })
 
-export const ReviewSource = Schema.Union(
+export const ReviewSource = Schema.Union([
 	ReviewPullRequestSource,
 	ReviewBranchSource,
-)
+])
 
 export const ReviewRecord = Schema.Struct({
 	repo: RepositoryAlias,
@@ -262,15 +278,17 @@ const ReviewTaskFrontmatter = Schema.Struct({
 	epic: Schema.optional(EntityId),
 	...TaskMetadata,
 	review: ReviewRecord,
-	status: Schema.optionalWith(WorkStatus, { default: () => "open" as const }),
+	status: WorkStatus.pipe(
+		Schema.withDecodingDefaultType(Effect.succeed("open" as const)),
+	),
 	completion: Schema.optional(CompletionRecord),
 })
 
-export const TaskFrontmatter = Schema.Union(
+export const TaskFrontmatter = Schema.Union([
 	SinglePhaseTaskFrontmatter,
 	MultiPhaseTaskFrontmatter,
 	ReviewTaskFrontmatter,
-)
+])
 
 export const PhaseFrontmatter = Schema.Struct({
 	description: Description,

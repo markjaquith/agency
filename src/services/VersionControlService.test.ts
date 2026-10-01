@@ -26,7 +26,7 @@ describe("VersionControlService", () => {
 	test("inspects a Git repository with one subprocess", async () => {
 		const commands: readonly string[][] = []
 		const fileSystem = {
-			...FileSystemService.Default,
+			...FileSystemService.layer,
 			runCommand: (command: readonly string[]) => {
 				;(commands as string[][]).push([...command])
 				return Effect.succeed({
@@ -36,10 +36,10 @@ describe("VersionControlService", () => {
 					stderr: "",
 				})
 			},
-		} as unknown as Effect.Effect.Success<typeof FileSystemService>
+		} as unknown as Effect.Success<typeof FileSystemService>
 		const backend = await Effect.runPromise(
 			GitVersionControlService.pipe(
-				Effect.provide(GitVersionControlService.Default),
+				Effect.provide(GitVersionControlService.layer),
 			),
 		)
 		const inspection = await Effect.runPromise(

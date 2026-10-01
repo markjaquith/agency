@@ -1,5 +1,13 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Deferred, Effect, Either, Exit } from "effect"
+import {
+	Schema,
+	Data,
+	Deferred,
+	Effect,
+	Result,
+	Exit,
+	Context,
+	Layer,
+} from "effect"
 import { join, relative, resolve, sep } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -74,17 +82,17 @@ interface ReferenceCheckout extends CheckoutInspection {
 	readonly resolvedCommit: string | null
 }
 
-const decode = <S extends Schema.Schema.AnyNoContext>(
+const decode = <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	input: unknown,
 ) => {
-	const result = Schema.decodeUnknownEither(schema, {
+	const result = Schema.decodeUnknownResult(schema, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
-		? { ok: false as const, error: TreeFormatter.formatErrorSync(result.left) }
-		: { ok: true as const, value: result.right }
+	return Result.isFailure(result)
+		? { ok: false as const, error: result.failure.message }
+		: { ok: true as const, value: result.success }
 }
 
 const isWithin = (root: string, path: string) => {
@@ -92,16 +100,20 @@ const isWithin = (root: string, path: string) => {
 	return child === "" || (!child.startsWith(`..${sep}`) && child !== "..")
 }
 
-const runGit = (fs: FileSystemService, cwd: string, args: readonly string[]) =>
+const runGit = (
+	fs: FileSystemService["Service"],
+	cwd: string,
+	args: readonly string[],
+) =>
 	fs.runCommand(["git", "-C", cwd, ...args], { captureOutput: true }).pipe(
 		Effect.map((result) =>
 			result.exitCode === 0 ? result.stdout.trim() || null : null,
 		),
-		Effect.catchAll(() => Effect.succeed(null)),
+		Effect.catch(() => Effect.succeed(null)),
 	)
 
 const runGitText = (
-	fs: FileSystemService,
+	fs: FileSystemService["Service"],
 	cwd: string,
 	args: readonly string[],
 ) =>
@@ -109,7 +121,7 @@ const runGitText = (
 		Effect.map((result) =>
 			result.exitCode === 0 ? result.stdout.trim() : null,
 		),
-		Effect.catchAll(() => Effect.succeed(null)),
+		Effect.catch(() => Effect.succeed(null)),
 	)
 
 const worktreePaths = (output: string | null) =>
@@ -120,10 +132,10 @@ const worktreePaths = (output: string | null) =>
 			.map((line) => line.slice("worktree ".length)),
 	)
 
-export class ContextService extends Effect.Service<ContextService>()(
+export class ContextService extends Context.Service<ContextService>()(
 	"ContextService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			get: (options: {
 				readonly target?: string
 				readonly cwd?: string
@@ -156,36 +168,36 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const existsCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<ReturnType<typeof sourceFs.exists>>,
-							Effect.Effect.Error<ReturnType<typeof sourceFs.exists>>
+							Effect.Success<ReturnType<typeof sourceFs.exists>>,
+							Effect.Error<ReturnType<typeof sourceFs.exists>>
 						>
 					>()
 					const directoryCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<ReturnType<typeof sourceFs.isDirectory>>,
-							Effect.Effect.Error<ReturnType<typeof sourceFs.isDirectory>>
+							Effect.Success<ReturnType<typeof sourceFs.isDirectory>>,
+							Effect.Error<ReturnType<typeof sourceFs.isDirectory>>
 						>
 					>()
 					const readCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<ReturnType<typeof sourceFs.readFile>>,
-							Effect.Effect.Error<ReturnType<typeof sourceFs.readFile>>
+							Effect.Success<ReturnType<typeof sourceFs.readFile>>,
+							Effect.Error<ReturnType<typeof sourceFs.readFile>>
 						>
 					>()
 					const listingCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<ReturnType<typeof sourceFs.readDirectory>>,
-							Effect.Effect.Error<ReturnType<typeof sourceFs.readDirectory>>
+							Effect.Success<ReturnType<typeof sourceFs.readDirectory>>,
+							Effect.Error<ReturnType<typeof sourceFs.readDirectory>>
 						>
 					>()
 					const realPathCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<ReturnType<typeof sourceFs.realPath>>,
-							Effect.Effect.Error<ReturnType<typeof sourceFs.realPath>>
+							Effect.Success<ReturnType<typeof sourceFs.realPath>>,
+							Effect.Error<ReturnType<typeof sourceFs.realPath>>
 						>
 					>()
 					const fs = {
@@ -200,7 +212,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 							memoize(listingCache, path, sourceFs.readDirectory(path)),
 						realPath: (path: string) =>
 							memoize(realPathCache, path, sourceFs.realPath(path)),
-					} satisfies FileSystemService
+					} satisfies FileSystemService["Service"]
 					const cwd = resolve(options.cwd ?? process.cwd())
 					const suppliedTarget = options.target ?? "."
 					const candidate = resolve(cwd, suppliedTarget)
@@ -212,23 +224,15 @@ export class ContextService extends Effect.Service<ContextService>()(
 					const revisionCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<
-								ReturnType<typeof sourceBackend.resolveRevision>
-							>,
-							Effect.Effect.Error<
-								ReturnType<typeof sourceBackend.resolveRevision>
-							>
+							Effect.Success<ReturnType<typeof sourceBackend.resolveRevision>>,
+							Effect.Error<ReturnType<typeof sourceBackend.resolveRevision>>
 						>
 					>()
 					const workspaceCache = new Map<
 						string,
 						Deferred.Deferred<
-							Effect.Effect.Success<
-								ReturnType<typeof sourceBackend.listWorkspaces>
-							>,
-							Effect.Effect.Error<
-								ReturnType<typeof sourceBackend.listWorkspaces>
-							>
+							Effect.Success<ReturnType<typeof sourceBackend.listWorkspaces>>,
+							Effect.Error<ReturnType<typeof sourceBackend.listWorkspaces>>
 						>
 					>()
 					const backend = {
@@ -450,7 +454,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 						}
 					}
 
-					const readDocument = <S extends Schema.Schema.AnyNoContext>(
+					const readDocument = <S extends Schema.Decoder<unknown>>(
 						id: string,
 						path: string,
 						schema: S,
@@ -485,10 +489,10 @@ export class ContextService extends Effect.Service<ContextService>()(
 								sha256: documentRevision(content),
 								data: decoded.value,
 								body: parsed.body,
-							} satisfies Document<Schema.Schema.Type<S>>
+							} satisfies Document<S["Type"]>
 						})
 
-					const readOptionalDocument = <S extends Schema.Schema.AnyNoContext>(
+					const readOptionalDocument = <S extends Schema.Decoder<unknown>>(
 						id: string,
 						path: string,
 						schema: S,
@@ -576,15 +580,15 @@ export class ContextService extends Effect.Service<ContextService>()(
 					for (const taskId of relevantTaskIds) {
 						let document = taskDocuments.get(taskId)
 						if (!document) {
-							const archived = yield* Effect.either(
+							const archived = yield* Effect.result(
 								readOptionalDocument(
 									taskId,
 									join(archivedTaskDirectory(root, taskId), "TASK.md"),
 									TaskFrontmatter,
 								),
 							)
-							document = Either.isRight(archived)
-								? (archived.right ?? undefined)
+							document = Result.isSuccess(archived)
+								? (archived.success ?? undefined)
 								: undefined
 							if (document) taskDocuments.set(taskId, document)
 						}
@@ -592,7 +596,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 						for (const child of document.data.phases) {
 							const key = `${taskId}/${child.id}`
 							if (phaseDocuments.has(key)) continue
-							const archived = yield* Effect.either(
+							const archived = yield* Effect.result(
 								readOptionalDocument(
 									child.id,
 									join(
@@ -602,8 +606,8 @@ export class ContextService extends Effect.Service<ContextService>()(
 									PhaseFrontmatter,
 								),
 							)
-							if (Either.isRight(archived) && archived.right) {
-								phaseDocuments.set(key, archived.right)
+							if (Result.isSuccess(archived) && archived.success) {
+								phaseDocuments.set(key, archived.success)
 							}
 						}
 					}
@@ -1136,7 +1140,7 @@ export class ContextService extends Effect.Service<ContextService>()(
 												? result.stdout.trim() || null
 												: null,
 										),
-										Effect.catchAll(() => Effect.succeed(null)),
+										Effect.catch(() => Effect.succeed(null)),
 									)
 							: null
 
@@ -1267,6 +1271,8 @@ export class ContextService extends Effect.Service<ContextService>()(
 						},
 					}
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

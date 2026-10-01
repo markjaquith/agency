@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Schema } from "@effect/schema"
+import { Schema } from "effect"
 import {
 	EntityId,
 	EpicFrontmatter,
@@ -63,6 +63,32 @@ describe("portable repository declarations", () => {
 })
 
 describe("body-of-work descriptions", () => {
+	test("rejects invalid record keys when excess properties are errors", () => {
+		const strict = Schema.decodeUnknownSync(WorkbaseConfig, {
+			errors: "all",
+			onExcessProperty: "error",
+		})
+		expect(() =>
+			strict({
+				version: 2,
+				repositories: {
+					"-agency": { remote: "https://example.com/agency.git" },
+				},
+			}),
+		).toThrow('["repositories"]["-agency"]')
+		expect(() =>
+			strict({
+				version: 2,
+				delivery: {
+					provider: "github",
+					createCommand: ["gh", "pr", "create"],
+					queryCommand: ["gh", "pr", "view"],
+					environment: { "1INVALID": "value" },
+				},
+			}),
+		).toThrow('["delivery"]["environment"]["1INVALID"]')
+	})
+
 	test("decodes strict task purpose and handoff provenance", () => {
 		const handoff = {
 			source: { kind: "phase", taskId: "investigate", phaseId: "evidence" },
@@ -152,7 +178,9 @@ describe("body-of-work descriptions", () => {
 					...review,
 					review: { ...review.review, source: inconsistent },
 				}),
-			).toThrow()
+			).toThrow(
+				"Pull request review source URL, repository, identifier, and fetch ref must agree",
+			)
 		}
 	})
 
@@ -365,6 +393,15 @@ describe("work status", () => {
 
 		expect("status" in task && task.status).toBe("open")
 		expect(phase.status).toBe("open")
+		expect(
+			Schema.decodeUnknownSync(PhaseFrontmatter)({
+				repo: "agency",
+				branch: "task/undefined-phase-status",
+				base: "main",
+				pr: null,
+				status: undefined,
+			}).status,
+		).toBe("open")
 	})
 
 	test("accepts every supported status on tasks and phases", () => {
@@ -457,6 +494,15 @@ test("rejects impossible and non-canonical timestamps", () => {
 			}),
 		).toThrow()
 	}
+	expect(() =>
+		Schema.decodeUnknownSync(TaskFrontmatter)({
+			...task,
+			completion: {
+				...task.completion,
+				completedAt: "2026-02-29T13:00:00.000Z",
+			},
+		}),
+	).toThrow("Expected a canonical ISO-8601 timestamp")
 })
 
 describe("workbase registry", () => {
@@ -497,7 +543,7 @@ describe("workbase registry", () => {
 })
 
 describe("schema boundaries", () => {
-	const rejects = <S extends Schema.Schema.AnyNoContext>(
+	const rejects = <S extends Schema.Decoder<unknown>>(
 		schema: S,
 		input: unknown,
 	) => {

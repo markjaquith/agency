@@ -1,5 +1,13 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Cause, Data, Effect, Either, Exit } from "effect"
+import {
+	Schema,
+	Cause,
+	Data,
+	Effect,
+	Result,
+	Exit,
+	Context,
+	Layer,
+} from "effect"
 import { join, resolve } from "node:path"
 import { cp, lstat, realpath, rename, rm } from "node:fs/promises"
 import { FileSystemService } from "./FileSystemService"
@@ -74,19 +82,19 @@ export interface RepositorySetupResult {
 	readonly repositories: readonly RepositoryInfo[]
 }
 
-const validate = <S extends Schema.Schema.AnyNoContext>(
+const validate = <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	value: unknown,
 	label: string,
 ) => {
-	const result = Schema.decodeUnknownEither(schema)(value)
-	return Either.isLeft(result)
+	const result = Schema.decodeUnknownResult(schema)(value)
+	return Result.isFailure(result)
 		? Effect.fail(
 				new RepositoryError({
-					message: `Invalid ${label} '${String(value)}': ${TreeFormatter.formatErrorSync(result.left)}`,
+					message: `Invalid ${label} '${String(value)}': ${result.failure.message}`,
 				}),
 			)
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
 const validateAlias = (alias: string) =>
@@ -138,18 +146,18 @@ const configState = (startPath: string) =>
 				cause,
 			})
 		}
-		const decoded = Schema.decodeUnknownEither(WorkbaseConfig, {
+		const decoded = Schema.decodeUnknownResult(WorkbaseConfig, {
 			errors: "all",
 			onExcessProperty: "error",
 		})(input)
-		if (Either.isLeft(decoded)) {
+		if (Result.isFailure(decoded)) {
 			return yield* new RepositoryError({
-				message: `Invalid workbase configuration in ${path}:\n${TreeFormatter.formatErrorSync(decoded.left)}`,
+				message: `Invalid workbase configuration in ${path}:\n${decoded.failure.message}`,
 			})
 		}
 		return {
 			root,
-			config: decoded.right,
+			config: decoded.success,
 			path,
 			revision: documentRevision(content),
 		}
@@ -189,7 +197,7 @@ const portableRemote = (path: string, backend?: VersionControlBackend) =>
 
 const inspectRepository = (
 	alias: string,
-	state: Effect.Effect.Success<ReturnType<typeof configState>>,
+	state: Effect.Success<ReturnType<typeof configState>>,
 	backend: VersionControlBackend,
 ) =>
 	Effect.gen(function* () {
@@ -384,7 +392,7 @@ const replaceWithMoveStep = (
 })
 
 const runGit = (
-	fs: Effect.Effect.Success<typeof FileSystemService>,
+	fs: Effect.Success<typeof FileSystemService>,
 	args: readonly string[],
 	label: string,
 ) =>
@@ -403,7 +411,7 @@ const runGit = (
 		)
 
 const runTransaction = (
-	state: Effect.Effect.Success<ReturnType<typeof configState>>,
+	state: Effect.Success<ReturnType<typeof configState>>,
 	config: WorkbaseConfig,
 	steps: readonly TransactionStep<any>[],
 ) =>
@@ -426,10 +434,10 @@ const runTransaction = (
 		),
 	)
 
-export class RepositoryService extends Effect.Service<RepositoryService>()(
+export class RepositoryService extends Context.Service<RepositoryService>()(
 	"RepositoryService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			add: (alias: string, remote: string, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -447,8 +455,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						})
 					}
 
-					const inputIsPortable = Either.isRight(
-						Schema.decodeUnknownEither(RepositoryRemote)(remote),
+					const inputIsPortable = Result.isSuccess(
+						Schema.decodeUnknownResult(RepositoryRemote)(remote),
 					)
 					const cloneSource = inputIsPortable
 						? remote
@@ -463,10 +471,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					)
 					yield* fs.createDirectory(join(state.root, "repos"))
 					yield* backend.cloneRepository(cloneSource, staging).pipe(
-						Effect.catchAll((cause) =>
+						Effect.catch((cause) =>
 							fs.deleteDirectory(staging).pipe(
 								Effect.ignore,
-								Effect.zipRight(
+								Effect.andThen(
 									Effect.fail(
 										new RepositoryError({
 											message: `Failed to clone repository '${remote}': ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -668,10 +676,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					const metadataBackup = `${sourceWorktrees}.agency-materialize-${suffix}`
 					yield* fs.createDirectory(join(state.root, "repos"))
 					yield* backend.cloneRepository(source, staging).pipe(
-						Effect.catchAll((cause) =>
+						Effect.catch((cause) =>
 							fs.deleteDirectory(staging).pipe(
 								Effect.ignore,
-								Effect.zipRight(
+								Effect.andThen(
 									Effect.fail(
 										new RepositoryError({
 											message: `Failed to materialize repository '${alias}': ${cause instanceof Error ? cause.message : String(cause)}`,
@@ -756,10 +764,10 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 					yield* backend
 						.setRemoteUrl(staging, "origin", repository.declaredRemote)
 						.pipe(
-							Effect.catchAll((cause) =>
+							Effect.catch((cause) =>
 								fs
 									.deleteDirectory(staging)
-									.pipe(Effect.ignore, Effect.zipRight(Effect.fail(cause))),
+									.pipe(Effect.ignore, Effect.andThen(Effect.fail(cause))),
 							),
 						)
 					for (const workspace of worktrees) {
@@ -806,17 +814,19 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						const attempt = (effect: Effect.Effect<void, unknown, any>) =>
 							effect.pipe(
 								Effect.exit,
-								Effect.tap((exit) => {
-									if (Exit.isFailure(exit))
-										errors.push(Cause.squash(exit.cause))
-								}),
+								Effect.tap((exit) =>
+									Effect.sync(() => {
+										if (Exit.isFailure(exit))
+											errors.push(Cause.squash(exit.cause))
+									}),
+								),
 							)
 						if (metadataMoved) {
 							yield* attempt(
 								transactionEffect(async () => {
 									await rename(metadataBackup, sourceWorktrees)
 									metadataMoved = false
-								}).pipe(Effect.zipRight(repair(commonDirectory))),
+								}).pipe(Effect.andThen(repair(commonDirectory))),
 							)
 						}
 						if (cloneInstalled) {
@@ -893,9 +903,9 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							})
 							yield* repair(repository.path)
 						}).pipe(
-							Effect.catchAllCause((cause) =>
+							Effect.catchCause((cause) =>
 								rollbackMigration.pipe(
-									Effect.catchAllCause((rollbackCause) =>
+									Effect.catchCause((rollbackCause) =>
 										Effect.fail(
 											new Error(
 												`Repository materialization failed and rollback requires manual recovery: restore ${aliasBackup} to ${repository.path} and ${metadataBackup} to ${sourceWorktrees}`,
@@ -908,7 +918,7 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 											),
 										),
 									),
-									Effect.zipRight(Effect.failCause(cause)),
+									Effect.andThen(Effect.failCause(cause)),
 								),
 							),
 						),
@@ -1249,15 +1259,15 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 						}
 						if (!repository.states.includes("declared")) {
 							const decoded = repository.remote
-								? Schema.decodeUnknownEither(RepositoryRemote)(
+								? Schema.decodeUnknownResult(RepositoryRemote)(
 										repository.remote,
 									)
 								: null
-							if (decoded && Either.isRight(decoded)) {
+							if (decoded && Result.isSuccess(decoded)) {
 								planned.push({
 									kind: "adopt",
 									alias: repository.alias,
-									remote: decoded.right,
+									remote: decoded.success,
 								})
 							} else {
 								unresolved.push({
@@ -1283,13 +1293,13 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 							yield* fs.createDirectory(join(state.root, "repos"))
 							const cloned = yield* backend
 								.cloneRepository(action.remote, from)
-								.pipe(Effect.either)
-							if (Either.isLeft(cloned)) {
+								.pipe(Effect.result)
+							if (Result.isFailure(cloned)) {
 								for (const item of staging)
 									yield* fs.deleteDirectory(item.from).pipe(Effect.ignore)
 								return yield* new RepositoryError({
-									message: `Failed to materialize repository '${action.alias}': ${cloned.left instanceof Error ? cloned.left.message : String(cloned.left)}`,
-									cause: cloned.left,
+									message: `Failed to materialize repository '${action.alias}': ${cloned.failure instanceof Error ? cloned.failure.message : String(cloned.failure)}`,
+									cause: cloned.failure,
 								})
 							}
 							staging.push({
@@ -1335,6 +1345,8 @@ export class RepositoryService extends Effect.Service<RepositoryService>()(
 								: repositories,
 					} satisfies RepositorySetupResult
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

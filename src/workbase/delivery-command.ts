@@ -1,4 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
+import { Schema } from "effect"
 import type { PullRequestRecord, WorkbaseConfig } from "./schemas"
 import { PullRequestRecord as PullRequestRecordSchema } from "./schemas"
 
@@ -109,7 +109,7 @@ export const resolveDeliveryCommand = (
 	}
 }
 
-const decodeRecord = Schema.decodeUnknownEither(PullRequestRecordSchema, {
+const decodeRecord = Schema.decodeUnknownResult(PullRequestRecordSchema, {
 	onExcessProperty: "error",
 })
 
@@ -121,15 +121,15 @@ export const parsePullRequestRecord = (value: string): PullRequestRecord => {
 		throw new Error("Delivery provider did not return valid JSON")
 	}
 	const decoded = decodeRecord(input)
-	if (decoded._tag === "Left") {
+	if (decoded._tag === "Failure") {
 		throw new Error(
 			"Delivery provider did not return a valid pull request record",
 		)
 	}
-	if (decoded.right.merged !== (decoded.right.state === "merged")) {
+	if (decoded.success.merged !== (decoded.success.state === "merged")) {
 		throw new Error("Delivery provider returned inconsistent merge state")
 	}
-	return decoded.right
+	return decoded.success
 }
 
 export const parseOptionalPullRequestRecord = (
@@ -156,12 +156,12 @@ export const recordFromGitHubUrl = (url: string): PullRequestRecord => {
 }
 
 const GitHubRepository = Schema.Struct({
-	nameWithOwner: Schema.String.pipe(Schema.minLength(1)),
+	nameWithOwner: Schema.String.pipe(Schema.check(Schema.isMinLength(1))),
 })
 
 const GitHubPullRequest = Schema.Struct({
 	number: Schema.Number,
-	state: Schema.Literal("OPEN", "CLOSED", "MERGED"),
+	state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]),
 	title: Schema.optional(Schema.String),
 	isDraft: Schema.Boolean,
 	headRefName: Schema.String,
@@ -173,28 +173,25 @@ const GitHubPullRequest = Schema.Struct({
 	mergeCommit: Schema.optional(
 		Schema.NullOr(Schema.Struct({ oid: Schema.String })),
 	),
-	mergeable: Schema.Literal("MERGEABLE", "CONFLICTING", "UNKNOWN"),
+	mergeable: Schema.Literals(["MERGEABLE", "CONFLICTING", "UNKNOWN"]),
 })
 
-const decodeGitHubPullRequest = Schema.decodeUnknownEither(GitHubPullRequest)
-const decodeGitHubPullRequests = Schema.decodeUnknownEither(
+const decodeGitHubPullRequest = Schema.decodeUnknownResult(GitHubPullRequest)
+const decodeGitHubPullRequests = Schema.decodeUnknownResult(
 	Schema.Array(GitHubPullRequest),
 )
 
 const invalidGitHubResponse = (
 	kind: "pull request" | "pull request list",
-	error: Parameters<typeof TreeFormatter.formatErrorSync>[0],
-) =>
-	new Error(
-		`GitHub CLI did not return a valid ${kind}: ${TreeFormatter.formatErrorSync(error)}`,
-	)
+	error: Schema.SchemaError,
+) => new Error(`GitHub CLI did not return a valid ${kind}: ${error.message}`)
 
 const recordFromGitHubJson = (value: unknown): PullRequestRecord => {
 	const decoded = decodeGitHubPullRequest(value)
-	if (decoded._tag === "Left") {
-		throw invalidGitHubResponse("pull request", decoded.left)
+	if (decoded._tag === "Failure") {
+		throw invalidGitHubResponse("pull request", decoded.failure)
 	}
-	const detail = decoded.right
+	const detail = decoded.success
 	const record = recordFromGitHubUrl(detail.url)
 	const repositoryName = (repository: unknown) => {
 		if (!repository || typeof repository !== "object") return undefined
@@ -244,10 +241,10 @@ export const parseGitHubPullRequestList = (
 	const decoded = decodeGitHubPullRequests(
 		parseJson(value, "pull request list"),
 	)
-	if (decoded._tag === "Left") {
-		throw invalidGitHubResponse("pull request list", decoded.left)
+	if (decoded._tag === "Failure") {
+		throw invalidGitHubResponse("pull request list", decoded.failure)
 	}
-	return decoded.right.map(recordFromGitHubJson)
+	return decoded.success.map(recordFromGitHubJson)
 }
 
 export const normalizePullRequestRecord = (

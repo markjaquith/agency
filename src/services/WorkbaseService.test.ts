@@ -130,7 +130,7 @@ pr: null
 		)
 
 		const fs = await Effect.runPromise(
-			FileSystemService.pipe(Effect.provide(FileSystemService.Default)),
+			FileSystemService.pipe(Effect.provide(FileSystemService.layer)),
 		)
 		const reads: string[] = []
 		const exists: string[] = []
@@ -149,7 +149,7 @@ pr: null
 		const report = await Effect.runPromise(
 			WorkbaseService.pipe(
 				Effect.flatMap((service) => service.validate(root)),
-				Effect.provide(WorkbaseService.Default),
+				Effect.provide(WorkbaseService.layer),
 				Effect.provideService(FileSystemService, trackedFs),
 			) as Effect.Effect<unknown, unknown, never>,
 		)

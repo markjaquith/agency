@@ -1,5 +1,4 @@
-import { Schema } from "@effect/schema"
-import { Effect } from "effect"
+import { Schema, Effect } from "effect"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { ActDiscovery } from "../act-schema"
 import { FileSystemService } from "../services/FileSystemService"
@@ -239,7 +238,7 @@ const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
 	})
 
 interface ActState {
-	session?: Effect.Effect.Success<ReturnType<typeof openActSession>>
+	session?: Effect.Success<ReturnType<typeof openActSession>>
 	recap: string[]
 	root?: string
 	view: "home" | "item-menu" | "goal-menu" | "flow"
@@ -279,7 +278,7 @@ export const act = (
 						}),
 					),
 					Effect.as(true),
-					Effect.catchAll((error) => {
+					Effect.catch((error) => {
 						if (error instanceof ActCancelled) {
 							if (state.view === "item-menu") state.item = undefined
 							if (state.view === "goal-menu") state.goal = undefined
@@ -477,7 +476,7 @@ const actStep = (
 			const matches = (action: ActAction) => !actionId || action.id === actionId
 			log(
 				JSON.stringify(
-					yield* Schema.decodeUnknown(ActDiscovery)({
+					yield* Schema.decodeUnknownEffect(ActDiscovery)({
 						creationDefaults: creationDefaults(config),
 						workbase: {
 							root,

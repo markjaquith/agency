@@ -13,12 +13,12 @@ import {
 
 const sampleCount = 7
 const BenchmarkLayer = Layer.mergeAll(
-	FileSystemService.Default,
-	WorkbaseService.Default,
-	TaskService.Default,
-	PhaseService.Default,
-	GitVersionControlService.Default,
-	VersionControlService.Default,
+	FileSystemService.layer,
+	WorkbaseService.layer,
+	TaskService.layer,
+	PhaseService.layer,
+	GitVersionControlService.layer,
+	VersionControlService.layer,
 )
 
 const runEffect = <A>(effect: Effect.Effect<A, unknown, any>) =>
