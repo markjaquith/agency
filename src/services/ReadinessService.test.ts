@@ -122,7 +122,9 @@ status: open
 }
 
 const service = <A>(
-	run: (readiness: ReadinessService) => Effect.Effect<A, unknown, any>,
+	run: (
+		readiness: ReadinessService["Service"],
+	) => Effect.Effect<A, unknown, any>,
 ) => runTestEffect(ReadinessService.pipe(Effect.flatMap(run)))
 
 describe("ReadinessService", () => {
@@ -225,11 +227,11 @@ describe("ReadinessService", () => {
 		)
 
 		const blocked = await service((readiness) =>
-			Effect.either(readiness.guardWorkTarget("phase:ship/verify", root)),
+			Effect.result(readiness.guardWorkTarget("phase:ship/verify", root)),
 		)
 		expect(blocked).toMatchObject({
-			_tag: "Left",
-			left: {
+			_tag: "Failure",
+			failure: {
 				_tag: "ExecutionGuardError",
 				action: "work",
 				target: "phase:ship/verify",
@@ -239,11 +241,11 @@ describe("ReadinessService", () => {
 		})
 
 		const missing = await service((readiness) =>
-			Effect.either(readiness.guardWorkTarget("task:missing", root)),
+			Effect.result(readiness.guardWorkTarget("task:missing", root)),
 		)
 		expect(missing).toMatchObject({
-			_tag: "Left",
-			left: {
+			_tag: "Failure",
+			failure: {
 				_tag: "ExecutionGuardError",
 				target: "task:missing",
 				blockers: [],

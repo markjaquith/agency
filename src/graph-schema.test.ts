@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Schema } from "@effect/schema"
+import { Schema } from "effect"
 import jsonSchema from "../schemas/agency-graph-v1.schema.json"
 import { AgencyGraph, graphJsonlRecords } from "./graph-schema"
 

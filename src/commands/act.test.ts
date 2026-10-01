@@ -1144,7 +1144,7 @@ describe("act command", () => {
 								listCalls++
 								return worktrees.list(...args)
 							},
-						} as WorktreeService),
+						} as WorktreeService["Service"]),
 					),
 				),
 			),

@@ -1,4 +1,4 @@
-import { Data, Effect, Either } from "effect"
+import { Data, Effect, Result, Context, Layer } from "effect"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import type {
 	PhaseFrontmatter,
@@ -230,8 +230,8 @@ const mutateExecution = (
 	)
 }
 
-export class SyncService extends Effect.Service<SyncService>()("SyncService", {
-	sync: () => ({
+export class SyncService extends Context.Service<SyncService>()("SyncService", {
+	make: Effect.sync(() => ({
 		reconcile: (
 			options: {
 				readonly cwd?: string
@@ -402,7 +402,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 							env: commandOptions?.env,
 						})
 						.pipe(
-							Effect.catchAll((error) =>
+							Effect.catch((error) =>
 								Effect.succeed({
 									exitCode: -1,
 									stdout: "",
@@ -414,15 +414,15 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					Effect.gen(function* () {
 						if (registeredByRepository.has(repositoryPath))
 							return registeredByRepository.get(repositoryPath)!
-						const listed = yield* Effect.either(
+						const listed = yield* Effect.result(
 							backend.listWorkspaces(repositoryPath),
 						)
-						if (Either.isLeft(listed)) {
+						if (Result.isFailure(listed)) {
 							registeredByRepository.set(repositoryPath, null)
 							return null
 						}
 						const registered: RegisteredWorktree[] = []
-						for (const item of listed.right) {
+						for (const item of listed.success) {
 							registered.push({
 								head: item.commit,
 								branch: item.branch,
@@ -1136,21 +1136,21 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 										message:
 											cause instanceof Error ? cause.message : String(cause),
 									}),
-							}).pipe(Effect.either)
-							if (Either.isLeft(parsed)) {
+							}).pipe(Effect.result)
+							if (Result.isFailure(parsed)) {
 								warnings.push({
 									kind: "pr-provider-invalid-output",
 									target: record.key,
-									message: parsed.left.message,
+									message: parsed.failure.message,
 								})
 							} else if (
-								parsed.right &&
-								(parsed.right.provider !== config.delivery.provider ||
+								parsed.success &&
+								(parsed.success.provider !== config.delivery.provider ||
 									(
-										parsed.right.headRepository ?? parsed.right.repository
+										parsed.success.headRepository ?? parsed.success.repository
 									).toLowerCase() !== remoteRepository.toLowerCase())
 							) {
-								if (parsed.right) {
+								if (parsed.success) {
 									prConflict = true
 									unresolved.push({
 										kind: "pr-provider-conflict",
@@ -1161,8 +1161,8 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 									})
 								}
 							} else {
-								current = parsed.right
-								pr = parsed.right ?? { url: null, state: "none" }
+								current = parsed.success
+								pr = parsed.success ?? { url: null, state: "none" }
 							}
 						} else {
 							pr = existing
@@ -1392,5 +1392,7 @@ export class SyncService extends Effect.Service<SyncService>()("SyncService", {
 					autoArchive,
 				} satisfies SyncResult
 			}),
-	}),
-}) {}
+	})),
+}) {
+	static readonly layer = Layer.effect(this, this.make)
+}

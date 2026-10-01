@@ -6,7 +6,7 @@ import { cleanupTempDir, createTempDir } from "../test-utils"
 import { FileSystemService } from "./FileSystemService"
 
 const runFileSystem = <A, E>(effect: Effect.Effect<A, E, FileSystemService>) =>
-	Effect.runPromise(effect.pipe(Effect.provide(FileSystemService.Default)))
+	Effect.runPromise(effect.pipe(Effect.provide(FileSystemService.layer)))
 
 describe("FileSystemService", () => {
 	const roots: string[] = []
@@ -24,23 +24,23 @@ describe("FileSystemService", () => {
 		const missing = await runFileSystem(
 			FileSystemService.pipe(
 				Effect.flatMap((service) => service.readFile(join(root, "missing"))),
-				Effect.either,
+				Effect.result,
 			),
 		)
 		expect(missing).toMatchObject({
-			_tag: "Left",
-			left: { _tag: "FileNotFoundError" },
+			_tag: "Failure",
+			failure: { _tag: "FileNotFoundError" },
 		})
 
 		const unreadable = await runFileSystem(
 			FileSystemService.pipe(
 				Effect.flatMap((service) => service.readFile(directory)),
-				Effect.either,
+				Effect.result,
 			),
 		)
 		expect(unreadable).toMatchObject({
-			_tag: "Left",
-			left: {
+			_tag: "Failure",
+			failure: {
 				_tag: "FileSystemError",
 				message: `Failed to read file: ${directory}`,
 			},
@@ -67,12 +67,12 @@ describe("FileSystemService", () => {
 				Effect.flatMap((service) =>
 					service.readSymlinkTarget(join(regularFile, "child")),
 				),
-				Effect.either,
+				Effect.result,
 			),
 		)
 		expect(unreadable).toMatchObject({
-			_tag: "Left",
-			left: {
+			_tag: "Failure",
+			failure: {
 				_tag: "FileSystemError",
 				message: `Failed to read symlink target: ${join(regularFile, "child")}`,
 			},

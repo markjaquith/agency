@@ -65,9 +65,9 @@ describe("lifecycle transactions", () => {
 						}),
 					},
 				],
-			}).pipe(Effect.either),
+			}).pipe(Effect.result),
 		)
-		if (result._tag === "Left") failure = result.left
+		if (result._tag === "Failure") failure = result.failure
 
 		expect(failure.completed).toEqual([
 			"install documents: existing.md, nested/created.md",
@@ -99,9 +99,9 @@ describe("lifecycle transactions", () => {
 						}),
 					},
 				],
-			}).pipe(Effect.either),
+			}).pipe(Effect.result),
 		)
-		if (result._tag === "Left") failure = result.left
+		if (result._tag === "Failure") failure = result.failure
 
 		expect(failure.completed).toEqual(["external mutation"])
 		expect(failure.rolledBack).toEqual([])
@@ -127,7 +127,7 @@ describe("lifecycle transactions", () => {
 					{
 						label: "block",
 						apply: Deferred.succeed(blocked, undefined).pipe(
-							Effect.zipRight(Effect.never),
+							Effect.andThen(Effect.never),
 						),
 					},
 				],

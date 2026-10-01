@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { lstat, mkdir, readdir, realpath, rename, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
@@ -60,37 +59,35 @@ export interface CreatePhaseInput {
 }
 
 const decodeId = (id: string, label: string) => {
-	const result = Schema.decodeUnknownEither(EntityId)(id)
-	return Either.isLeft(result)
+	const result = Schema.decodeUnknownResult(EntityId)(id)
+	return Result.isFailure(result)
 		? Effect.fail(new PhaseError({ message: `Invalid ${label} ID '${id}'` }))
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
 const decodePhase = (input: unknown) => {
-	const result = Schema.decodeUnknownEither(PhaseFrontmatter, {
+	const result = Schema.decodeUnknownResult(PhaseFrontmatter, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
-		? Effect.fail(
-				new PhaseError({ message: TreeFormatter.formatErrorSync(result.left) }),
-			)
-		: Effect.succeed(result.right)
+	return Result.isFailure(result)
+		? Effect.fail(new PhaseError({ message: result.failure.message }))
+		: Effect.succeed(result.success)
 }
 
 const decodeStatus = (status: string) => {
-	const result = Schema.decodeUnknownEither(WorkStatus)(status)
-	return Either.isLeft(result)
+	const result = Schema.decodeUnknownResult(WorkStatus)(status)
+	return Result.isFailure(result)
 		? Effect.fail(
 				new PhaseError({ message: `Invalid work status '${status}'` }),
 			)
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
-export class PhaseService extends Effect.Service<PhaseService>()(
+export class PhaseService extends Context.Service<PhaseService>()(
 	"PhaseService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			create: (input: CreatePhaseInput, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -586,6 +583,8 @@ export class PhaseService extends Effect.Service<PhaseService>()(
 						...(autoArchive ? { autoArchive } : {}),
 					} satisfies PhaseRecord
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

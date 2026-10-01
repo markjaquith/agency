@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { FileSystemService } from "./FileSystemService"
@@ -86,41 +85,37 @@ export interface HandoffTaskInput {
 }
 
 const decodeTask = (input: unknown) => {
-	const result = Schema.decodeUnknownEither(TaskFrontmatter, {
+	const result = Schema.decodeUnknownResult(TaskFrontmatter, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
-		? Effect.fail(
-				new TaskError({ message: TreeFormatter.formatErrorSync(result.left) }),
-			)
-		: Effect.succeed(result.right)
+	return Result.isFailure(result)
+		? Effect.fail(new TaskError({ message: result.failure.message }))
+		: Effect.succeed(result.success)
 }
 
 const decodeId = (id: string) => {
-	const result = Schema.decodeUnknownEither(EntityId)(id)
-	return Either.isLeft(result)
+	const result = Schema.decodeUnknownResult(EntityId)(id)
+	return Result.isFailure(result)
 		? Effect.fail(new TaskError({ message: `Invalid task ID '${id}'` }))
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
 const decodeStatus = (status: string) => {
-	const result = Schema.decodeUnknownEither(WorkStatus)(status)
-	return Either.isLeft(result)
+	const result = Schema.decodeUnknownResult(WorkStatus)(status)
+	return Result.isFailure(result)
 		? Effect.fail(new TaskError({ message: `Invalid work status '${status}'` }))
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
 const decodePhase = (input: unknown) => {
-	const result = Schema.decodeUnknownEither(PhaseFrontmatter, {
+	const result = Schema.decodeUnknownResult(PhaseFrontmatter, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
-		? Effect.fail(
-				new TaskError({ message: TreeFormatter.formatErrorSync(result.left) }),
-			)
-		: Effect.succeed(result.right)
+	return Result.isFailure(result)
+		? Effect.fail(new TaskError({ message: result.failure.message }))
+		: Effect.succeed(result.success)
 }
 
 const branchAvailableStep = (
@@ -228,8 +223,8 @@ const reviewPinStep = (
 	}
 }
 
-export class TaskService extends Effect.Service<TaskService>()("TaskService", {
-	sync: () => ({
+export class TaskService extends Context.Service<TaskService>()("TaskService", {
+	make: Effect.sync(() => ({
 		create: (input: CreateTaskInput, startPath: string = process.cwd()) =>
 			Effect.gen(function* () {
 				const fs = yield* FileSystemService
@@ -697,5 +692,7 @@ export class TaskService extends Effect.Service<TaskService>()("TaskService", {
 					...(autoArchive ? { autoArchive } : {}),
 				} satisfies TaskRecord
 			}),
-	}),
-}) {}
+	})),
+}) {
+	static readonly layer = Layer.effect(this, this.make)
+}

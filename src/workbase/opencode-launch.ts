@@ -1,9 +1,8 @@
-import { Schema } from "@effect/schema"
-import { Effect } from "effect"
+import { Schema, Effect } from "effect"
 import { FileSystemService } from "../services/FileSystemService"
 
 const Session = Schema.Struct({
-	id: Schema.String.pipe(Schema.pattern(/^ses/)),
+	id: Schema.String.pipe(Schema.check(Schema.isPattern(/^ses/))),
 	location: Schema.Struct({ directory: Schema.String }),
 })
 const Created = Schema.Struct({ data: Session })
@@ -91,15 +90,15 @@ export const prepareOpenCodeLaunch = (
 				order: "desc",
 				limit: "1",
 			})
-			const listed = yield* Schema.decodeUnknown(Schema.parseJson(Listed))(
-				yield* api("get", `/api/session?${query}`),
-			)
+			const listed = yield* Schema.decodeUnknownEffect(
+				Schema.fromJsonString(Listed),
+			)(yield* api("get", `/api/session?${query}`))
 			session = listed.data[0]
 		}
 		if (!session) {
-			const created = yield* Schema.decodeUnknown(Schema.parseJson(Created))(
-				yield* api("post", "/api/session", { location: { directory: cwd } }),
-			)
+			const created = yield* Schema.decodeUnknownEffect(
+				Schema.fromJsonString(Created),
+			)(yield* api("post", "/api/session", { location: { directory: cwd } }))
 			session = created.data
 		}
 		if ((yield* fs.realPath(session.location.directory)) !== cwd) {
@@ -118,7 +117,9 @@ export const prepareOpenCodeLaunch = (
 			),
 		)
 		yield* api("put", `/api/session/${session.id}/environment`, { variables })
-		const submitted = yield* Schema.decodeUnknown(Schema.parseJson(Admitted))(
+		const submitted = yield* Schema.decodeUnknownEffect(
+			Schema.fromJsonString(Admitted),
+		)(
 			yield* api("post", `/api/session/${session.id}/prompt`, {
 				text: argv.at(-1)!,
 				resume: true,

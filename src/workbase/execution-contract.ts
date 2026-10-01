@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Effect, Either } from "effect"
+import { Schema, Effect, Result } from "effect"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { FileSystemService } from "../services/FileSystemService"
 import { WorkbaseService } from "../services/WorkbaseService"
@@ -181,16 +180,14 @@ export const buildValidationEvidence = (input: {
 	})
 
 export const parseValidationEvidence = (value: unknown): ValidationEvidence => {
-	const decoded = Schema.decodeUnknownEither(ValidationEvidence, {
+	const decoded = Schema.decodeUnknownResult(ValidationEvidence, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(value)
-	if (Either.isLeft(decoded)) {
-		throw new Error(
-			`Invalid validation evidence: ${TreeFormatter.formatErrorSync(decoded.left)}`,
-		)
+	if (Result.isFailure(decoded)) {
+		throw new Error(`Invalid validation evidence: ${decoded.failure.message}`)
 	}
-	return decoded.right
+	return decoded.success
 }
 
 export const readValidationEvidence = (input: string, cwd: string) =>

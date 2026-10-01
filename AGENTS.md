@@ -47,13 +47,14 @@ accept and forward `silent`, `verbose`, and `json` options to `createLoggers()`.
 The codebase uses Effect for dependency injection, typed failures, and command
 composition.
 
-- Core capabilities are `Effect.Service` implementations under `src/services/`.
+- Core capabilities are `Context.Service` classes under `src/services/`, each
+  exposing its implementation through a static `layer`.
 - Commands under `src/commands/` return Effects and obtain capabilities by
   yielding services.
 - Services use specific `Data.TaggedError` types for expected failure modes.
 - The CLI assembles service layers and owns final human or machine rendering.
 - External, durable, configuration, frontmatter, and machine-protocol data is
-  runtime-validated with `@effect/schema`.
+  runtime-validated with Effect's `Schema` module.
 
 Keep domain logic in services rather than CLI argument handling. Prefer using an
 existing service over adding direct filesystem, process, Git, or GitHub access

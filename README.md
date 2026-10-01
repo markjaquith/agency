@@ -1516,8 +1516,10 @@ The `@babel/core` override selects 7.29.6 to fix
 [GHSA-4x5r-pxfx-6jf8](https://github.com/advisories/GHSA-4x5r-pxfx-6jf8);
 OpenTUI Solid 0.5.11 otherwise pins vulnerable 7.28.0. Remove the override when
 the upstream dependency resolves to a patched version, after running `bun audit`
-and the TUI tests. Effect's minimum is 3.20.0 for
-[GHSA-38f7-945m-qr2g](https://github.com/advisories/GHSA-38f7-945m-qr2g).
+and the TUI tests. Effect 4 consolidates Schema into the `effect` package, so
+there is no separate `@effect/schema` dependency; Effect 4.0.0 is outside the
+[GHSA-38f7-945m-qr2g](https://github.com/advisories/GHSA-38f7-945m-qr2g)
+range that previously set the 3.20.0 minimum.
 
 ### Guided-flow ownership
 

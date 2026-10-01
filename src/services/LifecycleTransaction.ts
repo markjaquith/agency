@@ -280,9 +280,11 @@ export const runLifecycleTransaction = <R>({
 				})
 
 				return execute.pipe(
-					Effect.catchAllCause((cause) =>
+					Effect.catchCause((cause) =>
 						Effect.gen(function* () {
-							const failure = Option.getOrUndefined(Cause.failureOption(cause))
+							const failure = Option.getOrUndefined(
+								Cause.findErrorOption(cause),
+							)
 							if (failure instanceof LifecycleTransactionError)
 								return yield* failure
 							const rollbackErrors: unknown[] = []
@@ -290,7 +292,7 @@ export const runLifecycleTransaction = <R>({
 								if (!step.rollback) continue
 								const rollback = yield* Effect.exit(
 									step.rollback.pipe(
-										Effect.zipRight(step.finalize ?? Effect.void),
+										Effect.andThen(step.finalize ?? Effect.void),
 									),
 								)
 								if (Exit.isSuccess(rollback)) {
@@ -299,7 +301,7 @@ export const runLifecycleTransaction = <R>({
 									rollbackErrors.push(Cause.squash(rollback.cause))
 								}
 							}
-							if (Cause.isInterruptedOnly(cause))
+							if (Cause.hasInterruptsOnly(cause))
 								return yield* Effect.failCause(cause as Cause.Cause<never>)
 							const manualRecovery = completed
 								.filter(

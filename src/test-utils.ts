@@ -31,7 +31,9 @@ export const createTempDir = () => mkdtemp(join(tmpdir(), "agency-test-"))
 export const cleanupTempDir = (path: string) =>
 	rm(path, { recursive: true, force: true })
 
-export const trackDocumentReadConcurrency = (fs: FileSystemService) => {
+export const trackDocumentReadConcurrency = (
+	fs: FileSystemService["Service"],
+) => {
 	let active = 0
 	let maximum = 0
 	return {
@@ -46,32 +48,32 @@ export const trackDocumentReadConcurrency = (fs: FileSystemService) => {
 					return yield* fs.readFile(path)
 				}).pipe(Effect.ensuring(Effect.sync(() => (active -= 1))))
 			},
-		} satisfies FileSystemService,
+		} satisfies FileSystemService["Service"],
 		maximum: () => maximum,
 	}
 }
 
 const TestLayer = Layer.mergeAll(
-	FileSystemService.Default,
-	WorkbaseService.Default,
-	GitVersionControlService.Default,
-	VersionControlService.Default,
-	RepositoryService.Default,
-	EpicService.Default,
-	TaskService.Default,
-	PhaseService.Default,
-	WorktreeService.Default,
-	PullRequestService.Default,
-	PushService.Default,
-	ArchiveService.Default,
-	IntegrationService.Default,
-	ContextService.Default,
-	GraphService.Default,
-	SyncService.Default,
-	ReadinessService.Default,
-	GraphMutationService.Default,
-	DoctorService.Default,
-	ReviewService.Default,
+	FileSystemService.layer,
+	WorkbaseService.layer,
+	GitVersionControlService.layer,
+	VersionControlService.layer,
+	RepositoryService.layer,
+	EpicService.layer,
+	TaskService.layer,
+	PhaseService.layer,
+	WorktreeService.layer,
+	PullRequestService.layer,
+	PushService.layer,
+	ArchiveService.layer,
+	IntegrationService.layer,
+	ContextService.layer,
+	GraphService.layer,
+	SyncService.layer,
+	ReadinessService.layer,
+	GraphMutationService.layer,
+	DoctorService.layer,
+	ReviewService.layer,
 )
 
 export async function runTestEffect<A, E>(
@@ -79,7 +81,7 @@ export async function runTestEffect<A, E>(
 ): Promise<A> {
 	const program = effect.pipe(
 		Effect.provide(TestLayer),
-		Effect.catchAllDefect((defect) =>
+		Effect.catchDefect((defect) =>
 			Effect.fail(defect instanceof Error ? defect : new Error(String(defect))),
 		),
 	) as Effect.Effect<A, E | Error, never>

@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Context, Layer } from "effect"
 import { basename, dirname, join, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
@@ -905,10 +905,10 @@ const buildInspectionContext = (
 		} satisfies InspectionContext
 	})
 
-export class WorktreeService extends Effect.Service<WorktreeService>()(
+export class WorktreeService extends Context.Service<WorktreeService>()(
 	"WorktreeService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			list: (startPath: string = process.cwd(), options: ListOptions = {}) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -1861,7 +1861,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								operations,
 							} satisfies ExecutionWorkspace
 						}).pipe(
-							Effect.catchAll((cause) =>
+							Effect.catch((cause) =>
 								Effect.gen(function* () {
 									if (options.dryRun) return yield* cause
 									const completed = operations
@@ -1900,9 +1900,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 														verboseLog,
 													}).pipe(
 														Effect.as({ exitCode: 0 }),
-														Effect.catchAll(() =>
-															Effect.succeed({ exitCode: 1 }),
-														),
+														Effect.catch(() => Effect.succeed({ exitCode: 1 })),
 													)
 												: yield* fs.runCommand(
 														[
@@ -2386,7 +2384,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								})
 								if (result.exitCode !== 0) {
 									const state = yield* planState(plan).pipe(
-										Effect.catchAll(() => Effect.succeed(undefined)),
+										Effect.catch(() => Effect.succeed(undefined)),
 									)
 									if (
 										!state ||
@@ -2407,7 +2405,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								plan.checkoutExists ? plan.checkoutPath : plan.registeredPath,
 							)
 						}).pipe(
-							Effect.catchAll((cause) =>
+							Effect.catch((cause) =>
 								Effect.gen(function* () {
 									const rolledBack: string[] = []
 									const manualRecovery: string[] = []
@@ -2462,7 +2460,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 												)
 											}
 										}).pipe(
-											Effect.catchAll((recoveryCause) =>
+											Effect.catch((recoveryCause) =>
 												Effect.sync(() => {
 													manualRecovery.push(
 														`Restore ${plan.checkoutPath}: ${describeError(recoveryCause)}`,
@@ -2590,7 +2588,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 							lockHeld: true,
 						})
 						.pipe(
-							Effect.catchAll((cause) =>
+							Effect.catch((cause) =>
 								Effect.gen(function* () {
 									const rolledBack: string[] = []
 									const manualRecovery: string[] = []
@@ -2796,7 +2794,7 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 								lockHeld: true,
 							})
 							.pipe(
-								Effect.catchAll(
+								Effect.catch(
 									(cause) =>
 										new WorktreeError({
 											message:
@@ -2829,6 +2827,8 @@ export class WorktreeService extends Effect.Service<WorktreeService>()(
 						actions,
 					} satisfies WorktreeLifecycleResult
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

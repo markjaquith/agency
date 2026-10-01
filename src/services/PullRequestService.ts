@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Context, Layer } from "effect"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { WorktreeService } from "./WorktreeService"
@@ -37,10 +37,10 @@ interface PullRequestOptions extends BaseCommandOptions {
 	readonly labels?: readonly string[]
 }
 
-export class PullRequestService extends Effect.Service<PullRequestService>()(
+export class PullRequestService extends Context.Service<PullRequestService>()(
 	"PullRequestService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			setRecord: (
 				taskId: string,
 				phaseId: string | undefined,
@@ -264,7 +264,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						})
 					const recoverGitHubPullRequest = () =>
 						discoverGitHubPullRequest().pipe(
-							Effect.catchAll(() => Effect.succeed(null)),
+							Effect.catch(() => Effect.succeed(null)),
 						)
 					if (!config.delivery) {
 						const existing = yield* discoverGitHubPullRequest()
@@ -315,7 +315,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 							message: `Failed to create pull request: ${created.stderr}`,
 						})
 					}
-					const parsedRecord = yield* Effect.either(
+					const parsedRecord = yield* Effect.result(
 						Effect.try({
 							try: () => {
 								if (config.delivery)
@@ -358,7 +358,7 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								}),
 						}),
 					)
-					if (parsedRecord._tag === "Left") {
+					if (parsedRecord._tag === "Failure") {
 						if (!config.delivery) {
 							const recovered = yield* recoverGitHubPullRequest()
 							if (recovered) {
@@ -370,9 +370,9 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 								)
 							}
 						}
-						return yield* parsedRecord.left
+						return yield* parsedRecord.failure
 					}
-					const record = parsedRecord.right
+					const record = parsedRecord.success
 					if (
 						config.delivery &&
 						(record.provider !== config.delivery.provider ||
@@ -391,6 +391,8 @@ export class PullRequestService extends Effect.Service<PullRequestService>()(
 						workspace.root,
 					)
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

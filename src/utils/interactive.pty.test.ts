@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { cleanupTempDir, createTempDir } from "../test-utils"
 
 const projectRoot = join(import.meta.dir, "../..")
+const effectEntry = Bun.resolveSync("effect", projectRoot)
 const cliPath = join(projectRoot, "cli.ts")
 const tempDirs: string[] = []
 
@@ -148,13 +149,13 @@ describe("interactive CLI terminal restoration", () => {
 			await Bun.write(
 				entry,
 				`
-import { Effect } from ${JSON.stringify(join(projectRoot, "node_modules/effect"))}
+import { Effect } from ${JSON.stringify(effectEntry)}
 import { openActSession, ActCancelled } from ${JSON.stringify(join(projectRoot, "src/commands/act-prompts.ts"))}
 await Effect.runPromise(Effect.gen(function* () {
   const session = yield* Effect.acquireRelease(openActSession(), s => s.close())
   session.show("Working fixture")
   yield* Effect.raceFirst(Effect.never, session.cancelled)
-}).pipe(Effect.scoped, Effect.catchAll(error => error instanceof ActCancelled ? Effect.void : Effect.fail(error))))
+}).pipe(Effect.scoped, Effect.catch(error => error instanceof ActCancelled ? Effect.void : Effect.fail(error))))
 console.log("Operation cancelled")
 `,
 			)
@@ -234,7 +235,7 @@ console.log("Operation cancelled")
 				await Bun.write(
 					entry,
 					`
-import { Effect } from ${JSON.stringify(join(projectRoot, "node_modules/effect"))}
+import { Effect } from ${JSON.stringify(effectEntry)}
 import { runTestEffect } from ${JSON.stringify(join(projectRoot, "src/test-utils.ts"))}
 import { act } from ${JSON.stringify(join(projectRoot, "src/commands/act.ts"))}
 await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", inputAllowed: true }, undefined, () => Effect.sync(() => console.log("WORKER_RETURNED"))))

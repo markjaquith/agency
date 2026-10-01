@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { open, rename, rm } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
 import { EpicService, type EpicRecord } from "./EpicService"
@@ -87,31 +86,31 @@ export interface PhaseUpdates {
 	readonly pr?: string | null
 }
 
-const decode = <S extends Schema.Schema.AnyNoContext>(
+const decode = <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	input: unknown,
 	label: string,
 ) => {
-	const result = Schema.decodeUnknownEither(schema, {
+	const result = Schema.decodeUnknownResult(schema, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
+	return Result.isFailure(result)
 		? Effect.fail(
 				new GraphMutationError({
-					message: `Invalid ${label}: ${TreeFormatter.formatErrorSync(result.left)}`,
+					message: `Invalid ${label}: ${result.failure.message}`,
 				}),
 			)
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
 const decodeId = (id: string, label: string) => {
-	const decoded = Schema.decodeUnknownEither(EntityId)(id)
-	return Either.isLeft(decoded)
+	const decoded = Schema.decodeUnknownResult(EntityId)(id)
+	return Result.isFailure(decoded)
 		? Effect.fail(
 				new GraphMutationError({ message: `Invalid ${label} ID '${id}'` }),
 			)
-		: Effect.succeed(decoded.right)
+		: Effect.succeed(decoded.success)
 }
 
 const exists = async (path: string) => {
@@ -276,10 +275,10 @@ const assertDependencies = (nodes: readonly Dependency[], label: string) => {
 		: Effect.void
 }
 
-export class GraphMutationService extends Effect.Service<GraphMutationService>()(
+export class GraphMutationService extends Context.Service<GraphMutationService>()(
 	"GraphMutationService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			updateEpic: (
 				id: string,
 				updates: EpicUpdates,
@@ -1069,6 +1068,8 @@ export class GraphMutationService extends Effect.Service<GraphMutationService>()
 						writes.map((write) => write.path),
 					)
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

@@ -115,7 +115,7 @@ describe("IntegrationService", () => {
 
 	test("inspects each integration path once per status call", async () => {
 		const service = await Effect.runPromise(
-			Effect.provide(FileSystemService, FileSystemService.Default),
+			Effect.provide(FileSystemService, FileSystemService.layer),
 		)
 		const inspected = new Map<string, number>()
 		const instrumented = {
@@ -139,7 +139,7 @@ describe("IntegrationService", () => {
 
 	test("inspects integration and legacy paths once per synchronized call", async () => {
 		const service = await Effect.runPromise(
-			Effect.provide(FileSystemService, FileSystemService.Default),
+			Effect.provide(FileSystemService, FileSystemService.layer),
 		)
 		const inspected = new Map<string, number>()
 		const instrumented = {

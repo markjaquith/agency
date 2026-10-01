@@ -1,4 +1,4 @@
-import { Data, Effect } from "effect"
+import { Data, Effect, Context, Layer } from "effect"
 import { FileSystemService } from "./FileSystemService"
 
 export interface RegisteredWorkspace {
@@ -170,211 +170,217 @@ const parseGitWorktrees = (output: string): readonly RegisteredWorkspace[] => {
 	return workspaces
 }
 
-export class GitVersionControlService extends Effect.Service<GitVersionControlService>()(
+export class GitVersionControlService extends Context.Service<GitVersionControlService>()(
 	"GitVersionControlService",
 	{
-		sync: () =>
-			({
-				kind: "git",
-				cloneRepository: (source, destination) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						yield* requireSuccess(
-							"Failed to clone Git repository",
-							fs.runCommand(
+		make: Effect.sync(
+			() =>
+				({
+					kind: "git",
+					cloneRepository: (source, destination) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							yield* requireSuccess(
+								"Failed to clone Git repository",
+								fs.runCommand(
+									[
+										"git",
+										"clone",
+										"--bare",
+										"--no-hardlinks",
+										"--",
+										source,
+										destination,
+									],
+									{
+										captureOutput: true,
+									},
+								),
+							)
+						}),
+					inspectRepository: (path) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const inspection = yield* fs.runCommand(
 								[
 									"git",
-									"clone",
-									"--bare",
-									"--no-hardlinks",
-									"--",
-									source,
-									destination,
+									"-C",
+									path,
+									"config",
+									"--show-scope",
+									"--get-regexp",
+									"^(core\\.bare|remote\\.origin\\.url|url\\..*\\.insteadof)$",
 								],
-								{
-									captureOutput: true,
-								},
-							),
-						)
-					}),
-				inspectRepository: (path) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const inspection = yield* fs.runCommand(
-							[
-								"git",
-								"-C",
-								path,
-								"config",
-								"--show-scope",
-								"--get-regexp",
-								"^(core\\.bare|remote\\.origin\\.url|url\\..*\\.insteadof)$",
-							],
-							{ captureOutput: true },
-						)
-						if (inspection.exitCode !== 0) return null
-						const entries = parseGitConfig(inspection.stdout)
-						const bare = entries.find(
-							(entry) =>
-								(entry.scope === "local" || entry.scope === "worktree") &&
-								entry.key === "core.bare",
-						)
-						if (!bare) return null
-						const remote = entries.find(
-							(entry) => entry.key === "remote.origin.url",
-						)?.value
-						return {
-							kind: bare.value === "true" ? "bare" : "repository",
-							remote:
-								remote === undefined ? null : expandGitUrl(remote, entries),
-						} as const
-					}),
-				listWorkspaces: (repositoryPath) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const result = yield* requireSuccess(
-							"Failed to inspect Git worktrees",
-							fs.runCommand(
+								{ captureOutput: true },
+							)
+							if (inspection.exitCode !== 0) return null
+							const entries = parseGitConfig(inspection.stdout)
+							const bare = entries.find(
+								(entry) =>
+									(entry.scope === "local" || entry.scope === "worktree") &&
+									entry.key === "core.bare",
+							)
+							if (!bare) return null
+							const remote = entries.find(
+								(entry) => entry.key === "remote.origin.url",
+							)?.value
+							return {
+								kind: bare.value === "true" ? "bare" : "repository",
+								remote:
+									remote === undefined ? null : expandGitUrl(remote, entries),
+							} as const
+						}),
+					listWorkspaces: (repositoryPath) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const result = yield* requireSuccess(
+								"Failed to inspect Git worktrees",
+								fs.runCommand(
+									[
+										"git",
+										"-C",
+										repositoryPath,
+										"worktree",
+										"list",
+										"--porcelain",
+										"-z",
+									],
+									{ captureOutput: true },
+								),
+							)
+							return parseGitWorktrees(result.stdout)
+						}),
+					resolveRevision: (repositoryPath, revision) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const result = yield* fs.runCommand(
 								[
 									"git",
 									"-C",
 									repositoryPath,
-									"worktree",
-									"list",
-									"--porcelain",
-									"-z",
+									"rev-parse",
+									"--verify",
+									`${revision}^{commit}`,
 								],
 								{ captureOutput: true },
-							),
-						)
-						return parseGitWorktrees(result.stdout)
-					}),
-				resolveRevision: (repositoryPath, revision) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const result = yield* fs.runCommand(
-							[
-								"git",
-								"-C",
-								repositoryPath,
-								"rev-parse",
-								"--verify",
-								`${revision}^{commit}`,
-							],
-							{ captureOutput: true },
-						)
-						return result.exitCode === 0 ? result.stdout.trim() : null
-					}),
-				workspaceHead: (workspacePath) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const result = yield* fs.runCommand(
-							["git", "-C", workspacePath, "rev-parse", "HEAD"],
-							{ captureOutput: true },
-						)
-						return result.exitCode === 0 ? result.stdout.trim() : null
-					}),
-				workspaceDirty: (workspacePath) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const result = yield* fs.runCommand(
-							[
-								"git",
-								"-C",
-								workspacePath,
-								"status",
-								"--porcelain=v1",
-								"-z",
-								"--untracked-files=all",
-							],
-							{ captureOutput: true },
-						)
-						return result.exitCode === 0
-							? isDirtyGitStatus(result.stdout)
-							: null
-					}),
-				fetch: (repositoryPath, remote = "origin", branch) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						yield* requireSuccess(
-							"Failed to fetch Git repository",
-							fs.runCommand(
-								[
-									"git",
-									"-C",
-									repositoryPath,
-									"fetch",
-									remote,
-									...(branch ? [branch] : []),
-								],
+							)
+							return result.exitCode === 0 ? result.stdout.trim() : null
+						}),
+					workspaceHead: (workspacePath) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const result = yield* fs.runCommand(
+								["git", "-C", workspacePath, "rev-parse", "HEAD"],
 								{ captureOutput: true },
-							),
-						)
-					}),
-				push: (workspacePath, remote, branch) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						yield* requireSuccess(
-							"Failed to push branch",
-							fs.runCommand(
+							)
+							return result.exitCode === 0 ? result.stdout.trim() : null
+						}),
+					workspaceDirty: (workspacePath) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const result = yield* fs.runCommand(
 								[
 									"git",
 									"-C",
 									workspacePath,
-									"push",
-									"--set-upstream",
-									remote,
-									branch,
+									"status",
+									"--porcelain=v1",
+									"-z",
+									"--untracked-files=all",
 								],
 								{ captureOutput: true },
-							),
-						)
-					}),
-				remoteUrl: (repositoryPath, remote) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const result = yield* fs.runCommand(
-							["git", "-C", repositoryPath, "remote", "get-url", remote],
-							{ captureOutput: true },
-						)
-						return result.exitCode === 0 ? result.stdout.trim() : null
-					}),
-				setRemoteUrl: (repositoryPath, remote, url) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const previous = yield* fs.runCommand(
-							["git", "-C", repositoryPath, "remote", "get-url", remote],
-							{ captureOutput: true },
-						)
-						const command =
-							url === null
-								? ["git", "-C", repositoryPath, "remote", "remove", remote]
-								: [
+							)
+							return result.exitCode === 0
+								? isDirtyGitStatus(result.stdout)
+								: null
+						}),
+					fetch: (repositoryPath, remote = "origin", branch) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							yield* requireSuccess(
+								"Failed to fetch Git repository",
+								fs.runCommand(
+									[
 										"git",
 										"-C",
 										repositoryPath,
-										"remote",
-										previous.exitCode === 0 ? "set-url" : "add",
+										"fetch",
 										remote,
-										url,
-									]
-						yield* requireSuccess(
-							`Failed to update Git remote '${remote}'`,
-							fs.runCommand(command, { captureOutput: true }),
-						)
-					}),
-			}) satisfies VersionControlBackend,
+										...(branch ? [branch] : []),
+									],
+									{ captureOutput: true },
+								),
+							)
+						}),
+					push: (workspacePath, remote, branch) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							yield* requireSuccess(
+								"Failed to push branch",
+								fs.runCommand(
+									[
+										"git",
+										"-C",
+										workspacePath,
+										"push",
+										"--set-upstream",
+										remote,
+										branch,
+									],
+									{ captureOutput: true },
+								),
+							)
+						}),
+					remoteUrl: (repositoryPath, remote) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const result = yield* fs.runCommand(
+								["git", "-C", repositoryPath, "remote", "get-url", remote],
+								{ captureOutput: true },
+							)
+							return result.exitCode === 0 ? result.stdout.trim() : null
+						}),
+					setRemoteUrl: (repositoryPath, remote, url) =>
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const previous = yield* fs.runCommand(
+								["git", "-C", repositoryPath, "remote", "get-url", remote],
+								{ captureOutput: true },
+							)
+							const command =
+								url === null
+									? ["git", "-C", repositoryPath, "remote", "remove", remote]
+									: [
+											"git",
+											"-C",
+											repositoryPath,
+											"remote",
+											previous.exitCode === 0 ? "set-url" : "add",
+											remote,
+											url,
+										]
+							yield* requireSuccess(
+								`Failed to update Git remote '${remote}'`,
+								fs.runCommand(command, { captureOutput: true }),
+							)
+						}),
+				}) satisfies VersionControlBackend,
+		),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}
 
-export class VersionControlService extends Effect.Service<VersionControlService>()(
+export class VersionControlService extends Context.Service<VersionControlService>()(
 	"VersionControlService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			forWorkbase: (_root: string) =>
 				Effect.gen(function* () {
 					return yield* GitVersionControlService
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

@@ -55,8 +55,8 @@ const validate = async (root: string) => {
 	await Effect.runPromise(
 		WorkbaseService.pipe(
 			Effect.flatMap((service) => service.validate(root)),
-			Effect.provide(WorkbaseService.Default),
-			Effect.provide(FileSystemService.Default),
+			Effect.provide(WorkbaseService.layer),
+			Effect.provide(FileSystemService.layer),
 		) as Effect.Effect<unknown, unknown, never>,
 	)
 }

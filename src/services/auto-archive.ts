@@ -65,7 +65,7 @@ export const autoArchiveTask = (
 		const result = yield* archives.archiveTask(taskId, root)
 		return { taskId, status: "archived" as const, path: result.path }
 	}).pipe(
-		Effect.catchAll((error) =>
+		Effect.catch((error) =>
 			Effect.succeed({
 				taskId,
 				status: "skipped" as const,

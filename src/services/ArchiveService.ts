@@ -1,5 +1,4 @@
-import { Schema, TreeFormatter } from "@effect/schema"
-import { Data, Effect, Either } from "effect"
+import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { EpicService, type EpicRecord } from "./EpicService"
@@ -60,7 +59,7 @@ interface ArchivePathTarget {
 }
 
 const LifecycleEventSchema = Schema.Struct({
-	operation: Schema.Literal("archive", "restore"),
+	operation: Schema.Literals(["archive", "restore"]),
 	at: Schema.String,
 	from: Schema.String,
 	to: Schema.String,
@@ -68,12 +67,12 @@ const LifecycleEventSchema = Schema.Struct({
 
 const LifecycleManifestSchema = Schema.Struct({
 	version: Schema.Literal(1),
-	kind: Schema.Literal("epic", "task", "phase"),
+	kind: Schema.Literals(["epic", "task", "phase"]),
 	id: Schema.String,
 	taskId: Schema.optional(Schema.String),
 	parent: Schema.optional(
 		Schema.Struct({
-			kind: Schema.Literal("epic", "task"),
+			kind: Schema.Literals(["epic", "task"]),
 			id: Schema.String,
 			declaration: Dependency,
 		}),
@@ -218,22 +217,22 @@ const archiveEligibilityError = (context: TaskArchiveContext) => {
 const executionPhaseId = (unit: { taskId: string; phaseId?: string }) =>
 	unit.phaseId
 
-const decode = <S extends Schema.Schema.AnyNoContext>(
+const decode = <S extends Schema.Decoder<unknown>>(
 	schema: S,
 	input: unknown,
 	label: string,
 ) => {
-	const result = Schema.decodeUnknownEither(schema, {
+	const result = Schema.decodeUnknownResult(schema, {
 		errors: "all",
 		onExcessProperty: "error",
 	})(input)
-	return Either.isLeft(result)
+	return Result.isFailure(result)
 		? Effect.fail(
 				new ArchiveError({
-					message: `Invalid archived ${label}: ${TreeFormatter.formatErrorSync(result.left)}`,
+					message: `Invalid archived ${label}: ${result.failure.message}`,
 				}),
 			)
-		: Effect.succeed(result.right)
+		: Effect.succeed(result.success)
 }
 
 const readManifest = (directory: string) =>
@@ -250,16 +249,16 @@ const readManifest = (directory: string) =>
 					cause,
 				}),
 		})
-		const decoded = Schema.decodeUnknownEither(LifecycleManifestSchema, {
+		const decoded = Schema.decodeUnknownResult(LifecycleManifestSchema, {
 			errors: "all",
 			onExcessProperty: "error",
 		})(input)
-		if (Either.isLeft(decoded)) {
+		if (Result.isFailure(decoded)) {
 			return yield* new ArchiveError({
-				message: `Invalid lifecycle provenance ${path}: ${TreeFormatter.formatErrorSync(decoded.left)}`,
+				message: `Invalid lifecycle provenance ${path}: ${decoded.failure.message}`,
 			})
 		}
-		return decoded.right
+		return decoded.success
 	})
 
 const manifestFor = (
@@ -456,10 +455,10 @@ const repositoriesFor = (record: ArchivedRecord) => {
 const statusFor = (record: ArchivedRecord) =>
 	"status" in record.data ? record.data.status : undefined
 
-export class ArchiveService extends Effect.Service<ArchiveService>()(
+export class ArchiveService extends Context.Service<ArchiveService>()(
 	"ArchiveService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			resolvePathTarget: (path: string, cwd: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
@@ -556,7 +555,7 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						id: string,
 						directory: string,
 						documentName: string,
-						schema: Schema.Schema.AnyNoContext,
+						schema: Schema.Decoder<unknown>,
 						taskId?: string,
 					) =>
 						Effect.gen(function* () {
@@ -806,10 +805,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 											lockHeld: true,
 										})
 								}).pipe(
-									Effect.catchAllCause((cause) =>
+									Effect.catchCause((cause) =>
 										transactionEffect(() =>
 											restoreWorktreeSnapshots(snapshots),
-										).pipe(Effect.zipRight(Effect.failCause(cause))),
+										).pipe(Effect.andThen(Effect.failCause(cause))),
 									),
 								),
 								rollback: transactionEffect(() =>
@@ -918,12 +917,12 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 										? context.phases.find((phase) => phase.id === unit.phaseId)
 										: undefined,
 								})
-								.pipe(Effect.either)
-							if (Either.isLeft(result)) {
-								preflightFailure = result.left
+								.pipe(Effect.result)
+							if (Result.isFailure(result)) {
+								preflightFailure = result.failure
 								break
 							}
-							removed.push(...result.right)
+							removed.push(...result.success)
 						}
 						if (preflightFailure) {
 							if (
@@ -1097,10 +1096,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 										})
 									}
 								}).pipe(
-									Effect.catchAllCause((cause) =>
+									Effect.catchCause((cause) =>
 										transactionEffect(() =>
 											restoreWorktreeSnapshots(snapshots),
-										).pipe(Effect.zipRight(Effect.failCause(cause))),
+										).pipe(Effect.andThen(Effect.failCause(cause))),
 									),
 								),
 								rollback: transactionEffect(() =>
@@ -1301,10 +1300,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 											},
 										)
 								}).pipe(
-									Effect.catchAllCause((cause) =>
+									Effect.catchCause((cause) =>
 										transactionEffect(() =>
 											restoreWorktreeSnapshots(snapshots),
-										).pipe(Effect.zipRight(Effect.failCause(cause))),
+										).pipe(Effect.andThen(Effect.failCause(cause))),
 									),
 								),
 								rollback: transactionEffect(() =>
@@ -1438,10 +1437,10 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 												})
 												.pipe(
 													Effect.asVoid,
-													Effect.catchAllCause((cause) =>
+													Effect.catchCause((cause) =>
 														transactionEffect(() =>
 															restoreWorktreeSnapshots(snapshots),
-														).pipe(Effect.zipRight(Effect.failCause(cause))),
+														).pipe(Effect.andThen(Effect.failCause(cause))),
 													),
 												),
 											rollback: transactionEffect(() =>
@@ -1768,6 +1767,8 @@ export class ArchiveService extends Effect.Service<ArchiveService>()(
 						at,
 					} satisfies LifecycleResult
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}
