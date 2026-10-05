@@ -1111,7 +1111,12 @@ agency task dependency <add|remove> <task-id> <dependency-id> [--json]
 
 Task updates can replace or clear descriptions, tickets, repository references,
 and pull request URLs, or replace writable repository, branch, and base metadata.
-Execution metadata changes refuse to run while code is materialized. Moving a
+Repository, reference, and branch changes refuse to run while code is
+materialized. A base change is allowed on a materialized task or phase only when
+its checkout is on the declared branch, clean, has no rebase or merge in
+progress, and HEAD already descends from the new base (the delivery remote's
+tracking ref, or the local branch when no tracking ref exists). Rebase the
+branch first, then record the new base. Moving a
 task with scoped incoming or outgoing dependencies also refuses until those
 dependencies are removed.
 
