@@ -229,6 +229,130 @@ describe("GraphMutationService", () => {
 		}
 	})
 
+	test("records rebased bases with an appended base history", async () => {
+		const record = await runTestEffect(
+			Effect.gen(function* () {
+				const mutations = yield* GraphMutationService
+				const phases = yield* PhaseService
+				const first = yield* phases.show("multi", "build", root)
+				yield* mutations.recordRebasedBase(
+					{ taskId: "multi", phaseId: "build" },
+					"develop",
+					"first",
+					first.revision,
+					root,
+				)
+				const second = yield* phases.show("multi", "build", root)
+				yield* mutations.recordRebasedBase(
+					{ taskId: "multi", phaseId: "build" },
+					"release",
+					"second",
+					second.revision,
+					root,
+				)
+				return yield* phases.show("multi", "build", root)
+			}),
+		)
+		expect(record.data.base).toBe("release")
+		expect(record.content).toContain("## Base History\n\n- first\n- second\n")
+		expect(record.content.match(/## Base History/g)).toHaveLength(1)
+	})
+
+	describe("base changes with a materialized Git checkout", () => {
+		const git = (cwd: string, ...args: string[]) => {
+			const result = Bun.spawnSync(["git", ...args], {
+				cwd,
+				env: {
+					...process.env,
+					GIT_AUTHOR_NAME: "Test",
+					GIT_AUTHOR_EMAIL: "test@example.com",
+					GIT_COMMITTER_NAME: "Test",
+					GIT_COMMITTER_EMAIL: "test@example.com",
+				},
+			})
+			if (result.exitCode !== 0)
+				throw new Error(`git ${args.join(" ")}: ${result.stderr.toString()}`)
+			return result.stdout.toString().trim()
+		}
+		const commit = (cwd: string, file: string) => {
+			Bun.spawnSync(["sh", "-c", `echo ${file} > ${file}`], { cwd })
+			git(cwd, "add", file)
+			git(cwd, "commit", "-q", "-m", file)
+		}
+		let checkout: string
+
+		beforeEach(async () => {
+			checkout = join(root, "tasks/alpha/code/agency")
+			await mkdir(checkout, { recursive: true })
+			git(checkout, "init", "-q", "-b", "main")
+			commit(checkout, "root.txt")
+			git(checkout, "checkout", "-q", "-b", "stacked")
+			commit(checkout, "stacked.txt")
+			git(checkout, "checkout", "-q", "-b", "task/alpha")
+			commit(checkout, "alpha.txt")
+			git(checkout, "checkout", "-q", "main")
+			commit(checkout, "upstream.txt")
+			git(checkout, "checkout", "-q", "task/alpha")
+			await runTestEffect(
+				Effect.gen(function* () {
+					yield* (yield* GraphMutationService).updateTask(
+						"alpha",
+						{ base: "stacked" },
+						root,
+					)
+				}),
+			)
+		})
+
+		const updateBase = (base: string) =>
+			runTestEffect(
+				Effect.gen(function* () {
+					return yield* (yield* GraphMutationService).updateTask(
+						"alpha",
+						{ base },
+						root,
+					)
+				}),
+			)
+
+		test("rejects a base that is not an ancestor of HEAD", async () => {
+			await expect(updateBase("main")).rejects.toThrow(
+				"is not an ancestor of HEAD",
+			)
+		})
+
+		test("records a base that HEAD already descends from", async () => {
+			git(checkout, "rebase", "-q", "--onto", "main", "stacked")
+			const output = await updateBase("main")
+			expect(output).toMatchObject({ operation: "task.update", changed: true })
+			const task = await runTestEffect(
+				Effect.gen(function* () {
+					return yield* (yield* TaskService).show("alpha", root)
+				}),
+			)
+			expect(task.data).toMatchObject({ base: "main" })
+		})
+
+		test("rejects a dirty checkout", async () => {
+			git(checkout, "rebase", "-q", "--onto", "main", "stacked")
+			await Bun.write(join(checkout, "alpha.txt"), "changed\n")
+			await expect(updateBase("main")).rejects.toThrow("uncommitted changes")
+		})
+
+		test("rejects a checkout on another branch", async () => {
+			git(checkout, "checkout", "-q", "main")
+			await expect(updateBase("main")).rejects.toThrow(
+				"not on declared branch 'task/alpha'",
+			)
+		})
+
+		test("rejects a base that does not resolve", async () => {
+			await expect(updateBase("missing")).rejects.toThrow(
+				"resolves to a commit",
+			)
+		})
+	})
+
 	test("preserves dependency order and rejects cycles", async () => {
 		await runTestEffect(
 			Effect.gen(function* () {

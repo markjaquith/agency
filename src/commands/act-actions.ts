@@ -12,6 +12,7 @@ import { review } from "./review"
 import { task } from "./task"
 import { phase } from "./phase"
 import { push } from "./push"
+import { rebase } from "./rebase"
 import { sync } from "./sync"
 import { status } from "./status"
 import { config } from "./config"
@@ -32,6 +33,7 @@ type NativeOperation =
 	| ReturnType<typeof repo>
 	| ReturnType<typeof review>
 	| ReturnType<typeof push>
+	| ReturnType<typeof rebase>
 	| ReturnType<typeof sync>
 	| ReturnType<typeof status>
 	| ReturnType<typeof config>
@@ -52,6 +54,8 @@ interface Plan {
 	readonly run: Operation
 	readonly followUpCommands?: readonly (readonly string[])[]
 	readonly next?: { readonly taskId: string; readonly phaseId?: string }
+	/** Filled while the operation runs; shown after it succeeds. */
+	readonly warnings?: readonly string[]
 }
 interface Input {
 	readonly id: string
@@ -242,6 +246,23 @@ const actionPresentation: Record<
 		icon: "󰜷",
 		color: macchiato.sapphire,
 	},
+	rebase: {
+		description:
+			"Rebase this checkout onto a new base and record the base after success.",
+		icon: "󰃻",
+		color: macchiato.yellow,
+	},
+	"rebase-continue": {
+		description:
+			"Continue the stopped rebase after resolving and staging conflicts.",
+		icon: "󰐊",
+		color: macchiato.green,
+	},
+	"rebase-abort": {
+		description: "Abort the stopped rebase and keep the current base.",
+		icon: "󰜺",
+		color: macchiato.red,
+	},
 	pr: {
 		description: "Publish this execution branch and record its pull request.",
 		icon: "",
@@ -424,7 +445,16 @@ export const actionGroups = [
 		id: "pull-request",
 		label: "Publish or update a pull request",
 		icon: "",
-		actions: ["push", "sync", "pr", "pr-ready", "pr-close"],
+		actions: [
+			"push",
+			"rebase",
+			"rebase-continue",
+			"rebase-abort",
+			"sync",
+			"pr",
+			"pr-ready",
+			"pr-close",
+		],
 	},
 	{
 		id: "archive",
@@ -484,6 +514,8 @@ export const actActions = (
 		auto?: boolean
 		draft?: boolean
 		checkoutStates?: ReadonlyMap<string, ActCheckoutState>
+		/** Execution-unit IDs whose checkout has an Agency rebase awaiting --continue or --abort. */
+		pendingRebases?: ReadonlySet<string>
 	},
 	work: StartWork = startWork,
 	node?: ActEntity,
@@ -949,6 +981,20 @@ export const actActions = (
 		node.data.claim !== null &&
 		"state" in node.data.claim &&
 		node.data.claim.state === "active"
+	const rebasePending = options.pendingRebases?.has(node.id) ?? false
+	const rebaseArgs = [
+		target.taskId,
+		...(target.phaseId ? [target.phaseId] : []),
+	]
+	const rebaseBlockedReason =
+		noExecution ??
+		(parent && "review" in parent.data
+			? "Review tasks do not have delivery branches"
+			: terminal
+				? "Item is terminal"
+				: !checkoutState
+					? "Local checkout is not materialized"
+					: null)
 	const checkoutBlockedReason = noExecution
 		? noExecution
 		: !checkoutState
@@ -1060,6 +1106,66 @@ export const actActions = (
 				run: push({ ...options, cwd: itemDirectory }),
 			},
 		),
+		action(
+			{
+				...details(
+					"rebase",
+					"Rebase onto a new base",
+					rebaseBlockedReason ??
+						(rebasePending
+							? "A rebase is stopped on conflicts; continue or abort it"
+							: checkoutState?.dirty
+								? "Local checkout has uncommitted changes"
+								: null),
+				),
+				inputs: [input("base", "New base branch")],
+			},
+			"<base>",
+			(p) => p.text("New base branch", base),
+			(onto) => {
+				const warnings: string[] = []
+				return {
+					command: [
+						"agency",
+						"rebase",
+						...rebaseArgs,
+						"--onto",
+						onto,
+						"--if-revision",
+						node.data.sha256,
+					],
+					run: rebase({
+						...options,
+						...target,
+						onto,
+						ifRevision: node.data.sha256,
+						onWarnings: (items) => warnings.push(...items),
+					}),
+					warnings,
+				}
+			},
+		),
+		...(["continue", "abort"] as const).map((step) => {
+			const warnings: string[] = []
+			return immediate(
+				details(
+					`rebase-${step}`,
+					step === "continue" ? "Continue rebase" : "Abort rebase",
+					rebaseBlockedReason ??
+						(rebasePending ? null : "No rebase is stopped for this item"),
+				),
+				{
+					command: ["agency", "rebase", ...rebaseArgs, `--${step}`],
+					run: rebase({
+						...options,
+						...target,
+						[step]: true,
+						onWarnings: (items) => warnings.push(...items),
+					}),
+					warnings,
+				},
+			)
+		}),
 		immediate(
 			details(
 				"pr",

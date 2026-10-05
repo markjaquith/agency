@@ -7,6 +7,7 @@ import { init, help as initHelp } from "./src/commands/init"
 import { task, help as taskHelp } from "./src/commands/task"
 import { pr, prCreate, help as prHelp } from "./src/commands/pr"
 import { push, help as pushHelp } from "./src/commands/push"
+import { rebase, help as rebaseHelp } from "./src/commands/rebase"
 import { work, workPrepare, help as workHelp } from "./src/commands/work"
 import { worktree, help as worktreeHelp } from "./src/commands/worktree"
 import { status, help as statusHelp } from "./src/commands/status"
@@ -37,6 +38,7 @@ import { PhaseService } from "./src/services/PhaseService"
 import { WorktreeService } from "./src/services/WorktreeService"
 import { PullRequestService } from "./src/services/PullRequestService"
 import { PushService } from "./src/services/PushService"
+import { RebaseService } from "./src/services/RebaseService"
 import { ArchiveService } from "./src/services/ArchiveService"
 import { IntegrationService } from "./src/services/IntegrationService"
 import { ContextService } from "./src/services/ContextService"
@@ -77,6 +79,7 @@ const CliLayer = Layer.mergeAll(
 	WorktreeService.layer,
 	PullRequestService.layer,
 	PushService.layer,
+	RebaseService.layer,
 	ArchiveService.layer,
 	IntegrationService.layer,
 	ContextService.layer,
@@ -282,6 +285,30 @@ const commands: Record<string, Command> = {
 			}
 			await runCommand(
 				push({
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
+	rebase: {
+		run: async (args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(rebaseHelp)
+				return
+			}
+			await runCommand(
+				rebase({
+					taskId: args[0]!,
+					phaseId: args[1],
+					onto: options.onto,
+					from: options.from,
+					dryRun: options["dry-run"],
+					continue: options.continue,
+					abort: options.abort,
+					ifRevision: options["if-revision"],
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -744,6 +771,7 @@ Commands:
   next                   List or select ready execution units
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
+  rebase <task> [phase]  Rebase a checkout onto a new base and record it
   review refresh|finish  Refresh or finish a pinned review task
   repo <subcommand>      Manage workbase repositories
   status                 Show status for the current workbase

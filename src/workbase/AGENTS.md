@@ -110,6 +110,13 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
     `agency review refresh <task> --if-revision <revision> --json`.
 16. Finish a review task with the current revision; no summary is required:
     `agency review finish <task> --if-revision <revision> --json`.
+17. Change the base of a materialized execution unit: preview with
+    `agency rebase <task> [phase] --onto <base> --dry-run --json`, then run
+    `agency rebase <task> [phase] --onto <base> --if-revision <revision> --json`.
+    On `REBASE_CONFLICT`, resolve and stage the conflicts, then rerun with
+    `--continue --json`, or stop with `--abort --json`. If the branch was already
+    rebased by hand, `agency task update <task> --base <base> --json` (or
+    `phase update`) records it. Rebase does not force-push or retarget a PR.
 
 Never pass `--work` or `--auto` to `agency task create`. Do not run separate
 `agency validate`, `agency worktree prepare`, `agency graph`, `agency task list`,

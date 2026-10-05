@@ -5,6 +5,7 @@ import { EpicService, type EpicRecord } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService, type PhaseRecord } from "./PhaseService"
 import { TaskService } from "./TaskService"
+import { isDirtyGitStatus } from "./VersionControlService"
 import { WorkbaseService } from "./WorkbaseService"
 import {
 	EntityId,
@@ -268,6 +269,152 @@ const result = (
 	}
 }
 
+const materializedTopologyChange = (
+	label: string,
+	documentPath: string,
+	current: {
+		readonly repo: string
+		readonly repos?: readonly RepositoryReference[]
+		readonly branch: string
+		readonly base: string
+	},
+	updates: {
+		readonly repo?: string
+		readonly repos?: readonly RepositoryReference[] | null
+		readonly branch?: string
+		readonly base?: string
+	},
+	root: string,
+) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const codePath = join(dirname(documentPath), "code")
+		if (!(yield* fs.isDirectory(codePath))) return
+		const otherTopologyChange =
+			(updates.repo !== undefined && updates.repo !== current.repo) ||
+			(updates.branch !== undefined && updates.branch !== current.branch) ||
+			(updates.repos !== undefined &&
+				JSON.stringify(updates.repos ?? []) !==
+					JSON.stringify(current.repos ?? []))
+		if (otherTopologyChange) {
+			return yield* new GraphMutationError({
+				message: `${label} has materialized code; remove its worktree with Agency before changing execution metadata`,
+			})
+		}
+		if (updates.base === undefined || updates.base === current.base) return
+		const base = updates.base
+		const checkout = join(codePath, current.repo)
+		const refuse = (reason: string) =>
+			new GraphMutationError({
+				message: `${label} has materialized code; cannot change base to '${base}': ${reason}`,
+			})
+		const git = (args: readonly string[]) =>
+			fs
+				.runCommand(["git", ...args], {
+					cwd: checkout,
+					captureOutput: true,
+					timeoutMs: 10_000,
+				})
+				.pipe(
+					Effect.mapError(
+						(cause) =>
+							new GraphMutationError({
+								message: `Failed to inspect checkout ${checkout}`,
+								cause,
+							}),
+					),
+				)
+		if (!(yield* fs.isDirectory(checkout)))
+			return yield* refuse(`checkout ${checkout} is missing`)
+		const head = yield* git(["symbolic-ref", "--quiet", "HEAD"])
+		if (
+			head.exitCode !== 0 ||
+			head.stdout.trim() !== `refs/heads/${current.branch}`
+		)
+			return yield* refuse(
+				`checkout is not on declared branch '${current.branch}'`,
+			)
+		const gitDir = yield* git([
+			"rev-parse",
+			"--path-format=absolute",
+			"--git-dir",
+		])
+		const gitDirPath = gitDir.stdout.trim()
+		for (const marker of [
+			"rebase-merge",
+			"rebase-apply",
+			"MERGE_HEAD",
+			"CHERRY_PICK_HEAD",
+		]) {
+			if (gitDirPath && (yield* fs.exists(join(gitDirPath, marker))))
+				return yield* refuse("a Git operation is in progress in the checkout")
+		}
+		const status = yield* git([
+			"status",
+			"--porcelain=v1",
+			"-z",
+			"--untracked-files=all",
+		])
+		if (status.exitCode !== 0 || isDirtyGitStatus(status.stdout))
+			return yield* refuse("checkout has uncommitted changes")
+		const { config } = yield* (yield* WorkbaseService).loadConfig(root)
+		const remote = config.delivery?.remote ?? "origin"
+		let baseRef: string | null = null
+		for (const candidate of [
+			`refs/remotes/${remote}/${base}`,
+			`refs/heads/${base}`,
+		]) {
+			const resolved = yield* git([
+				"rev-parse",
+				"--verify",
+				"--quiet",
+				`${candidate}^{commit}`,
+			])
+			if (resolved.exitCode === 0 && resolved.stdout.trim()) {
+				baseRef = candidate
+				break
+			}
+		}
+		if (!baseRef)
+			return yield* refuse(
+				`neither '${remote}/${base}' nor local branch '${base}' resolves to a commit; fetch it first`,
+			)
+		const ancestor = yield* git([
+			"merge-base",
+			"--is-ancestor",
+			baseRef,
+			"HEAD",
+		])
+		if (ancestor.exitCode === 1)
+			return yield* refuse(
+				`'${baseRef}' is not an ancestor of HEAD; rebase the branch onto it first`,
+			)
+		if (ancestor.exitCode !== 0)
+			return yield* refuse(
+				`failed to inspect ancestry: ${ancestor.stderr.trim()}`,
+			)
+	})
+
+const baseHistoryHeading = "## Base History"
+
+const appendBaseHistory = (body: string, entry: string) => {
+	const lines = body.trimEnd().split("\n")
+	const heading = lines.findIndex((line) => line.trim() === baseHistoryHeading)
+	if (heading === -1)
+		return `${body.trimEnd()}\n\n${baseHistoryHeading}\n\n- ${entry}\n`
+	let end = lines.length
+	for (let index = heading + 1; index < lines.length; index++) {
+		if (/^#{1,2} /.test(lines[index]!)) {
+			end = index
+			break
+		}
+	}
+	while (end > heading + 1 && !lines[end - 1]!.trim()) end--
+	const insert = end === heading + 1 ? ["", `- ${entry}`] : [`- ${entry}`]
+	lines.splice(end, 0, ...insert)
+	return `${lines.join("\n")}\n`
+}
+
 const assertDependencies = (nodes: readonly Dependency[], label: string) => {
 	const issue = validateDependencies(nodes, label)
 	return issue
@@ -349,7 +496,6 @@ export class GraphMutationService extends Context.Service<GraphMutationService>(
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
-					const fs = yield* FileSystemService
 					const root = yield* workbase.discover(startPath)
 					const record = yield* tasks.show(id, root)
 					const executionChange = [
@@ -385,13 +531,14 @@ export class GraphMutationService extends Context.Service<GraphMutationService>(
 								"Reopen non-PR completed work before recording a pull request",
 						})
 					}
-					if (
-						checkoutTopologyChange &&
-						(yield* fs.isDirectory(join(dirname(record.path), "code")))
-					) {
-						return yield* new GraphMutationError({
-							message: `Task '${id}' has materialized code; remove its worktree with Agency before changing execution metadata`,
-						})
+					if (checkoutTopologyChange && "repo" in record.data) {
+						yield* materializedTopologyChange(
+							`Task '${id}'`,
+							record.path,
+							record.data,
+							updates,
+							root,
+						)
 					}
 					const data: TaskData = yield* decode(
 						TaskFrontmatter,
@@ -492,7 +639,6 @@ export class GraphMutationService extends Context.Service<GraphMutationService>(
 				Effect.gen(function* () {
 					const workbase = yield* WorkbaseService
 					const phases = yield* PhaseService
-					const fs = yield* FileSystemService
 					const root = yield* workbase.discover(startPath)
 					const record = yield* phases.show(taskId, id, root)
 					const executionChange = [
@@ -508,13 +654,14 @@ export class GraphMutationService extends Context.Service<GraphMutationService>(
 						"branch",
 						"base",
 					].some((key) => updates[key as keyof PhaseUpdates] !== undefined)
-					if (
-						checkoutTopologyChange &&
-						(yield* fs.isDirectory(join(dirname(record.path), "code")))
-					) {
-						return yield* new GraphMutationError({
-							message: `Phase '${id}' has materialized code; remove its worktree with Agency before changing execution metadata`,
-						})
+					if (checkoutTopologyChange) {
+						yield* materializedTopologyChange(
+							`Phase '${id}'`,
+							record.path,
+							record.data,
+							updates,
+							root,
+						)
 					}
 					if (updates.pr && record.data.completion) {
 						return yield* new GraphMutationError({
@@ -601,6 +748,58 @@ export class GraphMutationService extends Context.Service<GraphMutationService>(
 						writes: [{ path: record.path, content }],
 					})
 					return result(root, "phase.update", "phase", id, [record.path])
+				}),
+
+			recordRebasedBase: (
+				target: { readonly taskId: string; readonly phaseId?: string },
+				base: string,
+				historyEntry: string,
+				revision: string,
+				startPath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const workbase = yield* WorkbaseService
+					const root = yield* workbase.discover(startPath)
+					const record = target.phaseId
+						? yield* (yield* PhaseService).show(
+								target.taskId,
+								target.phaseId,
+								root,
+							)
+						: yield* (yield* TaskService).show(target.taskId, root)
+					if (!("base" in record.data)) {
+						return yield* new GraphMutationError({
+							message: `Task '${target.taskId}' does not have writable execution metadata`,
+						})
+					}
+					const data = target.phaseId
+						? yield* decode(
+								PhaseFrontmatter,
+								{ ...record.data, base },
+								"phase metadata",
+							)
+						: yield* decode(
+								TaskFrontmatter,
+								{ ...record.data, base },
+								"task metadata",
+							)
+					const parsed = yield* parseFrontmatter(record.content, record.path)
+					const content = formatMarkdownDocument(
+						data,
+						appendBaseHistory(parsed.body, historyEntry),
+					)
+					yield* applyWritePlan({
+						root,
+						preconditions: [{ path: record.path, revision }],
+						writes: [{ path: record.path, content }],
+					})
+					return result(
+						root,
+						target.phaseId ? "phase.rebase" : "task.rebase",
+						target.phaseId ? "phase" : "task",
+						target.phaseId ?? target.taskId,
+						[record.path],
+					)
 				}),
 
 			mutateTaskDependency: (
