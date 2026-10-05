@@ -92,6 +92,8 @@ describe("RebaseService", () => {
 		)
 		checkout = join(root, "tasks/alpha/code/agency")
 		git(root, "clone", "-q", remote, checkout)
+		git(checkout, "config", "user.name", "Test")
+		git(checkout, "config", "user.email", "test@example.com")
 		git(checkout, "checkout", "-q", "-b", "task/alpha", "origin/stacked")
 		await commit(checkout, "alpha.txt")
 

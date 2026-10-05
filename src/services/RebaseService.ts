@@ -81,6 +81,17 @@ const parseCommits = (output: string): CommitSummary[] =>
 			return { commit, subject: subject.join("\0") }
 		})
 
+const stopReason = (result: {
+	readonly stdout: string
+	readonly stderr: string
+}) => {
+	const lines = `${result.stdout}\n${result.stderr}`
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line && !/^Rebasing \(\d+\/\d+\)/.test(line))
+	return lines.find((line) => line.startsWith("CONFLICT")) ?? lines[0] ?? ""
+}
+
 const resolveUnit = (target: RebaseTarget, root: string) =>
 	Effect.gen(function* () {
 		if (target.phaseId) {
@@ -582,7 +593,7 @@ export class RebaseService extends Context.Service<RebaseService>()(
 									checkout,
 									options,
 									state,
-									rebased.stderr.trim().split("\n")[0] ?? "",
+									stopReason(rebased),
 								)
 							yield* checkout.clearState
 							return yield* fail(
@@ -623,7 +634,7 @@ export class RebaseService extends Context.Service<RebaseService>()(
 									checkout,
 									target,
 									state,
-									continued.stderr.trim().split("\n")[0] ?? "",
+									stopReason(continued),
 								)
 							return yield* checkout.fail(
 								`git rebase --continue failed: ${continued.stderr.trim() || continued.stdout.trim()}`,
