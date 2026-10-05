@@ -1404,6 +1404,12 @@ or removes dependencies. It warns when rewritten history must be force-pushed
 still targets the old base (change it before `agency sync`, which adopts the
 pull request base), and when other units are based on the rebased branch.
 
+`agency act` offers **Rebase onto a new base** for materialized, non-terminal
+execution units. While an Agency rebase is stopped on conflicts, it offers
+**Continue rebase** and **Abort rebase** instead. In the TUI, the first rebase
+warning is shown in the status line, and every warning appears in the exit
+recap.
+
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
 including readiness checks and durable PR recording. It accepts draft, title,
 declared head/base confirmation, and repeatable label options; a contradicting

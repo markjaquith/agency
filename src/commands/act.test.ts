@@ -1695,6 +1695,74 @@ describe("act command", () => {
 		}
 	})
 
+	test("offers rebase, then continue and abort only while a rebase is stopped", async () => {
+		await seedRepository()
+		await createTask("stack")
+		await materializeTask("stack")
+		const ids = (actions: readonly { id: string }[]) =>
+			actions.map((action) => action.id)
+
+		const idle = await discoverAction("stack", "rebase")
+		expect(ids(idle.actions)).toEqual(["rebase"])
+		for (const step of ["continue", "abort"]) {
+			const blocked = await discoverAction("stack", `rebase-${step}`)
+			expect(blocked.blockedActions).toEqual([
+				expect.objectContaining({
+					blockedReason: "No rebase is stopped for this item",
+				}),
+			])
+		}
+
+		const checkout = join(root, "tasks/stack/code/agency")
+		const gitDir = Bun.spawnSync(["git", "rev-parse", "--absolute-git-dir"], {
+			cwd: checkout,
+		})
+			.stdout.toString()
+			.trim()
+		const head = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: checkout })
+			.stdout.toString()
+			.trim()
+		await Bun.write(
+			join(gitDir, "agency-rebase.json"),
+			JSON.stringify({
+				version: 1,
+				target: "task:stack",
+				previousBase: "main",
+				base: "develop",
+				revision: "unused",
+				upstream: head,
+				onto: head,
+				previousHead: head,
+			}),
+		)
+
+		expect((await discoverAction("stack", "rebase")).blockedActions).toEqual([
+			expect.objectContaining({
+				blockedReason: "A rebase is stopped on conflicts; continue or abort it",
+			}),
+		])
+		const pending = await discoverAction("stack", "rebase-continue")
+		expect(pending.actions).toEqual([
+			expect.objectContaining({
+				id: "rebase-continue",
+				command: ["agency", "rebase", "stack", "--continue"],
+			}),
+		])
+
+		await runTestEffect(
+			act(
+				{ cwd: root, taskId: "stack", action: "rebase-abort", silent: true },
+				scriptedInteraction([]),
+			),
+		)
+		expect(await Bun.file(join(gitDir, "agency-rebase.json")).exists()).toBe(
+			false,
+		)
+		expect(
+			ids((await discoverAction("stack", "rebase-abort")).actions),
+		).toEqual([])
+	})
+
 	test("offers target-aware publication and review maintenance actions", async () => {
 		await createTask("example")
 		await runTestEffect(

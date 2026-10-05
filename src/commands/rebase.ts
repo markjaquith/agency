@@ -12,6 +12,8 @@ interface RebaseCommandOptions extends BaseCommandOptions {
 	readonly continue?: boolean
 	readonly abort?: boolean
 	readonly ifRevision?: string
+	/** Receives warnings before rendering, including when output is silent. */
+	readonly onWarnings?: (warnings: readonly string[]) => void
 }
 
 export const rebase = (options: RebaseCommandOptions) =>
@@ -24,6 +26,7 @@ export const rebase = (options: RebaseCommandOptions) =>
 			const result = options.continue
 				? yield* service.continueRebase(target, cwd)
 				: yield* service.abortRebase(target, cwd)
+			options.onWarnings?.(result.warnings)
 			if (options.json) return log(JSON.stringify(result, null, 2))
 			log(
 				options.abort
@@ -43,6 +46,7 @@ export const rebase = (options: RebaseCommandOptions) =>
 			},
 			cwd,
 		)
+		options.onWarnings?.(result.warnings)
 		if (options.json) return log(JSON.stringify(result, null, 2))
 		const base = describeBase(result)
 		if (result.status === "up-to-date")

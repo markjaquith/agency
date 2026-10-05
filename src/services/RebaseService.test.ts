@@ -3,7 +3,12 @@ import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
-import { RebaseService, type RebaseOptions } from "./RebaseService"
+import { rebase as rebaseCommand } from "../commands/rebase"
+import {
+	hasPendingRebase,
+	RebaseService,
+	type RebaseOptions,
+} from "./RebaseService"
 import { TaskService } from "./TaskService"
 
 const git = (cwd: string, ...args: string[]) => {
@@ -185,6 +190,18 @@ describe("RebaseService", () => {
 			}),
 		)
 		const output = await rebase({ onto: "main", dryRun: true })
+		const reported: string[] = []
+		await runTestEffect(
+			rebaseCommand({
+				taskId: "alpha",
+				onto: "main",
+				dryRun: true,
+				cwd: root,
+				silent: true,
+				onWarnings: (warnings) => reported.push(...warnings),
+			}),
+		)
+		expect(reported).toEqual(output.warnings)
 		expect(output.warnings).toEqual(
 			expect.arrayContaining([
 				expect.stringContaining(
@@ -207,6 +224,8 @@ describe("RebaseService", () => {
 			const error = await rebase({ onto: "main" }).catch((cause) => cause)
 			expect(String(error)).toContain("--continue")
 			expect((await task()).data).toMatchObject({ base: "stacked" })
+			const pending = () => runTestEffect(hasPendingRebase(checkout))
+			expect(await pending()).toBe(true)
 			await expect(rebase({ onto: "main" })).rejects.toThrow(
 				"already in progress",
 			)
@@ -215,6 +234,7 @@ describe("RebaseService", () => {
 				service.abortRebase({ taskId: "alpha" }, root),
 			)
 			expect(aborted).toMatchObject({ status: "aborted", head })
+			expect(await pending()).toBe(false)
 			expect(git(checkout, "rev-parse", "HEAD")).toBe(head)
 			expect((await task()).data).toMatchObject({ base: "stacked" })
 			await expect(

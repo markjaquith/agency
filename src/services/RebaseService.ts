@@ -1,6 +1,6 @@
 import { Schema } from "@effect/schema"
 import { Data, Effect } from "effect"
-import { dirname, join, relative } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { GraphMutationService } from "./GraphMutationService"
 import { PhaseService } from "./PhaseService"
@@ -56,6 +56,19 @@ type RebaseState = Schema.Schema.Type<typeof RebaseState>
 
 const stateFileName = "agency-rebase.json"
 const rebaseTimeoutMs = 300_000
+
+/** Reports whether an Agency rebase is waiting for --continue or --abort. */
+export const hasPendingRebase = (checkoutPath: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const dotGit = join(checkoutPath, ".git")
+		if (yield* fs.isDirectory(dotGit))
+			return yield* fs.exists(join(dotGit, stateFileName))
+		const pointer = yield* fs.readFile(dotGit)
+		const gitDir = pointer.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim()
+		if (!gitDir) return false
+		return yield* fs.exists(join(resolve(checkoutPath, gitDir), stateFileName))
+	}).pipe(Effect.catchAll(() => Effect.succeed(false)))
 
 const commandFor = (target: RebaseTarget, flag: string) =>
 	`agency rebase ${target.taskId}${target.phaseId ? ` ${target.phaseId}` : ""} ${flag}`
@@ -290,13 +303,15 @@ const publicationWarnings = (checkout: Checkout, base: string) =>
 		const published = yield* revision(
 			`refs/remotes/${remote}/${unit.data.branch}`,
 		)
-		if (published || unit.data.pr)
+		const pr =
+			typeof unit.data.pr === "string" ? unit.data.pr : unit.data.pr?.url
+		if (pr && base !== unit.data.base)
+			warnings.push(
+				`Pull request ${pr} still targets '${unit.data.base}'; change its base to '${base}' (gh pr edit ${pr} --base ${base}) before running agency sync, which adopts the pull request base`,
+			)
+		if (published || pr)
 			warnings.push(
 				`Rewritten history must be force-pushed: git push --force-with-lease ${remote} ${unit.data.branch} (agency push rejects non-fast-forward publication)`,
-			)
-		if (unit.data.pr && base !== unit.data.base)
-			warnings.push(
-				`Pull request ${unit.data.pr} still targets '${unit.data.base}'; change its base to '${base}' (gh pr edit ${unit.data.pr} --base ${base}) before running agency sync, which adopts the pull request base`,
 			)
 		return warnings
 	})

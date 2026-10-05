@@ -29,6 +29,7 @@ import {
 	type ActInteraction,
 } from "./act-prompts"
 import { work as startWork, type StartWork } from "./work"
+import { hasPendingRebase } from "../services/RebaseService"
 
 export type { ActInteraction } from "./act-prompts"
 
@@ -394,6 +395,24 @@ const actStep = (
 				checkoutStates.set(id, checkoutState(inspection))
 			}
 		}
+		const pendingRebases = new Set<string>()
+		yield* Effect.forEach(
+			graph.nodes,
+			(node) =>
+				node.kind !== "execution-unit" || !node.workspace?.materialized
+					? Effect.void
+					: hasPendingRebase(node.workspace.checkoutPath).pipe(
+							Effect.map((pending) => {
+								if (pending)
+									pendingRebases.add(
+										"phaseId" in node.data
+											? `phase:${node.data.taskId}/${node.data.phaseId}`
+											: `task:${node.data.taskId}`,
+									)
+							}),
+						),
+			{ concurrency: 8, discard: true },
+		)
 		const nodes = graph.nodes.filter(
 			(node): node is ActEntity =>
 				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
@@ -422,6 +441,7 @@ const actStep = (
 			silent: session ? true : options.silent,
 			verbose: options.verbose,
 			checkoutStates,
+			pendingRebases,
 		}
 		const runWork: StartWork = session
 			? (args) => work({ ...args, silent: options.silent })
@@ -732,6 +752,11 @@ const actStep = (
 		if (session) {
 			recap.push(`󰄬  ${action.label}${selected ? ` — ${selected.key}` : ""}`)
 			state.notice = recap[recap.length - 1]!
+			const warnings = plan.warnings ?? []
+			if (warnings.length) {
+				recap.push(...warnings.map((warning) => `󰀦  ${warning}`))
+				state.notice = `󰀦  ${action.label} done — ${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more in the exit recap)` : ""}`
+			}
 			if (plan.next) {
 				recap.push(
 					`Item: ${plan.next.taskId}${plan.next.phaseId ? `/${plan.next.phaseId}` : ""}`,
