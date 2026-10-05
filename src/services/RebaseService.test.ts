@@ -43,7 +43,9 @@ describe("RebaseService", () => {
 	let upstream: string
 
 	const run = <A>(
-		effect: (service: RebaseService) => Effect.Effect<A, unknown, any>,
+		effect: (
+			service: RebaseService["Service"],
+		) => Effect.Effect<A, unknown, any>,
 	) =>
 		runTestEffect(
 			Effect.gen(function* () {

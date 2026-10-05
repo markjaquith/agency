@@ -1,5 +1,4 @@
-import { Schema } from "@effect/schema"
-import { Data, Effect } from "effect"
+import { Context, Data, Effect, Layer, Schema } from "effect"
 import { dirname, join, relative, resolve } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { GraphMutationService } from "./GraphMutationService"
@@ -68,7 +67,7 @@ export const hasPendingRebase = (checkoutPath: string) =>
 		const gitDir = pointer.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim()
 		if (!gitDir) return false
 		return yield* fs.exists(join(resolve(checkoutPath, gitDir), stateFileName))
-	}).pipe(Effect.catchAll(() => Effect.succeed(false)))
+	}).pipe(Effect.catch(() => Effect.succeed(false)))
 
 const commandFor = (target: RebaseTarget, flag: string) =>
 	`agency rebase ${target.taskId}${target.phaseId ? ` ${target.phaseId}` : ""} ${flag}`
@@ -190,8 +189,11 @@ const inspectCheckout = (target: RebaseTarget, startPath: string) =>
 		const readState = Effect.gen(function* () {
 			if (!(yield* fs.exists(statePath))) return null
 			const content = yield* fs.readFile(statePath)
-			return yield* Effect.try(() => JSON.parse(content) as unknown).pipe(
-				Effect.flatMap(Schema.decodeUnknown(RebaseState)),
+			return yield* Effect.try({
+				try: () => JSON.parse(content) as unknown,
+				catch: (cause) => cause,
+			}).pipe(
+				Effect.flatMap(Schema.decodeUnknownEffect(RebaseState)),
 				Effect.mapError(
 					(cause) =>
 						new RebaseError({
@@ -213,7 +215,7 @@ const inspectCheckout = (target: RebaseTarget, startPath: string) =>
 			)
 		const clearState = fs
 			.deleteFile(statePath)
-			.pipe(Effect.catchAll(() => Effect.void))
+			.pipe(Effect.catch(() => Effect.void))
 		const requireBranch = Effect.gen(function* () {
 			const head = yield* run(["symbolic-ref", "--quiet", "HEAD"])
 			if (
@@ -242,7 +244,7 @@ const inspectCheckout = (target: RebaseTarget, startPath: string) =>
 			"--diff-filter=U",
 		]).pipe(
 			Effect.map((output) => output.split("\n").filter(Boolean)),
-			Effect.catchAll(() => Effect.succeed([] as string[])),
+			Effect.catch(() => Effect.succeed([] as string[])),
 		)
 		return {
 			root,
@@ -264,7 +266,7 @@ const inspectCheckout = (target: RebaseTarget, startPath: string) =>
 		}
 	})
 
-type Checkout = Effect.Effect.Success<ReturnType<typeof inspectCheckout>>
+type Checkout = Effect.Success<ReturnType<typeof inspectCheckout>>
 
 const dependentWarnings = (checkout: Checkout) =>
 	Effect.gen(function* () {
@@ -354,9 +356,9 @@ const finish = (
 					startPath,
 				)
 				.pipe(
-					Effect.catchAll((cause) =>
+					Effect.catch((cause) =>
 						clearState.pipe(
-							Effect.zipRight(
+							Effect.andThen(
 								Effect.fail(
 									new RebaseError({
 										message: `Rebase completed but base '${state.base}' could not be recorded${cause instanceof RevisionConflictError ? " because the document changed" : ""}; record it with agency ${target.phaseId ? `phase update ${target.taskId} ${target.phaseId}` : `task update ${target.taskId}`} --base ${state.base}`,
@@ -440,10 +442,10 @@ const resolveBase = (checkout: Checkout, base: string) =>
 		return null
 	})
 
-export class RebaseService extends Effect.Service<RebaseService>()(
+export class RebaseService extends Context.Service<RebaseService>()(
 	"RebaseService",
 	{
-		sync: () => ({
+		make: Effect.sync(() => ({
 			rebase: (options: RebaseOptions, startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const checkout = yield* inspectCheckout(options, startPath)
@@ -688,6 +690,8 @@ export class RebaseService extends Effect.Service<RebaseService>()(
 									],
 					}
 				}),
-		}),
+		})),
 	},
-) {}
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}
