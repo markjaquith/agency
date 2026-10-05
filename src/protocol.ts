@@ -86,6 +86,13 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 	ArchiveError: { code: "ARCHIVE_ERROR", retryable: false },
 	WorktreeError: { code: "WORKTREE_ERROR", retryable: false },
 	PushError: { code: "PUSH_ERROR", retryable: false },
+	RebaseError: { code: "REBASE_ERROR", retryable: false },
+	RebaseConflictError: {
+		code: "REBASE_CONFLICT",
+		retryable: false,
+		remediation:
+			"Resolve and stage the conflicts in error.fields.checkoutPath, then run error.fields.continueCommand or error.fields.abortCommand.",
+	},
 	PullRequestError: { code: "PULL_REQUEST_ERROR", retryable: false },
 	ReviewError: { code: "REVIEW_ERROR", retryable: false },
 	ContextError: {

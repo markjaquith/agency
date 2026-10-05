@@ -12,6 +12,7 @@ import { review } from "./review"
 import { task } from "./task"
 import { phase } from "./phase"
 import { push } from "./push"
+import { rebase } from "./rebase"
 import { sync } from "./sync"
 import { status } from "./status"
 import { config } from "./config"
@@ -242,6 +243,12 @@ const actionPresentation: Record<
 		icon: "󰜷",
 		color: macchiato.sapphire,
 	},
+	rebase: {
+		description:
+			"Rebase this checkout onto a new base and record the base after success.",
+		icon: "󰃻",
+		color: macchiato.yellow,
+	},
 	pr: {
 		description: "Publish this execution branch and record its pull request.",
 		icon: "",
@@ -424,7 +431,7 @@ export const actionGroups = [
 		id: "pull-request",
 		label: "Publish or update a pull request",
 		icon: "",
-		actions: ["push", "sync", "pr", "pr-ready", "pr-close"],
+		actions: ["push", "rebase", "sync", "pr", "pr-ready", "pr-close"],
 	},
 	{
 		id: "archive",
@@ -1058,6 +1065,48 @@ export const actActions = (
 			{
 				command: ["agency", "--cwd", itemDirectory, "push"],
 				run: push({ ...options, cwd: itemDirectory }),
+			},
+		),
+		action(
+			{
+				...details(
+					"rebase",
+					"Rebase onto a new base",
+					noExecution ??
+						(parent && "review" in parent.data
+							? "Review tasks do not have delivery branches"
+							: terminal
+								? "Item is terminal"
+								: !checkoutState
+									? "Local checkout is not materialized"
+									: checkoutState.dirty
+										? "Local checkout has uncommitted changes"
+										: null),
+				),
+				inputs: [input("base", "New base branch")],
+			},
+			"<base>",
+			(p) => p.text("New base branch", base),
+			(onto) => {
+				const rebaseTarget = taskTarget(node)
+				return {
+					command: [
+						"agency",
+						"rebase",
+						rebaseTarget.taskId,
+						...(rebaseTarget.phaseId ? [rebaseTarget.phaseId] : []),
+						"--onto",
+						onto,
+						"--if-revision",
+						node.data.sha256,
+					],
+					run: rebase({
+						...options,
+						...rebaseTarget,
+						onto,
+						ifRevision: node.data.sha256,
+					}),
+				}
 			},
 		),
 		immediate(

@@ -945,6 +945,45 @@ const commands = {
 			options: ["json"],
 		},
 	},
+	rebase: {
+		usage:
+			"agency rebase <task-id> [phase-id] [--onto <branch>] | --continue | --abort",
+		options: {
+			...outputOptions,
+			onto: { type: "string" },
+			from: { type: "string" },
+			"dry-run": { type: "boolean" },
+			continue: { type: "boolean" },
+			abort: { type: "boolean" },
+			"if-revision": { type: "string" },
+		},
+		command: {
+			usage:
+				"agency rebase <task-id> [phase-id] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] | --continue | --abort [--json]",
+			minArgs: 1,
+			maxArgs: 2,
+			options: [
+				"onto",
+				"from",
+				"dry-run",
+				"continue",
+				"abort",
+				"if-revision",
+				"json",
+			],
+			conflicts: [
+				["continue", "abort"],
+				["continue", "onto"],
+				["continue", "from"],
+				["continue", "dry-run"],
+				["continue", "if-revision"],
+				["abort", "onto"],
+				["abort", "from"],
+				["abort", "dry-run"],
+				["abort", "if-revision"],
+			],
+		},
+	},
 	next: {
 		usage: "agency next [--select] [--json]",
 		options: {

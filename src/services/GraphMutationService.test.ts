@@ -229,6 +229,35 @@ describe("GraphMutationService", () => {
 		}
 	})
 
+	test("records rebased bases with an appended base history", async () => {
+		const record = await runTestEffect(
+			Effect.gen(function* () {
+				const mutations = yield* GraphMutationService
+				const phases = yield* PhaseService
+				const first = yield* phases.show("multi", "build", root)
+				yield* mutations.recordRebasedBase(
+					{ taskId: "multi", phaseId: "build" },
+					"develop",
+					"first",
+					first.revision,
+					root,
+				)
+				const second = yield* phases.show("multi", "build", root)
+				yield* mutations.recordRebasedBase(
+					{ taskId: "multi", phaseId: "build" },
+					"release",
+					"second",
+					second.revision,
+					root,
+				)
+				return yield* phases.show("multi", "build", root)
+			}),
+		)
+		expect(record.data.base).toBe("release")
+		expect(record.content).toContain("## Base History\n\n- first\n- second\n")
+		expect(record.content.match(/## Base History/g)).toHaveLength(1)
+	})
+
 	describe("base changes with a materialized Git checkout", () => {
 		const git = (cwd: string, ...args: string[]) => {
 			const result = Bun.spawnSync(["git", ...args], {

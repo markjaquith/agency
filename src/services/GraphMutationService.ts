@@ -395,6 +395,26 @@ const materializedTopologyChange = (
 			)
 	})
 
+const baseHistoryHeading = "## Base History"
+
+const appendBaseHistory = (body: string, entry: string) => {
+	const lines = body.trimEnd().split("\n")
+	const heading = lines.findIndex((line) => line.trim() === baseHistoryHeading)
+	if (heading === -1)
+		return `${body.trimEnd()}\n\n${baseHistoryHeading}\n\n- ${entry}\n`
+	let end = lines.length
+	for (let index = heading + 1; index < lines.length; index++) {
+		if (/^#{1,2} /.test(lines[index]!)) {
+			end = index
+			break
+		}
+	}
+	while (end > heading + 1 && !lines[end - 1]!.trim()) end--
+	const insert = end === heading + 1 ? ["", `- ${entry}`] : [`- ${entry}`]
+	lines.splice(end, 0, ...insert)
+	return `${lines.join("\n")}\n`
+}
+
 const assertDependencies = (nodes: readonly Dependency[], label: string) => {
 	const issue = validateDependencies(nodes, label)
 	return issue
@@ -728,6 +748,58 @@ export class GraphMutationService extends Context.Service<GraphMutationService>(
 						writes: [{ path: record.path, content }],
 					})
 					return result(root, "phase.update", "phase", id, [record.path])
+				}),
+
+			recordRebasedBase: (
+				target: { readonly taskId: string; readonly phaseId?: string },
+				base: string,
+				historyEntry: string,
+				revision: string,
+				startPath: string = process.cwd(),
+			) =>
+				Effect.gen(function* () {
+					const workbase = yield* WorkbaseService
+					const root = yield* workbase.discover(startPath)
+					const record = target.phaseId
+						? yield* (yield* PhaseService).show(
+								target.taskId,
+								target.phaseId,
+								root,
+							)
+						: yield* (yield* TaskService).show(target.taskId, root)
+					if (!("base" in record.data)) {
+						return yield* new GraphMutationError({
+							message: `Task '${target.taskId}' does not have writable execution metadata`,
+						})
+					}
+					const data = target.phaseId
+						? yield* decode(
+								PhaseFrontmatter,
+								{ ...record.data, base },
+								"phase metadata",
+							)
+						: yield* decode(
+								TaskFrontmatter,
+								{ ...record.data, base },
+								"task metadata",
+							)
+					const parsed = yield* parseFrontmatter(record.content, record.path)
+					const content = formatMarkdownDocument(
+						data,
+						appendBaseHistory(parsed.body, historyEntry),
+					)
+					yield* applyWritePlan({
+						root,
+						preconditions: [{ path: record.path, revision }],
+						writes: [{ path: record.path, content }],
+					})
+					return result(
+						root,
+						target.phaseId ? "phase.rebase" : "task.rebase",
+						target.phaseId ? "phase" : "task",
+						target.phaseId ?? target.taskId,
+						[record.path],
+					)
 				}),
 
 			mutateTaskDependency: (

@@ -12,6 +12,7 @@ import { PhaseService } from "./services/PhaseService"
 import { WorktreeService } from "./services/WorktreeService"
 import { PullRequestService } from "./services/PullRequestService"
 import { PushService } from "./services/PushService"
+import { RebaseService } from "./services/RebaseService"
 import { ArchiveService } from "./services/ArchiveService"
 import { IntegrationService } from "./services/IntegrationService"
 import { ContextService } from "./services/ContextService"
@@ -65,6 +66,7 @@ const TestLayer = Layer.mergeAll(
 	WorktreeService.layer,
 	PullRequestService.layer,
 	PushService.layer,
+	RebaseService.layer,
 	ArchiveService.layer,
 	IntegrationService.layer,
 	ContextService.layer,

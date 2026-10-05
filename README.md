@@ -1270,6 +1270,8 @@ agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-
 agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
+agency rebase <task-id> [phase-id] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] [--json]
+agency rebase <task-id> [phase-id] --continue | --abort [--json]
 agency pr create <task-id> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
 agency pr [args...]
 ```
@@ -1289,11 +1291,11 @@ promptless by default; use `--auto` to send Agency's generated context prompt.
 writable and reference worktrees, or its single pinned review checkout, without
 launching an agent or changing status. Its target may be a task ID or any path
 inside the task or phase, including its `TASK.md` or `PHASE.md` document.
-Managed workbase guidance provides exact fast paths for 15 common intents:
+Managed workbase guidance provides exact fast paths for common intents:
 single-phase creation; create-and-start; materialization; remote PR sync; phase
 conversion; archive; review creation and start; status inspection; drop;
 continuation; publication and PR creation; non-PR completion; initial multi-phase
-setup; investigation handoff; and review refresh.
+setup; investigation handoff; review refresh and finish; and base changes.
 Its JSON result includes the workspace, validation result, whether supplied
 evidence was `reused` or `refreshed` with stable reason strings, refreshed
 evidence, and a versioned `agency-execution-v1` contract. The contract reports
@@ -1380,6 +1382,27 @@ one retry for transient failures; push defaults to a 120-second deadline. Set
 values to override them. After a failed or timed-out push, Agency compares the
 exact remote delivery ref with the expected tip before reporting success, a safe
 retryable failure, or an unknown publication outcome.
+
+`agency rebase` moves a materialized execution unit's branch onto a new base and
+records that base only after Git finishes. It requires a non-terminal unit whose
+checkout is clean, on the declared branch, and has no Git operation in progress.
+It fetches the current and new bases from the delivery remote (falling back to
+local refs with a warning when the remote is unreachable) and runs
+`git rebase --onto <new-base> <merge-base-with-current-base>`, so commits that are
+reachable only from the old base are not replayed. `--from <commit>` overrides
+that starting point, which is useful when the old base no longer resolves.
+Without `--onto`, the branch is rebased onto the latest current base and no
+metadata changes. `--dry-run` reports the commits to replay and drop without
+rebasing. On success the `base` field and a `## Base History` entry are written
+under the revision captured when the rebase started.
+
+When Git stops on conflicts, the command fails with `REBASE_CONFLICT`, the
+conflicted paths, and the exact `--continue` and `--abort` commands; base
+metadata is unchanged until `--continue` completes the rebase. Rebase never adds
+or removes dependencies. It warns when rewritten history must be force-pushed
+(`agency push` refuses non-fast-forward updates), when a recorded pull request
+still targets the old base (change it before `agency sync`, which adopts the
+pull request base), and when other units are based on the rebased branch.
 
 Task-aware `agency pr create <task-id> [phase-id]` uses Agency's delivery flow,
 including readiness checks and durable PR recording. It accepts draft, title,
