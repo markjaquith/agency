@@ -670,6 +670,53 @@ describe("strict CLI parsing", () => {
 		)
 	})
 
+	test("allows item selectors to be omitted or supplied as paths", () => {
+		for (const args of [
+			["task", "show"],
+			["task", "status", "done"],
+			["task", "update", "--description", "Updated"],
+			["task", "rename", "new-id"],
+			["task", "move", "--no-epic"],
+			["task", "dependency", "add", "other"],
+			["task", "handoff", "implementation", "--repo", "agency"],
+			["epic", "show"],
+			["epic", "rename", "new-id"],
+			["phase", "list"],
+			["phase", "show"],
+			["phase", "status", "working"],
+			["phase", "rename", "new-id"],
+			["phase", "dependency", "remove", "build"],
+			["archive", "task"],
+			["archive", "phase"],
+			["archive", "show", "task"],
+			["restore", "epic"],
+			["worktree", "inspect"],
+		]) {
+			expect(() => parseCli(args)).not.toThrow()
+		}
+		expect(
+			parseCli(["phase", "status", "tasks/multi/phases/build", "done"]).args,
+		).toEqual(["status", "tasks/multi/phases/build", "done"])
+		expectUsageError(["task", "status"], "agency task status")
+		expectUsageError(["phase", "rename"], "agency phase rename")
+	})
+
+	test("keeps explicit selector options complete", () => {
+		expect(() =>
+			parseCli(["phase", "status", "--task", "multi", "working"]),
+		).toThrow("Option '--phase' is required with explicit selectors.")
+		expect(() => parseCli(["phase", "show", "--task", "multi"])).toThrow(
+			"Option '--phase' is required with explicit selectors.",
+		)
+		expect(
+			parseCli(["task", "status", "--task", "single", "working"]).args,
+		).toEqual(["status", "single", "working"])
+		expect(parseCli(["worktree", "inspect", "--task", "single"]).args).toEqual([
+			"inspect",
+			"single",
+		])
+	})
+
 	test("parses push without accepting an alternate target", () => {
 		expect(parseCli(["push", "--json"])).toMatchObject({
 			commandName: "push",

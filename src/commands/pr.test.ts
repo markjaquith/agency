@@ -138,39 +138,45 @@ status: working
 		return root
 	}
 
-	test("creates and records an Agency pull request", async () => {
+	const recordCreate = async (options: Parameters<typeof prCreate>[0]) => {
 		const url = "https://github.com/markjaquith/agency/pull/123"
 		let received: unknown[] = []
 		const logs = await captureLogs(() =>
-			Effect.runPromise(
-				prCreate({
-					taskId: "example",
-					phaseId: "implementation",
-					draft: true,
-					force: true,
-					title: "Ship it",
-					head: "task/example",
-					base: "main",
-					labels: ["ai-assisted"],
-					cwd: "/workbase",
-					json: true,
-				}).pipe(
+			runTestEffect(
+				prCreate(options).pipe(
 					Effect.provideService(PullRequestService, {
 						create: (...args: unknown[]) => {
 							received = args
 							return Effect.succeed(url)
 						},
 					} as never),
-				) as Effect.Effect<void, unknown, never>,
+				),
 			),
 		)
-
 		expect(JSON.parse(logs[0]!)).toEqual({ url })
+		return received
+	}
+
+	test("creates and records an Agency pull request", async () => {
+		const root = await createExecutionWorkbase()
+		const received = await recordCreate({
+			taskId: "example",
+			phaseId: "implementation",
+			draft: true,
+			force: true,
+			title: "Ship it",
+			head: "task/example",
+			base: "main",
+			labels: ["ai-assisted"],
+			cwd: root,
+			json: true,
+		})
+
 		expect(received).toEqual([
 			"example",
 			"implementation",
 			true,
-			"/workbase",
+			root,
 			expect.objectContaining({
 				force: true,
 				draft: true,
@@ -181,6 +187,28 @@ status: working
 				json: true,
 			}),
 		])
+	})
+
+	test("resolves task and phase paths for pull request creation", async () => {
+		const root = await createExecutionWorkbase()
+		expect(
+			(
+				await recordCreate({
+					taskId: ".",
+					cwd: join(root, "tasks/single/code/agency"),
+					json: true,
+				})
+			).slice(0, 2),
+		).toEqual(["single", undefined])
+		expect(
+			(
+				await recordCreate({
+					taskId: "tasks/multi/phases/build/PHASE.md",
+					cwd: root,
+					json: true,
+				})
+			).slice(0, 2),
+		).toEqual(["multi", "build"])
 	})
 
 	test("focuses task and descendant invocations on the writable checkout", async () => {

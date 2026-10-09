@@ -9,6 +9,7 @@ import {
 	Layer,
 } from "effect"
 import { join, relative, resolve, sep } from "node:path"
+import { locateItem } from "../workbase/item-selector"
 import { FileSystemService } from "./FileSystemService"
 import { WorkbaseService } from "./WorkbaseService"
 import { normalizePullRequestRecord } from "../workbase/delivery-command"
@@ -363,68 +364,55 @@ export class ContextService extends Context.Service<ContextService>()(
 							}
 						}
 						if (!isWithin(root, candidate)) return null
-						const parts = relative(root, candidate).split(sep)
-						if (parts[0] === "archive" && parts[1] === "epics" && parts[2]) {
+						const location = locateItem(root, candidate)
+						if (!location) return null
+						const { archived } = location
+						if (location.kind === "epic") {
 							return {
 								kind: "epic",
-								archived: true,
-								epicId: parts[2],
-								path: join(archivedEpicDirectory(root, parts[2]), "EPIC.md"),
+								archived,
+								epicId: location.epicId,
+								path: archived
+									? join(
+											archivedEpicDirectory(root, location.epicId),
+											"EPIC.md",
+										)
+									: join(root, "epics", location.epicId, "EPIC.md"),
 							}
 						}
-						if (parts[0] === "archive" && parts[1] === "tasks" && parts[2]) {
-							if (parts[3] === "phases" && parts[4]) {
-								return {
-									kind: "phase",
-									archived: true,
-									taskId: parts[2],
-									phaseId: parts[4],
-									path: join(
-										archivedPhaseDirectory(root, parts[2], parts[4]),
-										"PHASE.md",
-									),
-								}
-							}
+						if (location.kind === "phase") {
 							return {
-								kind: "task",
-								archived: true,
-								taskId: parts[2],
-								path: join(archivedTaskDirectory(root, parts[2]), "TASK.md"),
+								kind: "phase",
+								archived,
+								taskId: location.taskId,
+								phaseId: location.phaseId,
+								path: archived
+									? join(
+											archivedPhaseDirectory(
+												root,
+												location.taskId,
+												location.phaseId,
+											),
+											"PHASE.md",
+										)
+									: join(
+											root,
+											"tasks",
+											location.taskId,
+											"phases",
+											location.phaseId,
+											"PHASE.md",
+										),
 							}
 						}
-						if (parts[0] === "epics" && parts[1]) {
-							return {
-								kind: "epic",
-								archived: false,
-								epicId: parts[1],
-								path: join(root, "epics", parts[1], "EPIC.md"),
-							}
+						return {
+							kind: "task",
+							archived,
+							taskId: location.taskId,
+							path: archived
+								? join(archivedTaskDirectory(root, location.taskId), "TASK.md")
+								: join(root, "tasks", location.taskId, "TASK.md"),
 						}
-						if (parts[0] === "tasks" && parts[1]) {
-							if (parts[2] === "phases" && parts[3]) {
-								return {
-									kind: "phase",
-									archived: false,
-									taskId: parts[1],
-									phaseId: parts[3],
-									path: join(
-										root,
-										"tasks",
-										parts[1],
-										"phases",
-										parts[3],
-										"PHASE.md",
-									),
-								}
-							}
-							return {
-								kind: "task",
-								archived: false,
-								taskId: parts[1],
-								path: join(root, "tasks", parts[1], "TASK.md"),
-							}
-						}
-						return null
 					}
 
 					const inferredTarget = inferTarget()

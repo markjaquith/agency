@@ -1,5 +1,5 @@
 import { Data, Effect, Result, Context, Layer } from "effect"
-import { dirname, join, relative, resolve, sep } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import type {
 	PhaseFrontmatter,
 	RepositoryReference,
@@ -8,6 +8,7 @@ import type {
 	PullRequestRecord,
 } from "../workbase/schemas"
 import { documentRevision } from "../workbase/document-revision"
+import { locateItem } from "../workbase/item-selector"
 import {
 	formatMarkdownDocument,
 	parseFrontmatterSync,
@@ -280,14 +281,17 @@ export class SyncService extends Context.Service<SyncService>()("SyncService", {
 					documents.tasks.some((task) => task.id === options.taskId)
 				if (candidateExists && !existingTaskSelector) {
 					const canonicalPath = yield* fs.realPath(candidate)
-					const canonicalRoot = yield* fs.realPath(root)
-					const parts = relative(canonicalRoot, canonicalPath).split(sep)
-					if (parts[0] === "epics" && parts[1]) {
-						epicId = parts[1]
+					const location = locateItem(yield* fs.realPath(root), canonicalPath)
+					if (location?.kind === "epic" && !location.archived) {
+						epicId = location.epicId
 						taskId = undefined
-					} else if (parts[0] === "tasks" && parts[1]) {
-						taskId = parts[1]
-						phaseId = parts[2] === "phases" && parts[3] ? parts[3] : undefined
+					} else if (
+						location &&
+						!location.archived &&
+						location.kind !== "epic"
+					) {
+						taskId = location.taskId
+						phaseId = location.kind === "phase" ? location.phaseId : undefined
 					} else if (options.taskId !== undefined) {
 						return yield* new SyncError({
 							message: `Sync path does not identify an active task, phase, or epic: ${canonicalPath}`,
