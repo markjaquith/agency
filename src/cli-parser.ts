@@ -784,7 +784,7 @@ const commands = {
 	},
 	review: {
 		usage:
-			"agency review <refresh|finish> <task-id> [--if-revision <hash>] [--json]",
+			"agency review <refresh|finish> [task-id-or-path] [--if-revision <hash>] [--json]",
 		options: {
 			...outputOptions,
 			"if-revision": { type: "string" },
@@ -798,8 +798,9 @@ const commands = {
 				options: ["if-revision", "json"],
 			},
 			finish: {
-				usage: "agency review finish <task-id> [--if-revision <hash>] [--json]",
-				minArgs: 1,
+				usage:
+					"agency review finish [task-id-or-path] [--if-revision <hash>] [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: ["if-revision", "json"],
 			},

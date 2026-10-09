@@ -340,6 +340,59 @@ describe("ReviewService", () => {
 		).rejects.toThrow("--no-pull-request --summary <text>")
 	})
 
+	test("finishes a review selected by its task directory or document path", async () => {
+		const created = await createReview()
+		const workspace = await runTestEffect(
+			WorktreeService.pipe(
+				Effect.flatMap((service) =>
+					service.materialize("review", undefined, root),
+				),
+			),
+		)
+		const finish = (
+			selector: string | undefined,
+			cwd: string,
+			ifRevision?: string,
+		) =>
+			runTestEffect(
+				ReviewService.pipe(
+					Effect.flatMap((service) =>
+						service.finish(selector, cwd, ifRevision),
+					),
+				),
+			)
+		const reopen = () =>
+			runTestEffect(
+				TaskService.pipe(
+					Effect.flatMap((service) =>
+						service.setStatus("review", "open", root),
+					),
+				),
+			)
+		const taskDirectory = join(root, "tasks/review")
+
+		await expect(finish(undefined, root)).rejects.toThrow(
+			"does not identify an active review task",
+		)
+		await expect(finish(".", taskDirectory, "0".repeat(64))).rejects.toThrow(
+			"Revision conflict",
+		)
+
+		const fromDot = await finish(".", taskDirectory, created.revision)
+		expect(fromDot.id).toBe("review")
+		expect(fromDot.data.status).toBe("done")
+
+		await reopen()
+		const fromCheckout = await finish(undefined, workspace.reviewPath!)
+		expect(fromCheckout.id).toBe("review")
+		expect(fromCheckout.data.status).toBe("done")
+
+		await reopen()
+		const fromDocument = await finish("tasks/review/TASK.md", root)
+		expect(fromDocument.path).toBe(join(taskDirectory, "TASK.md"))
+		expect(fromDocument.data.status).toBe("done")
+	})
+
 	test("rejects unsafe branch sources and mixed create inputs", async () => {
 		for (const ref of [
 			"HEAD",

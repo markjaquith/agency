@@ -1,7 +1,7 @@
 import { Data, Effect, Context, Layer } from "effect"
 import { randomUUID } from "node:crypto"
 import { lstat, mkdir } from "node:fs/promises"
-import { dirname } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
 import { RepositoryService } from "./RepositoryService"
@@ -196,6 +196,35 @@ const fetchCommit = (repoPath: string, sourceRef: string) =>
 			})
 		}
 		return commit
+	})
+
+const resolveTaskSelector = (selector: string | undefined, startPath: string) =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystemService
+		const workbase = yield* WorkbaseService
+		const cwd = resolve(startPath)
+		const candidate = resolve(cwd, selector ?? ".")
+		const candidateExists = yield* fs.exists(candidate)
+		const root = yield* workbase.discover(candidateExists ? candidate : cwd)
+		if (selector !== undefined && !candidateExists)
+			return { root, taskId: selector }
+		if (
+			selector !== undefined &&
+			!selector.includes(sep) &&
+			selector !== "." &&
+			selector !== ".." &&
+			(yield* fs.exists(join(root, "tasks", selector, "TASK.md")))
+		) {
+			return { root, taskId: selector }
+		}
+		const parts = relative(
+			yield* fs.realPath(root),
+			yield* fs.realPath(candidate),
+		).split(sep)
+		if (parts[0] === "tasks" && parts[1]) return { root, taskId: parts[1] }
+		return yield* new ReviewError({
+			message: `Path does not identify an active review task: ${candidate}`,
+		})
 	})
 
 export class ReviewService extends Context.Service<ReviewService>()(
@@ -427,14 +456,16 @@ export class ReviewService extends Context.Service<ReviewService>()(
 				}),
 
 			finish: (
-				taskId: string,
+				selector: string | undefined,
 				startPath: string = process.cwd(),
 				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
-					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
-					const root = yield* workbase.discover(startPath)
+					const { root, taskId } = yield* resolveTaskSelector(
+						selector,
+						startPath,
+					)
 					const task = yield* tasks.show(taskId, root)
 					if (!("review" in task.data)) {
 						return yield* new ReviewError({
