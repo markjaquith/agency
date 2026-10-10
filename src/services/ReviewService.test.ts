@@ -176,10 +176,11 @@ describe("ReviewService", () => {
 		const refreshed = await runTestEffect(
 			ReviewService.pipe(
 				Effect.flatMap((service) =>
-					service.refresh("review", root, created.revision),
+					service.refresh(undefined, workspace.reviewPath!, created.revision),
 				),
 			),
 		)
+		expect(refreshed.taskId).toBe("review")
 		expect(refreshed.changed).toBe(true)
 		expect(
 			await Bun.file(join(workspace.codePath, "agency/README.md")).text(),
@@ -372,7 +373,7 @@ describe("ReviewService", () => {
 		const taskDirectory = join(root, "tasks/review")
 
 		await expect(finish(undefined, root)).rejects.toThrow(
-			"does not identify an active review task",
+			"does not identify an active task",
 		)
 		await expect(finish(".", taskDirectory, "0".repeat(64))).rejects.toThrow(
 			"Revision conflict",

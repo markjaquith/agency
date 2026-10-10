@@ -1082,8 +1082,8 @@ Create a pinned, read-only review task from the selected alias's origin:
 ```text
 agency task create <id> --review <alias> --pull-request <url-or-number>
 agency task create <id> --review <alias> --ref <remote-ref>
-agency review refresh <id> [--if-revision <hash>] [--json]
-agency review finish [<id-or-path>] [--if-revision <hash>] [--json]
+agency review refresh [task] [--if-revision <hash>] [--json]
+agency review finish [task] [--if-revision <hash>] [--json]
 ```
 
 Review creation fetches the source and records its exact 40-character commit.
@@ -1096,9 +1096,8 @@ review checkouts block refresh and cleanup. Review tasks support the normal stat
 lifecycle, but reject phase conversion and delivery PR operations. Because a
 review has no delivery pull request, `review finish` marks an open, working, or
 delegated review done without the `--no-pull-request --summary` requirement
-that applies to other work. Its target may be a task ID or a path inside the
-task directory, such as `.` or the review checkout; it defaults to the current
-directory.
+that applies to other work. Both commands take a standard task selector (see
+Item Selectors), such as `.` or the review checkout path.
 Each active or archived review task owns one internal task-scoped pin ref. A
 refresh advances that ref transactionally; failed creation removes it. Archiving
 retains the pin so a deleted source can still be restored and inspected.
@@ -1292,8 +1291,8 @@ agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-
 agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
-agency rebase <task-id> [phase-id] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] [--json]
-agency rebase <task-id> [phase-id] --continue | --abort [--json]
+agency rebase [task [phase-id]] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] [--json]
+agency rebase [task [phase-id]] --continue | --abort [--json]
 agency pr create <task> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
 agency pr [args...]
 ```

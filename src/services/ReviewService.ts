@@ -1,12 +1,11 @@
 import { Data, Effect, Context, Layer } from "effect"
 import { randomUUID } from "node:crypto"
 import { lstat, mkdir } from "node:fs/promises"
-import { dirname, join, relative, resolve, sep } from "node:path"
+import { dirname } from "node:path"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
 import { RepositoryService } from "./RepositoryService"
 import { TaskService } from "./TaskService"
-import { WorkbaseService } from "./WorkbaseService"
 import { autoArchiveTask } from "./auto-archive"
 import {
 	WorktreeService,
@@ -17,6 +16,7 @@ import {
 	VersionControlService,
 } from "./VersionControlService"
 import { withWorktreeLocks } from "./WorktreeLock"
+import { resolveTaskSelector } from "../workbase/item-selector"
 import {
 	documentWriteStep,
 	runLifecycleTransaction,
@@ -198,35 +198,6 @@ const fetchCommit = (repoPath: string, sourceRef: string) =>
 		return commit
 	})
 
-const resolveTaskSelector = (selector: string | undefined, startPath: string) =>
-	Effect.gen(function* () {
-		const fs = yield* FileSystemService
-		const workbase = yield* WorkbaseService
-		const cwd = resolve(startPath)
-		const candidate = resolve(cwd, selector ?? ".")
-		const candidateExists = yield* fs.exists(candidate)
-		const root = yield* workbase.discover(candidateExists ? candidate : cwd)
-		if (selector !== undefined && !candidateExists)
-			return { root, taskId: selector }
-		if (
-			selector !== undefined &&
-			!selector.includes(sep) &&
-			selector !== "." &&
-			selector !== ".." &&
-			(yield* fs.exists(join(root, "tasks", selector, "TASK.md")))
-		) {
-			return { root, taskId: selector }
-		}
-		const parts = relative(
-			yield* fs.realPath(root),
-			yield* fs.realPath(candidate),
-		).split(sep)
-		if (parts[0] === "tasks" && parts[1]) return { root, taskId: parts[1] }
-		return yield* new ReviewError({
-			message: `Path does not identify an active review task: ${candidate}`,
-		})
-	})
-
 export class ReviewService extends Context.Service<ReviewService>()(
 	"ReviewService",
 	{
@@ -296,17 +267,19 @@ export class ReviewService extends Context.Service<ReviewService>()(
 				}),
 
 			refresh: (
-				taskId: string,
+				selector: string | undefined,
 				startPath: string = process.cwd(),
 				ifRevision?: string,
 			) =>
 				Effect.gen(function* () {
-					const workbase = yield* WorkbaseService
 					const tasks = yield* TaskService
 					const worktrees = yield* WorktreeService
 					const service = yield* ReviewService
 					const repositories = yield* RepositoryService
-					const root = yield* workbase.discover(startPath)
+					const { root, taskId } = yield* resolveTaskSelector(
+						selector,
+						startPath,
+					)
 					return yield* withWorktreeLocks(
 						root,
 						[{ taskId }],

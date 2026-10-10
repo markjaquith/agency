@@ -803,22 +803,20 @@ const commands = {
 	},
 	review: {
 		usage:
-			"agency review <refresh|finish> [task-id-or-path] [--if-revision <hash>] [--json]",
+			"agency review <refresh|finish> [task] [--if-revision <hash>] [--json]",
 		options: {
 			...outputOptions,
 			"if-revision": { type: "string" },
 		},
 		subcommands: {
 			refresh: {
-				usage:
-					"agency review refresh <task-id> [--if-revision <hash>] [--json]",
-				minArgs: 1,
+				usage: "agency review refresh [task] [--if-revision <hash>] [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: ["if-revision", "json"],
 			},
 			finish: {
-				usage:
-					"agency review finish [task-id-or-path] [--if-revision <hash>] [--json]",
+				usage: "agency review finish [task] [--if-revision <hash>] [--json]",
 				minArgs: 0,
 				maxArgs: 1,
 				options: ["if-revision", "json"],
@@ -972,7 +970,7 @@ const commands = {
 	},
 	rebase: {
 		usage:
-			"agency rebase <task-id> [phase-id] [--onto <branch>] | --continue | --abort",
+			"agency rebase [task [phase-id]] [--onto <branch>] | --continue | --abort",
 		options: {
 			...outputOptions,
 			onto: { type: "string" },
@@ -984,8 +982,8 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency rebase <task-id> [phase-id] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] | --continue | --abort [--json]",
-			minArgs: 1,
+				"agency rebase [task [phase-id]] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] | --continue | --abort [--json]",
+			minArgs: 0,
 			maxArgs: 2,
 			options: [
 				"onto",
