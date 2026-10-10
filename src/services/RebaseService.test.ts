@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import { join } from "node:path"
 import { Effect } from "effect"
-import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
+import {
+	captureLogs,
+	cleanupTempDir,
+	createTempDir,
+	runTestEffect,
+} from "../test-utils"
 import { rebase as rebaseCommand } from "../commands/rebase"
 import {
 	hasPendingRebase,
@@ -214,6 +219,32 @@ describe("RebaseService", () => {
 				expect.stringContaining("task:beta is based on 'task/alpha'"),
 			]),
 		)
+	})
+
+	test("the command selects the current task or a task path", async () => {
+		const plan = async (taskId: string | undefined, cwd: string) => {
+			const logs = await captureLogs(() =>
+				runTestEffect(
+					rebaseCommand({
+						taskId,
+						onto: "main",
+						dryRun: true,
+						json: true,
+						cwd,
+					}),
+				),
+			)
+			return JSON.parse(logs[0]!)
+		}
+		const expected = await rebase({ onto: "main", dryRun: true })
+		expect(await plan(undefined, checkout)).toMatchObject({
+			status: expected.status,
+			branch: expected.branch,
+		})
+		expect(await plan("tasks/alpha/TASK.md", root)).toMatchObject({
+			status: expected.status,
+			branch: expected.branch,
+		})
 	})
 
 	describe("conflicts", () => {

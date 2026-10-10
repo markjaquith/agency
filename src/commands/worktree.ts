@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
 import { WorktreeService } from "../services/WorktreeService"
+import { resolveTaskSelector } from "../workbase/item-selector"
 
 interface WorktreeOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -22,13 +23,11 @@ export const worktree = (options: WorktreeOptions = {}) =>
 	Effect.gen(function* () {
 		const worktrees = yield* WorktreeService
 		const { log } = createLoggers(options)
-		const root = options.cwd ?? process.cwd()
+		const cwd = options.cwd ?? process.cwd()
 		const subcommand = options.subcommand
-		const taskId = options.args?.[0]
-		const phaseId = options.args?.[1]
 
 		if (subcommand === "list") {
-			const inspections = yield* worktrees.list(root)
+			const inspections = yield* worktrees.list(cwd)
 			if (options.json) return log(JSON.stringify(inspections, null, 2))
 			for (const inspection of inspections) {
 				for (const checkout of inspection.checkouts) {
@@ -47,11 +46,19 @@ export const worktree = (options: WorktreeOptions = {}) =>
 			return
 		}
 
-		if (!taskId) {
+		if (
+			!["inspect", "prepare", "remove", "rebuild", "repair"].includes(
+				subcommand ?? "",
+			)
+		) {
 			return yield* Effect.fail(
-				new Error("Worktree command requires a task ID"),
+				new Error(`Unknown worktree subcommand '${subcommand ?? ""}'`),
 			)
 		}
+		const target = yield* resolveTaskSelector(options.args?.[0], cwd)
+		const root = target.root
+		const taskId = target.taskId
+		const phaseId = options.args?.[1] ?? target.phaseId
 		if (subcommand === "inspect") {
 			const inspection = yield* worktrees.inspect(taskId, phaseId, root)
 			if (options.json) return log(JSON.stringify(inspection, null, 2))
@@ -125,11 +132,15 @@ Inspect and maintain Agency-managed writable and reference workspaces.
 
 Commands:
   list                              List every managed checkout
-  inspect <task-id> [phase-id]      Show registration, branch, commit, ownership, and dirtiness
-  prepare <task-id> [phase-id]      Create or reuse declared worktrees
-  remove <task-id> [phase-id]       Remove clean worktrees while preserving branches
-  rebuild <task-id> [phase-id]      Remove and recreate clean, conflict-free worktrees
-  repair <task-id> [phase-id]       Repair safe registration issues or missing worktrees
+  inspect [task [phase-id]]         Show registration, branch, commit, ownership, and dirtiness
+  prepare [task [phase-id]]         Create or reuse declared worktrees
+  remove [task [phase-id]]          Remove clean worktrees while preserving branches
+  rebuild [task [phase-id]]         Remove and recreate clean, conflict-free worktrees
+  repair [task [phase-id]]          Repair safe registration issues or missing worktrees
+
+The task is an ID or a path to a task or phase document or directory; a phase
+path also selects that phase. When omitted, the task or phase containing the
+current directory is used.
 
 Options:
   --task <id>          Select a task without positional IDs

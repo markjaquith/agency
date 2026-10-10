@@ -13,14 +13,9 @@ interface ReviewOptions extends BaseCommandOptions {
 
 export const review = (options: ReviewOptions) =>
 	Effect.gen(function* () {
-		if (
-			(options.subcommand !== "refresh" && options.subcommand !== "finish") ||
-			(options.subcommand === "refresh" && !options.taskId)
-		) {
+		if (options.subcommand !== "refresh" && options.subcommand !== "finish") {
 			return yield* Effect.fail(
-				new Error(
-					"Usage: agency review refresh <task> | agency review finish [task-or-path]",
-				),
+				new Error("Usage: agency review <refresh|finish> [task]"),
 			)
 		}
 		const service = yield* ReviewService
@@ -41,20 +36,24 @@ export const review = (options: ReviewOptions) =>
 			return
 		}
 		const result = yield* service.refresh(
-			options.taskId!,
+			options.taskId,
 			options.cwd,
 			options.ifRevision,
 		)
 		log(
 			options.json
 				? JSON.stringify(result, null, 2)
-				: `Refreshed review '${options.taskId}' at ${result.commit}`,
+				: `Refreshed review '${result.taskId}' at ${result.commit}`,
 		)
 	})
 
 export const help = `
-Usage: agency review refresh <task-id> [--if-revision <hash>] [--json]
-       agency review finish [<task-id-or-path>] [--if-revision <hash>] [--json]
+Usage: agency review refresh [task] [--if-revision <hash>] [--json]
+       agency review finish [task] [--if-revision <hash>] [--json]
+
+The task is an ID or a path to the task document, its directory, or anything
+inside it, such as the review checkout. When omitted, the task containing the
+current directory is used.
 
 Subcommands:
   refresh    Fetch the review source explicitly and replace the pinned commit
@@ -62,6 +61,4 @@ Subcommands:
              move implicitly.
   finish     Mark an open, working, or delegated review task done. Reviews
              have no delivery pull request and need no completion summary.
-             The target is a task ID or a path inside the task directory;
-             it defaults to the current directory.
 `

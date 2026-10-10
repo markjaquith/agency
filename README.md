@@ -948,6 +948,27 @@ status, validation, graph export, reconciliation, and PR creation.
 Entity create, list, and show results include a stable SHA-256 `revision` of the
 complete Markdown document.
 
+### Item Selectors
+
+Commands that act on an existing epic, task, or phase accept the same positional
+selectors. A selector is an item ID or a path to the item's document or
+directory, or to anything inside it, including its generated `code/` checkouts.
+When the selector is omitted, the item containing the current directory is used.
+A bare selector is an ID whenever that item exists, so existing ID usage is
+unchanged. A `[phase]` selector is `<task> <phase-id>`, a phase path, or a
+phase ID of the task containing the current directory. Restore and archive show
+selectors refer to archived items under `archive/`. For example, from a phase
+directory:
+
+```text
+agency phase status working --if-revision <hash>
+agency task show .
+agency worktree inspect
+```
+
+`agency pr create` keeps its `gh pr create` passthrough when no target is given;
+use `agency pr create .` for the current task or phase.
+
 ### Epics
 
 ```text
@@ -956,10 +977,10 @@ agency epic new <id> --ticket-url <url> [--description <text>]
 agency epic create <id> --ticket-url <url> [--description <text>] [--json]
   --repo <alias>:<ref> [--repo <alias>:<ref>...]
 agency epic list [filters] [--json]
-agency epic show <id> [--json]
-agency epic update <id> [--ticket-url <url>] [--description <text>]
+agency epic show [epic] [--json]
+agency epic update [epic] [--ticket-url <url>] [--description <text>]
   [--clear-description] [--repo <alias>:<ref>...] [--json]
-agency epic rename <id> <new-id> [--json]
+agency epic rename [epic] <new-id> [--json]
 ```
 
 Creating a task with `--epic <id>` adds the task to the epic and writes the task
@@ -1061,8 +1082,8 @@ Create a pinned, read-only review task from the selected alias's origin:
 ```text
 agency task create <id> --review <alias> --pull-request <url-or-number>
 agency task create <id> --review <alias> --ref <remote-ref>
-agency review refresh <id> [--if-revision <hash>] [--json]
-agency review finish [<id-or-path>] [--if-revision <hash>] [--json]
+agency review refresh [task] [--if-revision <hash>] [--json]
+agency review finish [task] [--if-revision <hash>] [--json]
 ```
 
 Review creation fetches the source and records its exact 40-character commit.
@@ -1075,9 +1096,8 @@ review checkouts block refresh and cleanup. Review tasks support the normal stat
 lifecycle, but reject phase conversion and delivery PR operations. Because a
 review has no delivery pull request, `review finish` marks an open, working, or
 delegated review done without the `--no-pull-request --summary` requirement
-that applies to other work. Its target may be a task ID or a path inside the
-task directory, such as `.` or the review checkout; it defaults to the current
-directory.
+that applies to other work. Both commands take a standard task selector (see
+Item Selectors), such as `.` or the review checkout path.
 Each active or archived review task owns one internal task-scoped pin ref. A
 refresh advances that ref transactionally; failed creation removes it. Archiving
 retains the pin so a deleted source can still be restored and inspected.
@@ -1102,13 +1122,13 @@ Inspect tasks:
 
 ```text
 agency task list [filters] [--json]
-agency task show <id> [--json]
-agency task status <id> <open|working|done|dropped>
+agency task show [task] [--json]
+agency task status [task] <open|working|done|dropped>
   [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
-agency task update <id> [metadata options] [--json]
-agency task rename <id> <new-id> [--json]
-agency task move <id> (--epic <epic-id> | --no-epic) [--json]
-agency task dependency <add|remove> <task-id> <dependency-id> [--json]
+agency task update [task] [metadata options] [--json]
+agency task rename [task] <new-id> [--json]
+agency task move [task] (--epic <epic-id> | --no-epic) [--json]
+agency task dependency <add|remove> [task] <dependency> [--json]
 ```
 
 Task updates can replace or clear descriptions, tickets, repository references,
@@ -1139,21 +1159,20 @@ phase. Dependencies remain explicit through `--depends-on`.
 ### Phases
 
 ```text
-agency phase new <task-id> <phase-id>
+agency phase new [task] <phase-id>
   --repo <alias> --branch <name> --base <name> [--work [--auto]]
-agency phase create <task-id> <phase-id>
+agency phase create [task] <phase-id>
   --repo <alias> --branch <name> --base <name>
   [--description <text>] [--reference <alias>:<ref>...]
   [--depends-on <phase-id>...] [--first-phase <phase-id>] [--json]
 
-agency phase list <task-id> [filters] [--json]
-agency phase show <task-id> <phase-id> [--json]
-agency phase status <task-id> <phase-id> <open|working|done|dropped>
+agency phase list [task] [filters] [--json]
+agency phase show [phase] [--json]
+agency phase status [phase] <open|working|done|dropped>
   [--no-pull-request --summary <text> [--evidence-url <url>]] [--json]
-agency phase update <task-id> <phase-id> [metadata options] [--json]
-agency phase rename <task-id> <phase-id> <new-id> [--json]
-agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>
-  [--json]
+agency phase update [phase] [metadata options] [--json]
+agency phase rename [phase] <new-id> [--json]
+agency phase dependency <add|remove> [phase] <dependency> [--json]
 ```
 
 Dependency additions append without reordering existing declarations and reject
@@ -1197,17 +1216,17 @@ labels remain complete without color or icon fonts.
 
 ```text
 agency archive list [--kind <kind>] [--status <status>] [--repository <alias>]
-agency archive show <epic|task> <id>
-agency archive show phase <task-id> <phase-id>
-agency archive epic <epic-id> [--dry-run] [--json]
-agency archive task <task-id> [--dry-run] [--json]
+agency archive show <epic|task> [id-or-path]
+agency archive show phase [phase]
+agency archive epic [epic] [--dry-run] [--json]
+agency archive task [task] [--dry-run] [--json]
 agency archive tasks [--dry-run] [--json]
-agency archive phase <task-id> <phase-id> [--dry-run] [--json]
+agency archive phase [phase] [--dry-run] [--json]
 agency archive <path> [--dry-run] [--json]
 agency archive [--dry-run] [--json]
-agency restore epic <epic-id> [--dry-run] [--json]
-agency restore task <task-id> [--dry-run] [--json]
-agency restore phase <task-id> <phase-id> [--dry-run] [--json]
+agency restore epic [epic] [--dry-run] [--json]
+agency restore task [task] [--dry-run] [--json]
+agency restore phase [phase] [--dry-run] [--json]
 ```
 
 With no target, `agency archive` infers the active epic, task, or phase containing
@@ -1272,9 +1291,9 @@ agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-
 agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--json]
-agency rebase <task-id> [phase-id] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] [--json]
-agency rebase <task-id> [phase-id] --continue | --abort [--json]
-agency pr create <task-id> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
+agency rebase [task [phase-id]] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] [--json]
+agency rebase [task [phase-id]] --continue | --abort [--json]
+agency pr create <task> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
 agency pr [args...]
 ```
 

@@ -101,6 +101,12 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 		remediation:
 			"Run the command from an Agency entity or provide a valid target.",
 	},
+	ItemSelectorError: {
+		code: "ITEM_SELECTOR_INVALID",
+		retryable: false,
+		remediation:
+			"Provide an item ID or a path inside the intended epic, task, or phase, or run the command from inside it.",
+	},
 	GraphError: {
 		code: "GRAPH_ERROR",
 		retryable: false,

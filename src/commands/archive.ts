@@ -2,6 +2,11 @@ import { Effect } from "effect"
 import { ArchiveService } from "../services/ArchiveService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import {
+	resolveEpicSelector,
+	resolvePhaseSelector,
+	resolveTaskSelector,
+} from "../workbase/item-selector"
 
 interface ArchiveOptions extends BaseCommandOptions {
 	readonly type?: string
@@ -25,8 +30,9 @@ export const archive = (options: ArchiveOptions) =>
 		const cwd = options.cwd ?? process.cwd()
 		const [id, phaseId] = options.args
 		let archiveType = options.type
-		let archiveId = id
+		let archiveId: string | undefined
 		let archiveTaskId: string | undefined
+		let root = cwd
 
 		if (!archiveType) {
 			const target = yield* archives.resolvePathTarget(id ?? ".", cwd)
@@ -61,44 +67,64 @@ export const archive = (options: ArchiveOptions) =>
 		if (options.type === "show") {
 			const [kindValue, firstId, secondId] = options.args
 			const kind = archiveKind(kindValue)
-			if (
-				!kind ||
-				!firstId ||
-				(kind === "phase" ? !secondId : secondId !== undefined)
-			) {
+			if (!kind || (kind !== "phase" && secondId !== undefined)) {
 				return yield* Effect.fail(
 					new Error(
-						"Usage: agency archive show <epic|task> <id> | phase <task-id> <phase-id>",
+						"Usage: agency archive show <epic|task> [id-or-path] | phase [<phase> | <task> <phase-id>]",
 					),
 				)
 			}
+			const archived = { archived: true }
+			let target: { root: string; id: string; taskId?: string }
+			if (kind === "epic") {
+				const epic = yield* resolveEpicSelector(firstId, cwd, archived)
+				target = { root: epic.root, id: epic.epicId }
+			} else if (kind === "task") {
+				const task = yield* resolveTaskSelector(firstId, cwd, archived)
+				target = { root: task.root, id: task.taskId }
+			} else {
+				const phase = yield* resolvePhaseSelector(
+					firstId,
+					secondId,
+					cwd,
+					archived,
+				)
+				target = { root: phase.root, id: phase.phaseId, taskId: phase.taskId }
+			}
 			const record = yield* archives.show(
 				kind,
-				kind === "phase" ? secondId! : firstId,
-				kind === "phase" ? firstId : undefined,
-				cwd,
+				target.id,
+				target.taskId,
+				target.root,
 			)
 			log(options.json ? JSON.stringify(record, null, 2) : record.content)
 			return
 		}
 
+		if (options.type === "epic") {
+			const target = yield* resolveEpicSelector(id, cwd)
+			root = target.root
+			archiveId = target.epicId
+		} else if (options.type === "task") {
+			const target = yield* resolveTaskSelector(id, cwd)
+			root = target.root
+			archiveId = target.taskId
+		} else if (options.type === "phase") {
+			const target = yield* resolvePhaseSelector(id, phaseId, cwd)
+			root = target.root
+			archiveTaskId = target.taskId
+			archiveId = target.phaseId
+		}
+
 		let result
 		switch (archiveType) {
 			case "epic":
-				if (!archiveId)
-					return yield* Effect.fail(
-						new Error("Usage: agency archive epic <epic-id>"),
-					)
-				result = yield* archives.archiveEpic(archiveId, cwd, {
+				result = yield* archives.archiveEpic(archiveId!, root, {
 					dryRun: options.dryRun,
 				})
 				break
 			case "task":
-				if (!archiveId)
-					return yield* Effect.fail(
-						new Error("Usage: agency archive task <task-id>"),
-					)
-				result = yield* archives.archiveTask(archiveId, cwd, {
+				result = yield* archives.archiveTask(archiveId!, root, {
 					dryRun: options.dryRun,
 				})
 				break
@@ -108,14 +134,10 @@ export const archive = (options: ArchiveOptions) =>
 				})
 				break
 			case "phase":
-				if (!(archiveTaskId && archiveId) && (!id || !phaseId))
-					return yield* Effect.fail(
-						new Error("Usage: agency archive phase <task-id> <phase-id>"),
-					)
 				result = yield* archives.archivePhase(
-					archiveTaskId ?? id!,
-					archiveTaskId ? archiveId! : phaseId!,
-					cwd,
+					archiveTaskId!,
+					archiveId!,
+					root,
 					{
 						dryRun: options.dryRun,
 					},
@@ -166,12 +188,17 @@ within one of those items infers it too.
 Commands:
   [path]                                 Archive the containing epic, task, or phase
   list [filters]                         List archived work
-  show <type> <id>                       Show an archived epic or task
-  show phase <task-id> <phase-id>        Show an archived phase
-  epic <epic-id>                         Archive an epic and its tasks
-  task <task-id>                         Archive a task
-  tasks                                 Archive all eligible terminal tasks
-  phase <task-id> <phase-id>             Archive a phase
+  show <epic|task> [id-or-path]          Show an archived epic or task
+  show phase [<phase> | <task> <phase-id>]
+                                         Show an archived phase
+  epic [epic]                            Archive an epic and its tasks
+  task [task]                            Archive a task
+  tasks                                  Archive all eligible terminal tasks
+  phase [<phase> | <task> <phase-id>]    Archive a phase
+
+Item selectors accept an ID or a path to the item's document or directory and
+default to the item containing the current directory. Show selectors refer to
+archived items.
 
 Options:
   --kind <kind>                          Filter list by kind (repeatable)

@@ -10,6 +10,8 @@ interface LeafCommand {
 	readonly required?: readonly string[]
 	readonly repeatable?: readonly string[]
 	readonly conflicts?: readonly (readonly [string, string])[]
+	/** Minimum positionals when every target selector slot is explicit. */
+	readonly targetMinArgs?: number
 }
 
 interface CommandDefinition {
@@ -374,14 +376,14 @@ const commands = {
 				conflicts: viewConflicts,
 			},
 			show: {
-				usage: "agency epic show <id> [--json]",
-				minArgs: 1,
+				usage: "agency epic show [epic] [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: ["json", "epic"],
 			},
 			update: {
-				usage: "agency epic update <id> [options] [--json]",
-				minArgs: 1,
+				usage: "agency epic update [epic] [options] [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: [
 					"description",
@@ -395,8 +397,8 @@ const commands = {
 				conflicts: [["description", "clear-description"]],
 			},
 			rename: {
-				usage: "agency epic rename <id> <new-id> [--json]",
-				minArgs: 2,
+				usage: "agency epic rename [epic] <new-id> [--json]",
+				minArgs: 1,
 				maxArgs: 2,
 				options: ["if-revision", "json"],
 			},
@@ -464,8 +466,8 @@ const commands = {
 			},
 			handoff: {
 				usage:
-					"agency task handoff <source-task-id> <new-task-id> --repo <alias> [--source-phase <phase-id>] [options]",
-				minArgs: 2,
+					"agency task handoff [source-task] <new-task-id> --repo <alias> [--source-phase <phase-id>] [options]",
+				minArgs: 1,
 				maxArgs: 2,
 				options: [
 					"ticket-url",
@@ -490,14 +492,16 @@ const commands = {
 				conflicts: viewConflicts,
 			},
 			show: {
-				usage: "agency task show <id> [--json]",
-				minArgs: 1,
+				usage: "agency task show [task] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 1,
 				options: ["json", "task"],
 			},
 			status: {
-				usage: "agency task status <id> <status> [options] [--json]",
-				minArgs: 2,
+				usage: "agency task status [task] <status> [options] [--json]",
+				minArgs: 1,
+				targetMinArgs: 2,
 				maxArgs: 2,
 				options: [
 					"json",
@@ -509,8 +513,8 @@ const commands = {
 				],
 			},
 			update: {
-				usage: "agency task update <id> [options] [--json]",
-				minArgs: 1,
+				usage: "agency task update [task] [options] [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: [
 					"ticket-url",
@@ -536,22 +540,22 @@ const commands = {
 				],
 			},
 			rename: {
-				usage: "agency task rename <id> <new-id> [--json]",
-				minArgs: 2,
+				usage: "agency task rename [task] <new-id> [--json]",
+				minArgs: 1,
 				maxArgs: 2,
 				options: ["if-revision", "json"],
 			},
 			move: {
-				usage: "agency task move <id> (--epic <id> | --no-epic) [--json]",
-				minArgs: 1,
+				usage: "agency task move [task] (--epic <id> | --no-epic) [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: ["epic", "no-epic", "if-revision", "json"],
 				conflicts: [["epic", "no-epic"]],
 			},
 			dependency: {
 				usage:
-					"agency task dependency <add|remove> <task-id> <dependency-id> [--json]",
-				minArgs: 3,
+					"agency task dependency <add|remove> [task] <dependency> [--json]",
+				minArgs: 2,
 				maxArgs: 3,
 				options: ["if-revision", "json"],
 			},
@@ -573,8 +577,9 @@ const commands = {
 		subcommands: {
 			new: {
 				usage:
-					"agency phase new <task-id> <phase-id> --repo <alias> --base <name> [--branch <name>] [options] [--work [--auto]]",
-				minArgs: 2,
+					"agency phase new [task] <phase-id> --repo <alias> --base <name> [--branch <name>] [options] [--work [--auto]]",
+				minArgs: 1,
+				targetMinArgs: 2,
 				maxArgs: 2,
 				options: [
 					"description",
@@ -596,8 +601,9 @@ const commands = {
 			},
 			create: {
 				usage:
-					"agency phase create <task-id> <phase-id> --repo <alias> --base <name> [--branch <name>] [options]",
-				minArgs: 2,
+					"agency phase create [task] <phase-id> --repo <alias> --base <name> [--branch <name>] [options]",
+				minArgs: 1,
+				targetMinArgs: 2,
 				maxArgs: 2,
 				options: [
 					"description",
@@ -615,23 +621,26 @@ const commands = {
 				repeatable: ["reference", "depends-on"],
 			},
 			list: {
-				usage: "agency phase list <task-id> [filters] [--json]",
-				minArgs: 1,
+				usage: "agency phase list [task] [filters] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 1,
 				options: ["json", "task", ...viewOptionNames],
 				repeatable: ["status", "repository"],
 				conflicts: viewConflicts,
 			},
 			show: {
-				usage: "agency phase show <task-id> <phase-id> [--json]",
-				minArgs: 2,
+				usage: "agency phase show [<phase> | <task> <phase-id>] [--json]",
+				minArgs: 0,
+				targetMinArgs: 2,
 				maxArgs: 2,
 				options: ["json", "task", "phase"],
 			},
 			status: {
 				usage:
-					"agency phase status <task-id> <phase-id> <status> [options] [--json]",
-				minArgs: 3,
+					"agency phase status [<phase> | <task> <phase-id>] <status> [options] [--json]",
+				minArgs: 1,
+				targetMinArgs: 3,
 				maxArgs: 3,
 				options: [
 					"json",
@@ -644,8 +653,9 @@ const commands = {
 				],
 			},
 			update: {
-				usage: "agency phase update <task-id> <phase-id> [options] [--json]",
-				minArgs: 2,
+				usage:
+					"agency phase update [<phase> | <task> <phase-id>] [options] [--json]",
+				minArgs: 0,
 				maxArgs: 2,
 				options: [
 					"description",
@@ -668,15 +678,16 @@ const commands = {
 				],
 			},
 			rename: {
-				usage: "agency phase rename <task-id> <phase-id> <new-id> [--json]",
-				minArgs: 3,
+				usage:
+					"agency phase rename [<phase> | <task> <phase-id>] <new-id> [--json]",
+				minArgs: 1,
 				maxArgs: 3,
 				options: ["if-revision", "json"],
 			},
 			dependency: {
 				usage:
-					"agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id> [--json]",
-				minArgs: 4,
+					"agency phase dependency <add|remove> [<phase> | <task> <phase-id>] <dependency> [--json]",
+				minArgs: 2,
 				maxArgs: 4,
 				options: ["if-revision", "json"],
 			},
@@ -723,20 +734,22 @@ const commands = {
 			},
 			show: {
 				usage:
-					"agency archive show <epic|task> <id> | phase <task-id> <phase-id> [--json]",
-				minArgs: 2,
+					"agency archive show <epic|task> [id-or-path] | phase [<phase> | <task> <phase-id>] [--json]",
+				minArgs: 1,
 				maxArgs: 3,
 				options: ["json"],
 			},
 			epic: {
-				usage: "agency archive epic <epic-id> [--dry-run] [--json]",
-				minArgs: 1,
+				usage: "agency archive epic [epic] [--dry-run] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 1,
 				options: ["dry-run", "json", "epic"],
 			},
 			task: {
-				usage: "agency archive task <task-id> [--dry-run] [--json]",
-				minArgs: 1,
+				usage: "agency archive task [task] [--dry-run] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 1,
 				options: ["dry-run", "json", "task"],
 			},
@@ -747,8 +760,10 @@ const commands = {
 				options: ["dry-run", "json"],
 			},
 			phase: {
-				usage: "agency archive phase <task-id> <phase-id> [--dry-run] [--json]",
-				minArgs: 2,
+				usage:
+					"agency archive phase [<phase> | <task> <phase-id>] [--dry-run] [--json]",
+				minArgs: 0,
+				targetMinArgs: 2,
 				maxArgs: 2,
 				options: ["dry-run", "json", "task", "phase"],
 			},
@@ -763,20 +778,24 @@ const commands = {
 		},
 		subcommands: {
 			epic: {
-				usage: "agency restore epic <epic-id> [--dry-run] [--json]",
-				minArgs: 1,
+				usage: "agency restore epic [epic] [--dry-run] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 1,
 				options: ["dry-run", "json", "epic"],
 			},
 			task: {
-				usage: "agency restore task <task-id> [--dry-run] [--json]",
-				minArgs: 1,
+				usage: "agency restore task [task] [--dry-run] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 1,
 				options: ["dry-run", "json", "task"],
 			},
 			phase: {
-				usage: "agency restore phase <task-id> <phase-id> [--dry-run] [--json]",
-				minArgs: 2,
+				usage:
+					"agency restore phase [<phase> | <task> <phase-id>] [--dry-run] [--json]",
+				minArgs: 0,
+				targetMinArgs: 2,
 				maxArgs: 2,
 				options: ["dry-run", "json", "task", "phase"],
 			},
@@ -784,22 +803,20 @@ const commands = {
 	},
 	review: {
 		usage:
-			"agency review <refresh|finish> [task-id-or-path] [--if-revision <hash>] [--json]",
+			"agency review <refresh|finish> [task] [--if-revision <hash>] [--json]",
 		options: {
 			...outputOptions,
 			"if-revision": { type: "string" },
 		},
 		subcommands: {
 			refresh: {
-				usage:
-					"agency review refresh <task-id> [--if-revision <hash>] [--json]",
-				minArgs: 1,
+				usage: "agency review refresh [task] [--if-revision <hash>] [--json]",
+				minArgs: 0,
 				maxArgs: 1,
 				options: ["if-revision", "json"],
 			},
 			finish: {
-				usage:
-					"agency review finish [task-id-or-path] [--if-revision <hash>] [--json]",
+				usage: "agency review finish [task] [--if-revision <hash>] [--json]",
 				minArgs: 0,
 				maxArgs: 1,
 				options: ["if-revision", "json"],
@@ -822,36 +839,41 @@ const commands = {
 				options: ["json"],
 			},
 			inspect: {
-				usage: "agency worktree inspect <task-id> [phase-id] [--json]",
-				minArgs: 1,
+				usage: "agency worktree inspect [task [phase-id]] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 2,
 				options: ["json", "task", "phase"],
 			},
 			prepare: {
 				usage:
-					"agency worktree prepare <task-id> [phase-id] [--dry-run] [--force] [--json]",
-				minArgs: 1,
+					"agency worktree prepare [task [phase-id]] [--dry-run] [--force] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 2,
 				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			remove: {
 				usage:
-					"agency worktree remove <task-id> [phase-id] [--dry-run] [--force] [--json]",
-				minArgs: 1,
+					"agency worktree remove [task [phase-id]] [--dry-run] [--force] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 2,
 				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			rebuild: {
 				usage:
-					"agency worktree rebuild <task-id> [phase-id] [--dry-run] [--force] [--json]",
-				minArgs: 1,
+					"agency worktree rebuild [task [phase-id]] [--dry-run] [--force] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 2,
 				options: ["dry-run", "force", "json", "task", "phase"],
 			},
 			repair: {
 				usage:
-					"agency worktree repair <task-id> [phase-id] [--dry-run] [--force] [--json]",
-				minArgs: 1,
+					"agency worktree repair [task [phase-id]] [--dry-run] [--force] [--json]",
+				minArgs: 0,
+				targetMinArgs: 1,
 				maxArgs: 2,
 				options: ["dry-run", "force", "json", "task", "phase"],
 			},
@@ -904,7 +926,7 @@ const commands = {
 		},
 	},
 	pr: {
-		usage: "agency pr create <task-id> [phase-id] | agency pr [args...]",
+		usage: "agency pr create <task> [phase-id] | agency pr [args...]",
 		options: {
 			...outputOptions,
 			draft: { type: "boolean" },
@@ -918,7 +940,7 @@ const commands = {
 		},
 		subcommands: {
 			create: {
-				usage: "agency pr create <task-id> [phase-id] [options]",
+				usage: "agency pr create <task> [phase-id] [options]",
 				minArgs: 1,
 				maxArgs: 2,
 				options: [
@@ -948,7 +970,7 @@ const commands = {
 	},
 	rebase: {
 		usage:
-			"agency rebase <task-id> [phase-id] [--onto <branch>] | --continue | --abort",
+			"agency rebase [task [phase-id]] [--onto <branch>] | --continue | --abort",
 		options: {
 			...outputOptions,
 			onto: { type: "string" },
@@ -960,8 +982,8 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency rebase <task-id> [phase-id] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] | --continue | --abort [--json]",
-			minArgs: 1,
+				"agency rebase [task [phase-id]] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] | --continue | --abort [--json]",
+			minArgs: 0,
 			maxArgs: 2,
 			options: [
 				"onto",
@@ -1247,7 +1269,10 @@ function applyEntitySelectors(
 			spec.usage,
 		)
 	}
-	const requiredSlots = slots.slice(0, spec.minArgs - trailingCount)
+	const requiredSlots = slots.slice(
+		0,
+		Math.max(0, (spec.targetMinArgs ?? spec.minArgs) - trailingCount),
+	)
 	for (const slot of requiredSlots) {
 		if (values[slot] === undefined) {
 			throw usageError(

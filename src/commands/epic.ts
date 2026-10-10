@@ -8,6 +8,10 @@ import { getWorkViews } from "../work-view"
 import { parseRepositoryReferences } from "../workbase/repository-reference"
 import { GraphMutationService } from "../services/GraphMutationService"
 import { work as startWork, type StartWork } from "./work"
+import {
+	resolveEpicSelector,
+	splitSelectorArgs,
+} from "../workbase/item-selector"
 
 interface EpicOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -112,9 +116,11 @@ export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 			}
 
 			case "show": {
-				const id = options.args[0]
-				if (!id) return yield* Effect.fail(new Error("Epic ID is required"))
-				const record = yield* epics.show(id, cwd)
+				const { root, epicId } = yield* resolveEpicSelector(
+					options.args[0],
+					cwd,
+				)
+				const record = yield* epics.show(epicId, root)
 				const { content: _, ...output } = record
 				log(
 					options.json
@@ -125,8 +131,10 @@ export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 			}
 
 			case "update": {
-				const id = options.args[0]
-				if (!id) return yield* Effect.fail(new Error("Epic ID is required"))
+				const { root, epicId: id } = yield* resolveEpicSelector(
+					options.args[0],
+					cwd,
+				)
 				const output = yield* mutations.updateEpic(
 					id,
 					{
@@ -137,7 +145,7 @@ export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 								? undefined
 								: parseRepositoryReferences(options.repos),
 					},
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -149,16 +157,18 @@ export const epic = (options: EpicOptions, work: StartWork = startWork) =>
 			}
 
 			case "rename": {
-				const [id, newId] = options.args
-				if (!id || !newId) {
-					return yield* Effect.fail(
-						new Error("Epic ID and new ID are required"),
-					)
+				const {
+					selectors: [selector],
+					operands: [newId],
+				} = splitSelectorArgs(options.args, 1)
+				if (!newId) {
+					return yield* Effect.fail(new Error("New epic ID is required"))
 				}
+				const { root, epicId: id } = yield* resolveEpicSelector(selector, cwd)
 				const output = yield* mutations.renameEpic(
 					id,
 					newId,
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -185,9 +195,13 @@ Subcommands:
   new <id>              Create an epic, optionally starting work
   create <id>           Create an epic
   list                  List epics
-  show <id>             Show an epic
-  update <id>           Update epic metadata
-  rename <id> <new-id>  Rename an epic and update task references
+  show [epic]           Show an epic
+  update [epic]         Update epic metadata
+  rename [epic] <new-id>
+                        Rename an epic and update task references
+
+An [epic] selector is an epic ID or a path to an epic document or directory.
+When omitted, the epic containing the current directory is used.
 
 Create options:
   --ticket-url <url>    External ticket URL
