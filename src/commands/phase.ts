@@ -10,6 +10,12 @@ import { GraphMutationService } from "../services/GraphMutationService"
 import { work as startWork, type StartWork } from "./work"
 import { TaskService } from "../services/TaskService"
 import { resolveBranchName } from "../workbase/branch-name-command"
+import {
+	resolveDependencySelector,
+	resolvePhaseSelector,
+	resolveTaskSelector,
+	splitSelectorArgs,
+} from "../workbase/item-selector"
 
 interface PhaseOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -46,19 +52,29 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 		const mutations = yield* GraphMutationService
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
-		const [taskId, phaseId] = options.args
+		const selectPhase = (trailing: number) => {
+			const { selectors, operands } = splitSelectorArgs(options.args, trailing)
+			return resolvePhaseSelector(selectors[0], selectors[1], cwd).pipe(
+				Effect.map((target) => ({ ...target, operands })),
+			)
+		}
 
 		switch (options.subcommand) {
 			case "new":
 			case "create": {
-				if (!taskId || !phaseId || !options.repo || !options.base) {
+				const {
+					selectors: [selector],
+					operands: [phaseId],
+				} = splitSelectorArgs(options.args, 1)
+				if (!phaseId || !options.repo || !options.base) {
 					return yield* Effect.fail(
 						new Error(
-							"Usage: agency phase create <task-id> <phase-id> --repo <alias> --base <name> [--branch <name>]",
+							"Usage: agency phase create [task] <phase-id> --repo <alias> --base <name> [--branch <name>]",
 						),
 					)
 				}
-				const parent = yield* tasks.show(taskId, cwd)
+				const { root, taskId } = yield* resolveTaskSelector(selector, cwd)
+				const parent = yield* tasks.show(taskId, root)
 				const branch =
 					options.branch ??
 					(yield* resolveBranchName({
@@ -69,7 +85,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						repo: options.repo,
 						base: options.base,
 						defaultBranch: `task/${taskId}-${phaseId}`,
-						startPath: cwd,
+						startPath: root,
 					}))
 				const record = yield* phases.create(
 					{
@@ -83,7 +99,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						dependsOn: options.dependsOn,
 						firstPhase: options.firstPhase,
 					},
-					cwd,
+					root,
 				)
 				const { content: _, ...output } = record
 				log(
@@ -96,7 +112,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						taskId: record.taskId,
 						phaseId: record.id,
 						auto: options.auto,
-						cwd,
+						cwd: root,
 						inputAllowed: options.inputAllowed,
 						silent: options.silent,
 						verbose: options.verbose,
@@ -105,10 +121,13 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 				return
 			}
 			case "list": {
-				if (!taskId) return yield* Effect.fail(new Error("Task ID is required"))
-				const records = yield* phases.list(taskId, cwd)
-				const { phaseRows } = yield* getWorkViews({
+				const { root, taskId } = yield* resolveTaskSelector(
+					options.args[0],
 					cwd,
+				)
+				const records = yield* phases.list(taskId, root)
+				const { phaseRows } = yield* getWorkViews({
+					cwd: root,
 					statuses: options.statuses,
 					repositories: options.repositories,
 					ready: options.ready,
@@ -157,12 +176,8 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 				return
 			}
 			case "show": {
-				if (!taskId || !phaseId) {
-					return yield* Effect.fail(
-						new Error("Task ID and phase ID are required"),
-					)
-				}
-				const record = yield* phases.show(taskId, phaseId, cwd)
+				const { root, taskId, phaseId } = yield* selectPhase(0)
+				const record = yield* phases.show(taskId, phaseId, root)
 				const { content: _, ...output } = record
 				log(
 					options.json
@@ -172,11 +187,16 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 				return
 			}
 			case "status": {
-				const status = options.args[2]
-				if (!taskId || !phaseId || !status) {
+				const {
+					root,
+					taskId,
+					phaseId,
+					operands: [status],
+				} = yield* selectPhase(1)
+				if (!status) {
 					return yield* Effect.fail(
 						new Error(
-							"Usage: agency phase status <task-id> <phase-id> <status>",
+							"Usage: agency phase status [<phase> | <task> <phase-id>] <status>",
 						),
 					)
 				}
@@ -184,7 +204,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 					taskId,
 					phaseId,
 					status,
-					cwd,
+					root,
 					options.noPullRequest
 						? {
 								summary: options.summary ?? "",
@@ -205,11 +225,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 				return
 			}
 			case "update": {
-				if (!taskId || !phaseId) {
-					return yield* Effect.fail(
-						new Error("Task ID and phase ID are required"),
-					)
-				}
+				const { root, taskId, phaseId } = yield* selectPhase(0)
 				const output = yield* mutations.updatePhase(
 					taskId,
 					phaseId,
@@ -225,7 +241,7 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 						base: options.base,
 						pr: options.clearPr ? null : options.prUrl,
 					},
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -236,17 +252,20 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 				return
 			}
 			case "rename": {
-				const newId = options.args[2]
-				if (!taskId || !phaseId || !newId) {
-					return yield* Effect.fail(
-						new Error("Task ID, phase ID, and new ID are required"),
-					)
+				if (options.args.length === 0) {
+					return yield* Effect.fail(new Error("New phase ID is required"))
 				}
+				const {
+					root,
+					taskId,
+					phaseId,
+					operands: [newId],
+				} = yield* selectPhase(1)
 				const output = yield* mutations.renamePhase(
 					taskId,
 					phaseId,
-					newId,
-					cwd,
+					newId!,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -257,26 +276,34 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 				return
 			}
 			case "dependency": {
-				const [operation, dependencyTaskId, dependencyPhaseId, dependencyId] =
-					options.args
-				if (
-					(operation !== "add" && operation !== "remove") ||
-					!dependencyTaskId ||
-					!dependencyPhaseId ||
-					!dependencyId
-				) {
+				const [operation, ...rest] = options.args
+				const {
+					selectors: [selector, selectedPhaseId],
+					operands: [dependency],
+				} = splitSelectorArgs(rest, 1)
+				if ((operation !== "add" && operation !== "remove") || !dependency) {
 					return yield* Effect.fail(
 						new Error(
-							"Usage: agency phase dependency <add|remove> <task-id> <phase-id> <dependency-id>",
+							"Usage: agency phase dependency <add|remove> [<phase> | <task> <phase-id>] <dependency>",
 						),
 					)
 				}
+				const {
+					root,
+					taskId: dependencyTaskId,
+					phaseId: dependencyPhaseId,
+				} = yield* resolvePhaseSelector(selector, selectedPhaseId, cwd)
+				const dependencyId = yield* resolveDependencySelector(
+					"phase",
+					dependency,
+					cwd,
+				)
 				const output = yield* mutations.mutatePhaseDependency(
 					operation,
 					dependencyTaskId,
 					dependencyPhaseId,
 					dependencyId,
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -296,20 +323,26 @@ export const phase = (options: PhaseOptions, work: StartWork = startWork) =>
 	})
 
 export const help = `
-Usage: agency phase <subcommand> <task-id> [phase-id]
+Usage: agency phase <subcommand> [selector] [arguments]
 
 Subcommands:
-  new <task> <phase>    Create a phase, optionally starting work
-  create <task> <phase> Create a phase
-  list <task>           List task phases
-  show <task> <phase>   Show a phase
-  status <task> <phase> <status>
+  new [task] <phase-id> Create a phase, optionally starting work
+  create [task] <phase-id>
+                        Create a phase
+  list [task]           List task phases
+  show [phase]          Show a phase
+  status [phase] <status>
                         Set open, working, dropped, or explicit non-PR done
-  update <task> <phase> Update phase metadata
-  rename <task> <phase> <new-id>
+  update [phase]        Update phase metadata
+  rename [phase] <new-id>
                         Rename a phase and update dependencies
-  dependency <operation> <task> <phase> <dependency>
+  dependency <operation> [phase] <dependency>
                         Add or remove a phase dependency
+
+A [task] selector is a task ID or a path to a task document or directory. A
+[phase] selector is <task> <phase-id>, a path to a phase document or directory,
+or a phase ID of the task containing the current directory. When omitted, the
+task or phase containing the current directory is used.
 
 Mutation option:
   --if-revision <hash>  Require the target's current revision

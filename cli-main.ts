@@ -301,7 +301,7 @@ const commands: Record<string, Command> = {
 			}
 			await runCommand(
 				rebase({
-					taskId: args[0]!,
+					taskId: args[0],
 					phaseId: args[1],
 					onto: options.onto,
 					from: options.from,

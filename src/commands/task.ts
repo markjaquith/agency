@@ -18,6 +18,11 @@ import {
 	normalizeRecalledContext,
 } from "../workbase/execution-contract"
 import { resolveBranchName } from "../workbase/branch-name-command"
+import {
+	resolveDependencySelector,
+	resolveTaskSelector,
+	splitSelectorArgs,
+} from "../workbase/item-selector"
 
 interface TaskOptions extends BaseCommandOptions {
 	readonly subcommand?: string
@@ -351,17 +356,19 @@ export const task = (
 				return
 			}
 			case "handoff": {
-				const [sourceTaskId, id] = options.args
-				if (!sourceTaskId || !id) {
-					return yield* Effect.fail(
-						new Error("Source task ID and new task ID are required"),
-					)
+				const {
+					selectors: [sourceSelector],
+					operands: [id],
+				} = splitSelectorArgs(options.args, 1)
+				if (!id) {
+					return yield* Effect.fail(new Error("New task ID is required"))
 				}
 				if (!options.repo) {
 					return yield* Effect.fail(
 						new Error("Writable repository is required for task handoff"),
 					)
 				}
+				const source = yield* resolveTaskSelector(sourceSelector, cwd)
 				const ticketUrl = options.ticketUrl?.trim() || null
 				const base = options.base ?? "main"
 				const branch =
@@ -373,12 +380,12 @@ export const task = (
 						repo: options.repo,
 						base,
 						defaultBranch: `task/${id}`,
-						startPath: cwd,
+						startPath: source.root,
 					}))
 				const output = yield* tasks.handoff(
 					{
-						sourceTaskId,
-						sourcePhaseId: options.sourcePhase,
+						sourceTaskId: source.taskId,
+						sourcePhaseId: options.sourcePhase ?? source.phaseId,
 						id,
 						ticketUrl,
 						description: options.description?.trim() || undefined,
@@ -388,7 +395,7 @@ export const task = (
 						branch,
 						base,
 					},
-					cwd,
+					source.root,
 				)
 				log(
 					options.json
@@ -455,9 +462,11 @@ export const task = (
 				return
 			}
 			case "show": {
-				const id = options.args[0]
-				if (!id) return yield* Effect.fail(new Error("Task ID is required"))
-				const record = yield* tasks.show(id, cwd)
+				const { root, taskId } = yield* resolveTaskSelector(
+					options.args[0],
+					cwd,
+				)
+				const record = yield* tasks.show(taskId, root)
 				const { content: _, ...output } = record
 				log(
 					options.json
@@ -467,16 +476,20 @@ export const task = (
 				return
 			}
 			case "status": {
-				const [id, status] = options.args
-				if (!id || !status) {
+				const {
+					selectors: [selector],
+					operands: [status],
+				} = splitSelectorArgs(options.args, 1)
+				if (!status) {
 					return yield* Effect.fail(
-						new Error("Usage: agency task status <id> <status>"),
+						new Error("Usage: agency task status [task] <status>"),
 					)
 				}
+				const { root, taskId: id } = yield* resolveTaskSelector(selector, cwd)
 				const record = yield* tasks.setStatus(
 					id,
 					status,
-					cwd,
+					root,
 					options.noPullRequest
 						? {
 								summary: options.summary ?? "",
@@ -497,8 +510,10 @@ export const task = (
 				return
 			}
 			case "update": {
-				const id = options.args[0]
-				if (!id) return yield* Effect.fail(new Error("Task ID is required"))
+				const { root, taskId: id } = yield* resolveTaskSelector(
+					options.args[0],
+					cwd,
+				)
 				const output = yield* mutations.updateTask(
 					id,
 					{
@@ -514,7 +529,7 @@ export const task = (
 						base: options.base,
 						pr: options.clearPr ? null : options.prUrl,
 					},
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -525,16 +540,18 @@ export const task = (
 				return
 			}
 			case "rename": {
-				const [id, newId] = options.args
-				if (!id || !newId) {
-					return yield* Effect.fail(
-						new Error("Task ID and new ID are required"),
-					)
+				const {
+					selectors: [selector],
+					operands: [newId],
+				} = splitSelectorArgs(options.args, 1)
+				if (!newId) {
+					return yield* Effect.fail(new Error("New task ID is required"))
 				}
+				const { root, taskId: id } = yield* resolveTaskSelector(selector, cwd)
 				const output = yield* mutations.renameTask(
 					id,
 					newId,
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -545,12 +562,14 @@ export const task = (
 				return
 			}
 			case "move": {
-				const id = options.args[0]
-				if (!id) return yield* Effect.fail(new Error("Task ID is required"))
+				const { root, taskId: id } = yield* resolveTaskSelector(
+					options.args[0],
+					cwd,
+				)
 				const output = yield* mutations.moveTask(
 					id,
 					options.noEpic ? null : (options.epic ?? null),
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -563,23 +582,29 @@ export const task = (
 				return
 			}
 			case "dependency": {
-				const [operation, id, dependencyId] = options.args
-				if (
-					(operation !== "add" && operation !== "remove") ||
-					!id ||
-					!dependencyId
-				) {
+				const [operation, ...rest] = options.args
+				const {
+					selectors: [selector],
+					operands: [dependency],
+				} = splitSelectorArgs(rest, 1)
+				if ((operation !== "add" && operation !== "remove") || !dependency) {
 					return yield* Effect.fail(
 						new Error(
-							"Usage: agency task dependency <add|remove> <task-id> <dependency-id>",
+							"Usage: agency task dependency <add|remove> [task] <dependency>",
 						),
 					)
 				}
+				const { root, taskId: id } = yield* resolveTaskSelector(selector, cwd)
+				const dependencyId = yield* resolveDependencySelector(
+					"task",
+					dependency,
+					cwd,
+				)
 				const output = yield* mutations.mutateTaskDependency(
 					operation,
 					id,
 					dependencyId,
-					cwd,
+					root,
 					options.ifRevision,
 				)
 				log(
@@ -604,15 +629,21 @@ Usage: agency task <subcommand>
 Subcommands:
   new [id]              Create a task with guided input
   create <id>           Create a task without prompting
-  handoff <source> <id> Create implementation work from an investigation
+  handoff [source] <id> Create implementation work from an investigation
   list                  List tasks
-  show <id>             Show a task
-  status <id> <status>  Set open, working, dropped, or explicit non-PR done
-  update <id>           Update task metadata
-  rename <id> <new-id>  Rename a task and update graph references
-  move <id>             Move a task with --epic or --no-epic
-  dependency <operation> <task> <dependency>
+  show [task]           Show a task
+  status [task] <status>
+                        Set open, working, dropped, or explicit non-PR done
+  update [task]         Update task metadata
+  rename [task] <new-id>
+                        Rename a task and update graph references
+  move [task]           Move a task with --epic or --no-epic
+  dependency <operation> [task] <dependency>
                         Add or remove a task dependency
+
+A [task] selector is a task ID or a path to a task document or directory (or
+anything inside it). When omitted, the task containing the current directory
+is used. A handoff source path inside a phase also selects that source phase.
 
 Mutation option:
   --if-revision <hash>  Require the target's current revision

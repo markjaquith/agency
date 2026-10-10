@@ -5,6 +5,7 @@ import { FileSystemService } from "../services/FileSystemService"
 import { PullRequestService } from "../services/PullRequestService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import { resolveTaskSelector } from "../workbase/item-selector"
 
 interface PrCreateOptions extends BaseCommandOptions {
 	readonly taskId: string
@@ -21,11 +22,15 @@ export const prCreate = (options: PrCreateOptions) =>
 	Effect.gen(function* () {
 		const pullRequests = yield* PullRequestService
 		const { log } = createLoggers(options)
-		const url = yield* pullRequests.create(
+		const target = yield* resolveTaskSelector(
 			options.taskId,
-			options.phaseId,
-			options.draft,
 			options.cwd ?? process.cwd(),
+		)
+		const url = yield* pullRequests.create(
+			target.taskId,
+			options.phaseId ?? target.phaseId,
+			options.draft,
+			target.root,
 			options,
 		)
 		log(options.json ? JSON.stringify({ url }, null, 2) : url)
@@ -57,11 +62,12 @@ export const pr = (args: readonly string[], cwd: string = process.cwd()) =>
 	})
 
 export const help = `
-Usage: agency pr create <task-id> [phase-id] [options]
+Usage: agency pr create <task> [phase-id] [options]
        agency pr [args...]
 
 Create records a pull request for an Agency execution unit and accepts the
-options listed below. Invocations without an Agency task target run gh pr
+options listed below. The task is an ID or a path to a task or phase document
+or directory; use "agency pr create ." for the current task or phase. Invocations without an Agency task target run gh pr
 unchanged, focusing the writable repository checkout when invoked from
 an Agency execution task or phase.
 

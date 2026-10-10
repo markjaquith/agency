@@ -2,9 +2,10 @@ import { Effect } from "effect"
 import { RebaseService } from "../services/RebaseService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import { resolveTaskSelector } from "../workbase/item-selector"
 
 interface RebaseCommandOptions extends BaseCommandOptions {
-	readonly taskId: string
+	readonly taskId?: string
 	readonly phaseId?: string
 	readonly onto?: string
 	readonly from?: string
@@ -20,8 +21,15 @@ export const rebase = (options: RebaseCommandOptions) =>
 	Effect.gen(function* () {
 		const service = yield* RebaseService
 		const { log } = createLoggers(options)
-		const cwd = options.cwd ?? process.cwd()
-		const target = { taskId: options.taskId, phaseId: options.phaseId }
+		const selected = yield* resolveTaskSelector(
+			options.taskId,
+			options.cwd ?? process.cwd(),
+		)
+		const cwd = selected.root
+		const target = {
+			taskId: selected.taskId,
+			phaseId: options.phaseId ?? selected.phaseId,
+		}
 		if (options.continue || options.abort) {
 			const result = options.continue
 				? yield* service.continueRebase(target, cwd)
@@ -73,14 +81,18 @@ const describeBase = (result: {
 		: `'${result.base}' (was '${result.previousBase}')`
 
 export const help = `
-Usage: agency rebase <task-id> [phase-id] [--onto <branch>] [options]
-       agency rebase <task-id> [phase-id] --continue | --abort
+Usage: agency rebase [task [phase-id]] [--onto <branch>] [options]
+       agency rebase [task [phase-id]] --continue | --abort
 
 Rebase an execution unit's materialized checkout onto a new base and record the
 base only after the rebase succeeds. Requires a clean checkout on the declared
 branch. Fetches both bases, then replays only commits after the merge base with
 the current base, so commits reachable only from the old base are dropped.
 Without --onto, rebases onto the latest current base.
+
+The task is an ID or a path to a task or phase document or directory; a phase
+path also selects that phase. When omitted, the task or phase containing the
+current directory is used.
 
 On conflicts, resolve and stage them in the checkout, then run --continue, or
 run --abort; base metadata is unchanged until the rebase completes. Dependencies

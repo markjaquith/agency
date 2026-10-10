@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
+import { dirname, resolve } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorktreeService } from "../services/WorktreeService"
 import { FileSystemService } from "../services/FileSystemService"
@@ -19,6 +19,7 @@ import {
 	type PickWorkTarget,
 	type WorkTarget,
 } from "../workbase/work-target"
+import { locateItem } from "../workbase/item-selector"
 import {
 	pickWorkbase,
 	resolveWorkbase,
@@ -186,18 +187,15 @@ export const work = (
 				status: "phases" in task.data ? undefined : task.data.status,
 			}
 		} else if (directoryPath) {
-			const path = relative(root, startPath)
-			const parts =
-				!path || isAbsolute(path) || path.startsWith(`..${sep}`)
-					? []
-					: path.split(sep)
-			if (parts[0] === "epics" && parts[1]) {
-				const epic = yield* epics.show(parts[1], root)
+			const found = locateItem(root, startPath)
+			const location = found?.archived ? null : found
+			if (location?.kind === "epic") {
+				const epic = yield* epics.show(location.epicId, root)
 				target = { kind: "epic", epicId: epic.id, path: epic.path }
-			} else if (parts[0] === "tasks" && parts[1]) {
-				const task = yield* tasks.show(parts[1], root)
-				if (parts[2] === "phases" && parts[3]) {
-					const phase = yield* phases.show(task.id, parts[3], root)
+			} else if (location) {
+				const task = yield* tasks.show(location.taskId, root)
+				if (location.kind === "phase") {
+					const phase = yield* phases.show(task.id, location.phaseId, root)
 					target = {
 						kind: "phase",
 						taskId: task.id,
@@ -529,16 +527,12 @@ export const workPrepare = (options: WorkOptions = {}) =>
 			const task = yield* tasks.show(options.directory, root)
 			taskId = task.id
 		} else {
-			const path = relative(root, targetPath)
-			const parts =
-				!path || isAbsolute(path) || path.startsWith(`..${sep}`)
-					? []
-					: path.split(sep)
-			if (parts[0] === "tasks" && parts[1]) {
-				const task = yield* tasks.show(parts[1], root)
+			const location = locateItem(root, targetPath)
+			if (location && !location.archived && location.kind !== "epic") {
+				const task = yield* tasks.show(location.taskId, root)
 				taskId = task.id
-				if (parts[2] === "phases" && parts[3]) {
-					const phase = yield* phases.show(task.id, parts[3], root)
+				if (location.kind === "phase") {
+					const phase = yield* phases.show(task.id, location.phaseId, root)
 					phaseId = phase.id
 				}
 			}

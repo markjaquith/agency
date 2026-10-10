@@ -2,6 +2,11 @@ import { Effect } from "effect"
 import { ArchiveService } from "../services/ArchiveService"
 import type { BaseCommandOptions } from "../utils/command"
 import { createLoggers } from "../utils/effect"
+import {
+	resolveEpicSelector,
+	resolvePhaseSelector,
+	resolveTaskSelector,
+} from "../workbase/item-selector"
 
 interface RestoreOptions extends BaseCommandOptions {
 	readonly type?: string
@@ -16,35 +21,33 @@ export const restore = (options: RestoreOptions) =>
 		const { log } = createLoggers(options)
 		const cwd = options.cwd ?? process.cwd()
 		const [id, phaseId] = options.args
+		const archived = { archived: true }
 		let result
 		switch (options.type) {
-			case "epic":
-				if (!id)
-					return yield* Effect.fail(
-						new Error("Usage: agency restore epic <epic-id>"),
-					)
-				result = yield* archives.restoreEpic(id, cwd, {
+			case "epic": {
+				const target = yield* resolveEpicSelector(id, cwd, archived)
+				result = yield* archives.restoreEpic(target.epicId, target.root, {
 					dryRun: options.dryRun,
 				})
 				break
-			case "task":
-				if (!id)
-					return yield* Effect.fail(
-						new Error("Usage: agency restore task <task-id>"),
-					)
-				result = yield* archives.restoreTask(id, cwd, {
+			}
+			case "task": {
+				const target = yield* resolveTaskSelector(id, cwd, archived)
+				result = yield* archives.restoreTask(target.taskId, target.root, {
 					dryRun: options.dryRun,
 				})
 				break
-			case "phase":
-				if (!id || !phaseId)
-					return yield* Effect.fail(
-						new Error("Usage: agency restore phase <task-id> <phase-id>"),
-					)
-				result = yield* archives.restorePhase(id, phaseId, cwd, {
-					dryRun: options.dryRun,
-				})
+			}
+			case "phase": {
+				const target = yield* resolvePhaseSelector(id, phaseId, cwd, archived)
+				result = yield* archives.restorePhase(
+					target.taskId,
+					target.phaseId,
+					target.root,
+					{ dryRun: options.dryRun },
+				)
 				break
+			}
 			default:
 				return yield* Effect.fail(
 					new Error("Work item type is required. Available: epic, task, phase"),
@@ -63,9 +66,12 @@ Usage: agency restore <epic|task|phase>
 Restore archived work after preflighting IDs, backlinks, dependencies, and paths.
 
 Commands:
-  epic <epic-id>                         Restore an epic and its tasks
-  task <task-id>                         Restore a task
-  phase <task-id> <phase-id>             Restore a phase
+  epic [epic]                            Restore an epic and its tasks
+  task [task]                            Restore a task
+  phase [<phase> | <task> <phase-id>]    Restore a phase
+
+Selectors accept an ID or a path to the archived item's document or directory
+and default to the archived item containing the current directory.
 
 Options:
   --dry-run                              Preflight without changing files
