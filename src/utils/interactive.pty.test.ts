@@ -458,6 +458,120 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 		}, 15_000)
 	}
 
+	test("act queues status changes in the background and rolls back failures", async () => {
+		const root = await createWorkbase()
+		const source = join(root, "source")
+		for (const command of [
+			["git", "init", "-b", "main", source],
+			[
+				"git",
+				"-C",
+				source,
+				"remote",
+				"add",
+				"origin",
+				"https://example.com/demo.git",
+			],
+			[process.execPath, cliPath, "repo", "link", "demo", source, "--silent"],
+			...[
+				["alpha", "First item"],
+				["beta", "Second item"],
+				["gamma", "Third item"],
+			].map(([id, description]) => [
+				process.execPath,
+				cliPath,
+				"task",
+				"create",
+				id!,
+				"--repo",
+				"demo",
+				"--base",
+				"main",
+				"--description",
+				description!,
+				"--silent",
+			]),
+		]) {
+			const result = Bun.spawnSync(command, {
+				cwd: root,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			if (result.exitCode !== 0)
+				throw new Error(new TextDecoder().decode(result.stderr))
+		}
+		let output = ""
+		const decoder = new TextDecoder()
+		const terminal = new Bun.Terminal({
+			cols: 100,
+			rows: 24,
+			data: (_terminal, bytes) => {
+				output += decoder.decode(bytes, { stream: true })
+			},
+		})
+		const initialModes = modes(terminal)
+		const subprocess = Bun.spawn([process.execPath, cliPath, "act"], {
+			cwd: root,
+			env: { ...process.env, TERM: "xterm-256color" },
+			terminal,
+		})
+		const wait = (text: string) =>
+			waitFor(
+				() => output.includes(text),
+				() => output,
+			)
+		const choose = async (item: string, action: string) => {
+			terminal.write(item)
+			await Bun.sleep(50)
+			terminal.write("\r")
+			await wait(`Act on task ${item}`)
+			terminal.write(action)
+			await Bun.sleep(50)
+			const beforeQueue = output.length
+			terminal.write("\r")
+			// Workstream returns without waiting for the queued action to run.
+			await waitFor(
+				() => output.slice(beforeQueue).includes("type to filter"),
+				() => output,
+			)
+		}
+		const taskFile = (id: string) => join(root, `tasks/${id}/TASK.md`)
+		try {
+			await wait("gamma")
+			// The displayed revision becomes stale, so gamma's queued drop fails.
+			const gamma = await Bun.file(taskFile("gamma")).text()
+			await Bun.write(taskFile("gamma"), `${gamma}\nExternal edit.\n`)
+			await choose("alpha", "Drop")
+			await choose("alpha", "Reopen")
+			await choose("beta", "Drop")
+			await choose("gamma", "Drop")
+			await wait("gamma failed — task gamma changed since it was chosen")
+			expect(subprocess.exitCode).toBeNull()
+			terminal.write("\x1b")
+			expect(await waitForExit(subprocess, () => output)).toBe(0)
+			expect(modes(terminal)).toEqual(initialModes)
+			const recap = output.slice(output.lastIndexOf("\x1b[?1049l"))
+			for (const line of [
+				"󰄬  Drop — alpha",
+				"󰄬  Reopen — alpha",
+				"󰄬  Drop — beta",
+				"󰅖  Drop — gamma failed",
+			])
+				expect(recap).toContain(line)
+			expect(await Bun.file(taskFile("alpha")).text()).toContain("status: open")
+			expect(await Bun.file(taskFile("beta")).text()).toContain(
+				"status: dropped",
+			)
+			expect(await Bun.file(taskFile("gamma")).text()).toContain("status: open")
+		} finally {
+			if (subprocess.exitCode === null) {
+				subprocess.kill("SIGKILL")
+				await subprocess.exited
+			}
+			terminal.close()
+		}
+	}, 20_000)
+
 	test("restores terminal state after submission, resize, and escape", async () => {
 		const output = await runPrompt(async (terminal, currentOutput) => {
 			terminal.resize(30, 8)
