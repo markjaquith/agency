@@ -1290,10 +1290,10 @@ clean managed checkouts, so paths inside the task may cease to exist.
 agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-command]
 agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
-agency push [--json]
+agency push [--force-with-lease] [--json]
 agency rebase [task [phase-id]] [--onto <branch>] [--from <commit>] [--dry-run] [--if-revision <hash>] [--json]
 agency rebase [task [phase-id]] --continue | --abort [--json]
-agency pr create <task> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--json]
+agency pr create <task> [phase-id] [--draft] [--title <title>] [--head <branch>] [--base <branch>] [--label <label>] [--force] [--force-with-lease] [--json]
 agency pr [args...]
 ```
 
@@ -1388,7 +1388,7 @@ without creating a pull request. It requires a valid, registered writable
 checkout in `working` state, fetches the configured delivery remote, verifies
 that the declared base is in the publication history, validates every outgoing
 commit's description, author, and conflict state, and refuses non-fast-forward
-updates. Local commit validation runs before network access when cached remote
+updates unless `--force-with-lease` is given. Local commit validation runs before network access when cached remote
 state is available, and the network fetch is limited to the declared base and
 delivery branch.
 
@@ -1403,6 +1403,18 @@ one retry for transient failures; push defaults to a 120-second deadline. Set
 values to override them. After a failed or timed-out push, Agency compares the
 exact remote delivery ref with the expected tip before reporting success, a safe
 retryable failure, or an unknown publication outcome.
+
+A non-fast-forward update fails with `PUSH_REMOTE_DIVERGENCE`. When the local
+branch rewrote the remote tip it last observed (after an amend, rebase, or
+squash), the failure reports `rewritten: true` and remediation naming
+`agency push --force-with-lease`. That option leases against the remote-tracking
+tip recorded before the fetch: publication is refused if the remote branch moved
+since then, if it existed but was never observed locally, or if its tip is not in
+the local branch's reflog (fetched but never integrated). Otherwise Agency pushes
+with `--force-with-lease=refs/heads/<branch>:<observed>` and reports the replaced
+tip as `forcedOver`. `agency pr create --force-with-lease` applies the same lease
+and reflog checks to its publication, and its non-fast-forward failures use the
+same code and remediation. Human-mode failures print the remediation line.
 
 `agency rebase` moves a materialized execution unit's branch onto a new base and
 records that base only after Git finishes. It requires a non-terminal unit whose
@@ -1420,8 +1432,8 @@ under the revision captured when the rebase started.
 When Git stops on conflicts, the command fails with `REBASE_CONFLICT`, the
 conflicted paths, and the exact `--continue` and `--abort` commands; base
 metadata is unchanged until `--continue` completes the rebase. Rebase never adds
-or removes dependencies. It warns when rewritten history must be force-pushed
-(`agency push` refuses non-fast-forward updates), when a recorded pull request
+or removes dependencies. It warns when rewritten history must be republished
+with `agency push --force-with-lease`, when a recorded pull request
 still targets the old base (change it before `agency sync`, which adopts the
 pull request base), and when other units are based on the rebased branch.
 

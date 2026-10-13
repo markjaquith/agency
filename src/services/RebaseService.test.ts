@@ -214,7 +214,7 @@ describe("RebaseService", () => {
 		expect(output.warnings).toEqual(
 			expect.arrayContaining([
 				expect.stringContaining(
-					"git push --force-with-lease origin task/alpha",
+					"Rewritten history must be republished with agency push --force-with-lease",
 				),
 				expect.stringContaining("task:beta is based on 'task/alpha'"),
 			]),

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { chmod, mkdir, realpath, rm } from "node:fs/promises"
 import { join } from "node:path"
+import { errorEnvelope } from "../protocol"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
@@ -574,6 +575,118 @@ process.exit(${exitCode})
 		await expect(createPullRequest()).rejects.toThrow("Failed to push branch")
 
 		await expectRemoteBranch("task/example", false)
+		expect(await Bun.file(ghCallPath).exists()).toBe(false)
+	})
+
+	const publishThenAmend = async () => {
+		await createTask()
+		const checkout = (await materialize()).writablePath!
+		const git = (...args: string[]) =>
+			requireCommand(["git", ...args], checkout)
+		await git("config", "user.name", "Agency Test")
+		await git("config", "user.email", "agency@example.com")
+		await git("commit", "--allow-empty", "-m", "First change")
+		await git("push", "origin", "task/example")
+		await git(
+			"fetch",
+			"origin",
+			"+refs/heads/task/example:refs/remotes/origin/task/example",
+		)
+		const published = (await git("rev-parse", "HEAD")).stdout
+		await git("commit", "--amend", "--allow-empty", "-m", "Rewritten change")
+		return { checkout, published, git }
+	}
+
+	const remoteTip = async (branch = "task/example") =>
+		(
+			await requireCommand([
+				"git",
+				"--git-dir",
+				remotePath,
+				"rev-parse",
+				`refs/heads/${branch}`,
+			])
+		).stdout
+
+	test("classifies rewritten history and publishes it with a lease", async () => {
+		const { published, git } = await publishThenAmend()
+		await writeFakeGh({ stdout: "https://github.com/example/agency/pull/47" })
+
+		const failure = await createPullRequest().catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { category: "remote_divergence", rewritten: true },
+			remediation: expect.stringContaining("--force-with-lease"),
+		})
+		expect(errorEnvelope(failure).error.message).not.toContain("git pull")
+		expect(await remoteTip()).toBe(published)
+		expect(await Bun.file(ghCallPath).exists()).toBe(false)
+
+		expect(
+			await createPullRequest("example", undefined, false, false, {
+				forceWithLease: true,
+			}),
+		).toBe("https://github.com/example/agency/pull/47")
+		expect(await remoteTip()).toBe((await git("rev-parse", "HEAD")).stdout)
+	})
+
+	test("refuses a lease when the remote moved since it was last observed", async () => {
+		const { git } = await publishThenAmend()
+		const other = join(root, "other")
+		await requireCommand([
+			"git",
+			"clone",
+			"-b",
+			"task/example",
+			remotePath,
+			other,
+		])
+		await requireCommand(
+			[
+				"git",
+				"-c",
+				"user.name=Other",
+				"-c",
+				"user.email=other@example.com",
+				"commit",
+				"--allow-empty",
+				"-m",
+				"Remote change",
+			],
+			other,
+		)
+		await requireCommand(["git", "push", "origin", "task/example"], other)
+		const concurrent = await remoteTip()
+		await writeFakeGh({ stdout: "https://github.com/example/agency/pull/48" })
+
+		const failure = await createPullRequest(
+			"example",
+			undefined,
+			false,
+			false,
+			{
+				forceWithLease: true,
+			},
+		).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { rewritten: false },
+			message: expect.stringContaining("since this checkout last observed it"),
+			remediation: expect.stringContaining("Integrate the remote commits"),
+		})
+		expect(await remoteTip()).toBe(concurrent)
+
+		await git(
+			"fetch",
+			"origin",
+			"+refs/heads/task/example:refs/remotes/origin/task/example",
+		)
+		await expect(
+			createPullRequest("example", undefined, false, false, {
+				forceWithLease: true,
+			}),
+		).rejects.toThrow("never integrated into local history")
+		expect(await remoteTip()).toBe(concurrent)
 		expect(await Bun.file(ghCallPath).exists()).toBe(false)
 	})
 

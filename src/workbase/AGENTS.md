@@ -95,6 +95,8 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
     `agency push --json`. Create and record a pull request with
     `agency pr create <task> [phase] [--draft] [--title <title>] [--label <label>] --json`;
     do not run a separate push first because `pr create` owns publication.
+    After amending, rebasing, or squashing published commits, add
+    `--force-with-lease` to either command; never fall back to raw `git push`.
 12. Complete genuine non-PR work. Run
     `agency task status <task> done --if-revision <revision> --no-pull-request --summary <text> [--evidence-url <url>] --json`
     or
@@ -116,7 +118,8 @@ retain `--if-revision` guards when shown, and do not add flags that are not show
     On `REBASE_CONFLICT`, resolve and stage the conflicts, then rerun with
     `--continue --json`, or stop with `--abort --json`. If the branch was already
     rebased by hand, `agency task update <task> --base <base> --json` (or
-    `phase update`) records it. Rebase does not force-push or retarget a PR.
+    `phase update`) records it. Rebase does not force-push or retarget a PR;
+    republish a published branch with `agency push --force-with-lease --json`.
 
 Never pass `--work` or `--auto` to `agency task create`. Do not run separate
 `agency validate`, `agency worktree prepare`, `agency graph`, `agency task list`,
@@ -255,6 +258,9 @@ Review and commit the diff according to the repository's instructions.
 Use `agency push` from an execution task or phase to validate and publish its
 declared delivery branch without creating a pull request. The command never authors semantic commit descriptions;
 resolve its reported commits and remediation commands before retrying.
+A `PUSH_REMOTE_DIVERGENCE` failure with `rewritten: true` means local history
+was intentionally rewritten; retry with `--force-with-lease`. Without it, the
+remote has commits this checkout has not integrated; integrate them first.
 
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work

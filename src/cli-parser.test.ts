@@ -457,13 +457,19 @@ describe("strict CLI parsing", () => {
 				"release",
 				"--draft",
 				"--force",
+				"--force-with-lease",
 				"--json",
 			]),
 		).toEqual({
 			commandName: "pr",
 			commandPath: "pr/create",
 			args: ["create", "ship", "release"],
-			values: { draft: true, force: true, json: true },
+			values: {
+				draft: true,
+				force: true,
+				"force-with-lease": true,
+				json: true,
+			},
 		})
 		const selected = parseCli(["pr", "create", "--task", "ship"])
 		expect(selected).toMatchObject({
@@ -725,7 +731,12 @@ describe("strict CLI parsing", () => {
 			args: [],
 			values: { json: true },
 		})
+		expect(parseCli(["push", "--force-with-lease"])).toMatchObject({
+			commandName: "push",
+			values: { "force-with-lease": true },
+		})
 		expectUsageError(["push", "example"], "agency push")
+		expectUsageError(["push", "--force"], "agency push")
 	})
 
 	test("accepts agent selection and command inspection for work", () => {
