@@ -106,6 +106,61 @@ export const wizardInputs = <T>(
 		return run()
 	})
 
+/** Record answered text and stable choice keys so inputs can be replayed later. */
+export const recordingInteraction = (
+	interaction: ActInteraction,
+	answers: string[],
+): ActInteraction => ({
+	...interaction,
+	text: (prompt) =>
+		(interaction.text ?? readText)(prompt).pipe(
+			Effect.tap((answer) =>
+				Effect.sync(() => {
+					if (answer !== null) answers.push(answer)
+				}),
+			),
+		),
+	select: (prompt, choices, command) =>
+		interaction
+			.select(
+				prompt,
+				choices.map((choice) => ({ ...choice, value: choice.key })),
+				command,
+			)
+			.pipe(
+				Effect.map((key) => {
+					if (key === null) return null
+					answers.push(key)
+					return choices.find((choice) => choice.key === key)?.value ?? null
+				}),
+			),
+})
+
+/** Answer prompts from recorded inputs; a missing or stale answer fails. */
+export const replayInteraction = (
+	answers: readonly string[],
+): ActInteraction => {
+	let index = 0
+	const next = (): Effect.Effect<string, Error> =>
+		index < answers.length
+			? Effect.succeed(answers[index++]!)
+			: Effect.fail(new Error("Recorded action inputs are incomplete"))
+	return {
+		text: next,
+		select: (_prompt, choices) =>
+			next().pipe(
+				Effect.flatMap((key) => {
+					const choice = choices.find((choice) => choice.key === key)
+					return choice
+						? Effect.succeed(choice.value)
+						: Effect.fail(
+								new Error(`Recorded choice '${key}' is no longer available`),
+							)
+				}),
+			),
+	}
+}
+
 export const actTabs = [
 	{ id: "workstream", label: "  Workstream", prompt: "" },
 	{ id: "workbase", label: "  Workbase", prompt: "" },
@@ -157,20 +212,22 @@ export const openActSession = () =>
 					try: run,
 					catch: (cause) => new Error("Interactive session failed", { cause }),
 				})
+			const nativeTabs = (tabs: readonly ActTab<unknown>[]) =>
+				tabs.map((tab) => ({
+					...tab,
+					choices: tab.choices.map((choice) => ({
+						...choice,
+						label: choice.plainLabel ?? choice.label,
+					})),
+				}))
+			let openTabs: readonly ActTab<unknown>[] = []
 			const interaction: ActInteraction = {
 				tabs: (tabs) =>
 					attempt(async () => {
-						const key = await session.tabs(
-							tabs.map((tab) => ({
-								...tab,
-								choices: tab.choices.map((choice) => ({
-									...choice,
-									label: choice.plainLabel ?? choice.label,
-								})),
-							})),
-						)
+						openTabs = tabs
+						const key = await session.tabs(nativeTabs(tabs))
 						if (key === null) return null
-						const choice = tabs
+						const choice = (openTabs as typeof tabs)
 							.flatMap((tab) => tab.choices)
 							.find((choice) => choice.key === key)
 						if (!choice) throw new Error("Invalid tab selection")
@@ -203,6 +260,13 @@ export const openActSession = () =>
 				},
 				resetCancellation,
 				notice: session.notice,
+				announce: session.announce,
+				queue: session.queue,
+				/** Refresh open tabs; choice keys must match the open prompt's. */
+				refreshTabs: <T>(tabs: readonly ActTab<T>[]) => {
+					openTabs = tabs
+					session.refreshTabs(nativeTabs(tabs))
+				},
 				cancelled: Effect.promise(() => cancellation).pipe(
 					Effect.flatMap(() => Effect.fail(new ActCancelled())),
 				),

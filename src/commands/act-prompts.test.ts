@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test"
 import { Effect } from "effect"
-import { actionPrompts, ActCancelled, wizardInputs } from "./act-prompts"
+import {
+	actionPrompts,
+	ActCancelled,
+	recordingInteraction,
+	replayInteraction,
+	wizardInputs,
+} from "./act-prompts"
 
 test("wizard rejects malformed and duplicate phase IDs at the ID prompt", async () => {
 	const answers = ["Kept outcome", "../bad", "build", "build-next"]
@@ -219,4 +225,43 @@ test("wizard leaves cancellation at the first prompt and global navigation alone
 		if (result._tag === "Failure")
 			expect(result.failure).toBeInstanceOf(ActCancelled)
 	}
+})
+
+test("records answered inputs and replays them against rebuilt prompts", async () => {
+	const answers: string[] = []
+	const collect = (ui: Parameters<typeof actionPrompts>[0]) =>
+		Effect.gen(function* () {
+			const p = actionPrompts(ui, ["agency", "other"], [])
+			const summary = yield* p.text("Summary")
+			const repo = yield* p.repository("agency")
+			yield* p.confirm("Proceed?")
+			return { summary, repo }
+		})
+	const recorded = await Effect.runPromise(
+		collect(
+			recordingInteraction(
+				{
+					text: () => Effect.succeed("  Shipped  "),
+					select: (_prompt, choices) =>
+						Effect.succeed(
+							choices.find((choice) =>
+								["other", "confirm"].includes(choice.key),
+							)!.value,
+						),
+				},
+				answers,
+			),
+		),
+	)
+	expect(recorded).toEqual({ summary: "Shipped", repo: "other" })
+	expect(answers).toEqual(["  Shipped  ", "other", "confirm"])
+	expect(await Effect.runPromise(collect(replayInteraction(answers)))).toEqual(
+		recorded,
+	)
+	await expect(
+		Effect.runPromise(collect(replayInteraction(answers.slice(0, 2)))),
+	).rejects.toThrow("Recorded action inputs are incomplete")
+	await expect(
+		Effect.runPromise(collect(replayInteraction(["x", "missing", "confirm"]))),
+	).rejects.toThrow("Recorded choice 'missing' is no longer available")
 })

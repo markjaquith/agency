@@ -4,6 +4,7 @@ import { testRender } from "@opentui/solid"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { createSignal } from "solid-js"
 import {
 	fuzzyChoices,
 	hierarchyPrefix,
@@ -12,6 +13,8 @@ import {
 	InteractiveTextPrompt,
 	interactiveRendererConfig,
 	interactiveSelectRendererConfig,
+	type InteractiveQueueEntry,
+	type InteractiveTab,
 } from "./interactive"
 
 const submitEditedText = async (
@@ -414,6 +417,75 @@ describe("OpenTUI interaction", () => {
 			await Bun.sleep(0)
 
 			expect(setup.captureCharFrame()).toContain("▌ second")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("shows the action queue footer and refreshes choices in place", async () => {
+		const [tabs, setTabs] = createSignal<readonly InteractiveTab[]>([
+			{
+				id: "workstream",
+				label: "Workstream",
+				prompt: "",
+				choices: [
+					{ key: "a", label: "alpha working" },
+					{ key: "b", label: "beta working" },
+				],
+			},
+		])
+		const [queue, setQueue] = createSignal<readonly InteractiveQueueEntry[]>([])
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={tabs()}
+					queue={queue()}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 50, height: 9 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("beta")
+			await setup.flush()
+			setQueue(
+				Array.from({ length: 5 }, (_, index) => ({
+					icon: index ? "󰥔" : "󰔟",
+					text: `Drop — task-${index}`,
+					color: "#cad3f5",
+				})),
+			)
+			setTabs([
+				{
+					...tabs()[0]!,
+					choices: [
+						{ key: "a", label: "alpha dropped" },
+						{ key: "b", label: "beta dropped" },
+					],
+				},
+			])
+			await setup.flush()
+			const rows = setup.captureCharFrame().split("\n")
+			expect(rows.slice(-5, -1).map((row) => row.trim())).toEqual([
+				"󰔟  Drop — task-0",
+				"󰥔  Drop — task-1",
+				"󰥔  Drop — task-2",
+				"󰇘  2 more queued",
+			])
+			expect(setup.captureCharFrame()).toContain("▌ beta dropped")
+			expect(setup.captureCharFrame()).not.toContain("alpha")
+			setQueue([])
+			await setup.flush()
+			expect(setup.captureCharFrame()).not.toContain("Drop —")
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBe("b")
 		} finally {
 			setup.renderer.destroy()
 		}

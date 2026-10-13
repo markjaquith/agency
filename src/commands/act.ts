@@ -1,6 +1,7 @@
 import { Schema, Effect } from "effect"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { ActDiscovery } from "../act-schema"
+import type { GraphNode } from "../graph-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
@@ -26,8 +27,17 @@ import {
 	actTabs,
 	defaultInteraction,
 	openActSession,
+	recordingInteraction,
+	replayInteraction,
 	type ActInteraction,
 } from "./act-prompts"
+import {
+	applyOptimistic,
+	makeActionQueue,
+	queuedActionStatus,
+	type ActionQueue,
+	type QueueJob,
+} from "./act-queue"
 import { work as startWork, type StartWork } from "./work"
 import { hasPendingRebase } from "../services/RebaseService"
 
@@ -238,8 +248,174 @@ const actionChoices = (actions: readonly ActAction[]): Choice<string>[] =>
 		}
 	})
 
+interface RecordedAction {
+	readonly itemId: string
+	readonly actionId: string
+	readonly answers: readonly string[]
+}
+
+interface QueuedAction extends RecordedAction {
+	readonly root: string
+}
+
+type NativeOptions = Parameters<typeof actActions>[1]
+
+const isEntity = (node: GraphNode): node is ActEntity =>
+	node.kind === "epic" || node.kind === "task" || node.kind === "phase"
+
+const materializedCheckouts = (nodes: readonly GraphNode[]) => {
+	const states = new Map<string, ActCheckoutState>()
+	for (const node of nodes) {
+		if (node.kind !== "execution-unit" || !node.workspace?.materialized)
+			continue
+		const id =
+			"phaseId" in node.data
+				? `phase:${node.data.taskId}/${node.data.phaseId}`
+				: `task:${node.data.taskId}`
+		states.set(id, {
+			paths: [node.workspace.checkoutPath],
+			conflicts: [],
+			dirty: false,
+		})
+	}
+	return states
+}
+
+/**
+ * Rebuild a chosen item action from current state and replay its recorded
+ * inputs, so revision guards and availability checks reflect that state.
+ */
+const recordedPlan = (
+	nodes: readonly GraphNode[],
+	options: NativeOptions,
+	work: StartWork,
+	recorded: RecordedAction,
+	revision: string,
+	chooser?: readonly string[],
+) =>
+	Effect.gen(function* () {
+		const current = nodes.find(
+			(node): node is ActEntity =>
+				isEntity(node) && node.id === recorded.itemId,
+		)
+		if (!current)
+			return yield* Effect.fail(
+				new Error(`Work item '${recorded.itemId}' no longer exists`),
+			)
+		if (current.data.sha256 !== revision)
+			return yield* Effect.fail(
+				new Error(`${current.kind} ${current.key} changed since it was chosen`),
+			)
+		const action = actActions(nodes, options, work, current).find(
+			(candidate) => candidate.id === recorded.actionId,
+		)
+		if (!action || action.blockedReason)
+			return yield* Effect.fail(
+				new Error(
+					`Action '${recorded.actionId}' is unavailable: ${action?.blockedReason ?? "not found"}`,
+				),
+			)
+		return yield* action.prepare(
+			actionPrompts(
+				replayInteraction(recorded.answers),
+				nodes
+					.filter((node) => node.kind === "repository")
+					.map((node) => node.key),
+				nodes.filter(isEntity).map((node) => node.key),
+				chooser,
+			),
+		)
+	})
+
+const goalChoices = actionGroups.map(({ id, label, icon }) => ({
+	key: id,
+	label: `${icon}  ${label}`,
+	plainLabel: label,
+	value: id,
+	segments: [{ text: `${icon}  `, color: macchiato.overlay1 }, { text: label }],
+}))
+
+type HomeChoice = { kind: "goal" | "item"; id: string }
+
+const homeTabs = (nodes: readonly ActEntity[]) => [
+	{
+		...actTabs[0],
+		emptyLabel: "No tasks or phases yet",
+		choices: entityChoices(
+			nodes.filter((node) => node.kind === "task" || node.kind === "phase"),
+			true,
+		).map((choice) => ({
+			...choice,
+			value: { kind: "item", id: choice.value } as HomeChoice,
+		})),
+	},
+	{
+		...actTabs[1],
+		choices: goalChoices
+			.filter(
+				(choice) => !["browse", "split", "handoff"].includes(choice.value),
+			)
+			.map((choice) => ({
+				...choice,
+				value: { kind: "goal", id: choice.value } as HomeChoice,
+			})),
+	},
+]
+
+const queueEntry = (job: QueueJob<QueuedAction>) =>
+	job.state === "running"
+		? { icon: "󰔟", text: job.label, color: macchiato.blue }
+		: job.state === "pending"
+			? { icon: "󰥔", text: `${job.label} · queued`, color: macchiato.overlay1 }
+			: job.state === "failed"
+				? {
+						icon: "󰅖",
+						text: `${job.label} — ${job.error}`,
+						color: macchiato.red,
+					}
+				: {
+						icon: "󰜺",
+						text: `${job.label} — ${job.error}`,
+						color: macchiato.yellow,
+					}
+
+const settledMessage = (job: QueueJob<QueuedAction>) =>
+	job.state === "done"
+		? `󰄬  ${job.label}`
+		: job.state === "failed"
+			? `󰅖  ${job.label} failed — ${job.error}`
+			: `󰜺  ${job.label} skipped — ${job.error}`
+
+/** Render queue changes: footer, optimistic rows, notices, and the recap. */
+const queueChanged = (state: ActState) => {
+	const queue = state.queue
+	if (!queue) return
+	const settled = queue.jobs
+		.filter((job) => job.settled !== undefined && job.settled > state.reported)
+		.toSorted((a, b) => a.settled! - b.settled!)
+	state.reported = queue.sequence
+	for (const job of settled) {
+		state.recap.push(settledMessage(job))
+		state.notice = settledMessage(job)
+	}
+	state.session?.queue(queue.visible.map(queueEntry))
+	if (settled.length) state.session?.announce(state.notice)
+	state.refreshHome?.()
+}
+
 interface ActState {
 	session?: Effect.Success<ReturnType<typeof openActSession>>
+	queue?: ActionQueue<QueuedAction>
+	/** Last queue sequence reported to the notice and recap. */
+	reported: number
+	/** The last loaded graph and the queue sequence when it was loaded. */
+	loaded?: {
+		readonly root: string
+		readonly nodes: readonly GraphNode[]
+		readonly snapshot: number
+	}
+	/** Re-render the open Workstream with the current optimistic state. */
+	refreshHome?: () => void
 	recap: string[]
 	root?: string
 	view: "home" | "item-menu" | "goal-menu" | "flow"
@@ -256,6 +432,7 @@ export const act = (
 ) =>
 	Effect.gen(function* () {
 		const state: ActState = {
+			reported: 0,
 			recap: [],
 			view: "home",
 			native: false,
@@ -325,6 +502,15 @@ export const act = (
 				}
 			}
 		}).pipe(
+			// Queued mutations finish before the session and its worker are released.
+			Effect.ensuring(
+				Effect.suspend(() => {
+					const queue = state.queue
+					if (!queue?.busy) return Effect.void
+					state.session?.show(`󰔟  Finishing ${queue.active} queued action(s)…`)
+					return queue.drain
+				}),
+			),
 			Effect.scoped,
 			Effect.ensuring(
 				Effect.sync(() => {
@@ -364,25 +550,25 @@ const actStep = (
 			isDirectory ? path : isPath ? dirname(path) : cwd,
 		)
 		state.root = root
-		const graph = yield* graphs.get({
-			cwd: root,
-			loadedConfig: { root, config },
-			include: ["workspace"],
-		})
-		const checkoutStates = new Map<string, ActCheckoutState>()
-		for (const node of graph.nodes) {
-			if (node.kind !== "execution-unit" || !node.workspace?.materialized)
-				continue
-			const id =
-				"phaseId" in node.data
-					? `phase:${node.data.taskId}/${node.data.phaseId}`
-					: `task:${node.data.taskId}`
-			checkoutStates.set(id, {
-				paths: [node.workspace.checkoutPath],
-				conflicts: [],
-				dirty: false,
-			})
+		state.refreshHome = undefined
+		// While mutations are queued, keep the loaded graph: the optimistic overlay
+		// supplies their changes and reads never race the background writes.
+		const cached =
+			state.queue?.busy && state.loaded?.root === root
+				? state.loaded
+				: undefined
+		const snapshot = cached?.snapshot ?? state.queue?.sequence ?? 0
+		const graph = {
+			nodes:
+				cached?.nodes ??
+				(yield* graphs.get({
+					cwd: root,
+					loadedConfig: { root, config },
+					include: ["workspace"],
+				})).nodes,
 		}
+		state.loaded = { root, nodes: graph.nodes, snapshot }
+		const checkoutStates = materializedCheckouts(graph.nodes)
 		if (options.json && checkoutStates.size > 0) {
 			checkoutStates.clear()
 			for (const inspection of yield* worktrees.list(root, {
@@ -413,10 +599,6 @@ const actStep = (
 						),
 			{ concurrency: 8, discard: true },
 		)
-		const nodes = graph.nodes.filter(
-			(node): node is ActEntity =>
-				node.kind === "epic" || node.kind === "task" || node.kind === "phase",
-		)
 		const recap = state.recap
 		const session =
 			state.session ??
@@ -446,13 +628,53 @@ const actStep = (
 		const runWork: StartWork = session
 			? (args) => work({ ...args, silent: options.silent })
 			: work
-		const globals = actActions(graph.nodes, nativeOptions, runWork)
-		const catalog = new Map(
-			nodes.map((node) => [
-				node.id,
-				actActions(graph.nodes, nativeOptions, runWork, node),
-			]),
-		)
+		if (session && !state.queue) {
+			const queue = makeActionQueue<QueuedAction>(() => queueChanged(state))
+			state.queue = queue
+			yield* Effect.forkScoped(
+				queue.worker((job, revision) =>
+					Effect.gen(function* () {
+						const current = yield* graphs.get({ cwd: job.root })
+						const plan = yield* recordedPlan(
+							current.nodes,
+							{ ...nativeOptions, cwd: job.root, checkoutStates: new Map() },
+							runWork,
+							job,
+							revision,
+						)
+						yield* plan.run
+						const after = yield* graphs.get({ cwd: job.root })
+						return (
+							after.nodes
+								.filter(isEntity)
+								.find((node) => node.id === job.itemId)?.data.sha256 ?? null
+						)
+					}),
+				),
+			)
+		}
+		// Display and availability include queued changes until they settle.
+		let seen = snapshot
+		let viewNodes: readonly GraphNode[] = graph.nodes
+		let nodes: readonly ActEntity[] = []
+		let globals: readonly ActAction[] = []
+		let catalog = new Map<string, readonly ActAction[]>()
+		const load = () => {
+			seen = state.queue?.sequence ?? 0
+			viewNodes = applyOptimistic(
+				graph.nodes,
+				state.queue?.overlay(snapshot) ?? [],
+			)
+			nodes = viewNodes.filter(isEntity)
+			globals = actActions(viewNodes, nativeOptions, runWork)
+			catalog = new Map(
+				nodes.map((node) => [
+					node.id,
+					actActions(viewNodes, nativeOptions, runWork, node),
+				]),
+			)
+		}
+		load()
 		let selectedKey = options.epicId
 			? `epic:${options.epicId}`
 			: options.phaseId
@@ -541,54 +763,28 @@ const actStep = (
 				return answer
 			})
 		if (!selectedKey && !actionId) {
-			const goals = actionGroups.map(({ id, label, icon }) => ({
-				key: id,
-				label: `${icon}  ${label}`,
-				plainLabel: label,
-				value: id,
-				segments: [
-					{ text: `${icon}  `, color: macchiato.overlay1 },
-					{ text: label },
-				],
-			}))
 			let goal: string | undefined = state.goal
 			if (goal) {
 				state.view = "flow"
 			} else if (ui.tabs) {
-				type HomeChoice = { kind: "goal" | "item"; id: string }
-				const chosen = yield* ui.tabs<HomeChoice>([
-					{
-						...actTabs[0],
-						emptyLabel: "No tasks or phases yet",
-						choices: entityChoices(
-							nodes.filter(
-								(node) => node.kind === "task" || node.kind === "phase",
-							),
-							true,
-						).map((choice) => ({
-							...choice,
-							value: { kind: "item", id: choice.value },
-						})),
-					},
-					{
-						...actTabs[1],
-						choices: goals
-							.filter(
-								(choice) =>
-									!["browse", "split", "handoff"].includes(choice.value),
-							)
-							.map((choice) => ({
-								...choice,
-								value: { kind: "goal", id: choice.value },
-							})),
-					},
-				])
+				if (session)
+					state.refreshHome = () => {
+						load()
+						session.refreshTabs(homeTabs(nodes))
+					}
+				const chosen = yield* ui.tabs<HomeChoice>(homeTabs(nodes)).pipe(
+					Effect.ensuring(
+						Effect.sync(() => {
+							state.refreshHome = undefined
+						}),
+					),
+				)
 				if (!chosen) return yield* Effect.fail(new ActCancelled())
 				state.view = "flow"
 				if (chosen.kind === "item") selectedKey = chosen.id
 				else goal = chosen.id
 			} else {
-				goal = yield* select("Choose an action", goals)
+				goal = yield* select("Choose an action", goalChoices)
 				state.view = "flow"
 			}
 			if (goal === "browse") {
@@ -672,7 +868,7 @@ const actStep = (
 				root,
 			)
 			checkoutStates.set(selected.id, checkoutState(inspection))
-			actions = actActions(graph.nodes, nativeOptions, runWork, selected)
+			actions = actActions(viewNodes, nativeOptions, runWork, selected)
 		}
 		const action = actions.find((action) => action.id === actionId)
 		if (!action || action.blockedReason)
@@ -681,10 +877,12 @@ const actStep = (
 					`Action '${actionId}' is unavailable: ${action?.blockedReason ?? "not found"}`,
 				),
 			)
-		const prepare = (interaction: ActInteraction) =>
-			action.prepare(
+		const answers: string[] = []
+		const prepare = (interaction: ActInteraction) => {
+			answers.length = 0
+			return action.prepare(
 				actionPrompts(
-					interaction,
+					recordingInteraction(interaction, answers),
 					graph.nodes
 						.filter((node) => node.kind === "repository")
 						.map((node) => node.key),
@@ -692,7 +890,8 @@ const actStep = (
 					config.chooserCommand,
 				),
 			)
-		const plan = yield* session
+		}
+		let plan = yield* session
 			? wizardInputs(
 					ui,
 					prepare,
@@ -700,7 +899,33 @@ const actStep = (
 					(message) => session.notice(message ? `󰀦  ${message}` : state.notice),
 				)
 			: prepare(ui)
+		const queue = session ? state.queue : undefined
+		const optimisticStatus = queuedActionStatus[action.id]
+		if (queue && selected && optimisticStatus && !options.dryRun) {
+			const label = `${action.label} — ${selected.key}`
+			const queued = queue.enqueue({
+				itemId: selected.id,
+				label,
+				status: optimisticStatus,
+				payload: { itemId: selected.id, actionId: action.id, answers, root },
+				revision: selected.data.sha256,
+				snapshot,
+				seen,
+			})
+			if ("error" in queued) return yield* Effect.fail(new Error(queued.error))
+			state.notice = `󰥔  Queued ${label}`
+			return
+		}
+		// Other actions run in the foreground after queued mutations settle.
+		if (queue?.busy) {
+			session!.show(`󰔟  Waiting for ${queue.active} queued action(s)…`)
+			yield* Effect.raceFirst(queue.drain, session!.cancelled)
+		}
 		if (selected) {
+			const basis = queue
+				? queue.basis(selected.id, selected.data.sha256, snapshot, seen)
+				: { revision: selected.data.sha256 }
+			if ("error" in basis) return yield* Effect.fail(new Error(basis.error))
 			const fresh = yield* graphs.get({ cwd: root })
 			const current = fresh.nodes.find(
 				(node): node is ActEntity =>
@@ -710,14 +935,25 @@ const actStep = (
 						node.kind === "epic"),
 			)
 			if (
+				!("revision" in basis) ||
 				!current ||
-				current.data.sha256 !== selected.data.sha256 ||
+				current.data.sha256 !== basis.revision ||
 				!actActions(fresh.nodes, nativeOptions, work, current).some(
 					(candidate) => candidate.id === actionId && available(candidate),
 				)
 			)
 				return yield* Effect.fail(
 					new Error("Selected work item changed; run agency act again"),
+				)
+			// Queued changes completed since loading: guard against their result.
+			if (basis.revision !== selected.data.sha256)
+				plan = yield* recordedPlan(
+					fresh.nodes,
+					nativeOptions,
+					runWork,
+					{ itemId: selected.id, actionId: action.id, answers },
+					basis.revision,
+					config.chooserCommand,
 				)
 		}
 		if (options.dryRun) {
@@ -810,6 +1046,8 @@ Completed item actions return to a freshly loaded Workstream. Escape clears inpu
 then steps back through
 wizard prompts, the action menu, and Workstream,
 or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
+In the built-in TUI, status changes queue in the background and are shown
+immediately; failures roll back. Exiting waits for queued changes.
 An existing directory or file selects its containing epic, task, or phase.
 A workbase path opens Workbase actions. Otherwise the positional value is a
 task ID. Selectors skip item selection.

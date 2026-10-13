@@ -665,6 +665,17 @@ selects the sole repository automatically, and suggests IDs, base branches, and
 phase branches. Suggestions remain editable; choosing a base never adds a
 completion dependency.
 
+In the built-in TUI, status changes (**Reopen**, **Drop**, **Complete without a
+pull request**, and **Finish review**) do not block. Each one joins a single
+background queue shown at the bottom of the screen, and Workstream immediately
+shows its expected status, so you can act on several items in quick succession.
+Queued actions run one at a time in order, with the same revision guards and
+availability checks as foreground actions. A later action on the same item is
+based on the earlier one's result. If an action fails, its status change is
+rolled back, the error is shown, and later queued actions on that item are
+skipped. Other actions wait for the queue to empty before they run, and exiting
+also waits for queued actions to finish.
+
 Splitting a task / adding a phase and turning an investigation into implementation
 start in **Workstream**: select the source item, then choose its action.
 

@@ -13,7 +13,7 @@ import {
 	useTerminalDimensions,
 	type JSX,
 } from "@opentui/solid"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createMemo, createSignal, For, Index, Show } from "solid-js"
 import type { ChoiceDetails, ChoiceSegment } from "./chooser"
 import { macchiato } from "./theme"
 
@@ -579,11 +579,32 @@ export interface InteractiveTab {
 	readonly initialKey?: string
 }
 
+export interface InteractiveQueueEntry {
+	readonly icon: string
+	readonly text: string
+	readonly color: string
+}
+
+const queueRowLimit = 4
+
+const queueRows = (entries: readonly InteractiveQueueEntry[]) =>
+	entries.length <= queueRowLimit
+		? entries
+		: [
+				...entries.slice(0, queueRowLimit - 1),
+				{
+					icon: "󰇘",
+					text: `${entries.length - queueRowLimit + 1} more queued`,
+					color: macchiato.overlay1,
+				},
+			]
+
 export const InteractiveTabbedPrompt = (props: {
 	readonly tabs: readonly InteractiveTab[]
 	readonly onDone: (value: string | null) => void
 	readonly onQuit?: () => void
 	readonly notice?: string
+	readonly queue?: readonly InteractiveQueueEntry[]
 	readonly initialTab?: number
 	readonly onTabChange?: (index: number) => void
 	readonly content?: (reservedRows: () => number) => JSX.Element
@@ -596,7 +617,8 @@ export const InteractiveTabbedPrompt = (props: {
 			(width, tab) => width + Bun.stringWidth(tab.label) + 4,
 			12,
 		)
-	const reservedRows = () => 1 + (props.notice ? 1 : 0)
+	const queue = () => queueRows(props.queue ?? [])
+	const reservedRows = () => 1 + (props.notice ? 1 : 0) + queue().length
 	const cycle = () => {
 		if (!props.tabs.length) return
 		const next = (active() + 1) % props.tabs.length
@@ -660,32 +682,50 @@ export const InteractiveTabbedPrompt = (props: {
 				{props.content ? (
 					props.content(reservedRows)
 				) : (
-					<For each={props.tabs}>
+					<Index each={props.tabs}>
 						{(tab, index) => (
 							<box
-								visible={index() === active()}
+								visible={index === active()}
 								width="100%"
 								flexGrow={1}
 								minHeight={0}
 							>
 								<InteractiveSelectPrompt
 									embedded
-									active={index() === active()}
+									active={index === active()}
 									reservedRows={reservedRows()}
 									backgroundColor={macchiato.base}
-									prompt={tab.prompt}
-									choices={tab.choices}
-									emptyLabel={tab.emptyLabel}
-									initialKey={tab.initialKey}
+									prompt={tab().prompt}
+									choices={tab().choices}
+									emptyLabel={tab().emptyLabel}
+									initialKey={tab().initialKey}
 									onTab={cycle}
 									onDone={props.onDone}
 									onQuit={props.onQuit}
 								/>
 							</box>
 						)}
-					</For>
+					</Index>
 				)}
 			</box>
+			<Show when={queue().length}>
+				<box
+					flexDirection="column"
+					height={queue().length}
+					flexShrink={0}
+					paddingLeft={1}
+					paddingRight={1}
+					backgroundColor={macchiato.mantle}
+				>
+					<For each={queue()}>
+						{(entry) => (
+							<text height={1} wrapMode="none" fg={entry.color}>
+								{`${entry.icon}  ${entry.text}`}
+							</text>
+						)}
+					</For>
+				</box>
+			</Show>
 		</box>
 	)
 }
@@ -702,7 +742,6 @@ const shutdown = async (renderer: CliRenderer) => {
 type SessionView =
 	| {
 			kind: "tabs"
-			tabs: readonly InteractiveTab[]
 			finish: (value: string | null) => void
 	  }
 	| {
@@ -741,6 +780,8 @@ export const createInteractiveSession = async (
 		}
 	}
 	const [notice, setNotice] = createSignal("")
+	const [queue, setQueue] = createSignal<readonly InteractiveQueueEntry[]>([])
+	const [liveTabs, setLiveTabs] = createSignal<readonly InteractiveTab[]>([])
 	const quit = () => {
 		quitRequested = true
 		onCancel()
@@ -784,10 +825,11 @@ export const createInteractiveSession = async (
 					{(current) =>
 						current.kind === "tabs" ? (
 							<InteractiveTabbedPrompt
-								tabs={current.tabs}
+								tabs={liveTabs()}
 								onDone={current.finish}
 								onQuit={quit}
 								notice={notice()}
+								queue={queue()}
 								initialTab={activeTab}
 								onTabChange={(index) => {
 									activeTab = index
@@ -798,6 +840,7 @@ export const createInteractiveSession = async (
 								tabs={frameTabs}
 								initialTab={activeTab}
 								notice={notice()}
+								queue={queue()}
 								onDone={() => {}}
 								onTabChange={navigate}
 								content={(reservedRows) =>
@@ -846,9 +889,10 @@ export const createInteractiveSession = async (
 					setView({ kind: "progress", prompt: "Preparing next step…" })
 				resolve(value)
 			}
+			if (tabs) setLiveTabs(tabs)
 			setView(
 				tabs
-					? { kind: "tabs", tabs, finish: pending }
+					? { kind: "tabs", finish: pending }
 					: choices
 						? { kind: "select", prompt, choices, finish: pending }
 						: { kind: "text", prompt, finish: pending },
@@ -875,6 +919,25 @@ export const createInteractiveSession = async (
 		notice: (message: string) => {
 			cancelled = false
 			setNotice(message)
+		},
+		/** Update the notice from background work without consuming a cancellation. */
+		announce: (message: string) => {
+			setNotice(message)
+			renderer.requestRender()
+		},
+		queue: (entries: readonly InteractiveQueueEntry[]) => {
+			setQueue(entries)
+			renderer.requestRender()
+		},
+		/** Re-render the open tab choices in place, preserving filter and selection. */
+		refreshTabs: (tabs: readonly InteractiveTab[]) => {
+			if (closed || view().kind !== "tabs") return
+			frameTabs = tabs.map((tab) => ({
+				...tab,
+				initialKey: tabSelections.get(tab.id),
+			}))
+			setLiveTabs(frameTabs)
+			renderer.requestRender()
 		},
 		tabs: async (tabs: readonly InteractiveTab[]) => {
 			frameTabs = tabs.map((tab) => ({
