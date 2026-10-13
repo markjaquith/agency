@@ -324,7 +324,7 @@ const publicationWarnings = (checkout: Checkout, base: string) =>
 			)
 		if (published || pr)
 			warnings.push(
-				`Rewritten history must be force-pushed: git push --force-with-lease ${remote} ${unit.data.branch} (agency push rejects non-fast-forward publication)`,
+				`Rewritten history must be republished with agency push --force-with-lease${pr ? "" : " (or agency pr create --force-with-lease)"}; do not use a raw git push to ${remote} ${unit.data.branch}`,
 			)
 		return warnings
 	})

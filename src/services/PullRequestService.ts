@@ -31,6 +31,7 @@ class PullRequestError extends Data.TaggedError("PullRequestError")<{
 
 interface PullRequestOptions extends BaseCommandOptions {
 	readonly force?: boolean
+	readonly forceWithLease?: boolean
 	readonly title?: string
 	readonly head?: string
 	readonly base?: string
@@ -198,7 +199,14 @@ export class PullRequestService extends Context.Service<PullRequestService>()(
 						})
 					}
 
-					yield* backend.push(workspace.writablePath, remote, execution.branch)
+					yield* backend.push(
+						workspace.writablePath,
+						remote,
+						execution.branch,
+						{
+							forceWithLease: options.forceWithLease,
+						},
+					)
 					const remoteUrl = yield* backend.remoteUrl(
 						workspace.writablePath,
 						remote,

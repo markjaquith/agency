@@ -1,5 +1,6 @@
 import { Data, Effect, Context, Layer } from "effect"
 import { FileSystemService } from "./FileSystemService"
+import { integrateRemoteRemediation, reflogIncludes } from "./git-publication"
 
 export interface RegisteredWorkspace {
 	readonly name: string | null
@@ -46,6 +47,7 @@ export interface VersionControlBackend {
 		workspacePath: string,
 		remote: string,
 		branch: string,
+		options?: { readonly forceWithLease?: boolean },
 	) => Effect.Effect<void, unknown, any>
 	readonly remoteUrl: (
 		repositoryPath: string,
@@ -72,6 +74,30 @@ export const isDirtyGitStatus = (output: string): boolean =>
 class VersionControlError extends Data.TaggedError("VersionControlError")<{
 	readonly message: string
 }> {}
+
+class PushRejectedError extends Data.TaggedError("PushRejectedError")<{
+	readonly message: string
+	readonly category: "remote_divergence"
+	readonly protocolCode: "PUSH_REMOTE_DIVERGENCE"
+	readonly retryable: false
+	readonly remediation: string
+	/** Whether local history rewrote the observed remote tip. */
+	readonly rewritten: boolean
+}> {}
+
+const pushRejected = (
+	message: string,
+	rewritten: boolean,
+	remediation: string,
+) =>
+	new PushRejectedError({
+		message,
+		category: "remote_divergence",
+		protocolCode: "PUSH_REMOTE_DIVERGENCE",
+		retryable: false,
+		remediation,
+		rewritten,
+	})
 
 const requireSuccess = (
 	label: string,
@@ -312,23 +338,107 @@ export class GitVersionControlService extends Context.Service<GitVersionControlS
 								),
 							)
 						}),
-					push: (workspacePath, remote, branch) =>
+					push: (workspacePath, remote, branch, options = {}) =>
 						Effect.gen(function* () {
 							const fs = yield* FileSystemService
-							yield* requireSuccess(
-								"Failed to push branch",
-								fs.runCommand(
-									[
-										"git",
-										"-C",
-										workspacePath,
-										"push",
-										"--set-upstream",
-										remote,
-										branch,
-									],
-									{ captureOutput: true },
-								),
+							const tracking = yield* fs.runCommand(
+								[
+									"git",
+									"-C",
+									workspacePath,
+									"rev-parse",
+									"--verify",
+									"--quiet",
+									`refs/remotes/${remote}/${branch}^{commit}`,
+								],
+								{ captureOutput: true },
+							)
+							// The remote-tracking tip is what this checkout last observed
+							// and is the lease for a force-push.
+							const observed =
+								tracking.exitCode === 0 ? tracking.stdout.trim() || null : null
+							const integrate = integrateRemoteRemediation(remote, branch)
+							if (
+								options.forceWithLease &&
+								observed &&
+								(yield* reflogIncludes(fs, workspacePath, branch, observed)) ===
+									false
+							) {
+								return yield* pushRejected(
+									`Failed to push branch '${branch}': ${remote}/${branch} (${observed}) was fetched but never integrated into local history; refusing to force-push`,
+									false,
+									integrate,
+								)
+							}
+							const pushed = yield* fs.runCommand(
+								[
+									"git",
+									"-C",
+									workspacePath,
+									"push",
+									"--set-upstream",
+									...(options.forceWithLease
+										? [
+												`--force-with-lease=refs/heads/${branch}:${observed ?? ""}`,
+											]
+										: []),
+									remote,
+									branch,
+								],
+								{ captureOutput: true },
+							)
+							if (pushed.exitCode === 0) return
+							const output = pushed.stderr.trim() || pushed.stdout.trim()
+							if (
+								!/non-fast-forward|fetch first|stale info|incorrect old value provided/.test(
+									output,
+								)
+							) {
+								return yield* new VersionControlError({
+									message: `Failed to push branch: ${output}`,
+								})
+							}
+							const listed = yield* fs.runCommand(
+								[
+									"git",
+									"-C",
+									workspacePath,
+									"ls-remote",
+									"--heads",
+									remote,
+									`refs/heads/${branch}`,
+								],
+								{ captureOutput: true },
+							)
+							const remoteTip =
+								listed.exitCode === 0
+									? listed.stdout.split(/\s+/, 1)[0] || null
+									: null
+							const rewritten =
+								!options.forceWithLease &&
+								remoteTip !== null &&
+								remoteTip === observed &&
+								(yield* reflogIncludes(
+									fs,
+									workspacePath,
+									branch,
+									remoteTip,
+								)) !== false
+							if (rewritten) {
+								return yield* pushRejected(
+									`Failed to push branch '${branch}': local history was rewritten over ${remote}/${branch} (${remoteTip}); refusing a non-fast-forward update without --force-with-lease`,
+									true,
+									"Local history was intentionally rewritten (amend, rebase, or squash). Retry this Agency command with --force-with-lease. Do not use a raw git push.",
+								)
+							}
+							return yield* pushRejected(
+								`Failed to push branch '${branch}': ${remote}/${branch} ${
+									observed && remoteTip !== observed
+										? `moved from ${observed} to ${remoteTip ?? "a missing ref"} since this checkout last observed it`
+										: "has commits not integrated into local history"
+								}; refusing a non-fast-forward update`,
+								false,
+								integrate,
 							)
 						}),
 					remoteUrl: (repositoryPath, remote) =>

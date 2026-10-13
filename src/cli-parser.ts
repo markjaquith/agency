@@ -931,6 +931,7 @@ const commands = {
 			...outputOptions,
 			draft: { type: "boolean" },
 			force: { type: "boolean" },
+			"force-with-lease": { type: "boolean" },
 			task: { type: "string" },
 			phase: { type: "string" },
 			title: { type: "string" },
@@ -946,6 +947,7 @@ const commands = {
 				options: [
 					"draft",
 					"force",
+					"force-with-lease",
 					"json",
 					"task",
 					"phase",
@@ -959,13 +961,16 @@ const commands = {
 		},
 	},
 	push: {
-		usage: "agency push [--json]",
-		options: outputOptions,
+		usage: "agency push [--force-with-lease] [--json]",
+		options: {
+			...outputOptions,
+			"force-with-lease": { type: "boolean" },
+		},
 		command: {
-			usage: "agency push [--json]",
+			usage: "agency push [--force-with-lease] [--json]",
 			minArgs: 0,
 			maxArgs: 0,
-			options: ["json"],
+			options: ["force-with-lease", "json"],
 		},
 	},
 	rebase: {

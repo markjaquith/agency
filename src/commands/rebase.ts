@@ -96,8 +96,8 @@ current directory is used.
 
 On conflicts, resolve and stage them in the checkout, then run --continue, or
 run --abort; base metadata is unchanged until the rebase completes. Dependencies
-are never changed. A published branch needs a force-push, and a recorded pull
-request needs its GitHub base changed.
+are never changed. Republish a published branch with agency push
+--force-with-lease, and change a recorded pull request's GitHub base.
 
 Options:
   --onto <branch>        New base branch (default: current base)

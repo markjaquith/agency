@@ -4,6 +4,7 @@ import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
+import { integrateRemoteRemediation, reflogIncludes } from "./git-publication"
 import { parseGitCommits, type PushCommitMetadata } from "./push-validation"
 import { isDirtyGitStatus } from "./VersionControlService"
 
@@ -35,7 +36,8 @@ const categoryMetadata: Record<
 	remote_divergence: {
 		code: "PUSH_REMOTE_DIVERGENCE",
 		retryable: false,
-		remediation: "Rebase onto the remote delivery branch before retrying.",
+		remediation:
+			"Integrate the remote delivery branch commits before retrying; if you intentionally rewrote local history, use agency push --force-with-lease.",
 	},
 	hook_rejection: {
 		code: "PUSH_HOOK_REJECTED",
@@ -78,6 +80,8 @@ class PushError extends Data.TaggedError("PushError")<{
 	readonly protocolCode: string
 	readonly retryable: boolean
 	readonly remediation: string
+	/** For remote divergence: whether local history rewrote the observed remote tip. */
+	readonly rewritten?: boolean
 }> {}
 
 interface CommandResult {
@@ -96,6 +100,8 @@ interface PushResult {
 	readonly base: string
 	readonly remote: string
 	readonly tip: string
+	/** Remote tip replaced by a --force-with-lease publication. */
+	readonly forcedOver?: string
 }
 
 type PushStage =
@@ -112,6 +118,7 @@ interface PushOptions {
 	readonly pushTimeoutMs?: number
 	readonly retryDelayMs?: number
 	readonly forwardOutput?: boolean
+	readonly forceWithLease?: boolean
 }
 
 const validEmail = (email: string) => /^[^@\s]+@[^@\s]+$/.test(email)
@@ -130,6 +137,22 @@ const pushError = (
 		protocolCode: categoryMetadata[category].code,
 		retryable: categoryMetadata[category].retryable,
 		remediation: categoryMetadata[category].remediation,
+	})
+
+const divergenceError = (
+	message: string,
+	rewritten: boolean,
+	remediation: string,
+	stage: PushStage = "validate",
+) =>
+	new PushError({
+		message,
+		category: "remote_divergence",
+		stage,
+		protocolCode: categoryMetadata.remote_divergence.code,
+		retryable: categoryMetadata.remote_divergence.retryable,
+		remediation,
+		rewritten,
 	})
 
 const processTimeout = (error: unknown): { elapsedMs?: number } | null => {
@@ -156,10 +179,12 @@ const classifyGitFailure = (
 			normalized,
 		)
 			? "authentication"
-			: /pre-push hook|hook declined|remote rejected/.test(normalized)
-				? "hook_rejection"
-				: /non-fast-forward|fetch first|stale info/.test(normalized)
-					? "remote_divergence"
+			: /non-fast-forward|fetch first|stale info|incorrect old value provided/.test(
+						normalized,
+				  )
+				? "remote_divergence"
+				: /pre-push hook|hook declined|remote rejected/.test(normalized)
+					? "hook_rejection"
 					: /could not resolve|connection|network|remote end hung up|unable to access|repository not found/.test(
 								normalized,
 						  )
@@ -388,6 +413,13 @@ const publishGit = (
 		}
 
 		const initialTip = yield* gitRevision(fs, checkout, "HEAD")
+		// The pre-fetch remote-tracking tip is what this checkout last observed;
+		// it is the lease for a force-push and detects concurrent remote updates.
+		const observedRemoteTip = yield* gitRevision(
+			fs,
+			checkout,
+			`refs/remotes/${remote}/${branch}`,
+		)
 		const initialBase = yield* gitRevision(
 			fs,
 			checkout,
@@ -494,17 +526,52 @@ const publishGit = (
 			`refs/remotes/${remote}/${branch}`,
 			"validate",
 		)
-		if (
-			remoteTip &&
+		const forced =
+			remoteTip !== null &&
 			!(yield* gitAncestor(fs, checkout, remoteTip, tip, "validate"))
-		) {
-			return yield* pushError(
-				`Remote branch '${branch}' on '${remote}' is not an ancestor of Git HEAD; refusing a non-fast-forward update`,
-				"remote_divergence",
-				"validate",
+		if (forced) {
+			const integrate = integrateRemoteRemediation(remote, branch)
+			if (remoteTip !== observedRemoteTip) {
+				return yield* divergenceError(
+					observedRemoteTip
+						? `Remote branch '${branch}' on '${remote}' moved from ${observedRemoteTip} to ${remoteTip} since this checkout last observed it, and is not an ancestor of Git HEAD; refusing a non-fast-forward update`
+						: `Remote branch '${branch}' on '${remote}' (${remoteTip}) was not observed by this checkout before publishing and is not an ancestor of Git HEAD; refusing a non-fast-forward update`,
+					false,
+					observedRemoteTip
+						? integrate
+						: `Inspect ${remote}/${branch} and integrate its commits if they belong in this branch. ${integrate}`,
+				)
+			}
+			const included = yield* reflogIncludes(
+				fs,
+				checkout,
+				branch,
+				remoteTip,
+			).pipe(
+				Effect.mapError((error) =>
+					classifyGitFailure(
+						`Failed to inspect the local branch reflog: ${error.message}`,
+						"validate",
+					),
+				),
 			)
+			if (included === false) {
+				return yield* divergenceError(
+					`Remote branch '${branch}' on '${remote}' (${remoteTip}) was fetched but never integrated into local history; refusing a non-fast-forward update`,
+					false,
+					integrate,
+				)
+			}
+			if (!options.forceWithLease) {
+				return yield* divergenceError(
+					`Local history was rewritten over remote branch '${branch}' on '${remote}' (${remoteTip}), which is not an ancestor of Git HEAD; refusing a non-fast-forward update without --force-with-lease`,
+					true,
+					"Local history was intentionally rewritten (amend, rebase, or squash). Publish it with: agency push --force-with-lease. Do not use a raw git push.",
+				)
+			}
 		}
 
+		const published = forced ? { tip, forcedOver: remoteTip } : { tip }
 		onProgress?.("publish")
 		yield* git(
 			fs,
@@ -524,9 +591,11 @@ const publishGit = (
 				[
 					"push",
 					"-u",
+					...(forced
+						? [`--force-with-lease=refs/heads/${branch}:${remoteTip}`]
+						: []),
 					remote,
 					`HEAD:refs/heads/${branch}`,
-					`--force-if-includes`,
 				],
 				`Failed to push declared branch '${branch}'`,
 				"publish",
@@ -557,7 +626,15 @@ const publishGit = (
 				)
 			}
 			const reconciledTip = reconciled.success.stdout.split(/\s+/, 1)[0] || null
-			if (reconciledTip === tip) return { tip }
+			if (reconciledTip === tip) return published
+			if (pushed.failure.category === "remote_divergence") {
+				return yield* divergenceError(
+					`Remote branch '${branch}' on '${remote}' changed to ${reconciledTip ?? "a missing ref"} while publishing ${tip}; ${pushed.failure.message}`,
+					false,
+					integrateRemoteRemediation(remote, branch),
+					"publish",
+				)
+			}
 			if (reconciledTip !== remoteTip) {
 				return yield* pushError(
 					`Publication outcome is unknown: remote branch '${branch}' changed to ${reconciledTip ?? "a missing ref"} while publishing ${tip}`,
@@ -567,7 +644,7 @@ const publishGit = (
 			}
 			return yield* pushed.failure
 		}
-		return { tip }
+		return published
 	})
 
 export class PushService extends Context.Service<PushService>()("PushService", {

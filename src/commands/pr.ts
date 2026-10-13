@@ -12,6 +12,7 @@ interface PrCreateOptions extends BaseCommandOptions {
 	readonly phaseId?: string
 	readonly draft?: boolean
 	readonly force?: boolean
+	readonly forceWithLease?: boolean
 	readonly title?: string
 	readonly head?: string
 	readonly base?: string
@@ -78,5 +79,7 @@ Options:
   --base <branch>           Confirm the declared base branch
   --label <label>           Add a label (repeatable)
   --force                   Override readiness checks
+  --force-with-lease        Publish rewritten history if the remote branch is
+                            unchanged since last observed
   --json                    Output one versioned machine result
 `

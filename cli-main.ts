@@ -265,6 +265,7 @@ const commands: Record<string, Command> = {
 					phaseId: args[2],
 					draft: options.draft,
 					force: options.force,
+					forceWithLease: options["force-with-lease"],
 					title: options.title,
 					head: options.head,
 					base: options.base,
@@ -285,6 +286,7 @@ const commands: Record<string, Command> = {
 			}
 			await runCommand(
 				push({
+					forceWithLease: options["force-with-lease"],
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
@@ -984,6 +986,9 @@ try {
 			if (Array.isArray(details[field]) && details[field].length > 0)
 				message += `\n${label}: ${details[field].join("; ")}`
 		}
+
+		if (typeof details.remediation === "string")
+			message += `\nRemediation: ${details.remediation}`
 
 		console.error(`ⓘ ${message}`)
 	} else {

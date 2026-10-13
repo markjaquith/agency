@@ -5,6 +5,7 @@ import { join, resolve } from "node:path"
 import { cleanupTempDir, createTempDir, runTestEffect } from "../test-utils"
 import { errorEnvelope } from "../protocol"
 import { PushService } from "./PushService"
+import { RebaseService } from "./RebaseService"
 import { TaskService } from "./TaskService"
 import { WorktreeService } from "./WorktreeService"
 import { parseGitCommits } from "./push-validation"
@@ -137,6 +138,7 @@ describe("PushService", () => {
 			fetchTimeoutMs?: number
 			pushTimeoutMs?: number
 			retryDelayMs?: number
+			forceWithLease?: boolean
 		} = {},
 	) =>
 		runTestEffect(
@@ -264,6 +266,175 @@ describe("PushService", () => {
 		await expect(publish(fixture.taskPath)).rejects.toThrow(
 			"refusing a non-fast-forward update",
 		)
+	})
+
+	const commitFile = async (
+		checkout: string,
+		file: string,
+		message: string,
+	) => {
+		await Bun.write(join(checkout, file), `${message}\n`)
+		await requireCommand(["git", "add", file], checkout)
+		await requireCommand(["git", "commit", "-m", message], checkout)
+	}
+
+	const pushFromOtherClone = async (root: string, remote: string) => {
+		const other = join(root, "other")
+		await requireCommand(["git", "clone", remote, other])
+		await requireCommand(["git", "checkout", "task/example"], other)
+		await configureAuthor(other)
+		await commitFile(other, "remote.txt", "Remote change")
+		await requireCommand(["git", "push", "origin", "task/example"], other)
+		return (await requireCommand(["git", "rev-parse", "HEAD"], other)).stdout
+	}
+
+	const amend = (checkout: string) =>
+		requireCommand(
+			["git", "commit", "--amend", "-m", "Rewritten change"],
+			checkout,
+		)
+
+	test("guides rewritten history to --force-with-lease and publishes it", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		const published = await publish(fixture.taskPath)
+		await amend(fixture.checkout)
+
+		const failure = await publish(fixture.taskPath).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { category: "remote_divergence", rewritten: true },
+			remediation: expect.stringContaining("agency push --force-with-lease"),
+		})
+		expect(await remoteBranch(fixture.remote)).toBe(published.tip)
+
+		const forced = await publish(fixture.taskPath, { forceWithLease: true })
+		expect(forced.forcedOver).toBe(published.tip)
+		expect(await remoteBranch(fixture.remote)).toBe(forced.tip)
+		expect(forced.tip).not.toBe(published.tip)
+	})
+
+	test("republishes an agency rebase with --force-with-lease", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		const published = await publish(fixture.taskPath)
+		const seed = join(fixture.root, "seed")
+		await commitFile(seed, "upstream.txt", "Upstream change")
+		await requireCommand(["git", "push", "origin", "main"], seed)
+		const rebased = await runTestEffect(
+			RebaseService.pipe(
+				Effect.flatMap((service) =>
+					service.rebase({ taskId: "example", onto: "main" }, fixture.root),
+				),
+			),
+		)
+		expect(rebased.warnings).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining("agency push --force-with-lease"),
+			]),
+		)
+
+		const failure = await publish(fixture.taskPath).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { rewritten: true },
+		})
+		const forced = await publish(fixture.taskPath, { forceWithLease: true })
+		expect(forced.forcedOver).toBe(published.tip)
+		expect(await remoteBranch(fixture.remote)).toBe(forced.tip)
+	})
+
+	test("publishes fast-forward updates normally with --force-with-lease", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		const created = await publish(fixture.taskPath, { forceWithLease: true })
+		await commitFile(fixture.checkout, "more.txt", "Second change")
+		const updated = await publish(fixture.taskPath, { forceWithLease: true })
+		expect(created.forcedOver).toBeUndefined()
+		expect(updated.forcedOver).toBeUndefined()
+		expect(await remoteBranch(fixture.remote)).toBe(updated.tip)
+	})
+
+	test("refuses a lease when the remote moved since it was last observed", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		await publish(fixture.taskPath)
+		const concurrent = await pushFromOtherClone(fixture.root, fixture.remote)
+		await amend(fixture.checkout)
+
+		const moved = await publish(fixture.taskPath, {
+			forceWithLease: true,
+		}).catch((error) => error)
+		expect(errorEnvelope(moved).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { rewritten: false },
+			message: expect.stringContaining("since this checkout last observed it"),
+			remediation: expect.stringContaining("Integrate the remote commits"),
+		})
+		expect(await remoteBranch(fixture.remote)).toBe(concurrent)
+
+		// The fetch updated the tracking ref, but the commit was never integrated.
+		const unintegrated = await publish(fixture.taskPath, {
+			forceWithLease: true,
+		}).catch((error) => error)
+		expect(errorEnvelope(unintegrated).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { rewritten: false },
+			message: expect.stringContaining("never integrated into local history"),
+		})
+		expect(await remoteBranch(fixture.remote)).toBe(concurrent)
+	})
+
+	test("refuses a lease when the remote branch was never observed", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		const published = await publish(fixture.taskPath)
+		await requireCommand(
+			["git", "update-ref", "-d", "refs/remotes/origin/task/example"],
+			fixture.checkout,
+		)
+		await amend(fixture.checkout)
+
+		const failure = await publish(fixture.taskPath, {
+			forceWithLease: true,
+		}).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { rewritten: false },
+			message: expect.stringContaining("was not observed by this checkout"),
+		})
+		expect(await remoteBranch(fixture.remote)).toBe(published.tip)
+	})
+
+	test("rejects a lease when the remote changes during publication", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		await publish(fixture.taskPath)
+		const base = (
+			await requireCommand(["git", "rev-parse", "HEAD~1"], fixture.checkout)
+		).stdout
+		await amend(fixture.checkout)
+		const hook = await prePushHook(fixture.checkout)
+		await Bun.write(
+			hook,
+			`#!/bin/sh\ngit --git-dir ${JSON.stringify(fixture.remote)} update-ref refs/heads/task/example ${base}\n`,
+		)
+		await chmod(hook, 0o755)
+
+		const failure = await publish(fixture.taskPath, {
+			forceWithLease: true,
+		}).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_REMOTE_DIVERGENCE",
+			fields: { stage: "publish", rewritten: false },
+		})
+		expect(await remoteBranch(fixture.remote)).toBe(base)
 	})
 
 	test("requires working status and the declared Git base in history", async () => {
