@@ -66,6 +66,17 @@ const AgentResponse = Schema.Struct({
 	result: Schema.Struct({ agent: HerdrPane }),
 })
 
+const TabCreatedResponse = Schema.Struct({
+	result: Schema.Struct({
+		tab: Schema.Struct({ tab_id: Schema.String }),
+		root_pane: Schema.Struct({ pane_id: Schema.String }),
+	}),
+})
+
+const PaneResponse = Schema.Struct({
+	result: Schema.Struct({ pane: HerdrPane }),
+})
+
 const SubscriptionEvent = Schema.Struct({
 	event: Schema.String,
 	data: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
@@ -98,7 +109,10 @@ const parseJson = (text: string): unknown => {
 }
 
 const failure = (operation: string, output: string, fallback: string) => {
-	const parsed = Schema.decodeUnknownOption(HerdrError)(parseJson(output))
+	// Herdr writes server errors as JSON to stderr; older commands used stdout.
+	const parsed = Schema.decodeUnknownOption(HerdrError)(
+		parseJson(output.trim()) ?? parseJson(fallback.trim()),
+	)
 	return new RuntimeError({
 		runtime: "herdr",
 		operation,
@@ -179,9 +193,111 @@ export const createHerdrRuntimeProvider = (
 			),
 		)
 
+	/** Run a command whose success carries no result worth decoding. */
+	const control = (
+		operation: string,
+		args: readonly string[],
+		fallback: string,
+	) =>
+		Effect.gen(function* () {
+			const result = yield* run(operation, args)
+			if (result.exitCode !== 0)
+				return yield* failure(
+					operation,
+					result.stdout,
+					result.stderr || fallback,
+				)
+		})
+
+	const focusPane = (paneId: string) =>
+		control("agent focus", ["agent", "focus", paneId], "").pipe(
+			// Panes without an agent are focused through their tab.
+			Effect.catchTag("RuntimeError", (error) =>
+				error.code === "agent_not_found"
+					? Effect.gen(function* () {
+							const result = yield* run("pane get", ["pane", "get", paneId])
+							if (result.exitCode !== 0)
+								return yield* failure(
+									"pane get",
+									result.stdout,
+									result.stderr || `Unable to find pane ${paneId}`,
+								)
+							const { pane } = (yield* decode(
+								PaneResponse,
+								"pane get",
+								result.stdout,
+							)).result
+							yield* control(
+								"tab focus",
+								["tab", "focus", pane.tab_id],
+								`Unable to focus tab ${pane.tab_id}`,
+							)
+						})
+					: Effect.fail(error),
+			),
+		)
+
 	return {
 		kind: "herdr",
 		currentLocation: () => currentHerdrLocation(env),
+
+		focus: (target, id) =>
+			target === "pane"
+				? focusPane(id)
+				: control(
+						`${target} focus`,
+						[target, "focus", id],
+						`Unable to focus ${target} ${id}`,
+					),
+
+		close: (target, id) =>
+			control(
+				`${target} close`,
+				[target, "close", id],
+				`Unable to close ${target} ${id}`,
+			),
+
+		promptAgent: (paneId, prompt) =>
+			control(
+				"agent prompt",
+				["agent", "prompt", paneId, prompt],
+				`Unable to prompt the agent in pane ${paneId}`,
+			),
+
+		launch: (launch) =>
+			Effect.gen(function* () {
+				const created = yield* run("tab create", [
+					"tab",
+					"create",
+					...(launch.workspaceId ? ["--workspace", launch.workspaceId] : []),
+					"--cwd",
+					launch.cwd,
+					"--label",
+					launch.label,
+					"--no-focus",
+					...Object.entries(launch.env ?? {}).flatMap(([key, value]) => [
+						"--env",
+						`${key}=${value}`,
+					]),
+				])
+				if (created.exitCode !== 0)
+					return yield* failure(
+						"tab create",
+						created.stdout,
+						created.stderr || "Unable to create a tab",
+					)
+				const { tab, root_pane } = (yield* decode(
+					TabCreatedResponse,
+					"tab create",
+					created.stdout,
+				)).result
+				yield* control(
+					"pane run",
+					["pane", "run", root_pane.pane_id, launch.command],
+					`Unable to run a command in pane ${root_pane.pane_id}`,
+				)
+				return { tabId: tab.tab_id, paneId: root_pane.pane_id }
+			}),
 
 		snapshot: () =>
 			Effect.gen(function* () {

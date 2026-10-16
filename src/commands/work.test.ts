@@ -1217,6 +1217,21 @@ describe("work command", () => {
 		})
 	})
 
+	test("appends supervisor instructions to the generated prompt", async () => {
+		const harness = createHarness()
+
+		await harness.run({
+			taskId: "example",
+			opencode: true,
+			auto: true,
+			instructions: "  Rebase onto main first.  ",
+		})
+
+		expect(harness.launches[0]?.args.at(-1)).toBe(
+			"Agency worker launch target: execution-unit:task/example. Start the task. Read /workbase/tasks/example/TASK.md.\n\nSupervisor instructions:\nRebase onto main first.",
+		)
+	})
+
 	test("continues existing work with the resume command", async () => {
 		const harness = createHarness({ taskStatus: "working" })
 

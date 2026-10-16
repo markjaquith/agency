@@ -19,6 +19,7 @@ import { graph, help as graphHelp } from "./src/commands/graph"
 import { next, help as nextHelp } from "./src/commands/next"
 import { attention, help as attentionHelp } from "./src/commands/attention"
 import { triage, help as triageHelp } from "./src/commands/triage"
+import { supervise, help as superviseHelp } from "./src/commands/supervise"
 import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -57,6 +58,7 @@ import { PullRequestStatusService } from "./src/services/PullRequestStatusServic
 import { SupervisionService } from "./src/services/SupervisionService"
 import { SupervisionStateService } from "./src/services/SupervisionStateService"
 import { TriageService } from "./src/services/TriageService"
+import { SupervisorExecutor } from "./src/services/SupervisorExecutor"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -105,6 +107,7 @@ const CliLayer = Layer.mergeAll(
 	SupervisionService.layer,
 	SupervisionStateService.layer,
 	TriageService.layer,
+	SupervisorExecutor.layer,
 )
 
 /**
@@ -186,7 +189,8 @@ const resolveInvocationCwd = (
 				commandName === "init" ||
 				commandName === "workbase" ||
 				commandName === "attention" ||
-				commandName === "triage"
+				commandName === "triage" ||
+				commandName === "supervise"
 			) {
 				return resolve(options.cwd ?? process.cwd())
 			}
@@ -609,6 +613,7 @@ const commands: Record<string, Command> = {
 					claude: options.claude,
 					agent: options.agent,
 					auto: options.auto,
+					instructions: options.instructions,
 					printCommand: options["print-command"],
 					force: options.force,
 					allowWorkingDependencies: options["allow-working-dependencies"],
@@ -814,6 +819,23 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	supervise: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(superviseHelp)
+				return
+			}
+			await runCommand(
+				supervise({
+					workbase: options.workbase,
+					inputAllowed: options.inputAllowed,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	sync: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -858,6 +880,7 @@ Commands:
   next                   List or select ready execution units
   attention              Report work and sessions that need attention
   triage                 Assess supervised work and rank next actions
+  supervise              Supervise and act on everything needing attention
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
   rebase <task> [phase]  Rebase a checkout onto a new base and record it

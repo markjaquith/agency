@@ -1,3 +1,13 @@
+/** Render argv as a POSIX shell command line, quoting where needed. */
+export const shellCommand = (argv: readonly string[]) =>
+	argv
+		.map((arg) =>
+			/^[A-Za-z0-9_./:=+@%-]+$/.test(arg)
+				? arg
+				: `'${arg.replaceAll("'", `'\\''`)}'`,
+		)
+		.join(" ")
+
 /**
  * Base options that all commands accept
  */

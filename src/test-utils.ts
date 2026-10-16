@@ -33,10 +33,12 @@ import { PullRequestStatusService } from "./services/PullRequestStatusService"
 import { SupervisionService } from "./services/SupervisionService"
 import { SupervisionStateService } from "./services/SupervisionStateService"
 import { TriageService } from "./services/TriageService"
-import type {
-	RuntimePane,
-	RuntimeProvider,
-	RuntimeSnapshot,
+import { SupervisorExecutor } from "./services/SupervisorExecutor"
+import {
+	RuntimeError,
+	type RuntimePane,
+	type RuntimeProvider,
+	type RuntimeSnapshot,
 } from "./workbase/runtime"
 import {
 	GitVersionControlService,
@@ -98,6 +100,7 @@ const TestLayer = Layer.mergeAll(
 	SupervisionService.layer,
 	SupervisionStateService.layer,
 	TriageService.layer,
+	SupervisorExecutor.layer,
 	// Tests never observe a real runtime unless they provide one explicitly.
 	Layer.succeed(RuntimeService, fakeRuntimeService(null)),
 )
@@ -157,6 +160,11 @@ export const createFakeRuntimeProvider = (options: {
 	readonly panes?: readonly RuntimePane[]
 	readonly location?: ReturnType<RuntimeProvider["currentLocation"]>
 	readonly transcripts?: Readonly<Record<string, string>>
+	/** Receives every control call (focus, close, prompt, launch). */
+	readonly calls?: unknown[][]
+	/** Fail control calls of these operations with the given error code. */
+	readonly failures?: Readonly<Record<string, string>>
+	readonly snapshot?: () => RuntimeSnapshot
 }): RuntimeProvider => {
 	const snapshot: RuntimeSnapshot = {
 		runtime: "herdr",
@@ -164,10 +172,32 @@ export const createFakeRuntimeProvider = (options: {
 		tabs: [],
 		panes: options.panes ?? [],
 	}
+	const control = (operation: string, ...args: unknown[]) =>
+		Effect.suspend(() => {
+			options.calls?.push([operation, ...args])
+			const code = options.failures?.[operation]
+			return code
+				? Effect.fail(
+						new RuntimeError({
+							runtime: "herdr",
+							operation,
+							code,
+							message: `${operation} failed: ${code}`,
+						}),
+					)
+				: Effect.void
+		})
 	return {
 		kind: "herdr",
 		currentLocation: () => options.location ?? null,
-		snapshot: () => Effect.succeed(snapshot),
+		snapshot: () => Effect.sync(() => options.snapshot?.() ?? snapshot),
+		focus: (target, id) => control("focus", target, id),
+		close: (target, id) => control("close", target, id),
+		promptAgent: (paneId, prompt) => control("prompt", paneId, prompt),
+		launch: (launch) =>
+			control("launch", launch).pipe(
+				Effect.as({ tabId: "w1:t99", paneId: "w1:p99" }),
+			),
 		readTranscript: (paneId) =>
 			Effect.succeed(options.transcripts?.[paneId] ?? ""),
 		waitForAgentStatus: (paneId, statuses) =>

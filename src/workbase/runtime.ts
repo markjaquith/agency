@@ -76,6 +76,23 @@ export interface RuntimeEvent {
 	readonly data: Readonly<Record<string, unknown>>
 }
 
+type RuntimeTarget = "pane" | "tab" | "workspace"
+
+/** A command started in a new, unfocused tab. */
+interface RuntimeLaunch {
+	readonly workspaceId: string | null
+	readonly cwd: string
+	readonly label: string
+	/** A shell command line run in the tab's root pane. */
+	readonly command: string
+	readonly env?: Readonly<Record<string, string>>
+}
+
+interface RuntimeLaunched {
+	readonly tabId: string
+	readonly paneId: string
+}
+
 export class RuntimeError extends Data.TaggedError("RuntimeError")<{
 	readonly runtime: RuntimeKind
 	readonly operation: string
@@ -105,6 +122,26 @@ export interface RuntimeProvider {
 	readonly subscribe: (
 		subscriptions: readonly RuntimeSubscription[],
 	) => Stream.Stream<RuntimeEvent, RuntimeError>
+	readonly focus: (
+		target: RuntimeTarget,
+		id: string,
+	) => Effect.Effect<void, RuntimeError>
+	readonly close: (
+		target: RuntimeTarget,
+		id: string,
+	) => Effect.Effect<void, RuntimeError>
+	/**
+	 * Submit a prompt to the agent in a pane. Fails with code `agent_blocked`
+	 * when the agent waits at an approval or question dialog.
+	 */
+	readonly promptAgent: (
+		paneId: string,
+		prompt: string,
+	) => Effect.Effect<void, RuntimeError>
+	/** Run a command in a new tab without taking focus. */
+	readonly launch: (
+		launch: RuntimeLaunch,
+	) => Effect.Effect<RuntimeLaunched, RuntimeError>
 }
 
 const DEFAULT_TRANSCRIPT_LINES = 200

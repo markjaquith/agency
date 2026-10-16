@@ -227,27 +227,33 @@ export class PullRequestStatusService extends Context.Service<PullRequestStatusS
 			const statuses = new Map<string, CacheEntry<LivePullRequest>>()
 			const mergeMethods = new Map<string, CacheEntry<PullRequestMergeMethod>>()
 			return {
-				/** Read live GitHub PR review state; failures become `unavailable`. */
-				read: (url: string) =>
-					cached(
-						statuses,
-						url,
-						runGh([
-							"gh",
-							"pr",
-							"view",
+				/**
+				 * Read live GitHub PR review state; failures become `unavailable`.
+				 * `fresh` bypasses the short-lived cache.
+				 */
+				read: (url: string, options?: { readonly fresh?: boolean }) =>
+					Effect.suspend(() => {
+						if (options?.fresh) statuses.delete(url)
+						return cached(
+							statuses,
 							url,
-							"--json",
-							"state,isDraft,reviewDecision,latestReviews,statusCheckRollup,mergeable,mergeStateStatus,headRefOid",
-						]).pipe(
-							Effect.map(
-								(result): LivePullRequest =>
-									result.ok
-										? parseLivePullRequest(url, result.stdout)
-										: { state: "unavailable", url, reason: result.reason },
+							runGh([
+								"gh",
+								"pr",
+								"view",
+								url,
+								"--json",
+								"state,isDraft,reviewDecision,latestReviews,statusCheckRollup,mergeable,mergeStateStatus,headRefOid",
+							]).pipe(
+								Effect.map(
+									(result): LivePullRequest =>
+										result.ok
+											? parseLivePullRequest(url, result.stdout)
+											: { state: "unavailable", url, reason: result.reason },
+								),
 							),
-						),
-					),
+						)
+					}),
 				/** The viewer's default merge method for a repository, defaulting to merge. */
 				mergeMethod: (repository: string) =>
 					cached(

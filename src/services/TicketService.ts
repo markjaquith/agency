@@ -81,10 +81,12 @@ export class TicketService extends Context.Service<TicketService>()(
 
 			const read = (
 				url: string | null,
+				options?: { readonly fresh?: boolean },
 			): Effect.Effect<TicketRecord, never, FileSystemService> => {
 				if (!url) return Effect.succeed({ url: null, state: "none" })
 				return Effect.clockWith((clock) =>
 					Effect.suspend(() => {
+						if (options?.fresh) cache.delete(url)
 						// Check and claim the cache entry synchronously so concurrent
 						// reads of one URL share a single in-flight lookup.
 						const now = clock.currentTimeMillisUnsafe()
@@ -110,7 +112,10 @@ export class TicketService extends Context.Service<TicketService>()(
 			}
 
 			return {
-				/** Read live ticket state; failures become explicit record states. */
+				/**
+				 * Read live ticket state; failures become explicit record states.
+				 * `fresh` bypasses the short-lived cache.
+				 */
 				read,
 				/** Read many tickets with bounded concurrency, keyed by URL. */
 				readMany: (urls: Iterable<string | null | undefined>) =>

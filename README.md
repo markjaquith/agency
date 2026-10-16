@@ -1061,6 +1061,46 @@ Supervision state lives in `$AGENCY_STATE_DIR/supervision/`, never in workbase
 documents: `triage-cache.json`, the `actions.jsonl` action log (compacted to its
 newest 1,000 entries), `snoozes.json`, and `dismissals.json`. Each update holds a
 lock file and replaces the file atomically, so concurrent runs merge.
+### Supervisor
+
+```sh
+agency supervise [--workbase <selector>]
+```
+
+`agency supervise` is a long-lived TUI, meant for its own Herdr tab, built on
+the [attention signals](#attention-signals). It groups everything needing
+attention by workbase, plus an Unmanaged group for agent panes outside any item.
+Each entry shows a status badge (such as Needs You, Blocked, Ready to Merge,
+Done, Needs Ticket, or Stale), its runtime location (`workspace › tab`), a
+one-line summary, and its ranked suggested actions. Signals for one execution
+unit merge into one entry. The view refreshes on runtime events (Herdr
+`events.subscribe`, debounced) and every minute for pull request and ticket
+changes.
+
+| Key                           | Action                                              |
+| ----------------------------- | --------------------------------------------------- |
+| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                |
+| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                    |
+| `Enter`                       | Preview, confirm, and run the action                |
+| `f`                           | Focus the entry's pane                              |
+| `r`                           | Refresh now                                         |
+| `e`                           | Edit the workbase's supervision prompt in `$EDITOR` |
+| `s` / `d`                     | Snooze, or dismiss until the entry changes          |
+| `?` / `Esc` / `C-c`           | Help / close a dialog / quit                        |
+
+Before running, the supervisor shows exactly what will run: the argv, runtime
+operation, or prompt. After confirmation it rechecks every precondition against
+fresh state (document revisions, item status, pane identity, a tab's exact agent
+panes, live pull request state and head, ticket status, and paths) and skips the
+action if anything changed. Destructive actions need a second confirmation.
+`agency` actions are re-resolved with `agency act --action <id> --json` and
+never run a stored argv; template inputs are prompted for. Work and fresh
+delegations start in a new, unfocused tab. `prompt_agent` and delegation to a
+bound agent require that agent to be idle and not blocked by a dialog;
+otherwise the supervisor offers a fresh kickoff with the same instructions.
+Every outcome, including declined confirmations, is appended to the local
+action log; snoozes and dismissals persist in local supervision state under
+`$AGENCY_STATE_DIR/supervision`.
 
 ### Next Ready Work
 
@@ -1511,7 +1551,7 @@ clean managed checkouts, so paths inside the task may cease to exist.
 ### Work, Publication, and Pull Requests
 
 ```text
-agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-command]
+agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto [--instructions <text>]] [--print-command]
 agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--force-with-lease] [--json]
@@ -1531,6 +1571,7 @@ Agency automatically uses the first available agent in this order: `opencode2`,
 `opencode`, then `claude`. `--opencode` and `--claude` remain aliases for
 requiring their corresponding built-in presets. Launches are interactive and
 promptless by default; use `--auto` to send Agency's generated context prompt.
+`--instructions <text>` appends supervisor instructions to that prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without

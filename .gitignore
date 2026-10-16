@@ -5,6 +5,7 @@ node_modules
 out
 dist
 src/utils/interactive.js
+src/utils/supervise-ui.js
 *.tgz
 
 # code coverage
