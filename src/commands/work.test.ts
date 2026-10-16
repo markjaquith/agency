@@ -8,6 +8,7 @@ import { PhaseService } from "../services/PhaseService"
 import { WorktreeService } from "../services/WorktreeService"
 import { ReadinessService } from "../services/ReadinessService"
 import { IntegrationService } from "../services/IntegrationService"
+import { RuntimeBindingService } from "../services/RuntimeBindingService"
 import { captureErrors, captureLogs } from "../test-utils"
 import { work, workPrepare } from "./work"
 import type { PickWorkTarget } from "../workbase/work-target"
@@ -87,6 +88,7 @@ interface HarnessOptions {
 	readonly taskRepo?: string
 	readonly existingPaths?: readonly string[]
 	readonly validationIssues?: readonly { path: string; message: string }[]
+	readonly runtimeBindingError?: Error
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -106,6 +108,20 @@ const createHarness = (options: HarnessOptions = {}) => {
 		args: readonly string[]
 		cwd: string
 	}> = []
+	const bindings: Array<
+		Parameters<RuntimeBindingService["Service"]["recordLaunch"]>[0]
+	> = []
+	const runtimeBindings = {
+		recordLaunch: (
+			input: Parameters<RuntimeBindingService["Service"]["recordLaunch"]>[0],
+		) => {
+			events.push("bind")
+			bindings.push(input)
+			return options.runtimeBindingError
+				? Effect.fail(options.runtimeBindingError)
+				: Effect.succeed(null)
+		},
+	}
 	const launchEnvironments: Array<Readonly<Record<string, string>>> = []
 	const launchProcessEnvironments: Array<Record<string, string | undefined>> =
 		[]
@@ -375,6 +391,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 				Effect.provideService(PhaseService, phases as never),
 				Effect.provideService(ReadinessService, readiness as never),
 				Effect.provideService(IntegrationService, integrations as never),
+				Effect.provideService(RuntimeBindingService, runtimeBindings as never),
 			) as Effect.Effect<void, unknown, never>,
 		).finally(() => {
 			if (agencySessionId !== undefined) {
@@ -396,6 +413,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 
 	return {
 		events,
+		bindings,
 		probes,
 		launches,
 		launchEnvironments,
@@ -440,6 +458,7 @@ describe("work command", () => {
 			"guard",
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 		expect(forced.guards[0]).toEqual({
@@ -852,6 +871,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 		expect(harness.launches[0]).toEqual({
@@ -880,6 +900,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 		expect(harness.launches[0]?.cwd).toBe(taskDirectory)
@@ -918,6 +939,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 		expect(harness.launches[0]?.cwd).toBe(
@@ -951,6 +973,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 	})
@@ -976,6 +999,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 	})
@@ -1056,6 +1080,7 @@ describe("work command", () => {
 		expect(harness.events).toEqual([
 			"materialize",
 			"probe:opencode",
+			"bind",
 			"launch:opencode",
 		])
 		expect(harness.launches).toEqual([
@@ -1100,8 +1125,57 @@ describe("work command", () => {
 			"api:post",
 			"api:put",
 			"api:post",
+			"bind",
 			"launch:opencode",
 		])
+		expect(harness.bindings).toEqual([
+			{
+				root: "/workbase",
+				unit: "execution-unit:task/example",
+				agent: "opencode",
+				agentSessionId: "ses_work",
+				agencySessionId: expect.any(String),
+			},
+		])
+	})
+
+	test("records a phase runtime binding without a known agent session", async () => {
+		const harness = createHarness({ workspace: multiPhaseWorkspace })
+		await harness.run({
+			taskId: "example",
+			phaseId: "implementation",
+			opencode: true,
+		})
+		expect(harness.bindings).toEqual([
+			expect.objectContaining({
+				unit: "execution-unit:phase/example/implementation",
+				agentSessionId: null,
+			}),
+		])
+	})
+
+	test("does not record runtime bindings for orchestration or print-only launches", async () => {
+		const harness = createHarness({ multiPhaseTasks: ["example"] })
+		await harness.run({ taskId: "example", opencode: true })
+		await harness.run({ epicId: "delivery", opencode: true })
+		const printHarness = createHarness()
+		await captureLogs(() =>
+			printHarness.run({
+				taskId: "example",
+				opencode: true,
+				printCommand: true,
+			}),
+		)
+		expect(harness.bindings).toEqual([])
+		expect(printHarness.bindings).toEqual([])
+	})
+
+	test("launches even when the runtime binding cannot be recorded", async () => {
+		const harness = createHarness({
+			runtimeBindingError: new Error("state directory is read-only"),
+		})
+		await harness.run({ taskId: "example", opencode: true })
+		expect(harness.events.slice(-2)).toEqual(["bind", "launch:opencode"])
 	})
 
 	test("sends the generated prompt only with --auto", async () => {

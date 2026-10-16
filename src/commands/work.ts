@@ -9,6 +9,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { ReadinessService } from "../services/ReadinessService"
 import { IntegrationService } from "../services/IntegrationService"
+import { RuntimeBindingService } from "../services/RuntimeBindingService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
 import { createProgress, type Progress } from "../utils/progress"
@@ -469,6 +470,38 @@ export const work = (
 		const launchArgv = managedOpenCodeAuto
 			? yield* prepareOpenCodeLaunch(resolved.argv, launchPath, environment)
 			: resolved.argv
+		if (
+			target.kind === "phase" ||
+			(target.kind === "task" && !target.multiPhase)
+		) {
+			const sessionFlag = launchArgv.indexOf("--session")
+			const runtimeBindings = yield* RuntimeBindingService
+			yield* runtimeBindings
+				.recordLaunch({
+					root,
+					unit: targetNodeId(target),
+					agent,
+					agentSessionId:
+						sessionFlag >= 0 ? (launchArgv[sessionFlag + 1] ?? null) : null,
+					agencySessionId: sessionId,
+				})
+				.pipe(
+					Effect.tap((binding) =>
+						Effect.sync(() => {
+							if (binding) {
+								verboseLog(
+									`Recorded ${binding.runtime} binding: ${binding.unit} -> ${binding.paneId}`,
+								)
+							}
+						}),
+					),
+					Effect.catch((error) =>
+						Effect.sync(() =>
+							verboseLog(`Unable to record runtime binding: ${error.message}`),
+						),
+					),
+				)
+		}
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
 		}

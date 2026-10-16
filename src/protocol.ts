@@ -130,6 +130,11 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 			"Fix the workbase branchNameCommand or pass an explicit --branch.",
 	},
 	ProcessError: { code: "PROCESS_ERROR", retryable: true },
+	RuntimeError: {
+		code: "RUNTIME_ERROR",
+		retryable: true,
+		remediation: "Check that the runtime (Herdr) is running and retry.",
+	},
 	ProtocolOutputError: {
 		code: "PROTOCOL_OUTPUT_ERROR",
 		retryable: false,

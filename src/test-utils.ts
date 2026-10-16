@@ -1,5 +1,5 @@
 import { spyOn } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -23,6 +23,13 @@ import { GraphMutationService } from "./services/GraphMutationService"
 import { DoctorService } from "./services/DoctorService"
 import { ReviewService } from "./services/ReviewService"
 import { TicketService } from "./services/TicketService"
+import { RuntimeService } from "./services/RuntimeService"
+import { RuntimeBindingService } from "./services/RuntimeBindingService"
+import type {
+	RuntimePane,
+	RuntimeProvider,
+	RuntimeSnapshot,
+} from "./workbase/runtime"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -78,6 +85,9 @@ const TestLayer = Layer.mergeAll(
 	DoctorService.layer,
 	ReviewService.layer,
 	TicketService.layer,
+	RuntimeBindingService.layer,
+	// Tests never observe a real runtime unless they provide one explicitly.
+	Layer.succeed(RuntimeService, fakeRuntimeService(null)),
 )
 
 export async function runTestEffect<A, E>(
@@ -114,3 +124,53 @@ export const captureLogs = (run: () => Promise<unknown>) =>
 
 export const captureErrors = (run: () => Promise<unknown>) =>
 	captureConsole("error", run)
+
+export const runtimePane = (
+	fields: Partial<RuntimePane> & Pick<RuntimePane, "paneId">,
+): RuntimePane => ({
+	tabId: "w1:t1",
+	workspaceId: "w1",
+	agent: "opencode",
+	agentSessionId: null,
+	agentStatus: "idle",
+	cwd: null,
+	foregroundCwd: null,
+	terminalTitle: null,
+	focused: false,
+	...fields,
+})
+
+/** An in-memory runtime provider; no real runtime is contacted. */
+export const createFakeRuntimeProvider = (options: {
+	readonly panes?: readonly RuntimePane[]
+	readonly location?: ReturnType<RuntimeProvider["currentLocation"]>
+	readonly transcripts?: Readonly<Record<string, string>>
+}): RuntimeProvider => {
+	const snapshot: RuntimeSnapshot = {
+		runtime: "herdr",
+		workspaces: [],
+		tabs: [],
+		panes: options.panes ?? [],
+	}
+	return {
+		kind: "herdr",
+		currentLocation: () => options.location ?? null,
+		snapshot: () => Effect.succeed(snapshot),
+		readTranscript: (paneId) =>
+			Effect.succeed(options.transcripts?.[paneId] ?? ""),
+		waitForAgentStatus: (paneId, statuses) =>
+			Effect.succeed(
+				snapshot.panes.find(
+					(pane) =>
+						pane.paneId === paneId && statuses.includes(pane.agentStatus),
+				) ?? null,
+			),
+		subscribe: () => Stream.empty,
+	}
+}
+
+export function fakeRuntimeService(
+	provider: RuntimeProvider | null,
+): RuntimeService["Service"] {
+	return { provider: () => Effect.succeed(provider) }
+}

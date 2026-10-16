@@ -49,6 +49,8 @@ import { GraphMutationService } from "./src/services/GraphMutationService"
 import { DoctorService } from "./src/services/DoctorService"
 import { ReviewService } from "./src/services/ReviewService"
 import { TicketService } from "./src/services/TicketService"
+import { RuntimeService } from "./src/services/RuntimeService"
+import { RuntimeBindingService } from "./src/services/RuntimeBindingService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -91,6 +93,8 @@ const CliLayer = Layer.mergeAll(
 	DoctorService.layer,
 	ReviewService.layer,
 	TicketService.layer,
+	RuntimeService.layer,
+	RuntimeBindingService.layer,
 )
 
 /**
