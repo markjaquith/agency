@@ -64,6 +64,8 @@ beforeEach(async () => {
 	await write(root, "tasks/merged/TASK.md", task("merged", "working", prUrl))
 	await write(root, "tasks/finished/TASK.md", task("finished", "done"))
 	await write(root, "archive/tasks/old/TASK.md", task("old", "done"))
+	await write(root, "archive/tasks/retired/TASK.md", task("retired", "done"))
+	await mkdir(join(tempDir, "prewarm"))
 	await write(other, "tasks/stray/TASK.md", task("stray", "open"))
 	await mkdir(join(tempDir, "notes"))
 	await runTestEffect(
@@ -176,6 +178,14 @@ describe("agency attention", () => {
 				agentStatus: "working",
 				cwd: join(tempDir, "notes"),
 			}),
+			// An unbound pane in an archived item whose foreground process runs
+			// in an unrelated directory.
+			runtimePane({
+				paneId: "w1:p6",
+				tabId: "w1:t6",
+				cwd: join(root, "archive/tasks/retired"),
+				foregroundCwd: join(tempDir, "prewarm"),
+			}),
 		])
 
 		expect(report.workbases).toEqual([
@@ -203,6 +213,7 @@ describe("agency attention", () => {
 		expect(summary).toEqual([
 			["complete_session_open", "finished"],
 			["complete_session_open", "old"],
+			["complete_session_open", "retired"],
 			["pr_merged_item_open", "merged"],
 			["claim_without_session", "orphan"],
 			["agent_waiting", "stray"],
@@ -219,6 +230,25 @@ describe("agency attention", () => {
 			type: "runtime",
 			payload: { operation: "close", target: "tab", id: "w1:t3" },
 		})
+		const retired = report.signals.find(
+			(signal) => signal.subject.item?.taskId === "retired",
+		)!
+		expect(retired.evidence).toEqual(
+			expect.arrayContaining([
+				{
+					source: "runtime",
+					label: "binding",
+					value: "inferred",
+					paneId: "w1:p6",
+				},
+				{
+					source: "runtime",
+					label: "matchedPath",
+					value: "cwd",
+					paneId: "w1:p6",
+				},
+			]),
+		)
 		const sync = report.signals.find(
 			(signal) => signal.kind === "pr_merged_item_open",
 		)!.actions[0]!

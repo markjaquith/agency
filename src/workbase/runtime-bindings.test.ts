@@ -240,5 +240,31 @@ describe("runtime binding reconciliation", () => {
 			["execution-unit:phase/multi/build", "directory", "w1:p3"],
 		])
 		expect(paneIds(result.unmanaged)).toEqual(["w1:p4"])
+		expect(result.inferred.map((item) => item.matchedPath)).toEqual([
+			"foregroundCwd",
+			"cwd",
+		])
+	})
+
+	test("falls back to the pane directory when the foreground runs elsewhere", () => {
+		const result = reconcileRuntime(
+			[],
+			snapshot(
+				runtimePane({
+					paneId: "w1:p1",
+					cwd: "/wb/tasks/alpha",
+					foregroundCwd: "/elsewhere/prewarm",
+				}),
+			),
+			units,
+		)
+		expect(result.inferred).toMatchObject([
+			{
+				unit: "execution-unit:task/alpha",
+				matchedBy: "directory",
+				matchedPath: "cwd",
+			},
+		])
+		expect(result.unmanaged).toEqual([])
 	})
 })

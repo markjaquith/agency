@@ -64,7 +64,10 @@ export interface AttentionUnit {
 	readonly pr: AttentionPullRequest | null
 	readonly ticket: TicketRecord
 	readonly binding: AttentionBinding | null
-	readonly inferred: readonly Pick<InferredBinding, "matchedBy" | "pane">[]
+	readonly inferred: readonly Pick<
+		InferredBinding,
+		"matchedBy" | "matchedPath" | "pane"
+	>[]
 	readonly actions: readonly CatalogAction[]
 }
 
@@ -158,6 +161,24 @@ export const isReadyToMerge = (live: LivePullRequest | null) =>
 
 const paneCwd = (pane: RuntimePane) => pane.foregroundCwd ?? pane.cwd
 
+/** Both directories a pane reports: its foreground process's and its own. */
+const panePaths = (pane: RuntimePane) => [
+	...new Set(
+		[pane.foregroundCwd, pane.cwd].filter((path): path is string =>
+			Boolean(path),
+		),
+	),
+]
+
+/** Whether a path lies inside an epic, task, or archived item directory. */
+const inItem = (roots: readonly string[], path: string) =>
+	roots.some((root) =>
+		["epics", "tasks", "archive"].some((directory) => {
+			const parent = join(root, directory)
+			return contains(parent, path) && relative(parent, path) !== ""
+		}),
+	)
+
 const runtimeRef = (
 	runtime: RuntimeKind,
 	pane: RuntimePane,
@@ -192,6 +213,7 @@ interface UnitPane {
 	readonly pane: RuntimePane
 	readonly binding: "recorded" | "inferred"
 	readonly matchedBy: "checkout" | "directory" | null
+	readonly matchedPath: "foregroundCwd" | "cwd" | null
 }
 
 /** Panes that currently host a unit through its binding or an inference. */
@@ -203,7 +225,12 @@ const unitPanes = (unit: AttentionUnit): UnitPane[] => {
 		unit.binding.state !== "unknown"
 	) {
 		for (const pane of unit.binding.panes)
-			panes.set(pane.paneId, { pane, binding: "recorded", matchedBy: null })
+			panes.set(pane.paneId, {
+				pane,
+				binding: "recorded",
+				matchedBy: null,
+				matchedPath: null,
+			})
 	}
 	for (const inferred of unit.inferred) {
 		if (!panes.has(inferred.pane.paneId))
@@ -211,6 +238,7 @@ const unitPanes = (unit: AttentionUnit): UnitPane[] => {
 				pane: inferred.pane,
 				binding: "inferred",
 				matchedBy: inferred.matchedBy,
+				matchedPath: inferred.matchedPath,
 			})
 	}
 	return [...panes.values()].sort((a, b) =>
@@ -288,7 +316,7 @@ const ticketEvidence = (ticket: TicketRecord): AttentionEvidence[] => {
 
 const paneEvidence = (
 	pane: RuntimePane,
-	provenance?: Pick<UnitPane, "binding" | "matchedBy">,
+	provenance?: Pick<UnitPane, "binding" | "matchedBy" | "matchedPath">,
 ): AttentionEvidence[] => {
 	const about = { paneId: pane.paneId }
 	return [
@@ -297,11 +325,13 @@ const paneEvidence = (
 		evidence("runtime", "agent", pane.agent, about),
 		evidence("runtime", "agentSessionId", pane.agentSessionId, about),
 		evidence("runtime", "agentStatus", pane.agentStatus, about),
-		evidence("runtime", "cwd", paneCwd(pane), about),
+		evidence("runtime", "cwd", pane.cwd, about),
+		evidence("runtime", "foregroundCwd", pane.foregroundCwd, about),
 		...(provenance
 			? [
 					evidence("runtime", "binding", provenance.binding, about),
 					evidence("runtime", "matchedBy", provenance.matchedBy, about),
+					evidence("runtime", "matchedPath", provenance.matchedPath, about),
 				]
 			: []),
 	]
@@ -610,10 +640,26 @@ const unitLabel = (unit: AttentionUnit) =>
 		? `${unit.item.taskId}/${unit.item.phaseId}`
 		: unit.item.taskId
 
+/** Every unit, in any workbase, that references each available ticket. */
+const ticketSharers = (snapshot: AttentionSnapshot) => {
+	const sharers = new Map<string, AttentionUnit[]>()
+	for (const workbase of snapshot.workbases) {
+		for (const unit of workbase.units) {
+			if (unit.ticket.state !== "available") continue
+			sharers.set(unit.ticket.url, [
+				...(sharers.get(unit.ticket.url) ?? []),
+				unit,
+			])
+		}
+	}
+	return sharers
+}
+
 const completeSessionOpen = (
 	snapshot: AttentionSnapshot,
 	workbase: AttentionWorkbase,
 	unit: AttentionUnit,
+	sharers: ReadonlyMap<string, readonly AttentionUnit[]>,
 ): AttentionSignal[] => {
 	const runtime = snapshot.runtime.provider
 	const entries = unitPanes(unit)
@@ -625,9 +671,21 @@ const completeSessionOpen = (
 		prState === null ||
 		prState === "merged" ||
 		(prState === "closed" && unit.status === "dropped")
+	// An open ticket is accounted for when other active units sharing it are
+	// what hold it open.
+	const heldOpenBy =
+		unit.ticket.state === "available" && unit.ticket.statusCategory !== "done"
+			? (sharers.get(unit.ticket.url) ?? []).filter(
+					(other) =>
+						other !== unit &&
+						!other.item.archived &&
+						!TERMINAL.has(other.status),
+				)
+			: []
 	const ticketSettled =
 		unit.ticket.state === "none" ||
-		(unit.ticket.state === "available" && unit.ticket.statusCategory === "done")
+		(unit.ticket.state === "available" &&
+			(unit.ticket.statusCategory === "done" || heldOpenBy.length > 0))
 	if (!prSettled || !ticketSettled) return []
 	const panes = entries.map((entry) => entry.pane)
 	const subject = subjectFor(
@@ -649,6 +707,9 @@ const completeSessionOpen = (
 				...unitEvidence(unit),
 				...prEvidence(unit.pr),
 				...ticketEvidence(unit.ticket),
+				...heldOpenBy.map((other) =>
+					evidence("ticket", "heldOpenBy", other.status, unitAbout(other)),
+				),
 				...entries.flatMap((entry) => paneEvidence(entry.pane, entry)),
 			],
 			(id) => [
@@ -1055,29 +1116,45 @@ const paneOwners = (snapshot: AttentionSnapshot) => {
 const containsAny = (roots: readonly string[], path: string) =>
 	roots.some((root) => contains(root, path))
 
-/** The workbase whose root contains a pane, or "other" for an uninspected one. */
+/**
+ * The workbase whose root contains a pane, or "other" for an uninspected one.
+ * A pane reports two directories; prefer the one inside a workbase item.
+ */
 const paneWorkbase = (
 	snapshot: AttentionSnapshot,
 	pane: RuntimePane,
 ): AttentionWorkbase | "other" | null => {
-	const cwd = paneCwd(pane)
-	if (!cwd) return null
-	const depth = (roots: readonly string[]) =>
-		Math.max(
-			-1,
-			...roots.filter((root) => contains(root, cwd)).map((root) => root.length),
-		)
-	let best: { depth: number; workbase: AttentionWorkbase | "other" } | null =
-		null
-	for (const workbase of snapshot.workbases) {
-		const found = depth(workbase.roots)
-		if (found >= 0 && (!best || found > best.depth))
-			best = { depth: found, workbase }
+	const ownerOf = (path: string) => {
+		const depth = (roots: readonly string[]) =>
+			Math.max(
+				-1,
+				...roots
+					.filter((root) => contains(root, path))
+					.map((root) => root.length),
+			)
+		let best: { depth: number; workbase: AttentionWorkbase | "other" } | null =
+			null
+		for (const workbase of snapshot.workbases) {
+			const found = depth(workbase.roots)
+			if (found >= 0 && (!best || found > best.depth))
+				best = { depth: found, workbase }
+		}
+		const other = depth(snapshot.otherRoots)
+		if (other >= 0 && (!best || other > best.depth))
+			best = { depth: other, workbase: "other" }
+		return best?.workbase ?? null
 	}
-	const other = depth(snapshot.otherRoots)
-	if (other >= 0 && (!best || other > best.depth))
-		best = { depth: other, workbase: "other" }
-	return best?.workbase ?? null
+	const matches = panePaths(pane).flatMap((path) => {
+		const owner = ownerOf(path)
+		return owner ? [{ path, owner }] : []
+	})
+	return (
+		matches.find(
+			({ path, owner }) => owner !== "other" && inItem(owner.roots, path),
+		)?.owner ??
+		matches[0]?.owner ??
+		null
+	)
 }
 
 const inspected = (owner: AttentionWorkbase | "other" | null) =>
@@ -1087,18 +1164,17 @@ const inspected = (owner: AttentionWorkbase | "other" | null) =>
  * Agents at a workbase root or in epic or non-unit task directories are
  * orchestration sessions, not unmanaged ones.
  */
-const isOrchestration = (workbase: AttentionWorkbase, pane: RuntimePane) => {
-	const cwd = paneCwd(pane)
-	if (!cwd) return false
-	return workbase.roots.some(
-		(root) =>
-			relative(root, cwd) === "" ||
-			["epics", "tasks"].some((directory) => {
-				const parent = join(root, directory)
-				return contains(parent, cwd) && relative(parent, cwd) !== ""
-			}),
+const isOrchestration = (workbase: AttentionWorkbase, pane: RuntimePane) =>
+	panePaths(pane).some((cwd) =>
+		workbase.roots.some(
+			(root) =>
+				relative(root, cwd) === "" ||
+				["epics", "tasks"].some((directory) => {
+					const parent = join(root, directory)
+					return contains(parent, cwd) && relative(parent, cwd) !== ""
+				}),
+		),
 	)
-}
 
 const duplicateSessions = (
 	snapshot: AttentionSnapshot,
@@ -1334,11 +1410,12 @@ export const attentionSignals = (
 ): AttentionSignal[] => {
 	const missing = new Set(snapshot.missingPaths)
 	const owners = paneOwners(snapshot)
+	const sharers = ticketSharers(snapshot)
 	const signals: AttentionSignal[] = [...ticketSignals(snapshot)]
 	for (const workbase of snapshot.workbases) {
 		for (const unit of workbase.units) {
 			signals.push(
-				...completeSessionOpen(snapshot, workbase, unit),
+				...completeSessionOpen(snapshot, workbase, unit, sharers),
 				...prMergedItemOpen(workbase, unit),
 				...prReadyToMerge(workbase, unit),
 				...claimWithoutSession(snapshot, workbase, unit),

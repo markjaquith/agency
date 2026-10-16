@@ -324,7 +324,9 @@ describe("attention signals", () => {
 							unit("alpha", {
 								archived: true,
 								status: "done",
-								inferred: [{ matchedBy: "directory", pane: busy }],
+								inferred: [
+									{ matchedBy: "directory", matchedPath: "cwd", pane: busy },
+								],
 							}),
 						]),
 					],
@@ -349,6 +351,36 @@ describe("attention signals", () => {
 					},
 				]),
 			)
+		})
+
+		test("accepts a shared ticket held open only by other active units", () => {
+			const pane = runtimePane({ paneId: "w1:p1", agentSessionId: "ses_1" })
+			const shared = ticket("in_progress")
+			const current = (sibling: AttentionUnit["status"]) =>
+				snapshot(
+					[
+						workbase([
+							unit("config", {
+								status: "done",
+								prState: "merged",
+								ticket: shared,
+								panes: [pane],
+							}),
+							unit("secrets-check", { status: sibling, ticket: shared }),
+						]),
+					],
+					[pane],
+				)
+			const signal = only(current("open"), "complete_session_open")
+			expect(signal.subject.item?.taskId).toBe("config")
+			expect(signal.evidence).toContainEqual({
+				source: "ticket",
+				label: "heldOpenBy",
+				value: "open",
+				unit: "execution-unit:task/secrets-check",
+			})
+			// Once nothing else holds it open, the ticket itself is unfinished.
+			expect(kinds(current("dropped"))).toEqual(["ticket_status_mismatch"])
 		})
 
 		test("waits for an open PR or unfinished ticket", () => {

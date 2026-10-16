@@ -48,6 +48,15 @@ import { TicketService } from "./TicketService"
 import { WorkbaseService } from "./WorkbaseService"
 
 const PR_CONCURRENCY = 8
+
+/** A pane's foreground process directory and its own directory, deduplicated. */
+const panePaths = (pane: RuntimePane) => [
+	...new Set(
+		[pane.foregroundCwd, pane.cwd].filter((path): path is string =>
+			Boolean(path),
+		),
+	),
+]
 const WORKBASE_CONCURRENCY = 4
 const DEFAULT_JIRA = { doneStatus: "Done", reopenStatus: "In Progress" }
 
@@ -372,21 +381,22 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 						...(options.archived ? yield* listArchived(root) : []),
 						// Panes still running in (or where) an archived item lives.
 						...(snapshot?.panes ?? []).flatMap((pane) => {
-							const directory = pane.foregroundCwd ?? pane.cwd
-							if (pane.agent === null || !directory) return []
-							return roots.flatMap((base) => {
-								const match = relative(base, directory).match(
-									/^(?:archive\/)?tasks\/([^/]+)(?:\/phases\/([^/]+))?/,
-								)
-								return match
-									? [
-											{
-												taskId: match[1]!,
-												...(match[2] ? { phaseId: match[2] } : {}),
-											},
-										]
-									: []
-							})
+							if (pane.agent === null) return []
+							return panePaths(pane).flatMap((directory) =>
+								roots.flatMap((base) => {
+									const match = relative(base, directory).match(
+										/^(?:archive\/)?tasks\/([^/]+)(?:\/phases\/([^/]+))?/,
+									)
+									return match
+										? [
+												{
+													taskId: match[1]!,
+													...(match[2] ? { phaseId: match[2] } : {}),
+												},
+											]
+										: []
+								}),
+							)
 						}),
 						...bindings
 							.filter((binding) => !known.has(binding.unit))
@@ -478,7 +488,11 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 									: { record: binding, state: "unknown", panes: [] },
 							inferred: (reconciled?.inferred ?? [])
 								.filter((item) => item.unit === unit.id)
-								.map(({ matchedBy, pane }) => ({ matchedBy, pane })),
+								.map(({ matchedBy, matchedPath, pane }) => ({
+									matchedBy,
+									matchedPath,
+									pane,
+								})),
 							actions: unit.entity
 								? catalog(graph.nodes, root, unit.entity)
 								: [],
@@ -574,10 +588,9 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 					yield* add(cwd, "current")
 					// Live agents may run in workbases that were never registered.
 					for (const path of new Set(
-						panes.flatMap((pane) => {
-							const directory = pane.foregroundCwd ?? pane.cwd
-							return pane.agent !== null && directory ? [directory] : []
-						}),
+						panes.flatMap((pane) =>
+							pane.agent !== null ? panePaths(pane) : [],
+						),
 					)) {
 						yield* add(path, "runtime")
 					}
