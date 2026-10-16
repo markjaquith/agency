@@ -13,6 +13,8 @@ import { epic } from "./epic"
 import { phase } from "./phase"
 import { task } from "./task"
 import { act, type ActInteraction } from "./act"
+import { collectActionInputs } from "./act-wizard"
+import { ActCancelled } from "./act-prompts"
 import { worktree } from "./worktree"
 import { parseCli } from "../cli-parser"
 import { FileSystemService } from "../services/FileSystemService"
@@ -1988,4 +1990,94 @@ describe("act command", () => {
 				"",
 			].join("\n"),
 		)
+
+	describe("collectActionInputs (Supervise's act wizard handoff)", () => {
+		const answering = (answers: readonly string[], prompts: string[]) => {
+			let index = 0
+			return {
+				...scriptedInteraction([]),
+				text: (prompt: string) => {
+					prompts.push(prompt)
+					return Effect.succeed(answers[index++] ?? null)
+				},
+			} satisfies ActInteraction
+		}
+
+		test("prefills prompts from the action's values and reports answers by input ID", async () => {
+			const prompts: string[] = []
+			const values = await runTestEffect(
+				collectActionInputs(
+					{
+						root,
+						selector: null,
+						actionId: "task-create",
+						values: { description: "Prefilled outcome", base: "develop" },
+					},
+					answering(["", "", ""], prompts),
+				),
+			)
+			expect(prompts).toEqual([
+				"Outcome [Prefilled outcome]: ",
+				"New task ID [prefilled-outcome]: ",
+				"Base branch [develop]: ",
+			])
+			expect(values).toEqual({
+				description: "Prefilled outcome",
+				id: "prefilled-outcome",
+				repo: "agency",
+				base: "develop",
+			})
+		})
+
+		test("collects nothing for an action without inputs and fails closed when it is unavailable", async () => {
+			await createTask("example")
+			const prompts: string[] = []
+			const request = {
+				root,
+				selector: { task: "example" },
+				values: {},
+			}
+			expect(
+				await runTestEffect(
+					collectActionInputs(
+						{ ...request, actionId: "drop" },
+						answering([], prompts),
+					),
+				),
+			).toEqual({})
+			await expect(
+				runTestEffect(
+					collectActionInputs(
+						{ ...request, actionId: "archive" },
+						answering([], prompts),
+					),
+				),
+			).rejects.toThrow("Item and all children must be terminal")
+			await expect(
+				runTestEffect(
+					collectActionInputs(
+						{ ...request, selector: { task: "missing" }, actionId: "drop" },
+						answering([], prompts),
+					),
+				),
+			).rejects.toThrow("task:missing no longer exists")
+			expect(prompts).toEqual([])
+		})
+
+		test("cancelling the wizard cancels the handoff", async () => {
+			await expect(
+				runTestEffect(
+					collectActionInputs(
+						{
+							root,
+							selector: null,
+							actionId: "task-create",
+							values: {},
+						},
+						answering([], []),
+					),
+				),
+			).rejects.toBeInstanceOf(ActCancelled)
+		})
+	})
 })

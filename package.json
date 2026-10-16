@@ -23,7 +23,7 @@
     "cli-main.ts",
     "src",
     "!src/utils/interactive.tsx",
-    "!src/utils/supervise-ui.tsx",
+    "!src/utils/supervise-tab.tsx",
     "!src/**/*.test.ts",
     "!src/**/*.test.tsx",
     "!src/test-utils.ts",

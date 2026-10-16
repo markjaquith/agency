@@ -1,4 +1,4 @@
-import { Schema, Effect } from "effect"
+import { Deferred, Effect, Fiber, Schema } from "effect"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { ActDiscovery } from "../act-schema"
 import type { GraphNode } from "../graph-schema"
@@ -26,10 +26,12 @@ import {
 	wizardInputs,
 	actTabs,
 	defaultInteraction,
+	loadSupervisorSurface,
 	openActSession,
 	recordingInteraction,
 	replayInteraction,
 	type ActInteraction,
+	type ActTabId,
 } from "./act-prompts"
 import {
 	applyOptimistic,
@@ -39,7 +41,19 @@ import {
 	type QueueJob,
 } from "./act-queue"
 import { work as startWork, type StartWork } from "./work"
+import {
+	collectActionInputs,
+	isEntity,
+	materializedCheckouts,
+} from "./act-wizard"
 import { hasPendingRebase } from "../services/RebaseService"
+import type { SupervisorAction } from "../attention-schema"
+import { UNMANAGED_GROUP } from "../workbase/supervise-view"
+import {
+	runSupervisor,
+	type CollectedInputs,
+	type SuperviseOptions,
+} from "./supervise-engine"
 
 export type { ActInteraction } from "./act-prompts"
 
@@ -53,7 +67,13 @@ interface ActOptions extends BaseCommandOptions {
 	readonly taskId?: string
 	readonly phaseId?: string
 	readonly exitOnEscape?: boolean
+	/** The tab the interactive session opens on. */
+	readonly tab?: ActTabId
+	/** Options for the Supervise tab's supervisor. */
+	readonly supervise?: Omit<SuperviseOptions, keyof BaseCommandOptions>
 }
+
+type AgencyAction = Extract<SupervisorAction, { type: "agency" }>
 
 const entityChoices = (
 	nodes: readonly ActEntity[],
@@ -252,27 +272,6 @@ interface QueuedAction extends RecordedAction {
 
 type NativeOptions = Parameters<typeof actActions>[1]
 
-const isEntity = (node: GraphNode): node is ActEntity =>
-	node.kind === "epic" || node.kind === "task" || node.kind === "phase"
-
-const materializedCheckouts = (nodes: readonly GraphNode[]) => {
-	const states = new Map<string, ActCheckoutState>()
-	for (const node of nodes) {
-		if (node.kind !== "execution-unit" || !node.workspace?.materialized)
-			continue
-		const id =
-			"phaseId" in node.data
-				? `phase:${node.data.taskId}/${node.data.phaseId}`
-				: `task:${node.data.taskId}`
-		states.set(id, {
-			paths: [node.workspace.checkoutPath],
-			conflicts: [],
-			dirty: false,
-		})
-	}
-	return states
-}
-
 /**
  * Rebuild a chosen item action from current state and replay its recorded
  * inputs, so revision guards and availability checks reflect that state.
@@ -329,7 +328,7 @@ const goalChoices = actionGroups.map(({ id, label, icon }) => ({
 
 type HomeChoice = { kind: "goal" | "item"; id: string }
 
-const homeTabs = (nodes: readonly ActEntity[]) => [
+const homeTabs = (nodes: readonly ActEntity[], supervise = false) => [
 	{
 		...actTabs[0],
 		emptyLabel: "No tasks or phases yet",
@@ -352,6 +351,9 @@ const homeTabs = (nodes: readonly ActEntity[]) => [
 				value: { kind: "goal", id: choice.value } as HomeChoice,
 			})),
 	},
+	...(supervise
+		? [{ ...actTabs[2], choices: [] as Choice<HomeChoice>[] }]
+		: []),
 ]
 
 const queueEntry = (job: QueueJob<QueuedAction>) =>
@@ -395,8 +397,25 @@ const queueChanged = (state: ActState) => {
 	state.refreshHome?.()
 }
 
+/** A Supervise request to collect an Agency action's inputs in the wizard. */
+interface Handoff {
+	readonly action: AgencyAction
+	readonly resolve: (result: CollectedInputs) => void
+}
+
 interface ActState {
 	session?: Effect.Success<ReturnType<typeof openActSession>>
+	/** The Supervise tab, which outlives each terminal session. */
+	supervisor?: Effect.Success<ReturnType<typeof loadSupervisorSurface>>
+	/** Starts the supervisor once Supervise is first shown; stops it on exit. */
+	engine?: { readonly start: () => void; readonly stop: Effect.Effect<void> }
+	handoffs: Handoff[]
+	/** The workbase of the item selected in Supervise. */
+	supervisedRoot?: string
+	/** Supervise ran an action since the front screen was loaded. */
+	stale?: boolean
+	/** The requested initial tab has been shown. */
+	tabOpened?: boolean
 	queue?: ActionQueue<QueuedAction>
 	/** Last queue sequence reported to the notice and recap. */
 	reported: number
@@ -417,6 +436,61 @@ interface ActState {
 	goal?: string
 }
 
+const errorMessage = (error: unknown) =>
+	error instanceof Error
+		? error.message
+		: typeof error === "object" &&
+			  error !== null &&
+			  "message" in error &&
+			  typeof error.message === "string"
+			? error.message
+			: String(error)
+
+/** Run a Supervise handoff in the act wizard, then return to Supervise. */
+const handoffStep = (handoff: Handoff, options: ActOptions, state: ActState) =>
+	Effect.gen(function* () {
+		const session = state.session
+		const { payload } = handoff.action
+		// Leaving the front screen for this step is not a user navigation.
+		session?.takeNavigation()
+		state.view = "flow"
+		const result: CollectedInputs = !session
+			? { kind: "unavailable", reason: "The terminal session is closed" }
+			: yield* collectActionInputs(
+					{
+						root: payload.cwd,
+						selector: payload.selector,
+						actionId: payload.actionId,
+						values: payload.values,
+					},
+					session.interaction,
+					{
+						auto: options.auto,
+						canGoBack: () =>
+							!session.quitRequested && !session.navigationRequested,
+						onInputError: (message) =>
+							session.notice(message ? `󰀦  ${message}` : state.notice),
+						onLoaded: (root, label) => {
+							// Workstream and Workbase follow the supervised item.
+							state.root = root
+							session.notice(`󰈈  Supervise › ${label}`)
+						},
+					},
+				).pipe(
+					Effect.map((values): CollectedInputs => ({ kind: "values", values })),
+					Effect.catch((error) =>
+						Effect.succeed<CollectedInputs>(
+							error instanceof ActCancelled
+								? { kind: "cancelled" }
+								: { kind: "unavailable", reason: errorMessage(error) },
+						),
+					),
+				)
+		handoff.resolve(result)
+		if (session && !session.navigationRequested)
+			session.activateTab("supervise")
+	})
+
 export const act = (
 	options: ActOptions = {},
 	interaction: ActInteraction = defaultInteraction,
@@ -429,17 +503,18 @@ export const act = (
 			view: "home",
 			native: false,
 			notice: "",
+			handoffs: [],
 		}
 		let nextOptions = options
 		const { log } = createLoggers(options)
 		yield* Effect.gen(function* () {
 			while (true) {
 				state.view = "home"
-				const keepGoing = yield* actStep(
-					nextOptions,
-					interaction,
-					work,
-					state,
+				const handoff = state.handoffs.shift()
+				const keepGoing = yield* (
+					handoff
+						? handoffStep(handoff, options, state)
+						: Effect.asVoid(actStep(nextOptions, interaction, work, state))
 				).pipe(
 					Effect.tap(() =>
 						Effect.sync(() => {
@@ -452,8 +527,11 @@ export const act = (
 						if (error instanceof ActCancelled) {
 							if (state.view === "item-menu") state.item = undefined
 							if (state.view === "goal-menu") state.goal = undefined
+							// The interactive front screen never quits on Escape.
 							return Effect.succeed(
-								state.view !== "home" || options.exitOnEscape === false,
+								state.native ||
+									state.view !== "home" ||
+									options.exitOnEscape === false,
 							)
 						}
 						if (!state.native || state.view === "home")
@@ -494,7 +572,15 @@ export const act = (
 				}
 			}
 		}).pipe(
-			// Queued mutations finish before the session and its worker are released.
+			// A supervised action in flight and queued mutations finish before the
+			// session and its workers are released.
+			Effect.ensuring(
+				Effect.suspend(() => {
+					for (const handoff of state.handoffs.splice(0))
+						handoff.resolve({ kind: "cancelled" })
+					return state.engine?.stop ?? Effect.void
+				}),
+			),
 			Effect.ensuring(
 				Effect.suspend(() => {
 					const queue = state.queue
@@ -514,6 +600,86 @@ export const act = (
 			),
 		)
 	})
+
+/** Ask the act loop to collect a supervised Agency action's inputs. */
+const requestHandoff = (state: ActState, action: AgencyAction) =>
+	new Promise<CollectedInputs>((resolve) => {
+		state.handoffs.push({ action, resolve })
+		if (state.session?.leaveTabs()) return
+		state.handoffs.pop()
+		resolve({
+			kind: "unavailable",
+			reason: "finish the open Workstream or Workbase step first",
+		})
+	})
+
+/** Start the Supervise tab's supervisor in the background, on first view. */
+const forkSupervisor = (
+	options: ActOptions,
+	state: ActState,
+	surface: NonNullable<ActState["supervisor"]>,
+) =>
+	Effect.gen(function* () {
+		const activation = yield* Deferred.make<void>()
+		const fiber = yield* Effect.forkScoped(
+			Deferred.await(activation).pipe(
+				Effect.andThen(
+					runSupervisor(
+						{
+							...options.supervise,
+							cwd: options.cwd,
+							verbose: options.verbose,
+						},
+						async (handlers) => {
+							surface.attach(handlers)
+							return {
+								...surface.ui,
+								collect: (action) => requestHandoff(state, action),
+								executed: () => {
+									state.stale = true
+								},
+							}
+						},
+					),
+				),
+				Effect.catch((error) =>
+					Effect.sync(() =>
+						surface.ui.notice(
+							`The supervisor stopped: ${errorMessage(error)}`,
+							"error",
+						),
+					),
+				),
+			),
+		)
+		let started = false
+		state.engine = {
+			start: () => {
+				if (started) return
+				started = true
+				Deferred.doneUnsafe(activation, Effect.void)
+			},
+			stop: Effect.suspend(() => {
+				if (!started) return Fiber.interrupt(fiber)
+				// A running action finishes; triage and refreshes stop.
+				state.session?.show("󰔟  Stopping Supervise…")
+				surface.stop()
+				return Fiber.join(fiber)
+			}).pipe(Effect.ignore),
+		}
+	})
+
+/** Switching tabs: Supervise starts its supervisor; the others follow its item. */
+const tabChanged = (state: ActState, id: string) => {
+	if (id === "supervise") {
+		state.engine?.start()
+		return
+	}
+	const moved = state.supervisedRoot && state.supervisedRoot !== state.root
+	if (moved) state.root = state.supervisedRoot
+	// Reload the front screen in place of showing stale or another workbase's work.
+	if (moved || state.stale) state.session?.leaveTabs()
+}
 
 const actStep = (
 	options: ActOptions,
@@ -560,6 +726,7 @@ const actStep = (
 				})).nodes,
 		}
 		state.loaded = { root, nodes: graph.nodes, snapshot }
+		if (!cached) state.stale = false
 		const checkoutStates = materializedCheckouts(graph.nodes)
 		if (options.json && checkoutStates.size > 0) {
 			checkoutStates.clear()
@@ -592,19 +759,51 @@ const actStep = (
 			{ concurrency: 8, discard: true },
 		)
 		const recap = state.recap
+		const supervising = options.tab === "supervise"
+		const nativeEligible =
+			!options.json &&
+			interaction === defaultInteraction &&
+			// Supervise never used an external chooser; it needs the native TUI.
+			(!config.chooserCommand || supervising) &&
+			Boolean(process.stdin.isTTY) &&
+			Boolean(process.stdout.isTTY)
+		if (!state.session && nativeEligible && !state.supervisor)
+			state.supervisor = yield* loadSupervisorSurface({
+				onSelect: (item) => {
+					state.supervisedRoot =
+						item && item.groupKey !== UNMANAGED_GROUP
+							? item.groupKey
+							: undefined
+				},
+			})
+		const opened = !state.session && nativeEligible
 		const session =
 			state.session ??
-			(!options.json &&
-			interaction === defaultInteraction &&
-			!config.chooserCommand &&
-			process.stdin.isTTY &&
-			process.stdout.isTTY
-				? yield* Effect.acquireRelease(openActSession(), (session) =>
-						session.close(),
+			(nativeEligible
+				? yield* Effect.acquireRelease(
+						openActSession({
+							supervisor: state.supervisor,
+							onTabChange: (id) => tabChanged(state, id),
+						}),
+						(session) => session.close(),
 					)
 				: undefined)
+		if (supervising && !session)
+			return yield* Effect.fail(
+				new Error(
+					"agency supervise requires an interactive terminal; use agency attention --json for automation",
+				),
+			)
 		state.session = session
 		state.native = Boolean(session)
+		if (session && state.supervisor && !state.engine)
+			yield* forkSupervisor(options, state, state.supervisor)
+		// The requested tab applies to the first session, not after a worker returns.
+		if (session && opened && options.tab && !state.tabOpened) {
+			state.tabOpened = true
+			session.activateTab(options.tab)
+			if (supervising) state.engine?.start()
+		}
 		session?.notice(state.notice)
 		const ui = session?.interaction ?? interaction
 		const nativeOptions = {
@@ -762,15 +961,19 @@ const actStep = (
 				if (session)
 					state.refreshHome = () => {
 						load()
-						session.refreshTabs(homeTabs(nodes))
+						session.refreshTabs(homeTabs(nodes, Boolean(state.supervisor)))
 					}
-				const chosen = yield* ui.tabs<HomeChoice>(homeTabs(nodes)).pipe(
-					Effect.ensuring(
-						Effect.sync(() => {
-							state.refreshHome = undefined
-						}),
-					),
-				)
+				const chosen = yield* ui
+					.tabs<HomeChoice>(
+						homeTabs(nodes, Boolean(session && state.supervisor)),
+					)
+					.pipe(
+						Effect.ensuring(
+							Effect.sync(() => {
+								state.refreshHome = undefined
+							}),
+						),
+					)
 				if (!chosen) return yield* Effect.fail(new ActCancelled())
 				state.view = "flow"
 				if (chosen.kind === "item") selectedKey = chosen.id
@@ -1032,12 +1235,13 @@ const actStep = (
 export const help = `
 Usage: agency act [<directory-or-task-id> | --epic <id> | --task <id> [--phase <id>]] [--action <id>] [--dry-run | --json] [--auto] [--draft]
 
-Choose a task/phase in Workstream, or press Tab for Workbase actions. Guided
-creation offers an explicit Work choice afterward; creation alone never starts work.
-Completed item actions return to a freshly loaded Workstream. Escape clears input,
-then steps back through
-wizard prompts, the action menu, and Workstream,
-or exits from the front screen; Ctrl-C quits. A recap is printed when you exit.
+Choose a task/phase in Workstream; Tab and Shift-Tab switch to Workbase actions
+and Supervise, which shows everything needing attention across workbases (agency
+supervise opens it directly). Guided creation offers an explicit Work choice
+afterward; creation alone never starts work. Completed item actions return to a
+freshly loaded Workstream. Escape clears input, then steps back through wizard
+prompts and the action menu; it never quits. Ctrl-C quits, and ? shows the
+active tab's keys. A recap is printed when you exit.
 In the built-in TUI, status changes queue in the background and are shown
 immediately; failures roll back. Exiting waits for queued changes.
 An existing directory or file selects its containing epic, task, or phase.

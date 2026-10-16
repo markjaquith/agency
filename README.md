@@ -656,8 +656,10 @@ for `agency act .` and explicitly focuses the item containing the current path.
 Otherwise, select an item to see its available actions. After an action,
 Agency reloads the graph and returns to Workstream so changed items and available
 actions are current, and archived items no longer appear.
-Press **Tab** to cycle to **Workbase** for workbase actions. Both tabs have a blank
-row above a chevron-prefixed filter with the placeholder “type to filter”.
+Press **Tab** to cycle to **Workbase** for workbase actions and then to
+[**Supervise**](#supervisor); **Shift-Tab** cycles back. Workstream and Workbase
+have a blank row above a chevron-prefixed filter with the placeholder “type to
+filter”; `?` with an empty filter shows the active tab's keys.
 Each tab remembers its filter and selection. The active
 tab shares its background with the panel beneath it. Creation
 works even in an empty workbase. The guided flow collects required inputs,
@@ -705,9 +707,9 @@ In wizard inputs, Escape clears entered text first; with an
 empty input it returns one prompt, retaining earlier answers and recomputing later
 defaults. Escape from the first input returns to the menu; Escape from an item's
 action menu returns to Workstream. Tab switches sections from any step. On
-the front screen, Escape clears a filter first. With an empty filter it exits
-`agency act`, but keeps the TUI open when entered through bare `agency`. Ctrl-C quits from any
-screen. On exit it restores the shell and leaves a compact recap of
+the front screen, Escape clears a filter first; it closes one layer at a time
+and never quits. Ctrl-C quits from any screen. Throughout the TUI a held Enter
+never submits, and confirmations ignore Enter for a moment after they open. On exit it restores the shell and leaves a compact recap of
 completed actions, affected items, and commands. Dry runs are labeled as previews;
 completed steps remain in the recap if a later step is cancelled or fails. Work
 handoffs restore the terminal before starting the interactive worker, then reopen
@@ -1070,8 +1072,15 @@ lock file and replaces the file atomically, so concurrent runs merge.
 agency supervise [--workbase <selector>]
 ```
 
-`agency supervise` is a long-lived TUI, meant for its own Herdr tab, built on
-the [attention signals](#attention-signals). It groups everything needing
+**Supervise** is the third tab of the Agency TUI (`agency act`), built on the
+[attention signals](#attention-signals). `agency supervise` opens the same TUI
+directly on it, so a long-lived Herdr tab can run it; `agency act` starts the
+supervisor only when Supervise is first shown, then keeps it refreshing in the
+background without disturbing the focus, selection, or text input of the tab in
+view. Supervise covers every registered workbase (or `--workbase`) wherever the
+TUI was opened; selecting an entry switches Workstream and Workbase to that
+entry's workbase, and they reload after Supervise runs an action. Tab and
+Shift-Tab switch tabs (except while a Supervise dialog is open). It groups everything needing
 attention by workbase, plus an Unmanaged group for agent panes outside any item.
 Each entry shows a status badge (such as Needs You, Blocked, Ready to Merge,
 Done, Needs Ticket, or Stale), its runtime location (`workspace › tab`), a
@@ -1100,17 +1109,19 @@ once saved with content and confirmed, records `"promptFile": "triage.md"`
 (changing only that key, atomically, and refusing if `agency.json` changed in
 the meantime). An inline `triage.prompt` is kept and still applies first.
 `agency supervise` cleans up on SIGINT, SIGTERM, or SIGHUP: running triage stops,
-the terminal is restored, and it exits 0.
+the terminal is restored, and it exits 0. Quitting with Ctrl-C first lets an
+action already running finish, then stops triage.
 
 | Key                           | Action                                                                 |
 | ----------------------------- | ---------------------------------------------------------------------- |
 | `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                                   |
-| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                                       |
-| `Enter`                       | Preview, confirm, and run the action                                   |
+| `←`/`→`, `1`–`9`              | Choose an action                                                       |
+| `Enter`                       | Preview, confirm, and run the action (Agency actions: wizard first)    |
 | `f`                           | Focus the entry's pane                                                 |
 | `r` / `R`                     | Triage the selected entry, or everything (takes minutes), then refresh |
 | `e`                           | Edit the workbase's triage prompt file in `$EDITOR`                    |
 | `s` / `d`                     | Snooze, or dismiss until the entry changes                             |
+| `Tab` / `S-Tab`               | Switch tabs                                                            |
 | `?` / `Esc` / `C-c`           | Help / close one dialog or help (never quits) / quit                   |
 
 Before running, the supervisor shows exactly what will run: the argv, runtime
@@ -1123,9 +1134,12 @@ identity and a tab's exact agent panes) and skips the action if anything
 changed. Destructive actions need a second confirmation (`y`), which the
 executor itself requires. If a refresh moves the selection, the supervisor says
 so and the next Enter only acknowledges the change.
-`agency` actions are re-resolved with `agency act --action <id> --json` and
-never run a stored argv; template inputs are prompted for, and the action is
-rediscovered just before running and skipped if its command changed. Work and fresh
+`agency` actions open the act wizard for their item first, prefilled from the
+action's `selector` and `values`, so inputs are collected in the same place as
+in Workstream; the wizard only collects. The supervisor then re-resolves the
+action with `agency act --action <id> --json` (never running a stored argv),
+previews and confirms it as above, and rediscovers it just before running,
+skipping it if its command changed. Work and fresh
 delegations start in a new, unfocused tab. `prompt_agent` and delegation to a
 bound agent require the same agent session still in its pane, idle and not
 blocked by a dialog. When that agent is gone or blocked, the supervisor offers a

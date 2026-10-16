@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import type { SupervisorAction } from "../attention-schema"
+import { CONFIRM_DELAY_MS, InteractiveTabbedPrompt } from "./interactive"
 import type { SuperviseItem, SuperviseModel } from "../workbase/supervise-view"
 import {
+	createSupervisorSurface,
 	SupervisorApp,
 	type SupervisorConfirmation,
 	type SupervisorHandlers,
-} from "./supervise-ui"
+} from "./supervise-tab"
 
 const subject = {
 	workbase: { id: null, name: "Main", root: "/work" },
@@ -188,6 +190,8 @@ describe("supervisor view", () => {
 			const first = await view.frame()
 			expect(first).toContain("herdr: close tab w1:t1")
 			expect(first).toContain("enter continue")
+			// The Enter guard also counts from when the panel was shown.
+			await Bun.sleep(CONFIRM_DELAY_MS + 10)
 			view.mockInput.pressEnter()
 			expect(await view.frame()).toContain("press y to confirm")
 			expect(answers).toEqual([])
@@ -252,6 +256,7 @@ describe("supervisor view", () => {
 		try {
 			const answers = confirm(view, 0, true)
 			await view.frame()
+			await Bun.sleep(CONFIRM_DELAY_MS + 10)
 			view.mockInput.pressEnter()
 			await view.frame()
 			view.mockInput.typeText("n")
@@ -377,6 +382,183 @@ describe("supervisor view", () => {
 			expect(frame.indexOf("Written by the triage model")).toBeLessThan(
 				frame.indexOf("Will run:"),
 			)
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+})
+
+describe("Supervise tab in the act frame", () => {
+	const frameTabs = [
+		{
+			id: "workstream",
+			label: "Workstream",
+			prompt: "",
+			choices: [
+				{ key: "a", label: "alpha task" },
+				{ key: "b", label: "beta task" },
+			],
+		},
+		{
+			id: "workbase",
+			label: "Workbase",
+			prompt: "",
+			choices: [{ key: "create", label: "Create work" }],
+		},
+		{ id: "supervise", label: "Supervise", prompt: "", choices: [] },
+	]
+
+	const mount = async (surface: ReturnType<typeof createSupervisorSurface>) => {
+		const changes: number[] = []
+		let submitted: string | null | undefined
+		const rendered = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={frameTabs}
+					panels={{ supervise: surface.panel }}
+					onTabChange={(index) => changes.push(index)}
+					onDone={(value) => {
+						submitted = value
+					}}
+				/>
+			),
+			{ width: 100, height: 24 },
+		)
+		await rendered.renderer.setupTerminal()
+		await rendered.renderOnce()
+		await Bun.sleep(0)
+		const frame = async () => {
+			await rendered.renderOnce()
+			return rendered.captureCharFrame()
+		}
+		return { ...rendered, changes, frame, submitted: () => submitted }
+	}
+
+	test("cycles tabs both ways and keeps Workstream's filter and selection while Supervise refreshes", async () => {
+		const selected: (string | null)[] = []
+		const surface = createSupervisorSurface({
+			onSelect: (item) => selected.push(item?.key ?? null),
+		})
+		surface.ui.update(model)
+		const view = await mount(surface)
+		try {
+			await view.mockInput.typeText("beta")
+			// Background refreshes land while the user is typing elsewhere.
+			for (let index = 0; index < 3; index++)
+				surface.ui.update({ ...model, generatedAt: `refresh-${index}` })
+			surface.ui.status({ refreshing: true })
+			let frame = await view.frame()
+			expect(frame).toContain("▌ beta task")
+			expect(frame).not.toContain("alpha task")
+			view.mockInput.pressTab({ shift: true })
+			frame = await view.frame()
+			expect(frame).toContain("alpha summary")
+			expect(view.changes).toEqual([2])
+			view.mockInput.typeText("j")
+			await view.frame()
+			expect(selected.at(-1)).toBe("beta")
+			// A refresh that reorders items keeps the selection on the same item.
+			surface.ui.update({
+				...model,
+				groups: [
+					{
+						...model.groups[0]!,
+						items: [model.groups[0]!.items[1]!, model.groups[0]!.items[0]!],
+					},
+				],
+			})
+			frame = await view.frame()
+			expect(frame).toMatch(/▌ Needs You\s+beta/)
+			expect(frame).not.toContain("is gone")
+			view.mockInput.pressTab()
+			frame = await view.frame()
+			expect(view.changes).toEqual([2, 0])
+			expect(frame).toContain("▌ beta task")
+			expect(frame).not.toContain("alpha task")
+			view.mockInput.pressEnter()
+			await view.waitFor(() => view.submitted() !== undefined)
+			expect(view.submitted()).toBe("b")
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("keeps Tab inside an open Supervise dialog and ignores keys while hidden", async () => {
+		const executed: string[] = []
+		const surface = createSupervisorSurface()
+		surface.attach({
+			onExecute: (item, action) => executed.push(`${item.key} ${action.id}`),
+			onFocus: () => {},
+			onRefresh: () => {},
+			onTriage: () => {},
+			onEditPrompt: () => {},
+			onSnooze: () => {},
+			onDismiss: () => {},
+			onQuit: () => {},
+		})
+		surface.ui.update(model)
+		const view = await mount(surface)
+		try {
+			// Workstream is showing: Supervise's keys do nothing.
+			view.mockInput.typeText("f")
+			await view.frame()
+			expect(executed).toEqual([])
+			view.mockInput.pressTab({ shift: true })
+			await view.frame()
+			const answer = surface.ui.confirm({
+				title: "Close tab w1:t1",
+				rationale: "Done.",
+				risk: "destructive",
+				preview: ["herdr: close tab w1:t1"],
+				destructive: true,
+			})
+			expect(await view.frame()).toContain("herdr: close tab w1:t1")
+			view.mockInput.pressTab()
+			expect(await view.frame()).toContain("herdr: close tab w1:t1")
+			expect(view.changes).toEqual([2])
+			view.mockInput.pressEscape()
+			await Bun.sleep(30)
+			expect(await answer).toEqual({
+				confirmed: false,
+				destructiveConfirmed: false,
+			})
+			view.mockInput.pressTab()
+			await view.frame()
+			expect(view.changes).toEqual([2, 0])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("a dialog opened while Supervise was hidden waits out the Enter guard once shown", async () => {
+		const surface = createSupervisorSurface()
+		surface.ui.update(model)
+		const view = await mount(surface)
+		try {
+			const answer = surface.ui.confirm({
+				title: "Focus",
+				rationale: "Look.",
+				risk: "reversible",
+				preview: ["herdr: focus pane w1:p1"],
+				destructive: false,
+			})
+			await Bun.sleep(CONFIRM_DELAY_MS + 10)
+			view.mockInput.pressTab({ shift: true })
+			await view.frame()
+			view.mockInput.pressEnter()
+			await view.frame()
+			let settled = false
+			void answer.then(() => {
+				settled = true
+			})
+			await Bun.sleep(0)
+			expect(settled).toBe(false)
+			await Bun.sleep(CONFIRM_DELAY_MS + 10)
+			view.mockInput.pressEnter()
+			expect(await answer).toEqual({
+				confirmed: true,
+				destructiveConfirmed: false,
+			})
 		} finally {
 			view.renderer.destroy()
 		}

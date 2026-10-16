@@ -1,11 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 
-import {
-	createCliRenderer,
-	type CliRenderer,
-	type TextNodeOptions,
-} from "@opentui/core"
-import { render, useKeyboard, useTerminalDimensions } from "@opentui/solid"
+import type { TextNodeOptions } from "@opentui/core"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
 import {
 	createEffect,
 	createMemo,
@@ -22,10 +18,12 @@ import type {
 	SuperviseModel,
 } from "../workbase/supervise-view"
 import {
+	CONFIRM_DELAY_MS,
 	InteractiveSelectPrompt,
-	InteractiveTextPrompt,
-	interactiveSelectRendererConfig,
+	isQuestion,
 	type InteractiveChoice,
+	type InteractivePanel,
+	type InteractivePanelContext,
 } from "./interactive"
 import { macchiato } from "./theme"
 
@@ -87,9 +85,6 @@ const DECLINED: SupervisorConfirmation = {
 	destructiveConfirmed: false,
 }
 
-/** Enter is ignored this long after a dialog opens, so a double press can't confirm. */
-const CONFIRM_DELAY_MS = 250
-
 type Modal =
 	| { readonly kind: "help" }
 	| {
@@ -98,11 +93,6 @@ type Modal =
 			readonly stage: 1 | 2
 			readonly openedAt: number
 			readonly resolve: (value: SupervisorConfirmation) => void
-	  }
-	| {
-			readonly kind: "text"
-			readonly prompt: string
-			readonly resolve: (value: string | null) => void
 	  }
 	| {
 			readonly kind: "choose"
@@ -122,15 +112,12 @@ interface Binding {
 export const SUPERVISOR_BINDINGS: readonly Binding[] = [
 	{ keys: "↑/↓ j/k C-p/C-n", description: "Move between items" },
 	{ keys: "Home/End", description: "First or last item" },
-	{
-		keys: "←/→ Tab/S-Tab",
-		description: "Choose an action",
-		footer: "←/→ action",
-	},
+	{ keys: "←/→", description: "Choose an action", footer: "←/→ action" },
 	{ keys: "1–9", description: "Choose an action by number" },
 	{
 		keys: "Enter",
-		description: "Preview, confirm, and run the action",
+		description:
+			"Preview, confirm, and run the action; Agency actions open the act wizard first",
 		footer: "enter run",
 	},
 	{ keys: "f", description: "Focus the item's pane", footer: "f focus" },
@@ -155,11 +142,16 @@ export const SUPERVISOR_BINDINGS: readonly Binding[] = [
 		description: "Dismiss the item until it changes",
 		footer: "d dismiss",
 	},
+	{
+		keys: "Tab/S-Tab",
+		description:
+			"Switch tabs; Workstream and Workbase follow the selected item's workbase",
+		footer: "tab tabs",
+	},
 	{ keys: "?", description: "Show or hide this help", footer: "? help" },
 	{
 		keys: "Esc",
-		description:
-			"Cancel a dialog (in text input, clear it first) or close this help; does nothing in the list",
+		description: "Cancel a dialog or close this help; does nothing in the list",
 	},
 	{
 		keys: "C-c",
@@ -218,8 +210,31 @@ type Row =
 			readonly index: number
 	  }
 
-const isQuestion = (key: { name: string; sequence: string }) =>
-	key.name === "?" || key.sequence === "?"
+/**
+ * The selection outlives the panel's mount: the front screen is rebuilt after
+ * every Workstream step, and the selection must never move underneath the user.
+ */
+export const createSupervisorSelection = () => {
+	const [key, setKey] = createSignal<string | null>(null)
+	const [actionId, setActionId] = createSignal<string | null>(null)
+	/** A refresh changed the selection; the next Enter only acknowledges it. */
+	const [guard, setGuard] = createSignal(false)
+	const [notice, setNotice] = createSignal<string | null>(null)
+	return {
+		key,
+		setKey,
+		actionId,
+		setActionId,
+		guard,
+		setGuard,
+		notice,
+		setNotice,
+		/** The last selection, to describe it after it disappears. */
+		last: { index: 0, label: "", actionTitle: null as string | null },
+	}
+}
+
+type SupervisorSelection = ReturnType<typeof createSupervisorSelection>
 
 export const SupervisorApp = (props: {
 	readonly model: SuperviseModel | null
@@ -228,77 +243,73 @@ export const SupervisorApp = (props: {
 	readonly modal: Modal | null
 	readonly setModal: (modal: Modal | null) => void
 	readonly handlers: SupervisorHandlers
+	readonly selection?: SupervisorSelection
+	/** False while another tab is showing; the panel then ignores keys. */
+	readonly active?: boolean
+	/** Rows above and below the panel that belong to the surrounding frame. */
+	readonly reservedRows?: number
+	readonly onSelect?: (item: SuperviseItem | null) => void
 }) => {
 	const dimensions = useTerminalDimensions()
-	const [selectedKey, setSelectedKey] = createSignal<string | null>(null)
-	const [selectedActionId, setSelectedActionId] = createSignal<string | null>(
-		null,
-	)
-	/** A refresh changed the selection; the next Enter only acknowledges it. */
-	const [guard, setGuard] = createSignal(false)
-	const [selectionNotice, setSelectionNotice] = createSignal<string | null>(
-		null,
-	)
+	const selection = props.selection ?? createSupervisorSelection()
+	const isActive = () => props.active !== false
 	const items = createMemo(() =>
 		(props.model?.groups ?? []).flatMap((group) => group.items),
 	)
 	const selectedIndex = createMemo(() =>
-		items().findIndex((item) => item.key === selectedKey()),
+		items().findIndex((item) => item.key === selection.key()),
 	)
 	const selected = () => items()[selectedIndex()] ?? null
 	const selectedAction = () => {
 		const actions = selected()?.actions ?? []
 		return (
-			actions.find((action) => action.id === selectedActionId()) ??
+			actions.find((action) => action.id === selection.actionId()) ??
 			actions[0] ??
 			null
 		)
 	}
-	let last: { index: number; label: string; actionTitle: string | null } = {
-		index: 0,
-		label: "",
-		actionTitle: null,
-	}
 	createEffect(() => {
 		const item = selected()
 		if (item)
-			last = {
+			selection.last = {
 				index: selectedIndex(),
 				label: item.label,
 				actionTitle: selectedAction()?.title ?? null,
 			}
 	})
+	createEffect(() => props.onSelect?.(selected()))
 	// Keep the selection on the same item and action across refreshes; when
 	// either disappears, move to a neighbour and say so.
 	createEffect(() => {
 		const list = items()
 		untrack(() => {
 			if (!list.length) return
-			const key = selectedKey()
+			const key = selection.key()
 			const index = list.findIndex((item) => item.key === key)
 			if (key === null) {
-				setSelectedKey(list[0]!.key)
+				selection.setKey(list[0]!.key)
 				return
 			}
 			if (index < 0) {
+				const { last } = selection
 				const neighbour = list[Math.min(last.index, list.length - 1)]!
-				setSelectedKey(neighbour.key)
-				setSelectedActionId(null)
-				setGuard(true)
-				setSelectionNotice(
+				selection.setKey(neighbour.key)
+				selection.setActionId(null)
+				selection.setGuard(true)
+				selection.setNotice(
 					`${last.label} is gone; selected ${neighbour.label} instead`,
 				)
 				return
 			}
-			const actionId = selectedActionId()
+			const actionId = selection.actionId()
 			if (
 				actionId !== null &&
 				!list[index]!.actions.some((action) => action.id === actionId)
 			) {
-				setSelectedActionId(null)
-				setGuard(true)
-				setSelectionNotice(
-					`${last.actionTitle ?? "The selected action"} is no longer offered`,
+				selection.setActionId(null)
+				selection.setGuard(true)
+				selection.setNotice(
+					`${selection.last.actionTitle ?? "The selected action"} is no longer offered`,
 				)
 			}
 		})
@@ -308,26 +319,32 @@ export const SupervisorApp = (props: {
 	createEffect(() => {
 		const item = selected()
 		const first = item?.actions[0]
-		if (first && selectedActionId() === null)
-			untrack(() => setSelectedActionId(first.id))
+		if (first && selection.actionId() === null)
+			untrack(() => selection.setActionId(first.id))
+	})
+	// A dialog opened while another tab was showing still waits out the Enter
+	// guard once it becomes visible.
+	let shownAt = Date.now()
+	createEffect(() => {
+		if (isActive()) shownAt = Date.now()
 	})
 	const userMoved = () => {
-		setGuard(false)
-		setSelectionNotice(null)
+		selection.setGuard(false)
+		selection.setNotice(null)
 	}
 	const select = (index: number) => {
 		const list = items()
 		if (!list.length) return
 		const next = list[Math.max(0, Math.min(list.length - 1, index))]!
-		if (next.key !== selected()?.key) setSelectedActionId(null)
-		setSelectedKey(next.key)
+		if (next.key !== selected()?.key) selection.setActionId(null)
+		selection.setKey(next.key)
 		userMoved()
 	}
 	const selectAction = (index: number) => {
 		const actions = selected()?.actions ?? []
 		const action = actions[index]
 		if (!action) return
-		setSelectedActionId(action.id)
+		selection.setActionId(action.id)
 		userMoved()
 	}
 	const moveAction = (offset: number) => {
@@ -340,8 +357,7 @@ export const SupervisorApp = (props: {
 		const modal = props.modal
 		props.setModal(null)
 		if (modal?.kind === "confirm") modal.resolve(DECLINED)
-		else if (modal?.kind === "text" || modal?.kind === "choose")
-			modal.resolve(null)
+		else if (modal?.kind === "choose") modal.resolve(null)
 	}
 	const quit = () => {
 		cancelModal()
@@ -349,17 +365,17 @@ export const SupervisorApp = (props: {
 	}
 
 	useKeyboard((key) => {
+		if (!isActive() || key.propagationStopped) return
 		if (key.ctrl && key.name === "c") {
 			key.preventDefault()
 			key.stopPropagation()
 			quit()
 			return
 		}
-		// A held key must never run or confirm anything; text entry keeps repeats.
+		// A held key must never run or confirm anything; choice filters keep repeats.
 		if (
 			key.repeated &&
-			(key.name === "return" ||
-				(props.modal?.kind !== "text" && props.modal?.kind !== "choose"))
+			(key.name === "return" || props.modal?.kind !== "choose")
 		) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -383,7 +399,7 @@ export const SupervisorApp = (props: {
 			if (
 				modal.stage === 1 &&
 				key.name === "return" &&
-				Date.now() - modal.openedAt >= CONFIRM_DELAY_MS
+				Date.now() - Math.max(modal.openedAt, shownAt) >= CONFIRM_DELAY_MS
 			) {
 				if (modal.request.destructive) props.setModal({ ...modal, stage: 2 })
 				else {
@@ -398,7 +414,6 @@ export const SupervisorApp = (props: {
 			}
 			return
 		}
-		if (key.propagationStopped) return
 		const handled = () => {
 			key.preventDefault()
 			key.stopPropagation()
@@ -431,12 +446,12 @@ export const SupervisorApp = (props: {
 			select(items().length - 1)
 			return
 		}
-		if (key.name === "right" || (key.name === "tab" && !key.shift)) {
+		if (key.name === "right") {
 			handled()
 			moveAction(1)
 			return
 		}
-		if (key.name === "left" || (key.name === "tab" && key.shift)) {
+		if (key.name === "left") {
 			handled()
 			moveAction(-1)
 			return
@@ -456,9 +471,9 @@ export const SupervisorApp = (props: {
 		switch (key.name) {
 			case "return": {
 				handled()
-				if (guard()) {
-					setGuard(false)
-					setSelectionNotice(
+				if (selection.guard()) {
+					selection.setGuard(false)
+					selection.setNotice(
 						`Selection changed: ${selected()?.label ?? "nothing"} · ${selectedAction()?.title ?? "no action"}. Press Enter again to run.`,
 					)
 					return
@@ -494,9 +509,9 @@ export const SupervisorApp = (props: {
 	})
 
 	const width = () => dimensions().width
-	const detailRows = () =>
-		Math.max(0, Math.min(DETAIL_ROWS, dimensions().height - 8))
-	const listRows = () => Math.max(1, dimensions().height - 3 - detailRows())
+	const height = () => dimensions().height - (props.reservedRows ?? 0)
+	const detailRows = () => Math.max(0, Math.min(DETAIL_ROWS, height() - 8))
+	const listRows = () => Math.max(1, height() - 3 - detailRows())
 	const rows = createMemo<Row[]>(() => {
 		let index = 0
 		return (props.model?.groups ?? []).flatMap((group) => [
@@ -552,7 +567,9 @@ export const SupervisorApp = (props: {
 			? { label: " model", color: macchiato.mauve }
 			: item.triageActionIds.includes(action.id)
 				? { label: " triage", color: macchiato.sapphire }
-				: { label: "", color: macchiato.overlay1 }
+				: action.type === "agency"
+					? { label: " wizard", color: macchiato.overlay1 }
+					: { label: "", color: macchiato.overlay1 }
 	const header = () => {
 		const model = props.model
 		const parts = [
@@ -575,7 +592,7 @@ export const SupervisorApp = (props: {
 	}
 	const footer = () =>
 		props.status.busy
-			? "working… · ? help · C-c quit"
+			? "working… · tab tabs · ? help · C-c quit"
 			: SUPERVISOR_BINDINGS.flatMap((binding) =>
 					binding.footer ? [binding.footer] : [],
 				).join(" · ")
@@ -743,7 +760,7 @@ export const SupervisorApp = (props: {
 			paddingTop={1}
 		>
 			<text height={1} fg={macchiato.blue}>
-				Keys
+				Supervise keys
 			</text>
 			<For each={SUPERVISOR_BINDINGS}>
 				{(binding) => (
@@ -757,8 +774,9 @@ export const SupervisorApp = (props: {
 			<text fg={macchiato.overlay1} wrapMode="word">
 				Every action shows exactly what it runs and rechecks its preconditions
 				against fresh state before running. Destructive actions need a second
-				confirmation. Actions tagged "triage" were recommended by triage;
-				"model" ones were written by the triage model itself.
+				confirmation. Agency actions collect their inputs in the act wizard.
+				Actions tagged "triage" were recommended by triage; "model" ones were
+				written by the triage model itself.
 			</text>
 			<text height={1} wrapMode="none" fg={macchiato.overlay1}>
 				{`Last triage: ${props.status.triage.last ?? "none this session"}`}
@@ -770,29 +788,17 @@ export const SupervisorApp = (props: {
 		<box
 			flexDirection="column"
 			width="100%"
-			height="100%"
+			height={height()}
 			backgroundColor={macchiato.base}
 		>
-			<box
-				flexDirection="row"
+			<text
 				height={1}
 				flexShrink={0}
-				paddingLeft={1}
-				paddingRight={1}
-				backgroundColor={macchiato.surface0}
+				wrapMode="none"
+				fg={props.status.live ? macchiato.green : macchiato.overlay1}
 			>
-				<text fg={macchiato.blue} wrapMode="none" flexShrink={0}>
-					Agency Supervisor
-				</text>
-				<box flexGrow={1} minWidth={1} />
-				<text
-					fg={props.status.live ? macchiato.green : macchiato.overlay1}
-					wrapMode="none"
-					flexShrink={0}
-				>
-					{header()}
-				</text>
-			</box>
+				{header()}
+			</text>
 			<Show
 				when={props.modal}
 				keyed
@@ -830,31 +836,19 @@ export const SupervisorApp = (props: {
 						<HelpView />
 					) : current.kind === "confirm" ? (
 						<ConfirmView modal={current} />
-					) : current.kind === "text" ? (
-						<box flexGrow={1} minHeight={0} paddingLeft={1} paddingRight={1}>
-							<InteractiveTextPrompt
-								fullScreen
-								embedded
-								prompt={current.prompt}
-								onDone={(value) => {
-									props.setModal(null)
-									current.resolve(value)
-								}}
-								onQuit={props.handlers.onQuit}
-							/>
-						</box>
 					) : (
-						<box flexGrow={1} minHeight={0} paddingLeft={1} paddingRight={1}>
+						<box flexGrow={1} minHeight={0}>
 							<InteractiveSelectPrompt
 								embedded
-								reservedRows={3}
+								active={isActive()}
+								reservedRows={(props.reservedRows ?? 0) + 3}
 								prompt={current.prompt}
 								choices={current.choices}
 								onDone={(value) => {
 									props.setModal(null)
 									current.resolve(value)
 								}}
-								onQuit={props.handlers.onQuit}
+								onQuit={quit}
 							/>
 						</box>
 					)
@@ -864,22 +858,20 @@ export const SupervisorApp = (props: {
 				height={1}
 				flexShrink={0}
 				wrapMode="none"
-				paddingLeft={1}
 				fg={
-					selectionNotice()
+					selection.notice()
 						? macchiato.yellow
 						: props.notice
 							? noticeColor[props.notice.tone]
 							: macchiato.overlay1
 				}
 			>
-				{selectionNotice() ?? props.notice?.text ?? " "}
+				{selection.notice() ?? props.notice?.text ?? " "}
 			</text>
 			<text
 				height={1}
 				flexShrink={0}
 				wrapMode="none"
-				paddingLeft={1}
 				fg={macchiato.overlay1}
 				bg={macchiato.mantle}
 			>
@@ -889,16 +881,23 @@ export const SupervisorApp = (props: {
 	)
 }
 
-const shutdown = async (renderer: CliRenderer) => {
-	try {
-		await renderer.idle()
-	} finally {
-		renderer.destroy()
-	}
+/** What a supervisor surface needs from the terminal session that hosts it. */
+interface SupervisorHost {
+	readonly requestRender: () => void
+	readonly suspend: () => void
+	readonly resume: () => void
 }
 
-/** Own the terminal for a long-lived supervisor session. */
-export const createSupervisorSession = async (handlers: SupervisorHandlers) => {
+/**
+ * The Supervise tab: state that outlives any one terminal session, and the
+ * panel each session renders from it.
+ */
+export const createSupervisorSurface = (
+	options: {
+		/** The selected item changed (null when nothing is selected). */
+		readonly onSelect?: (item: SuperviseItem | null) => void
+	} = {},
+) => {
 	const [model, setModel] = createSignal<SuperviseModel | null>(null)
 	const [status, setStatus] = createSignal<SupervisorStatus>({
 		live: false,
@@ -909,107 +908,105 @@ export const createSupervisorSession = async (handlers: SupervisorHandlers) => {
 	})
 	const [notice, setNotice] = createSignal<SupervisorNotice | null>(null)
 	const [modal, setModal] = createSignal<Modal | null>(null)
+	const selection = createSupervisorSelection()
+	let host: SupervisorHost | null = null
+	let handlers: SupervisorHandlers | null = null
 	let closed = false
-	let quitting = false
-	const quit = () => {
-		// An open dialog is cancelled before the quit is queued.
-		dismissModal()
-		if (quitting) return
-		quitting = true
-		handlers.onQuit()
-	}
-	const renderer = await createCliRenderer({
-		...interactiveSelectRendererConfig,
-		onDestroy: () => {
-			const external = !closed
-			closed = true
-			dismissModal()
-			if (external) quit()
-		},
-	})
+	const changed = () => host?.requestRender()
 	const dismissModal = () => {
 		const current = modal()
 		setModal(null)
 		if (current?.kind === "confirm") current.resolve(DECLINED)
-		else if (current?.kind === "text" || current?.kind === "choose")
-			current.resolve(null)
-	}
-	try {
-		await render(
-			() => (
-				<SupervisorApp
-					model={model()}
-					status={status()}
-					notice={notice()}
-					modal={modal()}
-					setModal={setModal}
-					handlers={{ ...handlers, onQuit: quit }}
-				/>
-			),
-			renderer,
-		)
-	} catch (error) {
-		await shutdown(renderer)
-		throw error
+		else if (current?.kind === "choose") current.resolve(null)
 	}
 	const open = <T,>(make: (resolve: (value: T) => void) => Modal, empty: T) => {
 		if (closed) return Promise.resolve(empty)
 		dismissModal()
 		return new Promise<T>((resolve) => {
 			setModal(make(resolve))
-			renderer.requestRender()
+			changed()
 		})
 	}
-	const changed = () => renderer.requestRender()
+	const panel = (context: InteractivePanelContext) => (
+		<SupervisorApp
+			model={model()}
+			status={status()}
+			notice={notice()}
+			modal={modal()}
+			setModal={setModal}
+			selection={selection}
+			active={context.active()}
+			reservedRows={context.reservedRows()}
+			onSelect={options.onSelect}
+			handlers={{
+				onExecute: (item, action) => handlers?.onExecute(item, action),
+				onFocus: (item) => handlers?.onFocus(item),
+				onRefresh: () => handlers?.onRefresh(),
+				onTriage: (item) => handlers?.onTriage(item),
+				onEditPrompt: (item) => handlers?.onEditPrompt(item),
+				onSnooze: (item) => handlers?.onSnooze(item),
+				onDismiss: (item) => handlers?.onDismiss(item),
+				onQuit: context.quit,
+			}}
+		/>
+	)
 	return {
-		update: (next: SuperviseModel) => {
-			setModel(next)
-			changed()
+		/** Attach to the session now rendering the panel, or detach with null. */
+		bind: (next: SupervisorHost | null) => {
+			host = next
 		},
-		status: (next: Partial<SupervisorStatus>) => {
-			setStatus({ ...status(), ...next })
-			changed()
+		panel: {
+			render: panel,
+			locked: () => modal() !== null,
+		} satisfies InteractivePanel,
+		/** Connect the supervisor's handlers; until then keys do nothing. */
+		attach: (next: SupervisorHandlers) => {
+			closed = false
+			handlers = next
 		},
-		notice: (text: string, tone: NoticeTone = "info") => {
-			setNotice({ text, tone })
-			changed()
-		},
-		confirm: (request: ConfirmRequest) =>
-			open<SupervisorConfirmation>(
-				(resolve) => ({
-					kind: "confirm",
-					request,
-					stage: 1,
-					openedAt: Date.now(),
-					resolve,
-				}),
-				DECLINED,
-			),
-		text: (prompt: string) =>
-			open<string | null>(
-				(resolve) => ({ kind: "text", prompt, resolve }),
-				null,
-			),
-		choose: (prompt: string, choices: readonly InteractiveChoice[]) =>
-			open<string | null>(
-				(resolve) => ({ kind: "choose", prompt, choices, resolve }),
-				null,
-			),
-		/** Hand the terminal to a child process, such as $EDITOR. */
-		suspend: () => renderer.suspend(),
-		resume: () => {
-			renderer.resume()
-			changed()
-		},
-		close: async () => {
-			if (closed) return
-			closed = true
+		/** Cancel any open dialog and ask the supervisor to stop. */
+		stop: () => {
 			dismissModal()
-			await shutdown(renderer)
+			handlers?.onQuit()
+		},
+		ui: {
+			update: (next: SuperviseModel) => {
+				setModel(next)
+				changed()
+			},
+			status: (next: Partial<SupervisorStatus>) => {
+				setStatus({ ...status(), ...next })
+				changed()
+			},
+			notice: (text: string, tone: NoticeTone = "info") => {
+				setNotice({ text, tone })
+				changed()
+			},
+			confirm: (request: ConfirmRequest) =>
+				open<SupervisorConfirmation>(
+					(resolve) => ({
+						kind: "confirm",
+						request,
+						stage: 1,
+						openedAt: Date.now(),
+						resolve,
+					}),
+					DECLINED,
+				),
+			choose: (prompt: string, choices: readonly InteractiveChoice[]) =>
+				open<string | null>(
+					(resolve) => ({ kind: "choose", prompt, choices, resolve }),
+					null,
+				),
+			suspend: () => host?.suspend(),
+			resume: () => host?.resume(),
+			close: async () => {
+				closed = true
+				handlers = null
+				dismissModal()
+			},
 		},
 	}
 }
 
-export type SupervisorSession = Awaited<
-	ReturnType<typeof createSupervisorSession>
->
+export type SupervisorSurface = ReturnType<typeof createSupervisorSurface>

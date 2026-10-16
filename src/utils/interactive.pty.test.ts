@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import { realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { cleanupTempDir, createTempDir } from "../test-utils"
 
@@ -43,6 +44,26 @@ const waitForExit = (subprocess: Bun.Subprocess, output: () => string) =>
 		)
 	})
 
+/**
+ * A terminal environment that can never reach the live Herdr session or the
+ * user's registered workbases: the Supervise tab sees only this test's state.
+ */
+const isolatedEnv = (extra: Record<string, string> = {}) => {
+	const env: Record<string, string | undefined> = {
+		...process.env,
+		TERM: "xterm-256color",
+		PATH: "/usr/bin:/bin",
+		XDG_CONFIG_HOME: join(isolatedHome, "config"),
+		AGENCY_STATE_DIR: join(isolatedHome, "state"),
+		...extra,
+	}
+	for (const name of Object.keys(env))
+		if (name.startsWith("HERDR_") && !(name in extra)) delete env[name]
+	return env
+}
+const isolatedHome = await createTempDir()
+afterAll(() => cleanupTempDir(isolatedHome))
+
 const createWorkbase = async () => {
 	const root = await createTempDir()
 	tempDirs.push(root)
@@ -72,7 +93,7 @@ const runPrompt = async (
 	const initialModes = modes(terminal)
 	const subprocess = Bun.spawn([process.execPath, cliPath, "task", "new"], {
 		cwd: root,
-		env: { ...process.env, TERM: "xterm-256color" },
+		env: isolatedEnv(),
 		terminal,
 	})
 
@@ -119,7 +140,7 @@ describe("interactive CLI terminal restoration", () => {
 		const initialModes = modes(terminal)
 		const subprocess = Bun.spawn([process.execPath, cliPath], {
 			cwd: root,
-			env: { ...process.env, TERM: "xterm-256color" },
+			env: isolatedEnv(),
 			terminal,
 		})
 		try {
@@ -169,8 +190,9 @@ describe("interactive CLI terminal restoration", () => {
 				terminal,
 			})
 			try {
+				// The Supervise tab's footer is showing.
 				await waitFor(
-					() => output.includes("Agency Supervisor"),
+					() => output.includes("e prompt"),
 					() => output,
 				)
 				subprocess.kill(signal)
@@ -186,6 +208,133 @@ describe("interactive CLI terminal restoration", () => {
 			}
 		}, 12_000)
 	}
+
+	test("supervise hands an Agency action to the act wizard, then previews, confirms, and runs it", async () => {
+		// Pane paths must match the workbase's resolved root.
+		const root = await realpath(await createTempDir())
+		tempDirs.push(root)
+		const source = join(root, "source")
+		// A fake Herdr runtime with one agent pane outside any Agency item.
+		const herdr = join(root, "fake-herdr.sh")
+		await Bun.write(
+			herdr,
+			`#!/bin/sh
+if [ "$1 $2" = "api snapshot" ]; then
+cat <<'JSON'
+${JSON.stringify({
+	id: "cli:api:snapshot",
+	result: {
+		snapshot: {
+			workspaces: [{ workspace_id: "w1", label: "Main", focused: true }],
+			tabs: [{ tab_id: "w1:t7", workspace_id: "w1", label: "loose" }],
+			panes: [
+				{
+					pane_id: "w1:p7",
+					tab_id: "w1:t7",
+					workspace_id: "w1",
+					agent: "opencode",
+					agent_session: { value: "ses_loose" },
+					agent_status: "idle",
+					cwd: source,
+				},
+			],
+		},
+	},
+})}
+JSON
+exit 0
+fi
+echo '{"id":"cli","error":{"code":"unsupported","message":"fake"}}'
+exit 1
+`,
+		)
+		const env = isolatedEnv({
+			HERDR_ENV: "1",
+			HERDR_BIN_PATH: herdr,
+			HERDR_SOCKET_PATH: join(root, "missing.sock"),
+		})
+		for (const command of [
+			["chmod", "+x", herdr],
+			[process.execPath, cliPath, "init", root, "--silent"],
+			["git", "init", "-b", "main", source],
+			[
+				"git",
+				"-C",
+				source,
+				"remote",
+				"add",
+				"origin",
+				"https://example.com/demo.git",
+			],
+			[process.execPath, cliPath, "repo", "link", "demo", source, "--silent"],
+		]) {
+			const result = Bun.spawnSync(command, {
+				cwd: root,
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			if (result.exitCode !== 0)
+				throw new Error(new TextDecoder().decode(result.stderr))
+		}
+		let output = ""
+		const decoder = new TextDecoder()
+		const terminal = new Bun.Terminal({
+			cols: 120,
+			rows: 30,
+			data: (_, bytes) => {
+				output += decoder.decode(bytes, { stream: true })
+			},
+		})
+		const initialModes = modes(terminal)
+		const subprocess = Bun.spawn([process.execPath, cliPath, "supervise"], {
+			cwd: root,
+			env,
+			terminal,
+		})
+		const wait = (text: string, from = 0) =>
+			waitFor(
+				() => output.includes(text, from),
+				() => output,
+			)
+		try {
+			await wait("Adopt this session as a new task")
+			const beforeEnter = output.length
+			terminal.write("\r")
+			// The act wizard collects the inputs inside the Supervise tab.
+			await wait("Outcome:", beforeEnter)
+			terminal.write("Adopted work\r")
+			await wait("[adopted-work]", beforeEnter)
+			terminal.write("\r")
+			await wait("main]:", beforeEnter)
+			terminal.write("\r")
+			// The executor re-resolves, then previews exactly what will run.
+			await wait("Will run:", beforeEnter)
+			await wait("agency task create adopted-work", beforeEnter)
+			await Bun.sleep(300)
+			terminal.write("\r")
+			await wait("✓ Adopt this session as a new task", beforeEnter)
+			expect(
+				await Bun.file(join(root, "tasks/adopted-work/TASK.md")).text(),
+			).toContain("Adopted work")
+			// Workstream reloads with the new task once it is shown.
+			const beforeSwitch = output.length
+			terminal.write("\t")
+			await wait("adopted-work", beforeSwitch)
+			expect(subprocess.exitCode).toBeNull()
+			terminal.write("\x03")
+			expect(await waitForExit(subprocess, () => output)).toBe(0)
+			expect(modes(terminal)).toEqual(initialModes)
+			expect(output.match(/\x1b\[\?1049h/g)).toHaveLength(1)
+			expect(output.match(/\x1b\[\?1049l/g)).toHaveLength(1)
+		} finally {
+			if (subprocess.exitCode === null) {
+				subprocess.kill("SIGKILL")
+				await subprocess.exited
+			}
+			terminal.close()
+		}
+	}, 30_000)
 
 	for (const shutdown of ["ctrl-c", "SIGTERM"] as const) {
 		test(`persistent session cancels in-flight work and restores the terminal (${shutdown})`, async () => {
@@ -216,7 +365,7 @@ console.log("Operation cancelled")
 			})
 			const initialModes = modes(terminal)
 			const subprocess = Bun.spawn([process.execPath, entry], {
-				env: { ...process.env, TERM: "xterm-256color" },
+				env: isolatedEnv(),
 				terminal,
 			})
 			try {
@@ -297,7 +446,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 						],
 				{
 					cwd: root,
-					env: { ...process.env, TERM: "xterm-256color" },
+					env: isolatedEnv(),
 					terminal,
 				},
 			)
@@ -340,7 +489,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				else expect(output).not.toContain("\x1b[?1049l")
 				if (finish === "\r") {
 					const beforeSwitch = output.length
-					terminal.write("\t")
+					terminal.write("\x1b[Z")
 					await waitFor(
 						() => output.slice(beforeSwitch).includes("󰄱  open"),
 						() => output,
@@ -417,7 +566,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 				[process.execPath, cliPath, "act", "--dry-run"],
 				{
 					cwd: root,
-					env: { ...process.env, TERM: "xterm-256color" },
+					env: isolatedEnv(),
 					terminal,
 				},
 			)
@@ -476,7 +625,11 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 						() => output,
 					)
 					expect(subprocess.exitCode).toBeNull()
+					// Escape never quits the front screen; Ctrl-C does.
 					terminal.write("\x1b")
+					await Bun.sleep(100)
+					expect(subprocess.exitCode).toBeNull()
+					terminal.write("\x03")
 				}
 				expect(await waitForExit(subprocess, () => output)).toBe(0)
 				expect(modes(terminal)).toEqual(initialModes)
@@ -558,7 +711,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 		const initialModes = modes(terminal)
 		const subprocess = Bun.spawn([process.execPath, cliPath, "act"], {
 			cwd: root,
-			env: { ...process.env, TERM: "xterm-256color" },
+			env: isolatedEnv(),
 			terminal,
 		})
 		const wait = (text: string) =>
@@ -593,7 +746,7 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, action: "task-create", i
 			await choose("gamma", "Drop")
 			await wait("gamma failed — task gamma changed since it was chosen")
 			expect(subprocess.exitCode).toBeNull()
-			terminal.write("\x1b")
+			terminal.write("\x03")
 			expect(await waitForExit(subprocess, () => output)).toBe(0)
 			expect(modes(terminal)).toEqual(initialModes)
 			const recap = output.slice(output.lastIndexOf("\x1b[?1049l"))

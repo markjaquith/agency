@@ -76,7 +76,18 @@ const withTerminal = async (
 	const initialModes = modes(terminal)
 	const process = Bun.spawn([globalThis.process.execPath, cli, ...args], {
 		cwd: workbase,
-		env: { ...globalThis.process.env, TERM: "xterm-256color" },
+		// Never reach the live Herdr session or the user's registered workbases.
+		env: {
+			...Object.fromEntries(
+				Object.entries(globalThis.process.env).filter(
+					([name]) => !name.startsWith("HERDR_"),
+				),
+			),
+			TERM: "xterm-256color",
+			PATH: "/usr/bin:/bin",
+			XDG_CONFIG_HOME: join(workbase, ".test-config"),
+			AGENCY_STATE_DIR: join(workbase, ".test-state"),
+		},
 		terminal,
 	})
 	const waitUntil = async (ready: () => boolean) => {
