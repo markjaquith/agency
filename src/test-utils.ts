@@ -25,6 +25,8 @@ import { ReviewService } from "./services/ReviewService"
 import { TicketService } from "./services/TicketService"
 import { RuntimeService } from "./services/RuntimeService"
 import { RuntimeBindingService } from "./services/RuntimeBindingService"
+import { PullRequestStatusService } from "./services/PullRequestStatusService"
+import { SupervisionService } from "./services/SupervisionService"
 import type {
 	RuntimePane,
 	RuntimeProvider,
@@ -86,6 +88,8 @@ const TestLayer = Layer.mergeAll(
 	ReviewService.layer,
 	TicketService.layer,
 	RuntimeBindingService.layer,
+	PullRequestStatusService.layer,
+	SupervisionService.layer,
 	// Tests never observe a real runtime unless they provide one explicitly.
 	Layer.succeed(RuntimeService, fakeRuntimeService(null)),
 )

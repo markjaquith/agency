@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-attention-v1.schema.json",
+  "title": "Agency attention report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "generatedAt",
+    "runtime",
+    "workbases",
+    "signals",
+    "summary"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "available", "error"],
+      "properties": {
+        "provider": {
+          "oneOf": [
+            {
+              "enum": ["herdr"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "workbases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "root", "source", "available", "error"],
+        "properties": {
+          "id": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "root": {
+            "type": "string"
+          },
+          "source": {
+            "enum": ["registered", "current", "runtime"]
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/signal"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "kinds"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kinds": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "complete_session_open",
+              "ticket_status_mismatch",
+              "pr_merged_item_open",
+              "pr_ready_to_merge",
+              "claim_without_session",
+              "duplicate_session",
+              "session_cwd_missing",
+              "agent_waiting",
+              "unmanaged_session"
+            ]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "signalKind": {
+      "enum": [
+        "complete_session_open",
+        "ticket_status_mismatch",
+        "pr_merged_item_open",
+        "pr_ready_to_merge",
+        "claim_without_session",
+        "duplicate_session",
+        "session_cwd_missing",
+        "agent_waiting",
+        "unmanaged_session"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "label", "value"],
+      "properties": {
+        "source": {
+          "enum": ["agency", "pull_request", "ticket", "runtime", "filesystem"]
+        },
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": ["string", "number", "boolean", "null"]
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "title", "subject", "evidence", "actions"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/signalKind"
+        },
+        "title": {
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json#/$defs/subject"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json"
+          }
+        }
+      }
+    }
+  }
+}

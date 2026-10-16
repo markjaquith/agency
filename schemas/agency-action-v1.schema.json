@@ -1,0 +1,610 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json",
+  "title": "Agency supervisor action v1",
+  "description": "A suggested action shared by attention signals, triage, and the supervisor. Executors must recheck preconditions; destructive actions need a second confirmation.",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "type",
+    "title",
+    "rationale",
+    "risk",
+    "subject",
+    "preconditions",
+    "payload"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "agency",
+        "runtime",
+        "command",
+        "prompt_agent",
+        "delegate",
+        "open_url"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "risk": {
+      "enum": ["read-only", "reversible", "destructive"]
+    },
+    "subject": {
+      "$ref": "#/$defs/subject"
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/precondition"
+      }
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agency"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/agencyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "runtime"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/runtimePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "command"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/commandPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "prompt_agent"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/prompt_agentPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "delegate"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/delegatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "open_url"
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/open_urlPayload"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "argv": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "enum": ["open", "working", "delegated", "done", "dropped"]
+    },
+    "runtimeKind": {
+      "enum": ["herdr"]
+    },
+    "workbaseRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "root"],
+      "properties": {
+        "id": {
+          "type": ["string", "null"]
+        },
+        "name": {
+          "type": ["string", "null"]
+        },
+        "root": {
+          "type": "string"
+        }
+      }
+    },
+    "itemRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "kind", "taskId", "path", "archived"],
+      "properties": {
+        "unit": {
+          "type": ["string", "null"],
+          "description": "The execution unit, or null for a multi-phase task as a whole."
+        },
+        "kind": {
+          "enum": ["task", "phase"]
+        },
+        "taskId": {
+          "type": "string"
+        },
+        "phaseId": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "archived": {
+          "type": "boolean"
+        }
+      }
+    },
+    "runtimeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime",
+        "paneId",
+        "tabId",
+        "workspaceId",
+        "agent",
+        "agentSessionId"
+      ],
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/runtimeKind"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": ["string", "null"]
+        },
+        "workspaceId": {
+          "type": ["string", "null"]
+        },
+        "agent": {
+          "type": ["string", "null"]
+        },
+        "agentSessionId": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workbase", "item", "runtime", "pullRequest", "ticket"],
+      "properties": {
+        "workbase": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/workbaseRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/itemRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeRef"
+          }
+        },
+        "pullRequest": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url"],
+              "properties": {
+                "url": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ticket": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url", "key"],
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": ["string", "null"]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "precondition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path", "sha256"],
+          "properties": {
+            "kind": {
+              "const": "document_revision"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "unit", "statuses"],
+          "properties": {
+            "kind": {
+              "const": "item_status"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "statuses": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/status"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "unit", "archived"],
+          "properties": {
+            "kind": {
+              "const": "item_archived"
+            },
+            "unit": {
+              "type": "string"
+            },
+            "archived": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "runtime",
+            "paneId",
+            "present",
+            "agentSessionId"
+          ],
+          "properties": {
+            "kind": {
+              "const": "pane_present"
+            },
+            "runtime": {
+              "$ref": "#/$defs/runtimeKind"
+            },
+            "paneId": {
+              "type": "string"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "agentSessionId": {
+              "type": ["string", "null"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "url", "states"],
+          "properties": {
+            "kind": {
+              "const": "pull_request_state"
+            },
+            "url": {
+              "type": "string"
+            },
+            "states": {
+              "type": "array",
+              "items": {
+                "enum": ["open", "closed", "merged"]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "url", "statusCategories"],
+          "properties": {
+            "kind": {
+              "const": "ticket_status_category"
+            },
+            "url": {
+              "type": "string"
+            },
+            "statusCategories": {
+              "type": "array",
+              "items": {
+                "enum": ["todo", "in_progress", "done"]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "path", "exists"],
+          "properties": {
+            "kind": {
+              "const": "path_exists"
+            },
+            "path": {
+              "type": "string"
+            },
+            "exists": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "actInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "required"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "multiline": {
+          "type": "boolean"
+        },
+        "option": {
+          "type": "string"
+        }
+      }
+    },
+    "agencyPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actionId",
+        "command",
+        "commandTemplate",
+        "inputs",
+        "cwd",
+        "bindRuntime"
+      ],
+      "properties": {
+        "actionId": {
+          "type": "string",
+          "description": "An agency act action ID; argv comes from its discovery output."
+        },
+        "command": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "string"
+          }
+        },
+        "commandTemplate": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/actInput"
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "description": "The workbase root to run the command from."
+        },
+        "bindRuntime": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/runtimeRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "After success, bind the resulting execution unit to this pane."
+        }
+      }
+    },
+    "runtimePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "operation", "target", "id"],
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/runtimeKind"
+        },
+        "operation": {
+          "enum": ["focus", "close"]
+        },
+        "target": {
+          "enum": ["pane", "tab", "workspace"]
+        },
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "commandPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "cwd"],
+      "properties": {
+        "argv": {
+          "$ref": "#/$defs/argv"
+        },
+        "cwd": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "prompt_agentPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "paneId", "agentSessionId", "prompt"],
+      "properties": {
+        "runtime": {
+          "$ref": "#/$defs/runtimeKind"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "agentSessionId": {
+          "type": ["string", "null"]
+        },
+        "prompt": {
+          "type": "string"
+        }
+      }
+    },
+    "delegatePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit", "instructions", "command"],
+      "properties": {
+        "unit": {
+          "type": ["string", "null"]
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "command": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "open_urlPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

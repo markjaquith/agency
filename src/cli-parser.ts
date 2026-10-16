@@ -1012,6 +1012,19 @@ const commands = {
 			],
 		},
 	},
+	attention: {
+		usage: "agency attention [--archived] [--json]",
+		options: {
+			...outputOptions,
+			archived: { type: "boolean" },
+		},
+		command: {
+			usage: "agency attention [--archived] [--json]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["archived", "json"],
+		},
+	},
 	next: {
 		usage: "agency next [--select] [--json]",
 		options: {

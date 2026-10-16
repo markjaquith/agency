@@ -56,6 +56,12 @@
     "./schemas/agency-execution-v1.json": {
       "default": "./schemas/agency-execution-v1.schema.json"
     },
+    "./schemas/agency-action-v1.json": {
+      "default": "./schemas/agency-action-v1.schema.json"
+    },
+    "./schemas/agency-attention-v1.json": {
+      "default": "./schemas/agency-attention-v1.schema.json"
+    },
     "./fixtures/protocol/success.json": {
       "default": "./fixtures/protocol/success.json"
     },

@@ -916,6 +916,43 @@ The graph's top-level `runtime` object reports the provider, its availability an
 any error, `unmanaged` agent panes that match no unit, and `orphaned` bindings
 whose unit is no longer active (for example, after archiving).
 
+### Attention Signals
+
+`agency attention` reports deterministic "needs attention" signals across every
+registered workbase, the current workbase, and any workbase in which a live
+agent pane runs. It joins Agency state with live pull request (`gh`), ticket,
+and runtime state, and never executes anything.
+
+```sh
+agency attention [--json] [--archived] [--workbase <selector>]
+```
+
+| Signal                   | Condition                                                                                                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `complete_session_open`  | Terminal or archived work whose PR is merged or absent (closed is fine for dropped work) and whose ticket is done or absent still has a live session.                         |
+| `ticket_status_mismatch` | Done work with a merged PR has an unfinished ticket, or a done ticket belongs to active work. A multi-phase task's shared ticket is compared once, against all of its phases. |
+| `pr_merged_item_open`    | The PR is merged but the unit is still open, working, or delegated.                                                                                                           |
+| `pr_ready_to_merge`      | The open, non-draft PR is approved, its checks are green, and it has no conflicts.                                                                                            |
+| `claim_without_session`  | A `working` unit has no live or inferred session (requires a runtime).                                                                                                        |
+| `duplicate_session`      | One agent session is open in more than one pane.                                                                                                                              |
+| `session_cwd_missing`    | An agent pane's working directory no longer exists.                                                                                                                           |
+| `agent_waiting`          | A bound agent of active work is idle, done, or blocked.                                                                                                                       |
+| `unmanaged_session`      | An agent pane belongs to no item. Panes in epic or multi-phase task directories count as orchestration and are not reported.                                                  |
+
+Archived units are inspected when a binding or live pane still points at them;
+`--archived` inspects every archived unit, which may issue many ticket lookups.
+Each signal carries subject references (workbase, item, runtime panes, PR,
+ticket), structured evidence, and suggested actions in the versioned
+[`schemas/agency-action-v1.schema.json`](schemas/agency-action-v1.schema.json)
+contract, shared with triage and the supervisor. Action `type` is `agency`,
+`runtime`, `command`, `prompt_agent`, `delegate`, or `open_url`; `risk` is
+`read-only`, `reversible`, or `destructive`; `preconditions` are state facts an
+executor must recheck before running it. `agency` actions carry the `agency act`
+action ID and argv from its discovery rather than a second catalog. Ticket
+transitions name their target status explicitly and are never automatic. The
+report itself follows
+[`schemas/agency-attention-v1.schema.json`](schemas/agency-attention-v1.schema.json).
+
 ### Next Ready Work
 
 `agency next` lists ready execution units in descending unlock priority, with
