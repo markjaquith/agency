@@ -632,3 +632,20 @@ describe("schema boundaries", () => {
 		})
 	})
 })
+
+describe("ticket configuration", () => {
+	test("accepts Jira transition status names", () => {
+		const strict = Schema.decodeUnknownSync(WorkbaseConfig, {
+			onExcessProperty: "error",
+		})
+		expect(
+			strict({
+				version: 2,
+				tickets: { jira: { doneStatus: "Closed", reopenStatus: "Reopened" } },
+			}).tickets,
+		).toEqual({ jira: { doneStatus: "Closed", reopenStatus: "Reopened" } })
+		expect(() =>
+			strict({ version: 2, tickets: { jira: { doneStatus: "" } } }),
+		).toThrow()
+	})
+})

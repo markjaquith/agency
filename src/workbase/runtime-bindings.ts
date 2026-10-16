@@ -39,6 +39,8 @@ export interface ReconciledBinding {
 export interface InferredBinding {
 	readonly unit: string
 	readonly matchedBy: "checkout" | "directory"
+	/** Which pane directory matched: the foreground process's, or the pane's. */
+	readonly matchedPath: "foregroundCwd" | "cwd"
 	readonly pane: RuntimePane
 }
 
@@ -170,6 +172,7 @@ const resolveSharedPanes = (
 interface UnitMatch {
 	readonly unit: string
 	readonly matchedBy: "checkout" | "directory"
+	readonly matchedPath: "foregroundCwd" | "cwd"
 	readonly depth: number
 }
 
@@ -178,7 +181,10 @@ const inferUnit = (
 	units: readonly RuntimeUnit[],
 ): UnitMatch | null => {
 	let best = null as UnitMatch | null
-	for (const path of [pane.foregroundCwd, pane.cwd]) {
+	for (const [matchedPath, path] of [
+		["foregroundCwd", pane.foregroundCwd],
+		["cwd", pane.cwd],
+	] as const) {
 		if (!path) continue
 		for (const unit of units) {
 			for (const [matchedBy, candidates] of [
@@ -189,7 +195,7 @@ const inferUnit = (
 					if (!contains(candidate, path)) continue
 					const depth = candidate.length
 					if (!best || depth > best.depth) {
-						best = { unit: unit.id, matchedBy, depth }
+						best = { unit: unit.id, matchedBy, matchedPath, depth }
 					}
 				}
 			}
@@ -225,7 +231,12 @@ export const reconcileRuntime = (
 		if (pane.agent === null || claimed.has(pane.paneId)) continue
 		const match = inferUnit(pane, units)
 		if (match) {
-			inferred.push({ unit: match.unit, matchedBy: match.matchedBy, pane })
+			inferred.push({
+				unit: match.unit,
+				matchedBy: match.matchedBy,
+				matchedPath: match.matchedPath,
+				pane,
+			})
 		} else {
 			unmanaged.push(pane)
 		}

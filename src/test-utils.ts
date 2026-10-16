@@ -1,4 +1,8 @@
 import { spyOn } from "bun:test"
+import Ajv2020 from "ajv/dist/2020"
+import addFormats from "ajv-formats"
+import actionSchema from "../schemas/agency-action-v1.schema.json"
+import attentionSchema from "../schemas/agency-attention-v1.schema.json"
 import { Effect, Layer, Stream } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -25,6 +29,8 @@ import { ReviewService } from "./services/ReviewService"
 import { TicketService } from "./services/TicketService"
 import { RuntimeService } from "./services/RuntimeService"
 import { RuntimeBindingService } from "./services/RuntimeBindingService"
+import { PullRequestStatusService } from "./services/PullRequestStatusService"
+import { SupervisionService } from "./services/SupervisionService"
 import type {
 	RuntimePane,
 	RuntimeProvider,
@@ -86,6 +92,8 @@ const TestLayer = Layer.mergeAll(
 	ReviewService.layer,
 	TicketService.layer,
 	RuntimeBindingService.layer,
+	PullRequestStatusService.layer,
+	SupervisionService.layer,
 	// Tests never observe a real runtime unless they provide one explicitly.
 	Layer.succeed(RuntimeService, fakeRuntimeService(null)),
 )
@@ -173,4 +181,15 @@ export function fakeRuntimeService(
 	provider: RuntimeProvider | null,
 ): RuntimeService["Service"] {
 	return { provider: () => Effect.succeed(provider) }
+}
+
+/** JSON Schema validators for the published action and attention contracts. */
+export const attentionValidators = () => {
+	const ajv = new Ajv2020({ allErrors: true, strict: false })
+	addFormats(ajv)
+	ajv.addSchema(actionSchema)
+	return {
+		action: ajv.getSchema(actionSchema.$id)!,
+		report: ajv.compile(attentionSchema),
+	}
 }

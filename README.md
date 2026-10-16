@@ -916,6 +916,67 @@ The graph's top-level `runtime` object reports the provider, its availability an
 any error, `unmanaged` agent panes that match no unit, and `orphaned` bindings
 whose unit is no longer active (for example, after archiving).
 
+### Attention Signals
+
+`agency attention` reports deterministic "needs attention" signals across every
+registered workbase, the current workbase, and any workbase in which a live
+agent pane runs. It joins Agency state with live pull request (`gh`), ticket,
+and runtime state, and never executes anything.
+
+```sh
+agency attention [--json] [--archived] [--workbase <selector>]
+```
+
+| Signal                   | Condition                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `complete_session_open`  | Terminal or archived work whose PR is merged or absent (closed is fine for dropped work) and whose ticket is done or absent still has a live session. Only agents that are not working are offered for closing.                                                                                        |
+| `ticket_status_mismatch` | Evaluated once per ticket across every unit (in any workbase) that shares it. The ticket is delivered when every sharing unit is terminal, at least one is done with a merged PR, and none is done with an unmerged PR. A done ticket is flagged only while sharing units are active and none is done. |
+| `pr_merged_item_open`    | The PR is merged but the unit is still open, working, or delegated.                                                                                                                                                                                                                                    |
+| `pr_ready_to_merge`      | The open, non-draft PR is approved, its checks ran and passed, and GitHub reports a `CLEAN` (or `HAS_HOOKS`) merge state. The merge pins the reviewed head with `--match-head-commit`.                                                                                                                 |
+| `claim_without_session`  | A `working` unit with no PR (or a closed one) has no live or inferred session (requires a runtime). Review tasks are offered `finish-review` instead of `drop`.                                                                                                                                        |
+| `duplicate_session`      | One agent session is open in more than one pane. Closing a copy is offered only when a binding or the focused pane says which to keep.                                                                                                                                                                 |
+| `session_cwd_missing`    | An agent pane's working directory no longer exists.                                                                                                                                                                                                                                                    |
+| `agent_waiting`          | A bound agent of active work is idle, done, or blocked.                                                                                                                                                                                                                                                |
+| `unmanaged_session`      | An agent pane belongs to no item. Panes at a workbase root or in epic or multi-phase task directories count as orchestration and are not reported.                                                                                                                                                     |
+
+Archived units are inspected when a binding or live pane still points at them;
+`--archived` inspects every archived unit, which may issue many ticket lookups.
+`--workbase` inspects one workbase and drops signals for panes that belong to
+any other known workbase.
+
+Each signal carries subject references (workbase, item, runtime panes, PR,
+ticket), structured evidence, and suggested actions in the versioned
+[`schemas/agency-action-v1.schema.json`](schemas/agency-action-v1.schema.json)
+contract, shared with triage and the supervisor. The action schema is a
+top-level `oneOf` with one complete variant per `type`: `agency`, `runtime`,
+`command`, `prompt_agent`, `delegate` (`via` `prompt_bound_agent` or
+`kickoff`), or `open_url`. `risk` is `read-only`, `reversible`, or
+`destructive`, and destructive actions need a second confirmation.
+
+`preconditions` are state facts an executor must recheck immediately before it
+runs an action. Pane IDs are reused, so `pane_matches` also pins the pane's tab,
+working directory, agent session, and allowed agent statuses, and
+`tab_agent_panes` requires a tab's agent panes to be exactly the listed set
+before a whole-tab close. `pull_request_head` pins the reviewed commit.
+
+`agency` actions carry an `agency act` action ID, its item `selector`, any
+input `values`, and exactly one of `command` or `commandTemplate` as discovered.
+Executors re-resolve the argv at execution time with
+`agency act --action <id> [--task <task> [--phase <phase>]] --json` from the
+payload's `cwd`, rather than trusting a stored argv. Ticket transitions name
+their target status explicitly and are never automatic. Jira status names
+default to `Done` and `In Progress`; override them per workbase in
+`agency.json`:
+
+```json
+{
+	"tickets": { "jira": { "doneStatus": "Closed", "reopenStatus": "Reopened" } }
+}
+```
+
+The report itself follows
+[`schemas/agency-attention-v1.schema.json`](schemas/agency-attention-v1.schema.json).
+
 ### Next Ready Work
 
 `agency next` lists ready execution units in descending unlock priority, with

@@ -17,6 +17,7 @@ import { validate, help as validateHelp } from "./src/commands/validate"
 import { context, help as contextHelp } from "./src/commands/context"
 import { graph, help as graphHelp } from "./src/commands/graph"
 import { next, help as nextHelp } from "./src/commands/next"
+import { attention, help as attentionHelp } from "./src/commands/attention"
 import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -51,6 +52,8 @@ import { ReviewService } from "./src/services/ReviewService"
 import { TicketService } from "./src/services/TicketService"
 import { RuntimeService } from "./src/services/RuntimeService"
 import { RuntimeBindingService } from "./src/services/RuntimeBindingService"
+import { PullRequestStatusService } from "./src/services/PullRequestStatusService"
+import { SupervisionService } from "./src/services/SupervisionService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -95,6 +98,8 @@ const CliLayer = Layer.mergeAll(
 	TicketService.layer,
 	RuntimeService.layer,
 	RuntimeBindingService.layer,
+	PullRequestStatusService.layer,
+	SupervisionService.layer,
 )
 
 /**
@@ -146,7 +151,8 @@ const resolveInvocationCwd = (
 			if (
 				options.help ||
 				commandName === "init" ||
-				commandName === "workbase"
+				commandName === "workbase" ||
+				commandName === "attention"
 			) {
 				return resolve(options.cwd ?? process.cwd())
 			}
@@ -736,6 +742,24 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	attention: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(attentionHelp)
+				return
+			}
+			await runCommand(
+				attention({
+					workbase: options.workbase,
+					archived: options.archived,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	sync: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -778,6 +802,7 @@ Commands:
   work [directory|task]  Work on an epic, task, or phase
   worktree <subcommand>  Inspect and maintain managed workspaces
   next                   List or select ready execution units
+  attention              Report work and sessions that need attention
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
   rebase <task> [phase]  Rebase a checkout onto a new base and record it
