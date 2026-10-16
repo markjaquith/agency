@@ -68,6 +68,11 @@ describe("ticket URL resolution", () => {
 			)?.key,
 		).toBe("OPS-7")
 		expect(
+			jiraTicketProvider.resolve(
+				"https://acme.atlassian.net/jira/software/projects/OPS/boards/1?selectedIssue=100%25",
+			),
+		).toBeNull()
+		expect(
 			jiraTicketProvider.resolve("https://example.com/browse/CAN-1"),
 		).toBeNull()
 		expect(
@@ -111,6 +116,63 @@ describe("TicketService", () => {
 			state: "unsupported",
 			reason: "No ticket provider recognizes this URL",
 		})
+	})
+
+	test("treats malformed or throwing URL resolution as unsupported", async () => {
+		const throwing: TicketProvider = {
+			id: "throwing",
+			resolve: () => {
+				throw new Error("boom")
+			},
+			read: () => Effect.die("unreachable"),
+			transitions: () => Effect.die("unreachable"),
+		}
+		const records = await run(
+			TicketService.pipe(
+				Effect.flatMap((service) =>
+					service.readMany([
+						"https://acme.atlassian.net/browse/%E0%A4%A",
+						"https://example.com/anything",
+					]),
+				),
+			),
+			[jiraTicketProvider, throwing],
+		)
+		expect(records.get("https://acme.atlassian.net/browse/%E0%A4%A")).toEqual({
+			url: "https://acme.atlassian.net/browse/%E0%A4%A",
+			state: "unsupported",
+			reason: "No ticket provider recognizes this URL",
+		})
+		expect(records.get("https://example.com/anything")?.state).toBe(
+			"unsupported",
+		)
+	})
+
+	test("shares one in-flight lookup across concurrent reads", async () => {
+		const provider = fakeProvider((reference) =>
+			Effect.sleep(5).pipe(
+				Effect.as({
+					key: reference.key,
+					url: reference.url,
+					status: "Open",
+					statusCategory: "todo" as const,
+					summary: reference.key,
+					resolution: null,
+				}),
+			),
+		)
+		await run(
+			TicketService.pipe(
+				Effect.flatMap((service) =>
+					Effect.all(
+						Array.from({ length: 5 }, () => service.read("fake://same")),
+						{ concurrency: "unbounded" },
+					),
+				),
+			),
+			[provider],
+		)
+		expect(provider.calls).toEqual(["same"])
 	})
 
 	test("caches reads and converts provider failures to unavailable", async () => {

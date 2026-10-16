@@ -7,7 +7,7 @@ interface ContextOptions extends BaseCommandOptions {
 	readonly target?: string
 	readonly compact?: boolean
 	readonly full?: boolean
-	readonly include?: readonly string[]
+	readonly include?: readonly "ticket"[]
 	readonly json?: boolean
 }
 
@@ -15,20 +15,7 @@ export const context = (options: ContextOptions = {}) =>
 	Effect.gen(function* () {
 		const service = yield* ContextService
 		const { log } = createLoggers(options)
-		const include = options.include ?? []
-		for (const value of include) {
-			if (value !== "ticket") {
-				return yield* Effect.fail(
-					new Error(
-						`Invalid --include value '${value}'. Expected one of: ticket`,
-					),
-				)
-			}
-		}
-		const result = yield* service.get({
-			...options,
-			include: include as readonly "ticket"[],
-		})
+		const result = yield* service.get(options)
 		log(JSON.stringify(result, null, 2))
 	})
 

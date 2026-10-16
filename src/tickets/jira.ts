@@ -25,14 +25,23 @@ const JiraWorkItem = Schema.Struct({
 const statusCategory = (key: string): TicketStatusCategory =>
 	key === "done" ? "done" : key === "indeterminate" ? "in_progress" : "todo"
 
+const decodePathSegment = (segment: string | undefined) => {
+	if (!segment) return null
+	try {
+		return decodeURIComponent(segment)
+	} catch {
+		return null
+	}
+}
+
 const issueKey = (url: URL) => {
 	const candidates = [
 		url.searchParams.get("selectedIssue"),
-		url.pathname.match(/\/browse\/([^/]+)\/?$/)?.[1],
-		url.pathname.match(/\/issues\/([^/]+)\/?$/)?.[1],
+		decodePathSegment(url.pathname.match(/\/browse\/([^/]+)\/?$/)?.[1]),
+		decodePathSegment(url.pathname.match(/\/issues\/([^/]+)\/?$/)?.[1]),
 	]
 	for (const candidate of candidates) {
-		const key = candidate ? decodeURIComponent(candidate).toUpperCase() : null
+		const key = candidate?.toUpperCase()
 		if (key && ISSUE_KEY.test(key)) return key
 	}
 	return null

@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer } from "effect"
 import type { FileSystemService } from "./FileSystemService"
 import {
 	TicketUnavailableError,
@@ -14,7 +14,7 @@ const READ_CONCURRENCY = 8
 
 interface CacheEntry {
 	readonly expiresAt: number
-	readonly record: Effect.Effect<TicketRecord, never, FileSystemService>
+	readonly record: Deferred.Deferred<TicketRecord>
 }
 
 export class TicketService extends Context.Service<TicketService>()(
@@ -28,7 +28,12 @@ export class TicketService extends Context.Service<TicketService>()(
 				url: string,
 			): { provider: TicketProvider; reference: TicketReference } | null => {
 				for (const provider of providers) {
-					const reference = provider.resolve(url)
+					let reference: TicketReference | null
+					try {
+						reference = provider.resolve(url)
+					} catch {
+						reference = null
+					}
 					if (reference) return { provider, reference }
 				}
 				return null
@@ -74,16 +79,35 @@ export class TicketService extends Context.Service<TicketService>()(
 				)
 			}
 
-			const read = (url: string | null) =>
-				Effect.gen(function* () {
-					if (!url) return { url: null, state: "none" } as TicketRecord
-					const now = yield* Clock.currentTimeMillis
-					const cached = cache.get(url)
-					if (cached && cached.expiresAt > now) return yield* cached.record
-					const record = yield* Effect.cached(lookup(url))
-					cache.set(url, { expiresAt: now + CACHE_TTL_MS, record })
-					return yield* record
-				})
+			const read = (
+				url: string | null,
+			): Effect.Effect<TicketRecord, never, FileSystemService> => {
+				if (!url) return Effect.succeed({ url: null, state: "none" })
+				return Effect.clockWith((clock) =>
+					Effect.suspend(() => {
+						// Check and claim the cache entry synchronously so concurrent
+						// reads of one URL share a single in-flight lookup.
+						const now = clock.currentTimeMillisUnsafe()
+						const cached = cache.get(url)
+						if (cached && cached.expiresAt > now) {
+							return Deferred.await(cached.record)
+						}
+						const entry = {
+							expiresAt: now + CACHE_TTL_MS,
+							record: Deferred.makeUnsafe<TicketRecord>(),
+						}
+						cache.set(url, entry)
+						return Deferred.into(lookup(url), entry.record).pipe(
+							Effect.onInterrupt(() =>
+								Effect.sync(() => {
+									if (cache.get(url) === entry) cache.delete(url)
+								}),
+							),
+							Effect.andThen(Deferred.await(entry.record)),
+						)
+					}),
+				)
+			}
 
 			return {
 				/** Read live ticket state; failures become explicit record states. */

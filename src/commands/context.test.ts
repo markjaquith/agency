@@ -280,7 +280,7 @@ Phase prose.
 	})
 
 	test("includes live ticket state only when requested", async () => {
-		const readWith = async (target: string, include?: string[]) => {
+		const readWith = async (target: string, include?: "ticket"[]) => {
 			const logs = await captureLogs(() =>
 				runTestEffect(context({ cwd: root, target, include, json: true })),
 			)
