@@ -1073,7 +1073,7 @@ const commands = {
 	},
 	context: {
 		usage:
-			"agency context [target] [--json] [--compact | --full] [--include ticket]",
+			"agency context [target] [--json] [--compact | --full] [--include <ticket|runtime>]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
@@ -1083,7 +1083,7 @@ const commands = {
 		},
 		command: {
 			usage:
-				"agency context [target] [--json] [--compact | --full] [--include ticket]",
+				"agency context [target] [--json] [--compact | --full] [--include <ticket|runtime>]",
 			minArgs: 0,
 			maxArgs: 1,
 			options: ["json", "compact", "full", "epic", "task", "phase", "include"],
@@ -1400,7 +1400,7 @@ function validateGraphOptions(values: ParsedCli["values"], spec: LeafCommand) {
 	const allowed = {
 		status: new Set(["open", "working", "delegated", "done", "dropped"]),
 		kind: new Set(["epic", "task", "phase", "repository", "execution-unit"]),
-		include: new Set(["bodies", "workspace", "git", "pr", "ticket"]),
+		include: new Set(["bodies", "workspace", "git", "pr", "ticket", "runtime"]),
 	}
 	for (const [name, accepted] of Object.entries(allowed)) {
 		const supplied = values[name]
@@ -1431,9 +1431,9 @@ function validateContextOptions(
 			? []
 			: [supplied]
 	for (const value of entries) {
-		if (value !== "ticket") {
+		if (value !== "ticket" && value !== "runtime") {
 			throw usageError(
-				`Invalid '--include' value '${String(value)}'. Expected one of: ticket.`,
+				`Invalid '--include' value '${String(value)}'. Expected one of: ticket, runtime.`,
 				spec.usage,
 			)
 		}

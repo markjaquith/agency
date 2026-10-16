@@ -9,6 +9,8 @@ import {
 	WorkStatus,
 } from "./workbase/schemas"
 import { TicketRecord } from "./tickets/provider"
+import { RuntimeKind, RuntimePane } from "./workbase/runtime"
+import { RuntimeBinding } from "./workbase/runtime-bindings"
 
 export const GRAPH_VERSION = 1 as const
 
@@ -33,6 +35,7 @@ export const GraphInclude = Schema.Literals([
 	"git",
 	"pr",
 	"ticket",
+	"runtime",
 ])
 
 export const GraphBlocker = Schema.Struct({
@@ -151,6 +154,28 @@ export const GraphPr = Schema.Union([
 	PullRequestRecord,
 ])
 
+export const GraphRuntimeBinding = Schema.Struct({
+	state: Schema.Literals(["live", "moved", "duplicated", "gone", "unknown"]),
+	record: RuntimeBinding,
+	panes: Schema.Array(RuntimePane),
+})
+export const GraphExecutionRuntime = Schema.Struct({
+	binding: Schema.NullOr(GraphRuntimeBinding),
+	inferred: Schema.Array(
+		Schema.Struct({
+			matchedBy: Schema.Literals(["checkout", "directory"]),
+			pane: RuntimePane,
+		}),
+	),
+})
+export const GraphRuntime = Schema.Struct({
+	provider: Schema.NullOr(RuntimeKind),
+	available: Schema.Boolean,
+	error: Schema.NullOr(Schema.String),
+	unmanaged: Schema.Array(RuntimePane),
+	orphaned: Schema.Array(GraphRuntimeBinding),
+})
+
 const NodeIdentity = {
 	id: Schema.String,
 	key: Schema.String,
@@ -205,6 +230,7 @@ export const GraphNode = Schema.Union([
 		git: Schema.optional(GraphExecutionGit),
 		pr: Schema.optional(GraphPr),
 		ticket: Schema.optional(TicketRecord),
+		runtime: Schema.optional(GraphExecutionRuntime),
 	}),
 ])
 
@@ -220,6 +246,7 @@ export const AgencyGraph = Schema.Struct({
 	workbase: GraphWorkbase,
 	filters: GraphFilters,
 	includes: Schema.Array(GraphInclude),
+	runtime: Schema.optional(GraphRuntime),
 	nodes: Schema.Array(GraphNode),
 	edges: Schema.Array(GraphEdge),
 	summary: GraphProgress,
@@ -243,6 +270,11 @@ export type GraphExecutionWorkspace = Schema.Schema.Type<
 export type GraphExecutionGit = Schema.Schema.Type<typeof GraphExecutionGit>
 export type GraphRepositoryGit = Schema.Schema.Type<typeof GraphRepositoryGit>
 export type GraphPr = Schema.Schema.Type<typeof GraphPr>
+export type GraphRuntimeBinding = Schema.Schema.Type<typeof GraphRuntimeBinding>
+export type GraphExecutionRuntime = Schema.Schema.Type<
+	typeof GraphExecutionRuntime
+>
+export type GraphRuntime = Schema.Schema.Type<typeof GraphRuntime>
 export type GraphNode = Schema.Schema.Type<typeof GraphNode>
 export type GraphEdge = Schema.Schema.Type<typeof GraphEdge>
 export type AgencyGraph = Schema.Schema.Type<typeof AgencyGraph>

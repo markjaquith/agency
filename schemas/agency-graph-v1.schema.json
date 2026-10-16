@@ -51,9 +51,12 @@
     },
     "includes": {
       "type": "array",
-      "items": { "enum": ["bodies", "workspace", "git", "pr", "ticket"] },
+      "items": {
+        "enum": ["bodies", "workspace", "git", "pr", "ticket", "runtime"]
+      },
       "uniqueItems": true
     },
+    "runtime": { "$ref": "#/$defs/runtime" },
     "nodes": {
       "type": "array",
       "items": { "$ref": "#/$defs/node" }
@@ -85,6 +88,118 @@
     }
   },
   "$defs": {
+    "runtimePane": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paneId",
+        "tabId",
+        "workspaceId",
+        "agent",
+        "agentSessionId",
+        "agentStatus",
+        "cwd",
+        "foregroundCwd",
+        "terminalTitle",
+        "focused"
+      ],
+      "properties": {
+        "paneId": { "type": "string" },
+        "tabId": { "type": "string" },
+        "workspaceId": { "type": "string" },
+        "agent": { "type": ["string", "null"] },
+        "agentSessionId": { "type": ["string", "null"] },
+        "agentStatus": {
+          "enum": ["idle", "working", "blocked", "done", "unknown"]
+        },
+        "cwd": { "type": ["string", "null"] },
+        "foregroundCwd": { "type": ["string", "null"] },
+        "terminalTitle": { "type": ["string", "null"] },
+        "focused": { "type": "boolean" }
+      }
+    },
+    "runtimeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "record", "panes"],
+      "properties": {
+        "state": { "enum": ["live", "moved", "duplicated", "gone", "unknown"] },
+        "record": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "workbase",
+            "unit",
+            "runtime",
+            "paneId",
+            "tabId",
+            "workspaceId",
+            "agent",
+            "agentSessionId",
+            "agencySessionId",
+            "boundAt"
+          ],
+          "properties": {
+            "version": { "const": 1 },
+            "workbase": { "type": "string" },
+            "unit": { "type": "string" },
+            "runtime": { "enum": ["herdr"] },
+            "paneId": { "type": "string" },
+            "tabId": { "type": ["string", "null"] },
+            "workspaceId": { "type": ["string", "null"] },
+            "agent": { "type": ["string", "null"] },
+            "agentSessionId": { "type": ["string", "null"] },
+            "agencySessionId": { "type": ["string", "null"] },
+            "boundAt": { "type": "string" }
+          }
+        },
+        "panes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/runtimePane" }
+        }
+      }
+    },
+    "executionRuntime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binding", "inferred"],
+      "properties": {
+        "binding": {
+          "oneOf": [{ "$ref": "#/$defs/runtimeBinding" }, { "type": "null" }]
+        },
+        "inferred": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["matchedBy", "pane"],
+            "properties": {
+              "matchedBy": { "enum": ["checkout", "directory"] },
+              "pane": { "$ref": "#/$defs/runtimePane" }
+            }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "available", "error", "unmanaged", "orphaned"],
+      "properties": {
+        "provider": { "enum": ["herdr", null] },
+        "available": { "type": "boolean" },
+        "error": { "type": ["string", "null"] },
+        "unmanaged": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/runtimePane" }
+        },
+        "orphaned": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/runtimeBinding" }
+        }
+      }
+    },
     "status": {
       "enum": ["open", "working", "delegated", "done", "dropped"]
     },
@@ -198,7 +313,8 @@
           ]
         },
         "pr": { "$ref": "#/$defs/pr" },
-        "ticket": { "$ref": "#/$defs/ticket" }
+        "ticket": { "$ref": "#/$defs/ticket" },
+        "runtime": { "$ref": "#/$defs/executionRuntime" }
       },
       "allOf": [
         {
@@ -212,7 +328,11 @@
               "aggregate": { "$ref": "#/$defs/progress" }
             },
             "not": {
-              "anyOf": [{ "required": ["git"] }, { "required": ["pr"] }]
+              "anyOf": [
+                { "required": ["git"] },
+                { "required": ["pr"] },
+                { "required": ["runtime"] }
+              ]
             }
           }
         },
@@ -233,7 +353,11 @@
               "aggregate": { "$ref": "#/$defs/progress" }
             },
             "not": {
-              "anyOf": [{ "required": ["git"] }, { "required": ["pr"] }]
+              "anyOf": [
+                { "required": ["git"] },
+                { "required": ["pr"] },
+                { "required": ["runtime"] }
+              ]
             }
           }
         },
@@ -251,7 +375,8 @@
               "anyOf": [
                 { "required": ["git"] },
                 { "required": ["pr"] },
-                { "required": ["ticket"] }
+                { "required": ["ticket"] },
+                { "required": ["runtime"] }
               ]
             }
           }
@@ -271,7 +396,8 @@
               "anyOf": [
                 { "required": ["body"] },
                 { "required": ["pr"] },
-                { "required": ["ticket"] }
+                { "required": ["ticket"] },
+                { "required": ["runtime"] }
               ]
             }
           }

@@ -825,6 +825,10 @@ recorded PR state, and validation warnings.
 Pass `--include ticket` to add a live `ticket` field read from the target's
 `ticketUrl` (a phase uses its task's ticket). See [Ticket Status](#ticket-status).
 
+Pass `--include runtime` to add a `runtime` object for an execution-unit target:
+the unit's reconciled runtime binding and any inferred agent panes (see
+[Runtime Bindings](#runtime-bindings)). Other targets report `runtime: null`.
+
 ### Workbase Graph
 
 `agency graph --json` exports the complete workbase as graph contract version 1.
@@ -840,7 +844,7 @@ summary counts the statuses of all execution units, independent of filters.
 ```text
 agency graph [--json | --jsonl] [--ready | --blocked]
   [--status <status>...] [--repository <alias>...] [--kind <kind>...]
-  [--include <bodies|workspace|git|pr|ticket>...]
+  [--include <bodies|workspace|git|pr|ticket|runtime>...]
 ```
 
 Filters are applied after graph state is computed. Returned edges always have
@@ -870,6 +874,47 @@ briefly in memory.
 `--jsonl` emits a versioned `meta` record, one record per node and edge, then an
 `end` record with counts. Combining the metadata with the streamed node and edge
 records reconstructs the same result as `--json`.
+
+### Runtime Bindings
+
+When `agency work` claims an execution unit and launches its agent inside a
+terminal runtime, it records a binding: runtime kind, pane, tab, and workspace
+IDs, the agent session ID when Agency knows it (for example, an OpenCode V2
+auto-start session), the Agency session ID, and a timestamp. Herdr is currently
+the only runtime. Recording reads Herdr's inherited `HERDR_ENV`,
+`HERDR_PANE_ID`, `HERDR_TAB_ID`, and `HERDR_WORKSPACE_ID` directly and runs no
+subprocess; outside Herdr it records nothing. Recording is best-effort: it is
+bounded to two seconds and its failures never block or fail the launch.
+Inspection detects Herdr from `HERDR_ENV`/`HERDR_BIN_PATH` or a `herdr` binary on
+`PATH`.
+
+Bindings are local operational state, not workbase content. They are stored as
+one JSON file per unit under
+`$AGENCY_STATE_DIR/runtime-bindings/<workbase-key>/` (default state directory:
+`$XDG_STATE_HOME/agency`, else `~/.local/state/agency`). Relaunching a unit
+replaces its binding, and launching a unit in a pane removes other units'
+bindings to that pane.
+
+`agency graph --include runtime` and `agency context --include runtime` reconcile
+bindings read-only against a live runtime snapshot. Each execution-unit node
+gains `runtime.binding` (or `null`) with a `state`:
+
+- `live`: the bound agent session is still in its recorded pane. When the session
+  ID is unknown, an agent in the recorded pane counts only while its working
+  directory is inside the unit's checkout or item directory, because pane IDs
+  are reused; if several such bindings claim one pane, the latest launch wins.
+- `moved`: the bound agent session is visible in exactly one other pane.
+- `duplicated`: the bound agent session is visible in more than one pane.
+- `gone`: the bound agent is no longer visible; `panes` lists the recorded pane
+  if it remains open (without an agent, or hosting other work).
+- `unknown`: no runtime is available to check.
+
+Unbound agent panes whose working directory lies inside a unit's checkout or item
+directory appear in that node's `runtime.inferred` list with `matchedBy:
+"checkout"` or `"directory"`; these are lower-confidence than recorded bindings.
+The graph's top-level `runtime` object reports the provider, its availability and
+any error, `unmanaged` agent panes that match no unit, and `orphaned` bindings
+whose unit is no longer active (for example, after archiving).
 
 ### Next Ready Work
 

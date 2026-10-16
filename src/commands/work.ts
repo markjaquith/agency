@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Cause, Effect } from "effect"
 import { dirname, resolve } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorktreeService } from "../services/WorktreeService"
@@ -9,6 +9,7 @@ import { TaskService } from "../services/TaskService"
 import { PhaseService } from "../services/PhaseService"
 import { ReadinessService } from "../services/ReadinessService"
 import { IntegrationService } from "../services/IntegrationService"
+import { RuntimeBindingService } from "../services/RuntimeBindingService"
 import { createLoggers } from "../utils/effect"
 import { execvp } from "../utils/exec"
 import { createProgress, type Progress } from "../utils/progress"
@@ -466,9 +467,45 @@ export const work = (
 				)
 			}
 		}
-		const launchArgv = managedOpenCodeAuto
+		const prepared = managedOpenCodeAuto
 			? yield* prepareOpenCodeLaunch(resolved.argv, launchPath, environment)
-			: resolved.argv
+			: { argv: resolved.argv, sessionId: null }
+		const launchArgv = prepared.argv
+		if (
+			target.kind === "phase" ||
+			(target.kind === "task" && !target.multiPhase)
+		) {
+			// Binding is best-effort bookkeeping: it must never fail, defect, or
+			// noticeably delay the launch.
+			const runtimeBindings = yield* RuntimeBindingService
+			yield* runtimeBindings
+				.recordLaunch({
+					root,
+					unit: targetNodeId(target),
+					agent,
+					agentSessionId: prepared.sessionId,
+					agencySessionId: sessionId,
+				})
+				.pipe(
+					Effect.timeout("2 seconds"),
+					Effect.tap((binding) =>
+						Effect.sync(() => {
+							if (binding) {
+								verboseLog(
+									`Recorded ${binding.runtime} binding: ${binding.unit} -> ${binding.paneId}`,
+								)
+							}
+						}),
+					),
+					Effect.catchCause((cause) =>
+						Effect.sync(() =>
+							verboseLog(
+								`Unable to record runtime binding: ${Cause.pretty(cause)}`,
+							),
+						),
+					),
+				)
+		}
 		for (const [key, value] of Object.entries(environment)) {
 			process.env[key] = value
 		}

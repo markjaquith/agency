@@ -69,7 +69,9 @@ export const prepareOpenCodeLaunch = (
 				return result.stdout
 			})
 		const version = (yield* run(["--version"])).trim()
-		if (/^(?:opencode\s+v?)?1\./.test(version)) return [...argv]
+		if (/^(?:opencode\s+v?)?1\./.test(version)) {
+			return { argv: [...argv], sessionId: null as string | null }
+		}
 		if (!/^(?:opencode\s+v?)?2\./.test(version)) {
 			return yield* Effect.fail(
 				new Error(`Unsupported OpenCode version for auto-start: ${version}`),
@@ -132,5 +134,5 @@ export const prepareOpenCodeLaunch = (
 				),
 			)
 		}
-		return [cli, "--session", session.id]
+		return { argv: [cli, "--session", session.id], sessionId: session.id }
 	})
