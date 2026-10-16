@@ -209,6 +209,72 @@ describe("interactive CLI terminal restoration", () => {
 		}, 12_000)
 	}
 
+	test("supervise opens outside every workbase with no default and offers registered workbases", async () => {
+		const home = await realpath(await createTempDir())
+		tempDirs.push(home)
+		const root = join(home, "registered")
+		const outside = join(home, "elsewhere")
+		const env = isolatedEnv({
+			XDG_CONFIG_HOME: join(home, "config"),
+			AGENCY_STATE_DIR: join(home, "state"),
+		})
+		for (const command of [
+			["mkdir", "-p", outside],
+			[process.execPath, cliPath, "init", root, "--silent"],
+			[process.execPath, cliPath, "workbase", "add", root, "--silent"],
+			[process.execPath, cliPath, "workbase", "default", "--clear", "--silent"],
+		]) {
+			const result = Bun.spawnSync(command, {
+				cwd: home,
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			if (result.exitCode !== 0)
+				throw new Error(new TextDecoder().decode(result.stderr))
+		}
+		let output = ""
+		const decoder = new TextDecoder()
+		const terminal = new Bun.Terminal({
+			cols: 120,
+			rows: 24,
+			data: (_, bytes) => {
+				output += decoder.decode(bytes, { stream: true })
+			},
+		})
+		const initialModes = modes(terminal)
+		const subprocess = Bun.spawn([process.execPath, cliPath, "supervise"], {
+			cwd: outside,
+			env,
+			terminal,
+		})
+		const wait = (text: string, from = 0) =>
+			waitFor(
+				() => output.includes(text, from),
+				() => output,
+			)
+		try {
+			await wait("e prompt")
+			const beforeSwitch = output.length
+			terminal.write("\t")
+			await wait("No workbase here", beforeSwitch)
+			await wait(root, beforeSwitch)
+			const beforeChoose = output.length
+			terminal.write("\r")
+			await wait("No tasks or phases yet", beforeChoose)
+			expect(subprocess.exitCode).toBeNull()
+			terminal.write("\x03")
+			expect(await waitForExit(subprocess, () => output)).toBe(0)
+			expect(modes(terminal)).toEqual(initialModes)
+		} finally {
+			if (subprocess.exitCode === null) {
+				subprocess.kill("SIGKILL")
+				await subprocess.exited
+			}
+			terminal.close()
+		}
+	}, 20_000)
+
 	test("supervise hands an Agency action to the act wizard, then previews, confirms, and runs it", async () => {
 		// Pane paths must match the workbase's resolved root.
 		const root = await realpath(await createTempDir())

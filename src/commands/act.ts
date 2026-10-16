@@ -555,7 +555,7 @@ export const act = (
 				state.session?.notice(state.notice)
 				nextOptions = {
 					...options,
-					cwd: state.root,
+					cwd: state.root ?? options.cwd,
 					directory: undefined,
 					epicId: state.item?.startsWith("epic:")
 						? state.item.slice(5)
@@ -681,6 +681,99 @@ const tabChanged = (state: ActState, id: string) => {
 	if (moved || state.stale) state.session?.leaveTabs()
 }
 
+/** Open (or reuse) the interactive session and its Supervise tab. */
+const openSession = (
+	options: ActOptions,
+	interaction: ActInteraction,
+	state: ActState,
+	chooserCommand: readonly string[] | undefined,
+) =>
+	Effect.gen(function* () {
+		const supervising = options.tab === "supervise"
+		const nativeEligible =
+			!options.json &&
+			interaction === defaultInteraction &&
+			// Supervise never used an external chooser; it needs the native TUI.
+			(!chooserCommand || supervising) &&
+			Boolean(process.stdin.isTTY) &&
+			Boolean(process.stdout.isTTY)
+		if (!state.session && nativeEligible && !state.supervisor)
+			state.supervisor = yield* loadSupervisorSurface({
+				onSelect: (item) => {
+					state.supervisedRoot =
+						item && item.groupKey !== UNMANAGED_GROUP
+							? item.groupKey
+							: undefined
+				},
+			})
+		const opened = !state.session && nativeEligible
+		const session =
+			state.session ??
+			(nativeEligible
+				? yield* Effect.acquireRelease(
+						openActSession({
+							supervisor: state.supervisor,
+							onTabChange: (id) => tabChanged(state, id),
+						}),
+						(session) => session.close(),
+					)
+				: undefined)
+		if (supervising && !session)
+			return yield* Effect.fail(
+				new Error(
+					"agency supervise requires an interactive terminal; use agency attention --json for automation",
+				),
+			)
+		state.session = session
+		state.native = Boolean(session)
+		if (session && state.supervisor && !state.engine)
+			yield* forkSupervisor(options, state, state.supervisor)
+		// The requested tab applies to the first session, not after a worker returns.
+		if (session && opened && options.tab && !state.tabOpened) {
+			state.tabOpened = true
+			session.activateTab(options.tab)
+			if (supervising) state.engine?.start()
+		}
+		session?.notice(state.notice)
+		return session
+	})
+
+/**
+ * Without a current workbase (Supervise opened outside every workbase),
+ * Workstream and Workbase offer the registered workbases instead.
+ */
+const chooseWorkbase = (
+	options: ActOptions,
+	interaction: ActInteraction,
+	state: ActState,
+) =>
+	Effect.gen(function* () {
+		const workbases = yield* WorkbaseService
+		const session = yield* openSession(options, interaction, state, undefined)
+		const ui = session?.interaction ?? interaction
+		if (!ui.tabs)
+			return yield* Effect.fail(new Error("No Agency workbase found"))
+		const { workbases: registered } = yield* workbases.listRegistrations(
+			options.supervise?.configDirectory,
+		)
+		const choices = registered.map((entry) => ({
+			key: entry.path,
+			label: `${entry.name ?? entry.id}  ${entry.path}`,
+			value: entry.path,
+		}))
+		const prompt =
+			"  No workbase here. Choose one, or select an item in Supervise:"
+		const emptyLabel =
+			"No registered workbases; add one with agency workbase add"
+		const chosen = yield* ui.tabs<string>([
+			{ ...actTabs[0], prompt, emptyLabel, choices },
+			{ ...actTabs[1], prompt, emptyLabel, choices },
+			...(session && state.supervisor ? [{ ...actTabs[2], choices: [] }] : []),
+		])
+		if (!chosen) return yield* Effect.fail(new ActCancelled())
+		state.root = chosen
+	})
+
 const actStep = (
 	options: ActOptions,
 	interaction: ActInteraction,
@@ -704,9 +797,18 @@ const actStep = (
 		const isDirectory = yield* fs.isDirectory(path)
 		const isPath =
 			isDirectory || Boolean(options.directory && (yield* fs.exists(path)))
-		const { root, config } = yield* workbase.loadConfig(
-			isDirectory ? path : isPath ? dirname(path) : cwd,
-		)
+		const loaded = yield* workbase
+			.loadConfig(isDirectory ? path : isPath ? dirname(path) : cwd)
+			.pipe(
+				// Supervise is cross-workbase: it opens with no current workbase.
+				Effect.catchTag("WorkbaseNotFoundError", (error) =>
+					options.tab === "supervise"
+						? Effect.succeed(null)
+						: Effect.fail(error),
+				),
+			)
+		if (!loaded) return yield* chooseWorkbase(options, interaction, state)
+		const { root, config } = loaded
 		state.root = root
 		state.refreshHome = undefined
 		// While mutations are queued, keep the loaded graph: the optimistic overlay
@@ -759,52 +861,12 @@ const actStep = (
 			{ concurrency: 8, discard: true },
 		)
 		const recap = state.recap
-		const supervising = options.tab === "supervise"
-		const nativeEligible =
-			!options.json &&
-			interaction === defaultInteraction &&
-			// Supervise never used an external chooser; it needs the native TUI.
-			(!config.chooserCommand || supervising) &&
-			Boolean(process.stdin.isTTY) &&
-			Boolean(process.stdout.isTTY)
-		if (!state.session && nativeEligible && !state.supervisor)
-			state.supervisor = yield* loadSupervisorSurface({
-				onSelect: (item) => {
-					state.supervisedRoot =
-						item && item.groupKey !== UNMANAGED_GROUP
-							? item.groupKey
-							: undefined
-				},
-			})
-		const opened = !state.session && nativeEligible
-		const session =
-			state.session ??
-			(nativeEligible
-				? yield* Effect.acquireRelease(
-						openActSession({
-							supervisor: state.supervisor,
-							onTabChange: (id) => tabChanged(state, id),
-						}),
-						(session) => session.close(),
-					)
-				: undefined)
-		if (supervising && !session)
-			return yield* Effect.fail(
-				new Error(
-					"agency supervise requires an interactive terminal; use agency attention --json for automation",
-				),
-			)
-		state.session = session
-		state.native = Boolean(session)
-		if (session && state.supervisor && !state.engine)
-			yield* forkSupervisor(options, state, state.supervisor)
-		// The requested tab applies to the first session, not after a worker returns.
-		if (session && opened && options.tab && !state.tabOpened) {
-			state.tabOpened = true
-			session.activateTab(options.tab)
-			if (supervising) state.engine?.start()
-		}
-		session?.notice(state.notice)
+		const session = yield* openSession(
+			options,
+			interaction,
+			state,
+			config.chooserCommand,
+		)
 		const ui = session?.interaction ?? interaction
 		const nativeOptions = {
 			cwd: root,
