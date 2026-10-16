@@ -23,7 +23,10 @@ export class RuntimeService extends Context.Service<RuntimeService>()(
 					const binary =
 						inherited ??
 						(yield* fs
-							.runCommand(["which", "herdr"], { captureOutput: true })
+							.runCommand(["which", "herdr"], {
+								captureOutput: true,
+								timeoutMs: 2_000,
+							})
 							.pipe(
 								Effect.map((result) =>
 									result.exitCode === 0 ? result.stdout.trim() || null : null,

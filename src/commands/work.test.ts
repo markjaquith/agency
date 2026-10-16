@@ -88,7 +88,7 @@ interface HarnessOptions {
 	readonly taskRepo?: string
 	readonly existingPaths?: readonly string[]
 	readonly validationIssues?: readonly { path: string; message: string }[]
-	readonly runtimeBindingError?: Error
+	readonly runtimeBinding?: Effect.Effect<null, Error>
 }
 
 const createHarness = (options: HarnessOptions = {}) => {
@@ -117,9 +117,7 @@ const createHarness = (options: HarnessOptions = {}) => {
 		) => {
 			events.push("bind")
 			bindings.push(input)
-			return options.runtimeBindingError
-				? Effect.fail(options.runtimeBindingError)
-				: Effect.succeed(null)
+			return options.runtimeBinding ?? Effect.succeed(null)
 		},
 	}
 	const launchEnvironments: Array<Readonly<Record<string, string>>> = []
@@ -1170,13 +1168,33 @@ describe("work command", () => {
 		expect(printHarness.bindings).toEqual([])
 	})
 
-	test("launches even when the runtime binding cannot be recorded", async () => {
-		const harness = createHarness({
-			runtimeBindingError: new Error("state directory is read-only"),
-		})
-		await harness.run({ taskId: "example", opencode: true })
-		expect(harness.events.slice(-2)).toEqual(["bind", "launch:opencode"])
+	test("launches even when runtime binding fails or defects", async () => {
+		for (const runtimeBinding of [
+			Effect.fail(new Error("state directory is read-only")),
+			Effect.die(new Error("unexpected defect")),
+		]) {
+			const harness = createHarness({ runtimeBinding })
+			const errors = await captureErrors(() =>
+				harness.run({ taskId: "example", opencode: true, verbose: true }),
+			)
+			expect(harness.events.slice(-2)).toEqual(["bind", "launch:opencode"])
+			expect(
+				errors.some((line) =>
+					line.startsWith("Unable to record runtime binding:"),
+				),
+			).toBe(true)
+		}
 	})
+
+	test("does not wait more than two seconds for runtime binding", async () => {
+		const harness = createHarness({ runtimeBinding: Effect.never })
+		const started = performance.now()
+		await captureErrors(() =>
+			harness.run({ taskId: "example", opencode: true }),
+		)
+		expect(performance.now() - started).toBeLessThan(4_000)
+		expect(harness.events.slice(-2)).toEqual(["bind", "launch:opencode"])
+	}, 10_000)
 
 	test("sends the generated prompt only with --auto", async () => {
 		const harness = createHarness()
@@ -1244,6 +1262,22 @@ describe("work command", () => {
 			],
 			cwd: phaseDirectory,
 		})
+	})
+
+	test("does not read a session ID from arbitrary launch arguments", async () => {
+		const harness = createHarness({
+			available: { codex: true },
+			agents: {
+				custom: {
+					command: ["codex"],
+					autoCommand: ["codex", "--session", "not-a-session", "{prompt}"],
+				},
+			},
+		})
+		await harness.run({ taskId: "example", agent: "custom", auto: true })
+		expect(harness.bindings).toEqual([
+			expect.objectContaining({ agentSessionId: null }),
+		])
 	})
 
 	test("expands a named agent with shared context", async () => {

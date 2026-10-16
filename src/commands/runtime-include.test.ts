@@ -67,24 +67,25 @@ const withRuntime = <A, E>(
 	)
 
 const bindAlpha = () =>
-	withRuntime(
+	runTestEffect(
 		Effect.flatMap(RuntimeBindingService, (service) =>
-			service.recordLaunch({
-				root,
-				unit: "execution-unit:task/alpha",
-				agent: "opencode2",
-				agentSessionId: "ses_alpha",
-				agencySessionId: "1-2",
-			}),
+			service.recordLaunch(
+				{
+					root,
+					unit: "execution-unit:task/alpha",
+					agent: "opencode2",
+					agentSessionId: "ses_alpha",
+					agencySessionId: "1-2",
+				},
+				{
+					...process.env,
+					HERDR_ENV: "1",
+					HERDR_PANE_ID: "w1:p1",
+					HERDR_TAB_ID: "w1:t1",
+					HERDR_WORKSPACE_ID: "w1",
+				},
+			),
 		),
-		createFakeRuntimeProvider({
-			location: {
-				runtime: "herdr",
-				paneId: "w1:p1",
-				tabId: "w1:t1",
-				workspaceId: "w1",
-			},
-		}),
 	)
 
 const liveProvider = () =>

@@ -97,7 +97,10 @@ const harness = (
 describe("OpenCode auto-start", () => {
 	test("submits once and attaches without a composer prompt", async () => {
 		const h = harness()
-		expect(await h.run()).toEqual(["opencode", "--session", session.id])
+		expect(await h.run()).toEqual({
+			argv: ["opencode", "--session", session.id],
+			sessionId: session.id,
+		})
 		expect(h.calls.filter((call) => call[3]?.endsWith("/prompt"))).toHaveLength(
 			1,
 		)
@@ -118,7 +121,10 @@ describe("OpenCode auto-start", () => {
 	})
 	test("continues the newest root session in the exact launch directory", async () => {
 		const h = harness({ resume: true, existing: true })
-		expect(await h.run()).toEqual(["opencode", "--session", session.id])
+		expect(await h.run()).toEqual({
+			argv: ["opencode", "--session", session.id],
+			sessionId: session.id,
+		})
 		expect(
 			h.calls.some((call) => call[2] === "post" && call[3] === "/api/session"),
 		).toBe(false)
@@ -132,7 +138,10 @@ describe("OpenCode auto-start", () => {
 	})
 	test("preserves V1 native launch", async () => {
 		const h = harness({ version: "1.18.29" })
-		expect(await h.run()).toEqual(["opencode", "--prompt", "generated prompt"])
+		expect(await h.run()).toEqual({
+			argv: ["opencode", "--prompt", "generated prompt"],
+			sessionId: null,
+		})
 		expect(h.calls).toHaveLength(1)
 	})
 	test("fails instead of opening an unsubmitted composer or retrying admission", async () => {

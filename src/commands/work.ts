@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Cause, Effect } from "effect"
 import { dirname, resolve } from "node:path"
 import type { BaseCommandOptions } from "../utils/command"
 import { WorktreeService } from "../services/WorktreeService"
@@ -467,25 +467,27 @@ export const work = (
 				)
 			}
 		}
-		const launchArgv = managedOpenCodeAuto
+		const prepared = managedOpenCodeAuto
 			? yield* prepareOpenCodeLaunch(resolved.argv, launchPath, environment)
-			: resolved.argv
+			: { argv: resolved.argv, sessionId: null }
+		const launchArgv = prepared.argv
 		if (
 			target.kind === "phase" ||
 			(target.kind === "task" && !target.multiPhase)
 		) {
-			const sessionFlag = launchArgv.indexOf("--session")
+			// Binding is best-effort bookkeeping: it must never fail, defect, or
+			// noticeably delay the launch.
 			const runtimeBindings = yield* RuntimeBindingService
 			yield* runtimeBindings
 				.recordLaunch({
 					root,
 					unit: targetNodeId(target),
 					agent,
-					agentSessionId:
-						sessionFlag >= 0 ? (launchArgv[sessionFlag + 1] ?? null) : null,
+					agentSessionId: prepared.sessionId,
 					agencySessionId: sessionId,
 				})
 				.pipe(
+					Effect.timeout("2 seconds"),
 					Effect.tap((binding) =>
 						Effect.sync(() => {
 							if (binding) {
@@ -495,9 +497,11 @@ export const work = (
 							}
 						}),
 					),
-					Effect.catch((error) =>
+					Effect.catchCause((cause) =>
 						Effect.sync(() =>
-							verboseLog(`Unable to record runtime binding: ${error.message}`),
+							verboseLog(
+								`Unable to record runtime binding: ${Cause.pretty(cause)}`,
+							),
 						),
 					),
 				)

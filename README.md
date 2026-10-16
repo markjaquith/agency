@@ -881,25 +881,32 @@ When `agency work` claims an execution unit and launches its agent inside a
 terminal runtime, it records a binding: runtime kind, pane, tab, and workspace
 IDs, the agent session ID when Agency knows it (for example, an OpenCode V2
 auto-start session), the Agency session ID, and a timestamp. Herdr is currently
-the only runtime; it is detected from `HERDR_ENV`/`HERDR_BIN_PATH` or a `herdr`
-binary on `PATH`. Running without a runtime is normal and records nothing, and a
-failure to record never blocks the launch.
+the only runtime. Recording reads Herdr's inherited `HERDR_ENV`,
+`HERDR_PANE_ID`, `HERDR_TAB_ID`, and `HERDR_WORKSPACE_ID` directly and runs no
+subprocess; outside Herdr it records nothing. Recording is best-effort: it is
+bounded to two seconds and its failures never block or fail the launch.
+Inspection detects Herdr from `HERDR_ENV`/`HERDR_BIN_PATH` or a `herdr` binary on
+`PATH`.
 
 Bindings are local operational state, not workbase content. They are stored as
 one JSON file per unit under
 `$AGENCY_STATE_DIR/runtime-bindings/<workbase-key>/` (default state directory:
 `$XDG_STATE_HOME/agency`, else `~/.local/state/agency`). Relaunching a unit
-replaces its binding.
+replaces its binding, and launching a unit in a pane removes other units'
+bindings to that pane.
 
 `agency graph --include runtime` and `agency context --include runtime` reconcile
 bindings read-only against a live runtime snapshot. Each execution-unit node
 gains `runtime.binding` (or `null`) with a `state`:
 
-- `live`: the bound agent is still in its recorded pane.
+- `live`: the bound agent session is still in its recorded pane. When the session
+  ID is unknown, an agent in the recorded pane counts only while its working
+  directory is inside the unit's checkout or item directory, because pane IDs
+  are reused; if several such bindings claim one pane, the latest launch wins.
 - `moved`: the bound agent session is visible in exactly one other pane.
 - `duplicated`: the bound agent session is visible in more than one pane.
-- `gone`: the agent is no longer visible; `panes` lists the recorded pane if it
-  remains open without an agent.
+- `gone`: the bound agent is no longer visible; `panes` lists the recorded pane
+  if it remains open (without an agent, or hosting other work).
 - `unknown`: no runtime is available to check.
 
 Unbound agent panes whose working directory lies inside a unit's checkout or item

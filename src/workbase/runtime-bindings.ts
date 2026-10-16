@@ -20,10 +20,12 @@ export const RuntimeBinding = Schema.Struct({
 export type RuntimeBinding = Schema.Schema.Type<typeof RuntimeBinding>
 
 /**
- * - live: the bound agent is visible in its recorded pane.
+ * - live: the bound agent is visible in its recorded pane (or, with no known
+ *   session, an agent in that pane still works inside the unit).
  * - moved: the bound agent session is visible in exactly one different pane.
  * - duplicated: the bound agent session is visible in more than one pane.
- * - gone: neither the agent session nor a live agent in the recorded pane remain.
+ * - gone: neither the agent session nor a matching agent in the recorded pane
+ *   remain, or a newer binding claimed that pane.
  */
 type RuntimeBindingState = "live" | "moved" | "duplicated" | "gone"
 
@@ -74,31 +76,55 @@ const contains = (parent: string, path: string) => {
 	)
 }
 
+const insideUnit = (pane: RuntimePane, unit: RuntimeUnit | undefined) =>
+	unit !== undefined &&
+	[pane.foregroundCwd, pane.cwd].some(
+		(path) =>
+			path !== null &&
+			[...unit.directories, ...unit.checkoutPaths].some((candidate) =>
+				contains(candidate, path),
+			),
+	)
+
+interface ReconciledCandidate extends ReconciledBinding {
+	/** True when the state rests on the recorded pane rather than a session match. */
+	readonly paneFallback: boolean
+}
+
 const reconcileBinding = (
 	binding: RuntimeBinding,
 	snapshot: RuntimeSnapshot,
-): ReconciledBinding => {
+	unit: RuntimeUnit | undefined,
+): ReconciledCandidate => {
 	const panes = snapshot.panes
 	const sessionPanes = binding.agentSessionId
 		? panes.filter((pane) => pane.agentSessionId === binding.agentSessionId)
 		: []
 	if (sessionPanes.length > 1) {
-		return { binding, state: "duplicated", panes: sessionPanes }
+		return {
+			binding,
+			state: "duplicated",
+			panes: sessionPanes,
+			paneFallback: false,
+		}
 	}
 	if (sessionPanes.length === 1) {
 		return {
 			binding,
 			state: sessionPanes[0]!.paneId === binding.paneId ? "live" : "moved",
 			panes: sessionPanes,
+			paneFallback: false,
 		}
 	}
 	const bound = panes.find((pane) => pane.paneId === binding.paneId)
-	if (!bound) return { binding, state: "gone", panes: [] }
+	if (!bound) return { binding, state: "gone", panes: [], paneFallback: false }
 	// The recorded pane still hosts an agent whose session identity is unknown
-	// on one side; treat it as the bound agent.
+	// on one side. Pane IDs are reused (and restart after a Herdr restart), so
+	// only treat it as the bound agent while it still works inside the unit.
 	if (
 		bound.agent !== null &&
-		(binding.agentSessionId === null || bound.agentSessionId === null)
+		(binding.agentSessionId === null || bound.agentSessionId === null) &&
+		insideUnit(bound, unit)
 	) {
 		const shared = bound.agentSessionId
 			? panes.filter((pane) => pane.agentSessionId === bound.agentSessionId)
@@ -107,9 +133,38 @@ const reconcileBinding = (
 			binding,
 			state: shared.length > 1 ? "duplicated" : "live",
 			panes: shared,
+			paneFallback: true,
 		}
 	}
-	return { binding, state: "gone", panes: [bound] }
+	return { binding, state: "gone", panes: [bound], paneFallback: false }
+}
+
+/**
+ * When several bindings resolve to the same pane only through the recorded-pane
+ * fallback, the most recent launch owns it and the older bindings are gone.
+ */
+const resolveSharedPanes = (
+	candidates: readonly ReconciledCandidate[],
+): ReconciledBinding[] => {
+	const owners = new Map<string, RuntimeBinding>()
+	for (const candidate of candidates) {
+		if (!candidate.paneFallback) continue
+		const owner = owners.get(candidate.binding.paneId)
+		if (!owner || candidate.binding.boundAt > owner.boundAt) {
+			owners.set(candidate.binding.paneId, candidate.binding)
+		}
+	}
+	return candidates.map(({ paneFallback, ...item }) =>
+		paneFallback && owners.get(item.binding.paneId) !== item.binding
+			? {
+					binding: item.binding,
+					state: "gone",
+					panes: item.panes.filter(
+						(pane) => pane.paneId === item.binding.paneId,
+					),
+				}
+			: item,
+	)
 }
 
 interface UnitMatch {
@@ -153,8 +208,11 @@ export const reconcileRuntime = (
 	snapshot: RuntimeSnapshot,
 	units: readonly RuntimeUnit[],
 ): RuntimeReconciliation => {
-	const reconciled = bindings.map((binding) =>
-		reconcileBinding(binding, snapshot),
+	const unitsById = new Map(units.map((unit) => [unit.id, unit]))
+	const reconciled = resolveSharedPanes(
+		bindings.map((binding) =>
+			reconcileBinding(binding, snapshot, unitsById.get(binding.unit)),
+		),
 	)
 	const claimed = new Set(
 		reconciled

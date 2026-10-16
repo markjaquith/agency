@@ -8,7 +8,11 @@ import type {
 	GraphRuntime,
 	GraphRuntimeBinding,
 } from "../graph-schema"
-import type { RuntimeKind, RuntimePane } from "../workbase/runtime"
+import {
+	currentHerdrLocation,
+	type RuntimeKind,
+	type RuntimePane,
+} from "../workbase/runtime"
 import {
 	executionUnitPaths,
 	reconcileRuntime,
@@ -121,7 +125,26 @@ export class RuntimeBindingService extends Context.Service<RuntimeBindingService
 					const temporary = `${path}.${process.pid}.tmp`
 					yield* fs.createDirectory(bindingsDirectory(workbase, env))
 					yield* fs.writeJSON(temporary, binding)
-					yield* fs.moveDirectory(temporary, path)
+					yield* fs
+						.moveDirectory(temporary, path)
+						.pipe(
+							Effect.tapError(() =>
+								fs.deleteFile(temporary).pipe(Effect.ignore),
+							),
+						)
+					// A pane hosts one claimed unit at a time: a newer launch in the
+					// same pane supersedes any other unit's binding to it.
+					for (const stale of yield* list(root, env)) {
+						if (
+							stale.unit !== binding.unit &&
+							stale.runtime === binding.runtime &&
+							stale.paneId === binding.paneId
+						) {
+							yield* fs
+								.deleteFile(bindingFile(workbase, stale.unit, env))
+								.pipe(Effect.ignore)
+						}
+					}
 					return binding
 				})
 
@@ -141,9 +164,9 @@ export class RuntimeBindingService extends Context.Service<RuntimeBindingService
 					env: NodeJS.ProcessEnv = process.env,
 				) =>
 					Effect.gen(function* () {
-						const runtime = yield* RuntimeService
-						const provider = yield* runtime.provider(env)
-						const location = provider?.currentLocation() ?? null
+						// Recording reads the inherited runtime identity directly; it needs
+						// no runtime binary, detection, or subprocess.
+						const location = currentHerdrLocation(env)
 						if (!location) return null
 						return yield* record(
 							{

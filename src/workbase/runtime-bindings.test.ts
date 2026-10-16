@@ -7,8 +7,22 @@ import {
 	type RuntimeBinding,
 } from "./runtime-bindings"
 
+const alphaPaths = executionUnitPaths("/wb", { taskId: "alpha" }, "agency")
+const betaPaths = executionUnitPaths("/wb", { taskId: "beta" }, "agency")
+const unitsFor = (...paths: (typeof alphaPaths & { id: string })[]) =>
+	paths.map((path) => ({
+		id: path.id,
+		directories: [path.directory],
+		checkoutPaths: [path.checkoutPath],
+	}))
+const units = unitsFor(
+	{ id: "execution-unit:task/alpha", ...alphaPaths },
+	{ id: "execution-unit:task/beta", ...betaPaths },
+)
+const inAlpha = alphaPaths.checkoutPath
+
 const reconcileBinding = (item: RuntimeBinding, live: RuntimeSnapshot) =>
-	reconcileRuntime([item], live, []).bindings[0]!
+	reconcileRuntime([item], live, units).bindings[0]!
 
 const binding = (fields: Partial<RuntimeBinding> = {}): RuntimeBinding => ({
 	version: 1,
@@ -68,18 +82,28 @@ describe("runtime binding reconciliation", () => {
 		expect(paneIds(result.panes)).toEqual(["w1:p1", "w1:p2"])
 	})
 
-	test("adopts an unknown session from the bound pane", () => {
+	test("adopts an unknown session from the bound pane while it works in the unit", () => {
 		expect(
 			reconcileBinding(
 				binding({ agentSessionId: null }),
-				snapshot(runtimePane({ paneId: "w1:p1", agentSessionId: "ses_z" })),
+				snapshot(
+					runtimePane({
+						paneId: "w1:p1",
+						agentSessionId: "ses_z",
+						foregroundCwd: inAlpha,
+					}),
+				),
 			).state,
 		).toBe("live")
 		expect(
 			reconcileBinding(
 				binding({ agentSessionId: null }),
 				snapshot(
-					runtimePane({ paneId: "w1:p1", agentSessionId: "ses_z" }),
+					runtimePane({
+						paneId: "w1:p1",
+						agentSessionId: "ses_z",
+						cwd: inAlpha,
+					}),
 					runtimePane({ paneId: "w3:p1", agentSessionId: "ses_z" }),
 				),
 			).state,
@@ -87,16 +111,74 @@ describe("runtime binding reconciliation", () => {
 		expect(
 			reconcileBinding(
 				binding(),
-				snapshot(runtimePane({ paneId: "w1:p1", agentSessionId: null })),
+				snapshot(
+					runtimePane({ paneId: "w1:p1", agentSessionId: null, cwd: inAlpha }),
+				),
 			).state,
 		).toBe("live")
+	})
+
+	test("does not adopt a reused pane whose agent works outside the unit", () => {
+		for (const pane of [
+			runtimePane({
+				paneId: "w1:p1",
+				agentSessionId: "ses_z",
+				cwd: "/elsewhere",
+			}),
+			runtimePane({ paneId: "w1:p1", cwd: betaPaths.checkoutPath }),
+			runtimePane({ paneId: "w1:p1" }),
+		]) {
+			const result = reconcileBinding(
+				binding({ agentSessionId: null }),
+				snapshot(pane),
+			)
+			expect(result.state).toBe("gone")
+			expect(paneIds(result.panes)).toEqual(["w1:p1"])
+		}
+		// A binding for a unit that no longer exists has no paths to confirm it.
+		expect(
+			reconcileRuntime(
+				[binding({ agentSessionId: null })],
+				snapshot(runtimePane({ paneId: "w1:p1", cwd: inAlpha })),
+				[],
+			).bindings[0]!.state,
+		).toBe("gone")
+	})
+
+	test("gives a shared pane to the latest fallback binding", () => {
+		const older = binding({
+			agentSessionId: null,
+			boundAt: "2026-10-16T00:00:00.000Z",
+		})
+		const newer = binding({
+			unit: "execution-unit:task/beta",
+			agentSessionId: null,
+			boundAt: "2026-10-16T01:00:00.000Z",
+		})
+		const shared = unitsFor({
+			id: "execution-unit:task/alpha",
+			directory: "/wb",
+			checkoutPath: "/wb",
+		}).concat(unitsFor({ id: "execution-unit:task/beta", ...betaPaths }))
+		const result = reconcileRuntime(
+			[older, newer],
+			snapshot(runtimePane({ paneId: "w1:p1", cwd: betaPaths.checkoutPath })),
+			shared,
+		)
+		expect(
+			result.bindings.map((item) => [item.binding.unit, item.state]),
+		).toEqual([
+			["execution-unit:task/alpha", "gone"],
+			["execution-unit:task/beta", "live"],
+		])
+		expect(paneIds(result.bindings[0]!.panes)).toEqual(["w1:p1"])
 	})
 
 	test("is gone when the pane closed, lost its agent, or hosts another session", () => {
 		expect(reconcileBinding(binding(), snapshot()).state).toBe("gone")
 		const shell = reconcileBinding(
 			binding({ agentSessionId: null }),
-			snapshot(runtimePane({ paneId: "w1:p1", agent: null })),
+			snapshot(runtimePane({ paneId: "w1:p1", agent: null, cwd: inAlpha })),
 		)
 		expect(shell.state).toBe("gone")
 		expect(paneIds(shell.panes)).toEqual(["w1:p1"])

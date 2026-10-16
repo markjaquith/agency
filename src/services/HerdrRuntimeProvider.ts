@@ -4,6 +4,7 @@ import { join } from "node:path"
 import type { FileSystemService } from "./FileSystemService"
 import {
 	boundedTranscriptLines,
+	currentHerdrLocation,
 	RuntimeAgentStatus,
 	RuntimeError,
 	type RuntimeEvent,
@@ -132,18 +133,28 @@ const subscriptionRequest = (subscription: RuntimeSubscription) =>
 const stringField = (data: Readonly<Record<string, unknown>>, key: string) =>
 	typeof data[key] === "string" ? (data[key] as string) : null
 
+const decodePane = Schema.decodeUnknownOption(HerdrPane)
+
 const normalizeEvent = (event: typeof SubscriptionEvent.Type): RuntimeEvent => {
 	const data = event.data ?? {}
+	// pane_created, pane_updated, and pane_moved nest the pane under data.pane.
+	const nested = decodePane(data.pane)
+	const pane = Option.isSome(nested) ? normalizePane(nested.value) : null
 	const status = stringField(data, "agent_status")
 	return {
 		type: event.event,
-		paneId: stringField(data, "pane_id"),
-		tabId: stringField(data, "tab_id"),
-		workspaceId: stringField(data, "workspace_id"),
-		agentStatus: status === null ? null : agentStatus(status),
+		paneId: pane?.paneId ?? stringField(data, "pane_id"),
+		tabId: pane?.tabId ?? stringField(data, "tab_id"),
+		workspaceId: pane?.workspaceId ?? stringField(data, "workspace_id"),
+		agentStatus:
+			pane?.agentStatus ?? (status === null ? null : agentStatus(status)),
+		pane,
+		previousPaneId: stringField(data, "previous_pane_id"),
 		data,
 	}
 }
+
+const SHORT_TIMEOUT_MS = 5_000
 
 export const createHerdrRuntimeProvider = (
 	fs: FileSystemService["Service"],
@@ -153,7 +164,7 @@ export const createHerdrRuntimeProvider = (
 	const run = (
 		operation: string,
 		args: readonly string[],
-		timeoutMs = 30_000,
+		timeoutMs = SHORT_TIMEOUT_MS,
 	) =>
 		fs.runCommand([binary, ...args], { captureOutput: true, timeoutMs }).pipe(
 			Effect.mapError(
@@ -170,15 +181,7 @@ export const createHerdrRuntimeProvider = (
 
 	return {
 		kind: "herdr",
-		currentLocation: () =>
-			env.HERDR_ENV === "1" && env.HERDR_PANE_ID
-				? {
-						runtime: "herdr",
-						paneId: env.HERDR_PANE_ID,
-						tabId: env.HERDR_TAB_ID || null,
-						workspaceId: env.HERDR_WORKSPACE_ID || null,
-					}
-				: null,
+		currentLocation: () => currentHerdrLocation(env),
 
 		snapshot: () =>
 			Effect.gen(function* () {
@@ -307,37 +310,50 @@ export const createHerdrRuntimeProvider = (
 								Queue.offerUnsafe(queue, normalizeEvent(event.value))
 							}
 						}
-						Bun.connect({
-							unix: path,
-							socket: {
-								open(connection) {
-									connection.write(
-										`${JSON.stringify({
-											id: `agency:subscribe:${process.pid}:${Date.now()}`,
-											method: "events.subscribe",
-											params: {
-												subscriptions: subscriptions.map(subscriptionRequest),
-											},
-										})}\n`,
-									)
+						const connect = () =>
+							Bun.connect({
+								unix: path,
+								socket: {
+									open(connection) {
+										connection.write(
+											`${JSON.stringify({
+												id: `agency:subscribe:${process.pid}:${Date.now()}`,
+												method: "events.subscribe",
+												params: {
+													subscriptions: subscriptions.map(subscriptionRequest),
+												},
+											})}\n`,
+										)
+									},
+									data(_connection, chunk) {
+										state.buffer += decoder.decode(chunk, { stream: true })
+										let newline = state.buffer.indexOf("\n")
+										while (newline >= 0) {
+											handleLine(state.buffer.slice(0, newline))
+											state.buffer = state.buffer.slice(newline + 1)
+											newline = state.buffer.indexOf("\n")
+										}
+									},
+									close() {
+										if (state.closed) return
+										state.buffer += decoder.decode()
+										handleLine(state.buffer)
+										state.buffer = ""
+										Queue.endUnsafe(queue)
+									},
+									error(_connection, error) {
+										fail(null, "Herdr subscription failed", error)
+									},
 								},
-								data(_connection, chunk) {
-									state.buffer += decoder.decode(chunk, { stream: true })
-									let newline = state.buffer.indexOf("\n")
-									while (newline >= 0) {
-										handleLine(state.buffer.slice(0, newline))
-										state.buffer = state.buffer.slice(newline + 1)
-										newline = state.buffer.indexOf("\n")
-									}
-								},
-								close() {
-									if (!state.closed) Queue.endUnsafe(queue)
-								},
-								error(_connection, error) {
-									fail(null, "Herdr subscription failed", error)
-								},
-							},
-						}).then(
+							})
+						let connecting: ReturnType<typeof connect>
+						try {
+							connecting = connect()
+						} catch (error) {
+							fail(null, `Unable to connect to Herdr at ${path}`, error)
+							return state
+						}
+						connecting.then(
 							(connection) => {
 								state.socket = connection
 								if (state.closed) connection.end()

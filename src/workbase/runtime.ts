@@ -47,7 +47,7 @@ export interface RuntimeSnapshot {
 }
 
 /** The runtime location of the current process, when it runs inside a runtime. */
-interface RuntimeLocation {
+export interface RuntimeLocation {
 	readonly runtime: RuntimeKind
 	readonly paneId: string
 	readonly tabId: string | null
@@ -69,6 +69,10 @@ export interface RuntimeEvent {
 	readonly tabId: string | null
 	readonly workspaceId: string | null
 	readonly agentStatus: RuntimeAgentStatus | null
+	/** The full pane, for events that carry one (created, updated, moved). */
+	readonly pane: RuntimePane | null
+	/** The pane's ID before a move. */
+	readonly previousPaneId: string | null
 	readonly data: Readonly<Record<string, unknown>>
 }
 
@@ -111,3 +115,19 @@ export const boundedTranscriptLines = (lines?: number) =>
 		MAX_TRANSCRIPT_LINES,
 		Math.max(1, Math.floor(lines ?? DEFAULT_TRANSCRIPT_LINES)),
 	)
+
+/**
+ * The Herdr pane hosting the current process, from Herdr's inherited
+ * environment. Needs no binary or subprocess.
+ */
+export const currentHerdrLocation = (
+	env: NodeJS.ProcessEnv = process.env,
+): RuntimeLocation | null =>
+	env.HERDR_ENV === "1" && env.HERDR_PANE_ID
+		? {
+				runtime: "herdr",
+				paneId: env.HERDR_PANE_ID,
+				tabId: env.HERDR_TAB_ID || null,
+				workspaceId: env.HERDR_WORKSPACE_ID || null,
+			}
+		: null
