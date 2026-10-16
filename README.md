@@ -1077,16 +1077,16 @@ unit merge into one entry. The view refreshes on runtime events (Herdr
 `events.subscribe`, debounced) and every minute for pull request and ticket
 changes.
 
-| Key                           | Action                                                     |
-| ----------------------------- | ---------------------------------------------------------- |
-| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                       |
-| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                           |
-| `Enter`                       | Preview, confirm, and run the action                       |
-| `f`                           | Focus the entry's pane                                     |
-| `r`                           | Refresh now                                                |
-| `e`                           | Edit the workbase's supervision prompt in `$EDITOR`        |
-| `s` / `d`                     | Snooze, or dismiss until the entry changes                 |
-| `?` / `Esc` / `q` or `C-c`    | Help / cancel a dialog / quit (cancelling any open dialog) |
+| Key                           | Action                                               |
+| ----------------------------- | ---------------------------------------------------- |
+| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                 |
+| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                     |
+| `Enter`                       | Preview, confirm, and run the action                 |
+| `f`                           | Focus the entry's pane                               |
+| `r`                           | Refresh now                                          |
+| `e`                           | Edit the workbase's supervision prompt in `$EDITOR`  |
+| `s` / `d`                     | Snooze, or dismiss until the entry changes           |
+| `?` / `Esc` / `C-c`           | Help / close one dialog or help (never quits) / quit |
 
 Before running, the supervisor shows exactly what will run: the argv, runtime
 operation, or prompt. Enter is ignored for a moment after a dialog opens and

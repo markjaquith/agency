@@ -119,7 +119,8 @@ describe("supervisor view", () => {
 			view.mockInput.typeText("e")
 			view.mockInput.typeText("r")
 			view.mockInput.typeText("q")
-			await view.waitFor(() => view.events.length >= 8)
+			await view.waitFor(() => view.events.length >= 7)
+			await view.frame()
 			expect(view.events).toEqual([
 				"run beta b1",
 				"run alpha a2",
@@ -128,8 +129,9 @@ describe("supervisor view", () => {
 				"dismiss alpha",
 				"edit alpha",
 				"refresh",
-				"quit",
 			])
+			view.mockInput.pressCtrlC()
+			await view.waitFor(() => view.events.includes("quit"))
 		} finally {
 			view.renderer.destroy()
 		}

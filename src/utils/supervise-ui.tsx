@@ -141,9 +141,9 @@ export const SUPERVISOR_BINDINGS: readonly Binding[] = [
 			"Cancel a dialog (in text input, clear it first) or close this help; does nothing in the list",
 	},
 	{
-		keys: "q / C-c",
-		description: "Quit (C-c also cancels an open dialog)",
-		footer: "q quit",
+		keys: "C-c",
+		description: "Quit (cancels any open dialog first)",
+		footer: "C-c quit",
 	},
 ]
 
@@ -439,10 +439,6 @@ export const SupervisorApp = (props: {
 					props.handlers.onExecute(item, action)
 				return
 			}
-			case "q":
-				handled()
-				quit()
-				return
 			case "f":
 				handled()
 				if (item && !props.status.busy) props.handlers.onFocus(item)
@@ -519,7 +515,7 @@ export const SupervisorApp = (props: {
 	}
 	const footer = () =>
 		props.status.busy
-			? "working… · ? help · q quit"
+			? "working… · ? help · C-c quit"
 			: SUPERVISOR_BINDINGS.flatMap((binding) =>
 					binding.footer ? [binding.footer] : [],
 				).join(" · ")
