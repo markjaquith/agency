@@ -112,6 +112,12 @@ const DeliveryProvider = Schema.Struct({
 	environment: Schema.optional(Schema.Record(EnvironmentName, Schema.String)),
 })
 
+/** A user triage prompt, inline or in a file relative to its config file. */
+const TriagePrompt = Schema.Struct({
+	prompt: Schema.optional(NonEmptyString),
+	promptFile: Schema.optional(NonEmptyString),
+})
+
 export const WorkbaseConfig = Schema.Struct({
 	version: Schema.Literal(2),
 	vcs: Schema.optional(Schema.Literal("git")),
@@ -140,6 +146,7 @@ export const WorkbaseConfig = Schema.Struct({
 		),
 	),
 	delivery: Schema.optional(DeliveryProvider),
+	triage: Schema.optional(TriagePrompt),
 	tickets: Schema.optional(
 		Schema.Struct({
 			jira: Schema.optional(
@@ -174,6 +181,13 @@ export const WorkbaseRegistry = Schema.Struct({
 export const GlobalConfig = Schema.Struct({
 	agent: Schema.optional(
 		Schema.Literals(["opencode2", "opencode", "pi", "claude"]),
+	),
+	triage: Schema.optional(
+		Schema.Struct({
+			...TriagePrompt.fields,
+			/** The OpenCode model for triage runs, as provider/model[#variant]. */
+			model: Schema.optional(NonEmptyString),
+		}),
 	),
 })
 

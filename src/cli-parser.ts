@@ -1025,6 +1025,20 @@ const commands = {
 			options: ["archived", "json"],
 		},
 	},
+	triage: {
+		usage: "agency triage [--item <ref>] [--archived] [--json]",
+		options: {
+			...outputOptions,
+			item: { type: "string" },
+			archived: { type: "boolean" },
+		},
+		command: {
+			usage: "agency triage [--item <ref>] [--archived] [--json]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: ["item", "archived", "json"],
+		},
+	},
 	next: {
 		usage: "agency next [--select] [--json]",
 		options: {

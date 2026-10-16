@@ -135,6 +135,18 @@ const errorMetadata: Readonly<Record<string, ErrorMetadata>> = {
 		retryable: true,
 		remediation: "Check that the runtime (Herdr) is running and retry.",
 	},
+	TriageError: {
+		code: "TRIAGE_ERROR",
+		retryable: false,
+		remediation:
+			"Correct the item selector or triage prompt configuration and retry.",
+	},
+	SupervisionStateLockError: {
+		code: "SUPERVISION_STATE_LOCKED",
+		retryable: true,
+		remediation:
+			"Retry; remove the reported lock file only if no Agency process is using it.",
+	},
 	ProtocolOutputError: {
 		code: "PROTOCOL_OUTPUT_ERROR",
 		retryable: false,

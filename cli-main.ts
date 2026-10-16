@@ -18,6 +18,7 @@ import { context, help as contextHelp } from "./src/commands/context"
 import { graph, help as graphHelp } from "./src/commands/graph"
 import { next, help as nextHelp } from "./src/commands/next"
 import { attention, help as attentionHelp } from "./src/commands/attention"
+import { triage, help as triageHelp } from "./src/commands/triage"
 import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -54,6 +55,8 @@ import { RuntimeService } from "./src/services/RuntimeService"
 import { RuntimeBindingService } from "./src/services/RuntimeBindingService"
 import { PullRequestStatusService } from "./src/services/PullRequestStatusService"
 import { SupervisionService } from "./src/services/SupervisionService"
+import { SupervisionStateService } from "./src/services/SupervisionStateService"
+import { TriageService } from "./src/services/TriageService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -100,12 +103,17 @@ const CliLayer = Layer.mergeAll(
 	RuntimeBindingService.layer,
 	PullRequestStatusService.layer,
 	SupervisionService.layer,
+	SupervisionStateService.layer,
+	TriageService.layer,
 )
 
 /**
  * Run a command Effect with all services provided
  */
-async function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
+async function runEffect<A, E>(
+	effect: Effect.Effect<A, E, any>,
+	options: { readonly interruptOnSignal?: boolean } = {},
+): Promise<A> {
 	const providedEffect = Effect.provide(effect, CliLayer) as Effect.Effect<
 		A,
 		E,
@@ -127,17 +135,42 @@ async function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
 		return new Error(String(error))
 	}
 
-	const result = await Effect.runPromise(
-		providedEffect.pipe(
-			Effect.catchDefect((defect) => Effect.fail(toError(defect))),
-			Effect.result,
-		),
-	)
-	if (Result.isFailure(result)) throw result.failure
-	return result.success
+	// Optionally interrupt the command on SIGINT or SIGTERM so its finalizers
+	// run: child processes in their own process group are killed and temporary
+	// files removed. A second signal exits immediately. Interactive commands
+	// own their terminal's signals and do not opt in.
+	const interrupt = new AbortController()
+	const onSignal = () => {
+		if (interrupt.signal.aborted) process.exit(130)
+		interrupt.abort()
+	}
+	if (options.interruptOnSignal) {
+		process.on("SIGINT", onSignal)
+		process.on("SIGTERM", onSignal)
+	}
+	try {
+		const result = await Effect.runPromise(
+			providedEffect.pipe(
+				Effect.catchDefect((defect) => Effect.fail(toError(defect))),
+				Effect.result,
+			),
+			{ signal: interrupt.signal },
+		).catch((error: unknown) => {
+			if (interrupt.signal.aborted) process.exit(130)
+			throw error
+		})
+		if (Result.isFailure(result)) throw result.failure
+		return result.success
+	} finally {
+		process.off("SIGINT", onSignal)
+		process.off("SIGTERM", onSignal)
+	}
 }
 
-const runCommand = <E>(effect: Effect.Effect<void, E, any>) => runEffect(effect)
+const runCommand = <E>(
+	effect: Effect.Effect<void, E, any>,
+	options?: { readonly interruptOnSignal?: boolean },
+) => runEffect(effect, options)
 
 const resolveInvocationCwd = (
 	commandName: string,
@@ -152,7 +185,8 @@ const resolveInvocationCwd = (
 				options.help ||
 				commandName === "init" ||
 				commandName === "workbase" ||
-				commandName === "attention"
+				commandName === "attention" ||
+				commandName === "triage"
 			) {
 				return resolve(options.cwd ?? process.cwd())
 			}
@@ -760,6 +794,26 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	triage: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(triageHelp)
+				return
+			}
+			await runCommand(
+				triage({
+					workbase: options.workbase,
+					archived: options.archived,
+					item: options.item,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+				{ interruptOnSignal: true },
+			)
+		},
+	},
 	sync: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -803,6 +857,7 @@ Commands:
   worktree <subcommand>  Inspect and maintain managed workspaces
   next                   List or select ready execution units
   attention              Report work and sessions that need attention
+  triage                 Assess supervised work and rank next actions
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
   rebase <task> [phase]  Rebase a checkout onto a new base and record it

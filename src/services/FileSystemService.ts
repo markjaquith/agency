@@ -1,5 +1,6 @@
 import { Effect, Data, pipe, Context, Layer } from "effect"
 import {
+	appendFile,
 	mkdir,
 	lstat,
 	readlink,
@@ -10,7 +11,9 @@ import {
 	stat,
 	symlink,
 	unlink,
+	writeFile,
 } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
 import { spawnProcess } from "../utils/process"
 
 // Error types for FileSystem operations
@@ -145,6 +148,79 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 						}),
 				}),
 
+			appendFile: (path: string, content: string) =>
+				Effect.tryPromise({
+					try: () => appendFile(path, content),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to append to file: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			/** Write through a uniquely named temporary file and an atomic rename. */
+			writeFileAtomic: (path: string, content: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
+						try {
+							await writeFile(temporary, content)
+							await rename(temporary, path)
+						} catch (error) {
+							await unlink(temporary).catch(() => undefined)
+							throw error
+						}
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to write file: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			/** Create a file only if it does not exist; false when it already does. */
+			createExclusive: (path: string, content: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						try {
+							await writeFile(path, content, { flag: "wx" })
+							return true
+						} catch (error) {
+							if (
+								typeof error === "object" &&
+								error !== null &&
+								"code" in error &&
+								error.code === "EEXIST"
+							)
+								return false
+							throw error
+						}
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to create file: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			/** Modification time in milliseconds, or null when the path is missing. */
+			modifiedAt: (path: string) =>
+				Effect.tryPromise({
+					try: async () => {
+						try {
+							return (await stat(path)).mtimeMs
+						} catch (error) {
+							if (isFileNotFound(error)) return null
+							throw error
+						}
+					},
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to inspect file: ${path}`,
+							cause: error,
+						}),
+				}),
+
 			writeJSON: <T = unknown>(path: string, data: T) =>
 				Effect.tryPromise({
 					try: () => Bun.write(path, JSON.stringify(data, null, 2) + "\n"),
@@ -258,14 +334,22 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 					readonly captureOutput?: boolean
 					readonly forwardOutput?: boolean
 					readonly passthrough?: boolean
+					/** Give the process no stdin, for commands that read piped input. */
+					readonly ignoreStdin?: boolean
 					readonly env?: Record<string, string>
+					/** Use `env` as the whole environment instead of extending it. */
+					readonly replaceEnv?: boolean
 					readonly timeoutMs?: number
 				},
 			) =>
 				pipe(
 					spawnProcess(args, {
 						cwd: options?.cwd,
-						stdin: options?.passthrough ? "inherit" : "pipe",
+						stdin: options?.passthrough
+							? "inherit"
+							: options?.ignoreStdin
+								? "ignore"
+								: "pipe",
 						stdout: options?.passthrough
 							? "inherit"
 							: options?.forwardOutput
@@ -279,6 +363,7 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 								? "tee"
 								: "pipe",
 						env: options?.env,
+						replaceEnv: options?.replaceEnv,
 						timeoutMs: options?.timeoutMs,
 					}),
 					Effect.mapError(

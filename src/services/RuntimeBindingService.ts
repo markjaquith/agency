@@ -22,6 +22,7 @@ import {
 	type ReconciledBinding,
 	type RuntimeUnit,
 } from "../workbase/runtime-bindings"
+import { agencyStateDirectory } from "../workbase/state-directory"
 
 export interface RuntimeInspection {
 	readonly provider: RuntimeKind | null
@@ -48,20 +49,12 @@ export interface RuntimeUnitReference {
 
 export type InspectedBinding = RuntimeInspection["bindings"][number]
 
-/**
- * Bindings are local operational state, never durable workbase content. They
- * live under $AGENCY_STATE_DIR (default: $XDG_STATE_HOME/agency or
- * ~/.local/state/agency), one file per workbase execution unit.
- */
-const runtimeStateDirectory = (env: NodeJS.ProcessEnv = process.env) =>
-	env.AGENCY_STATE_DIR ||
-	join(env.XDG_STATE_HOME || join(env.HOME ?? ".", ".local", "state"), "agency")
-
+/** Bindings are local operational state: one file per workbase execution unit. */
 const workbaseKey = (root: string) =>
 	createHash("sha256").update(root).digest("hex").slice(0, 32)
 
 const bindingsDirectory = (root: string, env: NodeJS.ProcessEnv) =>
-	join(runtimeStateDirectory(env), "runtime-bindings", workbaseKey(root))
+	join(agencyStateDirectory(env), "runtime-bindings", workbaseKey(root))
 
 const bindingFile = (root: string, unit: string, env: NodeJS.ProcessEnv) =>
 	join(bindingsDirectory(root, env), `${encodeURIComponent(unit)}.json`)

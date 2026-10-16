@@ -140,7 +140,7 @@ const contains = (parent: string, path: string) => {
 	)
 }
 
-const effectivePullRequestState = (pr: AttentionPullRequest) =>
+export const effectivePullRequestState = (pr: AttentionPullRequest) =>
 	pr.live?.state === "available" ? pr.live.prState : pr.recordedState
 
 /**
@@ -179,7 +179,7 @@ const inItem = (roots: readonly string[], path: string) =>
 		}),
 	)
 
-const runtimeRef = (
+export const runtimeRef = (
 	runtime: RuntimeKind,
 	pane: RuntimePane,
 ): AttentionRuntimeRef => ({
@@ -191,7 +191,7 @@ const runtimeRef = (
 	agentSessionId: pane.agentSessionId,
 })
 
-const subjectFor = (
+export const subjectFor = (
 	workbase: AttentionWorkbase | null,
 	unit: AttentionUnit | null,
 	panes: readonly AttentionRuntimeRef[] = [],
@@ -217,7 +217,7 @@ interface UnitPane {
 }
 
 /** Panes that currently host a unit through its binding or an inference. */
-const unitPanes = (unit: AttentionUnit): UnitPane[] => {
+export const unitPanes = (unit: AttentionUnit): UnitPane[] => {
 	const panes = new Map<string, UnitPane>()
 	if (
 		unit.binding &&
@@ -632,7 +632,7 @@ const signal = (
 	}
 }
 
-const unitScope = (workbase: AttentionWorkbase, unit: AttentionUnit) =>
+export const unitScope = (workbase: AttentionWorkbase, unit: AttentionUnit) =>
 	`${workbase.key}:${unit.item.unit}`
 
 const unitLabel = (unit: AttentionUnit) =>

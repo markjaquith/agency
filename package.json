@@ -62,6 +62,12 @@
     "./schemas/agency-attention-v1.json": {
       "default": "./schemas/agency-attention-v1.schema.json"
     },
+    "./schemas/agency-triage-v1.json": {
+      "default": "./schemas/agency-triage-v1.schema.json"
+    },
+    "./schemas/agency-triage-report-v1.json": {
+      "default": "./schemas/agency-triage-report-v1.schema.json"
+    },
     "./fixtures/protocol/success.json": {
       "default": "./fixtures/protocol/success.json"
     },

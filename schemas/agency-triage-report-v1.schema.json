@@ -1,0 +1,253 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-triage-report-v1.schema.json",
+  "title": "Agency triage report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "generatedAt",
+    "runtime",
+    "workbases",
+    "items",
+    "failures",
+    "summary"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "available", "error"],
+      "properties": {
+        "provider": {
+          "oneOf": [
+            {
+              "enum": ["herdr"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "workbases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "root", "available", "error"],
+        "properties": {
+          "id": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": ["string", "null"]
+          },
+          "root": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/failure"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "fresh", "cached", "stale", "failed"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fresh": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cached": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "$defs": {
+    "assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "summary",
+        "question",
+        "actions",
+        "modelActionIds"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "https://github.com/markjaquith/agency/schemas/agency-triage-v1.schema.json#/$defs/status"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "question": {
+          "type": ["string", "null"]
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json"
+          }
+        },
+        "modelActionIds": {
+          "description": "Actions the model wrote itself rather than copying from a deterministic signal.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "subject",
+        "fingerprint",
+        "source",
+        "evaluatedAt",
+        "assessment",
+        "suppressed",
+        "error"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json#/$defs/subject"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "source": {
+          "enum": ["fresh", "cached", "stale", "failed"]
+        },
+        "evaluatedAt": {
+          "type": ["string", "null"]
+        },
+        "assessment": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/assessment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suppressed": {
+          "oneOf": [
+            {
+              "enum": ["snoozed", "dismissed"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workbase",
+        "keys",
+        "kind",
+        "message",
+        "errors",
+        "attempts",
+        "sessionId"
+      ],
+      "properties": {
+        "workbase": {
+          "oneOf": [
+            {
+              "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json#/$defs/workbaseRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kind": {
+          "enum": ["runner", "invalid_response"]
+        },
+        "message": {
+          "type": "string"
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sessionId": {
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}
