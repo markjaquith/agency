@@ -54,6 +54,7 @@ import { RuntimeService } from "./src/services/RuntimeService"
 import { RuntimeBindingService } from "./src/services/RuntimeBindingService"
 import { PullRequestStatusService } from "./src/services/PullRequestStatusService"
 import { SupervisionService } from "./src/services/SupervisionService"
+import { SupervisionStateService } from "./src/services/SupervisionStateService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -100,6 +101,7 @@ const CliLayer = Layer.mergeAll(
 	RuntimeBindingService.layer,
 	PullRequestStatusService.layer,
 	SupervisionService.layer,
+	SupervisionStateService.layer,
 )
 
 /**

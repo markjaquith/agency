@@ -1,5 +1,6 @@
 import { Effect, Data, pipe, Context, Layer } from "effect"
 import {
+	appendFile,
 	mkdir,
 	lstat,
 	readlink,
@@ -141,6 +142,16 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 					catch: (error) =>
 						new FileSystemError({
 							message: `Failed to write file: ${path}`,
+							cause: error,
+						}),
+				}),
+
+			appendFile: (path: string, content: string) =>
+				Effect.tryPromise({
+					try: () => appendFile(path, content),
+					catch: (error) =>
+						new FileSystemError({
+							message: `Failed to append to file: ${path}`,
 							cause: error,
 						}),
 				}),
