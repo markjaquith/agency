@@ -110,7 +110,10 @@ const CliLayer = Layer.mergeAll(
 /**
  * Run a command Effect with all services provided
  */
-async function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
+async function runEffect<A, E>(
+	effect: Effect.Effect<A, E, any>,
+	options: { readonly interruptOnSignal?: boolean } = {},
+): Promise<A> {
 	const providedEffect = Effect.provide(effect, CliLayer) as Effect.Effect<
 		A,
 		E,
@@ -132,17 +135,42 @@ async function runEffect<A, E>(effect: Effect.Effect<A, E, any>): Promise<A> {
 		return new Error(String(error))
 	}
 
-	const result = await Effect.runPromise(
-		providedEffect.pipe(
-			Effect.catchDefect((defect) => Effect.fail(toError(defect))),
-			Effect.result,
-		),
-	)
-	if (Result.isFailure(result)) throw result.failure
-	return result.success
+	// Optionally interrupt the command on SIGINT or SIGTERM so its finalizers
+	// run: child processes in their own process group are killed and temporary
+	// files removed. A second signal exits immediately. Interactive commands
+	// own their terminal's signals and do not opt in.
+	const interrupt = new AbortController()
+	const onSignal = () => {
+		if (interrupt.signal.aborted) process.exit(130)
+		interrupt.abort()
+	}
+	if (options.interruptOnSignal) {
+		process.on("SIGINT", onSignal)
+		process.on("SIGTERM", onSignal)
+	}
+	try {
+		const result = await Effect.runPromise(
+			providedEffect.pipe(
+				Effect.catchDefect((defect) => Effect.fail(toError(defect))),
+				Effect.result,
+			),
+			{ signal: interrupt.signal },
+		).catch((error: unknown) => {
+			if (interrupt.signal.aborted) process.exit(130)
+			throw error
+		})
+		if (Result.isFailure(result)) throw result.failure
+		return result.success
+	} finally {
+		process.off("SIGINT", onSignal)
+		process.off("SIGTERM", onSignal)
+	}
 }
 
-const runCommand = <E>(effect: Effect.Effect<void, E, any>) => runEffect(effect)
+const runCommand = <E>(
+	effect: Effect.Effect<void, E, any>,
+	options?: { readonly interruptOnSignal?: boolean },
+) => runEffect(effect, options)
 
 const resolveInvocationCwd = (
 	commandName: string,
@@ -782,6 +810,7 @@ const commands: Record<string, Command> = {
 					verbose: options.verbose,
 					cwd: options.cwd,
 				}),
+				{ interruptOnSignal: true },
 			)
 		},
 	},

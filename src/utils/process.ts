@@ -18,6 +18,8 @@ interface SpawnOptions {
 	readonly stdout?: "pipe" | "inherit" | "tee"
 	readonly stderr?: "pipe" | "inherit" | "tee"
 	readonly env?: Record<string, string>
+	/** Use `env` as the whole environment instead of extending process.env. */
+	readonly replaceEnv?: boolean
 	readonly timeoutMs?: number
 }
 
@@ -95,7 +97,11 @@ export const spawnProcess = (
 					stdin: options?.stdin ?? "pipe",
 					stdout: options?.stdout === "inherit" ? "inherit" : "pipe",
 					stderr: options?.stderr === "inherit" ? "inherit" : "pipe",
-					env: options?.env ? { ...process.env, ...options.env } : process.env,
+					env: options?.env
+						? options.replaceEnv
+							? options.env
+							: { ...process.env, ...options.env }
+						: process.env,
 					detached,
 				})
 				// Start draining stdout/stderr immediately so verbose subprocesses

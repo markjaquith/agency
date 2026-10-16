@@ -1,5 +1,5 @@
 import { Context, Data, Effect, Layer, Result } from "effect"
-import { tmpdir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import actionSchema from "../../schemas/agency-action-v1.schema.json"
 import triageSchema from "../../schemas/agency-triage-v1.schema.json"
@@ -12,10 +12,11 @@ import {
 } from "../triage-schema"
 import {
 	boundTranscript,
+	chunk,
+	digest,
 	itemFingerprint,
 	itemSnapshot,
 	matchesItem,
-	promptDigest,
 	retryMessage,
 	TRANSCRIPT_LINES,
 	triageItems,
@@ -27,7 +28,12 @@ import {
 	type TranscriptTail,
 	type TriageItem,
 } from "../workbase/triage"
-import { TRIAGE_AGENT, triageAgentConfig } from "../workbase/triage-contract"
+import {
+	CARRIED_SETTINGS,
+	TRIAGE_AGENT,
+	triageAgentConfig,
+	triageProfile,
+} from "../workbase/triage-contract"
 import type { AttentionWorkbase } from "../workbase/attention"
 import { FileSystemService } from "./FileSystemService"
 import { RuntimeService } from "./RuntimeService"
@@ -48,7 +54,38 @@ class TriageError extends Data.TaggedError("TriageError")<{
 const BATCH_CONCURRENCY = 2
 const TRANSCRIPT_CONCURRENCY = 8
 const RUN_TIMEOUT_MS = 10 * 60_000
-const RECENT_ACTIONS = 50
+/** Recent supervisor actions per item, sent to the agent and fingerprinted. */
+const ITEM_ACTIONS = 20
+/** Items per OpenCode run, bounding prompt size. */
+const BATCH_ITEMS = 8
+
+/**
+ * The child environment: no Agency worker identity, no inherited OpenCode
+ * settings or session, and no Herdr location, so the run cannot act as (or
+ * report into) the invoking session. OpenCode reads only the run's own config
+ * directory and locates its project from $PWD.
+ */
+const triageEnvironment = (
+	env: NodeJS.ProcessEnv,
+	paths: { readonly directory: string; readonly configDirectory: string },
+): Record<string, string> => ({
+	...Object.fromEntries(
+		Object.entries(env).filter(
+			(entry): entry is [string, string] =>
+				entry[1] !== undefined &&
+				!/^(AGENCY_|OPENCODE_)/.test(entry[0]) &&
+				!["HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID"].includes(
+					entry[0],
+				),
+		),
+	),
+	PWD: paths.directory,
+	OPENCODE_CONFIG_DIR: paths.configDirectory,
+	OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+	OPENCODE_DISABLE_CLAUDE_CODE: "1",
+	OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: "1",
+	OPENCODE_DISABLE_AUTOUPDATE: "1",
+})
 
 interface TriageOptions extends SupervisionOptions {
 	/** Re-evaluate only the item with this key, unit, task[/phase], or pane. */
@@ -184,19 +221,50 @@ export class TriageService extends Context.Service<TriageService>()(
 					return tails
 				})
 
+			/** Model and provider settings from the user's own OpenCode config. */
+			const carriedSettings = (env: NodeJS.ProcessEnv) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const directory =
+						env.OPENCODE_CONFIG_DIR ||
+						join(
+							env.XDG_CONFIG_HOME || join(env.HOME ?? homedir(), ".config"),
+							"opencode",
+						)
+					for (const name of ["opencode.jsonc", "opencode.json"]) {
+						const content = yield* fs
+							.readFile(join(directory, name))
+							.pipe(Effect.orElseSucceed(() => null))
+						if (content === null) continue
+						let parsed: unknown
+						try {
+							parsed = Bun.JSONC.parse(content)
+						} catch {
+							return {}
+						}
+						if (typeof parsed !== "object" || parsed === null) return {}
+						return Object.fromEntries(
+							CARRIED_SETTINGS.flatMap((key) =>
+								key in parsed ? [[key, (parsed as any)[key]]] : [],
+							),
+						)
+					}
+					return {}
+				})
+
 			const runOpenCode = (input: {
 				readonly directory: string
+				readonly configDirectory: string
 				readonly message: string
 				readonly files: readonly string[]
 				readonly sessionId: string | null
 				readonly model: string | undefined
-				readonly env: NodeJS.ProcessEnv | undefined
+				readonly env: NodeJS.ProcessEnv
 			}) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
-					const env = input.env ?? process.env
 					const argv = [
-						env.AGENCY_OPENCODE_BIN || "opencode",
+						input.env.AGENCY_OPENCODE_BIN || "opencode",
 						"run",
 						"--standalone",
 						"--agent",
@@ -216,16 +284,11 @@ export class TriageService extends Context.Service<TriageService>()(
 							captureOutput: true,
 							ignoreStdin: true,
 							timeoutMs: RUN_TIMEOUT_MS,
-							// OpenCode locates its project from $PWD, not the process cwd.
-							env: {
-								...Object.fromEntries(
-									Object.entries(env).filter(
-										(entry): entry is [string, string] =>
-											entry[1] !== undefined,
-									),
-								),
-								PWD: input.directory,
-							},
+							replaceEnv: true,
+							env: triageEnvironment(input.env, {
+								directory: input.directory,
+								configDirectory: input.configDirectory,
+							}),
 						})
 						.pipe(Effect.result)
 					if (Result.isFailure(result))
@@ -250,34 +313,35 @@ export class TriageService extends Context.Service<TriageService>()(
 					} satisfies RunnerResult
 				})
 
-			/** Run one workbase's changed items, retrying once on invalid replies. */
+			/** Run one batch of changed items, retrying once on invalid replies. */
 			const runBatch = (
 				batch: Batch,
 				input: {
-					readonly directory: string
 					readonly message: string
 					readonly snapshot: unknown
+					readonly settings: Readonly<Record<string, unknown>>
 					readonly model: string | undefined
-					readonly env: NodeJS.ProcessEnv | undefined
+					readonly env: NodeJS.ProcessEnv
 				},
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const keys = batch.items.map((item) => item.key)
-					// Inputs stay outside the agent's OpenCode project directory.
+					// Each run is an isolated OpenCode project outside $HOME, with its
+					// own config directory instead of the user's global one.
+					const base = yield* fs
+						.realPath(tmpdir())
+						.pipe(Effect.orElseSucceed(() => tmpdir()))
 					const run = join(
-						tmpdir(),
+						base,
 						`agency-triage-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
 					)
+					const configDirectory = join(run, ".config")
 					const files = {
 						snapshot: join(run, "snapshot.json"),
 						triage: join(run, "agency-triage-v1.schema.json"),
 						action: join(run, "agency-action-v1.schema.json"),
 					}
-					yield* fs.createDirectory(run)
-					yield* fs.writeJSON(files.snapshot, input.snapshot)
-					yield* fs.writeJSON(files.triage, triageSchema)
-					yield* fs.writeJSON(files.action, actionSchema)
 					const failure = (
 						kind: TriageFailure["kind"],
 						message: string,
@@ -303,7 +367,8 @@ export class TriageService extends Context.Service<TriageService>()(
 					): Effect.Effect<BatchOutcome, never, FileSystemService> =>
 						Effect.gen(function* () {
 							const result = yield* runOpenCode({
-								directory: input.directory,
+								directory: run,
+								configDirectory,
 								message,
 								files: sessionId
 									? []
@@ -320,7 +385,7 @@ export class TriageService extends Context.Service<TriageService>()(
 									attempts,
 									result.sessionId,
 								)
-							const validated = validateResponse(result.text, keys)
+							const validated = validateResponse(result.text, batch.items)
 							if (validated.ok)
 								return { ok: true, assessments: validated.items }
 							if (attempts === 1 && result.sessionId)
@@ -337,18 +402,33 @@ export class TriageService extends Context.Service<TriageService>()(
 								result.sessionId,
 							)
 						})
-					return yield* attempt(input.message, null, 1).pipe(
+					return yield* Effect.gen(function* () {
+						yield* fs.createDirectory(configDirectory)
+						yield* fs.writeFileAtomic(
+							join(configDirectory, "opencode.jsonc"),
+							triageAgentConfig({
+								readRoots: batch.workbase?.roots ?? [],
+								settings: input.settings,
+							}),
+						)
+						yield* fs.writeJSON(files.snapshot, input.snapshot)
+						yield* fs.writeJSON(files.triage, triageSchema)
+						yield* fs.writeJSON(files.action, actionSchema)
+						return yield* attempt(input.message, null, 1)
+					}).pipe(
+						Effect.catch((error) =>
+							Effect.succeed(failure("runner", error.message, [], 0, null)),
+						),
 						Effect.ensuring(fs.deleteDirectory(run).pipe(Effect.ignore)),
 					)
 				})
 
 			const triage = (options: TriageOptions = {}) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
 					const supervision = yield* SupervisionService
 					const state = yield* SupervisionStateService
 					const workbases = yield* WorkbaseService
-					const env = options.env
+					const env = options.env ?? process.env
 					const { snapshot, report } = yield* supervision.inspect(options)
 					let items = triageItems(snapshot, report.signals)
 					if (options.item) {
@@ -363,10 +443,12 @@ export class TriageService extends Context.Service<TriageService>()(
 								message: `'${selector}' matches several items: ${items.map((item) => item.key).join(", ")}`,
 							})
 					}
+					const full = options.item === undefined
 
 					const global = yield* workbases.loadGlobalConfig(
 						options.configDirectory,
 					)
+					const model = global.triage?.model
 					const globalPrompt = global.triage
 						? yield* readPrompt(
 								global.triage,
@@ -397,7 +479,10 @@ export class TriageService extends Context.Service<TriageService>()(
 							return result
 						})
 
-					const tails = yield* transcripts(items, env)
+					const tails = yield* transcripts(items, options.env)
+					const actionLog = yield* state.actions({}, options.env)
+					const actionsFor = (key: string) =>
+						actionLog.filter((entry) => entry.key === key).slice(-ITEM_ACTIONS)
 					const fingerprints = new Map<string, string>()
 					for (const item of items) {
 						fingerprints.set(
@@ -405,55 +490,66 @@ export class TriageService extends Context.Service<TriageService>()(
 							itemFingerprint(
 								item,
 								tails.get(item.key) ?? [],
-								promptDigest(yield* sectionsFor(item.workbase)),
+								actionsFor(item.key),
+								digest({
+									prompts: yield* sectionsFor(item.workbase),
+									model: model ?? null,
+									profile: triageProfile,
+								}),
 							),
 						)
 					}
+					const snoozes = yield* state.snoozes(options.env)
+					const allDismissals = yield* state.dismissals(options.env)
+					/** Dismissals that still apply: unconditional, or for this state. */
+					const dismissalsFor = (key: string) =>
+						allDismissals.filter(
+							(entry) =>
+								entry.key === key &&
+								(entry.fingerprint === null ||
+									entry.fingerprint === fingerprints.get(key)),
+						)
+					const snoozesFor = (key: string) =>
+						snoozes.filter((entry) => entry.key === key)
+
 					const cache = new Map(
-						(yield* state.triageCache(env)).map((entry) => [entry.key, entry]),
+						(yield* state.triageCache(options.env)).map((entry) => [
+							entry.key,
+							entry,
+						]),
 					)
 					const changed = items.filter(
 						(item) =>
-							options.item !== undefined ||
+							!full ||
 							cache.get(item.key)?.fingerprint !== fingerprints.get(item.key),
 					)
-					const batches: Batch[] = []
+					const groups: Batch[] = []
 					for (const item of changed) {
-						const batch = batches.find(
+						const group = groups.find(
 							(entry) => entry.workbase === item.workbase,
 						)
-						if (batch) (batch.items as TriageItem[]).push(item)
-						else batches.push({ workbase: item.workbase, items: [item] })
+						if (group) (group.items as TriageItem[]).push(item)
+						else groups.push({ workbase: item.workbase, items: [item] })
 					}
+					const batches = groups.flatMap((group) =>
+						chunk(group.items, BATCH_ITEMS).map((items) => ({
+							workbase: group.workbase,
+							items,
+						})),
+					)
 
-					const directory = join(state.directory(env), "triage")
 					const results = new Map<string, TriageAssessment>()
 					const failures: TriageFailure[] = []
 					if (batches.length) {
-						const config = join(directory, ".opencode", "opencode.jsonc")
-						const content = triageAgentConfig()
-						const current = yield* fs
-							.readFile(config)
-							.pipe(Effect.orElseSucceed(() => null))
-						if (current !== content) {
-							yield* fs.createDirectory(dirname(config))
-							yield* fs.writeFile(config, content)
-						}
-						const recentActions = yield* state.actions(
-							{ limit: RECENT_ACTIONS },
-							env,
-						)
-						const snoozes = yield* state.snoozes(env)
-						const dismissals = yield* state.dismissals(env)
+						const settings = yield* carriedSettings(env)
 						const outcomes = yield* Effect.forEach(
 							batches,
 							(batch) =>
 								Effect.gen(function* () {
-									const keys = new Set(batch.items.map((item) => item.key))
 									return yield* runBatch(batch, {
-										directory,
 										message: triageMessage(yield* sectionsFor(batch.workbase)),
-										model: global.triage?.model,
+										model,
+										settings,
 										env,
 										snapshot: {
 											contractVersion: TRIAGE_VERSION,
@@ -464,12 +560,12 @@ export class TriageService extends Context.Service<TriageService>()(
 													item,
 													tails.get(item.key) ?? [],
 													cache.get(item.key)?.assessment ?? null,
+													{
+														recentActions: actionsFor(item.key),
+														snoozes: snoozesFor(item.key),
+														dismissals: dismissalsFor(item.key),
+													},
 												),
-											),
-											recentActions,
-											snoozes: snoozes.filter((entry) => keys.has(entry.key)),
-											dismissals: dismissals.filter((entry) =>
-												keys.has(entry.key),
 											),
 										},
 									})
@@ -490,6 +586,41 @@ export class TriageService extends Context.Service<TriageService>()(
 							failure.keys.map((key) => [key, failure.message] as const),
 						),
 					)
+					/** Remove what the supervisor snoozed or dismissed. */
+					const visible = (
+						key: string,
+						assessment: TriageAssessment | null,
+					): {
+						readonly assessment: TriageAssessment | null
+						readonly suppressed: TriageReportItem["suppressed"]
+					} => {
+						const hidden = [...snoozesFor(key), ...dismissalsFor(key)]
+						const suppressed = snoozesFor(key).some(
+							(entry) => entry.actionId === null,
+						)
+							? "snoozed"
+							: dismissalsFor(key).some((entry) => entry.actionId === null)
+								? "dismissed"
+								: null
+						if (!assessment) return { assessment, suppressed }
+						const actions = suppressed
+							? []
+							: assessment.actions.filter(
+									(action) =>
+										!hidden.some((entry) => entry.actionId === action.id),
+								)
+						const kept = new Set(actions.map((action) => action.id))
+						return {
+							assessment: {
+								...assessment,
+								actions,
+								modelActionIds: assessment.modelActionIds.filter((id) =>
+									kept.has(id),
+								),
+							},
+							suppressed,
+						}
+					}
 					const reportItems: TriageReportItem[] = items.map((item) => {
 						const fingerprint = fingerprints.get(item.key)!
 						const fresh = results.get(item.key)
@@ -500,7 +631,7 @@ export class TriageService extends Context.Service<TriageService>()(
 								...base,
 								source: "fresh",
 								evaluatedAt,
-								assessment: fresh,
+								...visible(item.key, fresh),
 								error: null,
 							}
 						const error = failedKeys.get(item.key) ?? null
@@ -509,46 +640,63 @@ export class TriageService extends Context.Service<TriageService>()(
 								...base,
 								source: "cached",
 								evaluatedAt: previous.evaluatedAt,
-								assessment: previous.assessment,
+								...visible(item.key, previous.assessment),
 								error: null,
 							}
 						return {
 							...base,
 							source: previous ? "stale" : "failed",
 							evaluatedAt: previous?.evaluatedAt ?? null,
-							assessment: previous?.assessment ?? null,
+							...visible(item.key, previous?.assessment ?? null),
 							error,
 						}
 					})
 
-					// A full run forgets items that are gone from the workbases it
-					// inspected; a single-item run keeps everything else.
+					// Merge under the cache lock: replace only this run's results. A
+					// full run also forgets items gone from the workbases it inspected.
 					const inspected = new Set<string | null>(
 						snapshot.workbases.map((workbase) => workbase.ref.root),
 					)
 					if (!options.workbase) inspected.add(null)
 					const present = new Set(items.map((item) => item.key))
-					const entries: TriageCacheEntry[] = [...cache.values()].filter(
-						(entry) =>
-							options.item !== undefined ||
-							present.has(entry.key) ||
-							!inspected.has(entry.workbase),
-					)
-					for (const item of items) {
+					const fresh: TriageCacheEntry[] = items.flatMap((item) => {
 						const assessment = results.get(item.key)
-						if (!assessment) continue
-						const entry: TriageCacheEntry = {
-							key: item.key,
-							workbase: item.workbase?.ref.root ?? null,
-							fingerprint: fingerprints.get(item.key)!,
-							evaluatedAt,
-							assessment,
-						}
-						const index = entries.findIndex((other) => other.key === item.key)
-						if (index >= 0) entries[index] = entry
-						else entries.push(entry)
-					}
-					yield* state.writeTriageCache(entries, env)
+						return assessment
+							? [
+									{
+										key: item.key,
+										workbase: item.workbase?.ref.root ?? null,
+										fingerprint: fingerprints.get(item.key)!,
+										evaluatedAt,
+										assessment,
+									},
+								]
+							: []
+					})
+					const freshKeys = new Set(fresh.map((entry) => entry.key))
+					yield* state.updateTriageCache(
+						(current) => [
+							...current.filter(
+								(entry) =>
+									!freshKeys.has(entry.key) &&
+									(!full ||
+										present.has(entry.key) ||
+										!inspected.has(entry.workbase)),
+							),
+							...fresh,
+						],
+						options.env,
+					)
+					// A full run over every workbase also drops dismissals for items
+					// that are gone or whose dismissed state has changed.
+					if (full && !options.workbase)
+						yield* state.pruneDismissals(
+							(entry) =>
+								present.has(entry.key) &&
+								(entry.fingerprint === null ||
+									entry.fingerprint === fingerprints.get(entry.key)),
+							options.env,
+						)
 
 					const count = (source: TriageReportItem["source"]) =>
 						reportItems.filter((item) => item.source === source).length

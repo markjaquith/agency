@@ -1,9 +1,11 @@
 import { Result, Schema } from "effect"
 import { createHash } from "node:crypto"
 import type {
+	ActionPrecondition,
 	AttentionSignal,
 	AttentionSubject,
 	AttentionWorkbaseRef,
+	SupervisorAction,
 } from "../attention-schema"
 import {
 	TRIAGE_VERSION,
@@ -19,12 +21,15 @@ import {
 	type AttentionSnapshot,
 	type AttentionUnit,
 	type AttentionWorkbase,
+	type CatalogAction,
 } from "./attention"
 import type { RuntimeAgentStatus, RuntimePane } from "./runtime"
 
 const WAITING = new Set<RuntimeAgentStatus>(["idle", "done", "blocked"])
 export const TRANSCRIPT_LINES = 120
 const TRANSCRIPT_CHARS = 6000
+/** Model-written action IDs start with this prefix. */
+const MODEL_ACTION_PREFIX = "triage:"
 
 /** One supervised item: an execution unit, or a pane outside any unit. */
 export interface TriageItem {
@@ -36,6 +41,8 @@ export interface TriageItem {
 	})[]
 	readonly signals: readonly AttentionSignal[]
 	readonly subject: AttentionSubject
+	/** Available `agency act` actions: the unit's, or the workbase's for a pane. */
+	readonly agencyActions: readonly CatalogAction[]
 }
 
 export interface TranscriptTail {
@@ -43,8 +50,28 @@ export interface TranscriptTail {
 	readonly text: string
 }
 
+/** Supervisor feedback about one item, as sent to the triage agent. */
+export interface ItemFeedback {
+	readonly recentActions: readonly unknown[]
+	readonly snoozes: readonly unknown[]
+	readonly dismissals: readonly unknown[]
+}
+
 const sha256 = (value: string) =>
 	createHash("sha256").update(value).digest("hex")
+
+/** JSON with sorted object keys, so equal values serialize identically. */
+const canonical = (value: unknown): string =>
+	JSON.stringify(value, (_, inner: unknown) =>
+		inner && typeof inner === "object" && !Array.isArray(inner)
+			? Object.fromEntries(
+					Object.entries(inner).sort(([a], [b]) => a.localeCompare(b)),
+				)
+			: inner,
+	)
+
+const available = (actions: readonly CatalogAction[]) =>
+	actions.filter((action) => action.available)
 
 /**
  * Items worth triaging: units with signals, live panes, or an active claim,
@@ -84,10 +111,17 @@ export const triageItems = (
 					unit,
 					runtime ? panes.map((entry) => runtimeRef(runtime, entry.pane)) : [],
 				),
+				agencyActions: available(unit.actions),
 			})
 		}
 	}
 	const paneItems = new Map<string, TriageItem>()
+	const panesOf = (signal: AttentionSignal) =>
+		snapshot.runtime.panes
+			.filter((pane) =>
+				signal.subject.runtime.some((item) => item.paneId === pane.paneId),
+			)
+			.map((pane) => ({ ...pane, binding: null }))
 	for (const signal of signals) {
 		if (signal.subject.item) continue
 		const ref = signal.subject.runtime[0]
@@ -95,32 +129,43 @@ export const triageItems = (
 		const key = `${ref.runtime}:${ref.paneId}`
 		const existing = paneItems.get(key)
 		if (existing) {
+			const known = new Set(existing.panes.map((pane) => pane.paneId))
 			paneItems.set(key, {
 				...existing,
+				panes: [
+					...existing.panes,
+					...panesOf(signal).filter((pane) => !known.has(pane.paneId)),
+				],
 				signals: [...existing.signals, signal],
 			})
 			continue
 		}
 		const root = signal.subject.workbase?.root
+		const workbase =
+			(root &&
+				snapshot.workbases.find((candidate) =>
+					candidate.roots.includes(root),
+				)) ||
+			null
 		paneItems.set(key, {
 			key,
-			workbase:
-				(root &&
-					snapshot.workbases.find((workbase) =>
-						workbase.roots.includes(root),
-					)) ||
-				null,
+			workbase,
 			unit: null,
-			panes: snapshot.runtime.panes
-				.filter((pane) =>
-					signal.subject.runtime.some((item) => item.paneId === pane.paneId),
-				)
-				.map((pane) => ({ ...pane, binding: null })),
+			panes: panesOf(signal),
 			signals: [signal],
 			subject: signal.subject,
+			agencyActions: workbase ? available(workbase.actions) : [],
 		})
 	}
 	return [...items, ...paneItems.values()]
+}
+
+/** Split items into batches of at most `size`, preserving order. */
+export const chunk = <A>(items: readonly A[], size: number): A[][] => {
+	const chunks: A[][] = []
+	for (let index = 0; index < items.length; index += size)
+		chunks.push(items.slice(index, index + size))
+	return chunks
 }
 
 /** Panes whose agents wait for input, whose transcript tails triage reads. */
@@ -143,7 +188,6 @@ const paneFacts = (pane: TriageItem["panes"][number]) => ({
 	agentStatus: pane.agentStatus,
 	cwd: pane.cwd,
 	foregroundCwd: pane.foregroundCwd,
-	terminalTitle: pane.terminalTitle,
 	binding: pane.binding,
 })
 
@@ -170,6 +214,17 @@ const pullRequestFacts = (unit: AttentionUnit | null) =>
 			}
 		: null
 
+/** Ticket state without transient failure reasons. */
+const ticketFacts = (unit: AttentionUnit | null) => {
+	const ticket = unit?.ticket
+	if (!ticket) return null
+	if (ticket.state === "unavailable" || ticket.state === "unsupported") {
+		const { reason: _reason, ...rest } = ticket
+		return rest
+	}
+	return ticket
+}
+
 const signalFacts = (signal: AttentionSignal) => ({
 	id: signal.id,
 	kind: signal.kind,
@@ -179,28 +234,33 @@ const signalFacts = (signal: AttentionSignal) => ({
 })
 
 /**
- * A digest of everything triage judges an item on. An unchanged fingerprint
- * means a cached assessment still applies.
+ * A digest of everything triage judges an item on: its state, its transcript
+ * tails, the supervisor's actions on it, and the run context (contract, agent
+ * profile, prompts, and model). An unchanged fingerprint means a cached
+ * assessment still applies.
  */
 export const itemFingerprint = (
 	item: TriageItem,
 	transcripts: readonly TranscriptTail[],
-	promptDigest: string,
+	actions: readonly unknown[],
+	contextDigest: string,
 ) =>
 	sha256(
-		JSON.stringify({
+		canonical({
 			contract: TRIAGE_VERSION,
-			prompt: promptDigest,
+			context: contextDigest,
 			key: item.key,
 			unit: item.unit ? unitFacts(item.unit) : null,
 			pullRequest: pullRequestFacts(item.unit),
-			ticket: item.unit?.ticket ?? null,
+			ticket: ticketFacts(item.unit),
 			panes: item.panes.map(paneFacts),
 			signals: item.signals.map(signalFacts),
+			agencyActions: item.agencyActions,
 			transcripts: transcripts.map((tail) => ({
 				paneId: tail.paneId,
 				sha256: sha256(tail.text),
 			})),
+			actions,
 		}),
 	)
 
@@ -209,26 +269,31 @@ export const itemSnapshot = (
 	item: TriageItem,
 	transcripts: readonly TranscriptTail[],
 	previous: TriageAssessment | null,
+	feedback: ItemFeedback,
 ) => ({
 	key: item.key,
 	subject: item.subject,
 	item: item.unit ? unitFacts(item.unit) : null,
 	pullRequest: pullRequestFacts(item.unit),
 	ticket: item.unit?.ticket ?? null,
-	panes: item.panes.map(paneFacts),
+	panes: item.panes.map((pane) => ({
+		...paneFacts(pane),
+		terminalTitle: pane.terminalTitle,
+	})),
 	signals: item.signals.map(signalFacts),
-	availableAgencyActions: (item.unit?.actions ?? [])
-		.filter((action) => action.available)
-		.map(({ id, label, command, commandTemplate, inputs }) => ({
+	availableAgencyActions: item.agencyActions.map(
+		({ id, label, command, commandTemplate, inputs }) => ({
 			id,
 			label,
 			command,
 			commandTemplate,
 			inputs,
-		})),
+		}),
+	),
 	agencyCwd: item.workbase?.ref.root ?? null,
 	transcriptTails: transcripts,
 	previousAssessment: previous,
+	...feedback,
 })
 
 export interface PromptSection {
@@ -252,8 +317,7 @@ export const retryMessage = (errors: readonly string[]) =>
 		"Reply again with the complete corrected JSON object only.",
 	].join("\n")
 
-export const promptDigest = (sections: readonly PromptSection[]) =>
-	sha256(JSON.stringify(sections))
+export const digest = (value: unknown) => sha256(canonical(value))
 
 const decodeResponse = Schema.decodeUnknownResult(TriageResponse, {
 	onExcessProperty: "error",
@@ -284,13 +348,172 @@ const extractJson = (text: string): unknown => {
 	}
 }
 
+const withoutSubject = ({ subject: _subject, ...rest }: SupervisorAction) =>
+	canonical(rest)
+
+const same = (a: unknown, b: unknown) => canonical(a) === canonical(b)
+
 /**
- * Validate a reply against the locked contract and the requested keys.
- * Returns assessments by key, or every validation error.
+ * Problems with an action the model wrote itself. Agency trusts only what it
+ * can check against the item: its own panes, tabs, unit, and the exact argv
+ * Agency discovered.
+ */
+const modelActionErrors = (
+	item: TriageItem,
+	action: SupervisorAction,
+): string[] => {
+	const errors: string[] = []
+	const where = `Item "${item.key}" action "${action.id}"`
+	const refs = [
+		...item.panes.map((pane) => ({
+			paneId: pane.paneId,
+			tabId: pane.tabId,
+			workspaceId: pane.workspaceId,
+			agentSessionId: pane.agentSessionId,
+		})),
+		...item.subject.runtime,
+	]
+	const paneIds = new Set(refs.map((ref) => ref.paneId))
+	const tabIds = new Set(refs.flatMap((ref) => (ref.tabId ? [ref.tabId] : [])))
+	const workspaceIds = new Set(
+		refs.flatMap((ref) => (ref.workspaceId ? [ref.workspaceId] : [])),
+	)
+	const unit = item.unit?.item.unit ?? null
+	const preconditions = action.preconditions
+	const hasPaneMatch = (paneId: string) =>
+		preconditions.some(
+			(condition) =>
+				condition.kind === "pane_matches" && condition.paneId === paneId,
+		)
+	const foreignPane = (paneId: string) => {
+		if (!paneIds.has(paneId))
+			errors.push(`${where} targets pane ${paneId}, which is not the item's.`)
+	}
+	const foreignTab = (tabId: string) => {
+		if (!tabIds.has(tabId))
+			errors.push(`${where} targets tab ${tabId}, which is not the item's.`)
+	}
+
+	if (!action.id.startsWith(MODEL_ACTION_PREFIX))
+		errors.push(
+			`${where} is not a verbatim signal action, so its id must start with "${MODEL_ACTION_PREFIX}".`,
+		)
+
+	for (const condition of preconditions as readonly ActionPrecondition[]) {
+		if (condition.kind === "pane_matches") {
+			foreignPane(condition.paneId)
+			foreignTab(condition.tabId)
+		} else if (condition.kind === "tab_agent_panes") foreignTab(condition.tabId)
+		else if (
+			(condition.kind === "item_status" ||
+				condition.kind === "item_archived") &&
+			condition.unit !== unit
+		)
+			errors.push(
+				`${where} has a precondition on ${condition.unit}, which is not the item's unit.`,
+			)
+	}
+
+	switch (action.type) {
+		case "agency": {
+			const payload = action.payload
+			const entry = item.agencyActions.find(
+				(candidate) => candidate.id === payload.actionId,
+			)
+			if (!entry) {
+				errors.push(
+					`${where} uses agency action "${payload.actionId}", which is not in availableAgencyActions.`,
+				)
+				break
+			}
+			if (
+				!same(payload.command, entry.command) ||
+				!same(payload.commandTemplate, entry.commandTemplate)
+			)
+				errors.push(
+					`${where} must copy command and commandTemplate exactly from availableAgencyActions "${entry.id}"; put template input values in values.`,
+				)
+			if (!same(payload.inputs, entry.inputs))
+				errors.push(
+					`${where} must copy inputs exactly from availableAgencyActions "${entry.id}".`,
+				)
+			const inputIds = new Set(entry.inputs.map((input) => input.id))
+			for (const id of Object.keys(payload.values))
+				if (!inputIds.has(id))
+					errors.push(`${where} sets value "${id}", which is not an input.`)
+			const selector = item.unit
+				? {
+						task: item.unit.item.taskId,
+						...(item.unit.item.phaseId
+							? { phase: item.unit.item.phaseId }
+							: {}),
+					}
+				: null
+			if (!same(payload.selector, selector))
+				errors.push(`${where} must use the item's selector.`)
+			if (payload.cwd !== item.workbase?.ref.root)
+				errors.push(`${where} must run from the item's workbase root.`)
+			if (payload.bindRuntime) foreignPane(payload.bindRuntime.paneId)
+			break
+		}
+		case "runtime": {
+			const { target, id } = action.payload
+			if (target === "pane") {
+				foreignPane(id)
+				if (!hasPaneMatch(id))
+					errors.push(`${where} needs a pane_matches precondition for ${id}.`)
+			} else if (target === "tab") {
+				foreignTab(id)
+				if (
+					action.payload.operation === "close" &&
+					!preconditions.some(
+						(condition) =>
+							condition.kind === "tab_agent_panes" && condition.tabId === id,
+					)
+				)
+					errors.push(
+						`${where} needs a tab_agent_panes precondition for ${id}.`,
+					)
+			} else if (!workspaceIds.has(id))
+				errors.push(
+					`${where} targets workspace ${id}, which is not the item's.`,
+				)
+			break
+		}
+		case "prompt_agent": {
+			const { paneId, agentSessionId } = action.payload
+			foreignPane(paneId)
+			if (!hasPaneMatch(paneId))
+				errors.push(`${where} needs a pane_matches precondition for ${paneId}.`)
+			const pane = refs.find((ref) => ref.paneId === paneId)
+			if (pane && pane.agentSessionId !== agentSessionId)
+				errors.push(`${where} must use pane ${paneId}'s agent session.`)
+			break
+		}
+		case "delegate":
+			if (action.payload.unit !== unit)
+				errors.push(`${where} delegates a unit that is not the item's.`)
+			break
+		case "command":
+		case "open_url":
+			if (action.risk === "read-only")
+				errors.push(
+					`${where} is written by the model, so its risk cannot be read-only.`,
+				)
+			break
+	}
+	return errors
+}
+
+/**
+ * Validate a reply against the locked contract and the requested items.
+ * Every action keeps the item's own subject. An action that is not a verbatim
+ * copy of one of the item's signal actions is model-written: it is checked
+ * against the item and listed in `modelActionIds`.
  */
 export const validateResponse = (
 	text: string,
-	keys: readonly string[],
+	items: readonly TriageItem[],
 ):
 	| { readonly ok: true; readonly items: ReadonlyMap<string, TriageAssessment> }
 	| { readonly ok: false; readonly errors: readonly string[] } => {
@@ -307,23 +530,46 @@ export const validateResponse = (
 	if (Result.isFailure(decoded))
 		return { ok: false, errors: [decoded.failure.message] }
 	const errors: string[] = []
-	const expected = new Set(keys)
-	const items = new Map<string, TriageAssessment>()
-	for (const { key, ...assessment } of decoded.success.items) {
-		if (!expected.has(key)) errors.push(`Unknown item key "${key}".`)
-		else if (items.has(key)) errors.push(`Item key "${key}" appears twice.`)
-		else {
-			const ids = assessment.actions.map((action) => action.id)
-			const duplicate = ids.find((id, index) => ids.indexOf(id) !== index)
-			if (duplicate)
-				errors.push(`Item "${key}" repeats action id "${duplicate}".`)
-			items.set(key, assessment)
+	const byKey = new Map(items.map((item) => [item.key, item]))
+	const assessments = new Map<string, TriageAssessment>()
+	for (const { key, ...reply } of decoded.success.items) {
+		const item = byKey.get(key)
+		if (!item) {
+			errors.push(`Unknown item key "${key}".`)
+			continue
 		}
+		if (assessments.has(key)) {
+			errors.push(`Item key "${key}" appears twice.`)
+			continue
+		}
+		const ids = reply.actions.map((action) => action.id)
+		const duplicate = ids.find((id, index) => ids.indexOf(id) !== index)
+		if (duplicate)
+			errors.push(`Item "${key}" repeats action id "${duplicate}".`)
+		const signalActions = new Set(
+			item.signals.flatMap((signal) => signal.actions.map(withoutSubject)),
+		)
+		const modelActionIds: string[] = []
+		for (const action of reply.actions) {
+			if (signalActions.has(withoutSubject(action))) continue
+			modelActionIds.push(action.id)
+			errors.push(...modelActionErrors(item, action))
+		}
+		assessments.set(key, {
+			...reply,
+			actions: reply.actions.map(
+				(action) => ({ ...action, subject: item.subject }) as SupervisorAction,
+			),
+			modelActionIds,
+		})
 	}
-	for (const key of keys) {
-		if (!items.has(key)) errors.push(`Missing item key "${key}".`)
+	for (const item of items) {
+		if (!assessments.has(item.key))
+			errors.push(`Missing item key "${item.key}".`)
 	}
-	return errors.length ? { ok: false, errors } : { ok: true, items }
+	return errors.length
+		? { ok: false, errors }
+		: { ok: true, items: assessments }
 }
 
 /** Whether a selector names an item: its key, unit, task[/phase], or pane. */

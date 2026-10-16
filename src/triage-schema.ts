@@ -20,8 +20,7 @@ const TriageStatus = Schema.Literals([
 	"unknown",
 ])
 
-/** The triage agent's judgment about one item. */
-export const TriageAssessment = Schema.Struct({
+const AssessmentFields = {
 	status: TriageStatus,
 	/** One line describing where the item stands. */
 	summary: Schema.String,
@@ -29,7 +28,7 @@ export const TriageAssessment = Schema.Struct({
 	question: Schema.NullOr(Schema.String),
 	/** Recommended actions, best first. */
 	actions: Schema.Array(SupervisorAction),
-})
+}
 
 /** The locked response contract the triage agent must emit. */
 export const TriageResponse = Schema.Struct({
@@ -38,9 +37,19 @@ export const TriageResponse = Schema.Struct({
 		Schema.Struct({
 			/** The item key from the snapshot, which references its subject. */
 			key: Schema.String,
-			...TriageAssessment.fields,
+			...AssessmentFields,
 		}),
 	),
+})
+
+/** The triage agent's validated judgment about one item. */
+export const TriageAssessment = Schema.Struct({
+	...AssessmentFields,
+	/**
+	 * Actions the model wrote itself rather than copying from a deterministic
+	 * signal. Treat them as LLM-sourced: never read-only, and confirm first.
+	 */
+	modelActionIds: Schema.Array(Schema.String),
 })
 
 const TriageItemSource = Schema.Literals([
@@ -60,7 +69,10 @@ export const TriageReportItem = Schema.Struct({
 	fingerprint: Schema.String,
 	source: TriageItemSource,
 	evaluatedAt: Schema.NullOr(Schema.String),
+	/** Actions snoozed or dismissed by the supervisor are removed. */
 	assessment: Schema.NullOr(TriageAssessment),
+	/** Set when the whole item is snoozed or dismissed. */
+	suppressed: Schema.NullOr(Schema.Literals(["snoozed", "dismissed"])),
 	error: Schema.NullOr(Schema.String),
 })
 

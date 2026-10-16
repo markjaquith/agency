@@ -113,7 +113,13 @@
     "assessment": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "summary", "question", "actions"],
+      "required": [
+        "status",
+        "summary",
+        "question",
+        "actions",
+        "modelActionIds"
+      ],
       "properties": {
         "status": {
           "$ref": "https://github.com/markjaquith/agency/schemas/agency-triage-v1.schema.json#/$defs/status"
@@ -129,6 +135,13 @@
           "items": {
             "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json"
           }
+        },
+        "modelActionIds": {
+          "description": "Actions the model wrote itself rather than copying from a deterministic signal.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -142,6 +155,7 @@
         "source",
         "evaluatedAt",
         "assessment",
+        "suppressed",
         "error"
       ],
       "properties": {
@@ -164,6 +178,16 @@
           "oneOf": [
             {
               "$ref": "#/$defs/assessment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suppressed": {
+          "oneOf": [
+            {
+              "enum": ["snoozed", "dismissed"]
             },
             {
               "type": "null"

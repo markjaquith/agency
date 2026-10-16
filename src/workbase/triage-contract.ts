@@ -19,7 +19,7 @@ The user message carries the supervisor's own instructions. These attachments ca
 
 Each snapshot item has a key, a subject, Agency state (status, archived, review), pull request and ticket state, the runtime panes hosting it, deterministic attention signals with ready-made actions, the Agency actions available for it, transcript tails of waiting agents, and the previous assessment, if any.
 
-You may investigate with read-only commands only: gh pr view/checks/diff/list, gh issue view, gh run view, acli jira workitem view/search, herdr pane read/list, and agency context/graph/attention/status. You may read files. Every mutating tool and command is denied; do not try to change anything.
+You may investigate with read-only commands only: gh pr view/checks/diff and gh issue view with a full https://github.com/ URL, acli jira workitem view/search, herdr pane read/list, and agency context/graph/status. You may read the attachments and files inside the item's workbase. Everything else is denied: other files, other hosts or repositories, output redirection, and every mutating tool or command. Do not try to work around this.
 
 # Reply
 
@@ -43,44 +43,106 @@ Every action must validate against agency-action-v1.schema.json.
 - prompt_agent sends text to the agent in an existing pane: use it to answer an agent's question only when the answer is clear from the supervisor's instructions or the snapshot; otherwise surface the question and let the supervisor answer.
 - delegate hands an execution unit new instructions: prompt_bound_agent when its pane is live, kickoff otherwise.
 - command actions must declare risk truthfully: read-only, reversible, or destructive. Never recommend a destructive command when a reversible one achieves the goal.
-- Do not recommend an action that the recent action log shows already succeeded for the same state, that is snoozed, or that is dismissed for the item's current fingerprint.
+- Agency checks every action that is not a verbatim signal action against its item: only the item's panes, tabs, unit, and availableAgencyActions are accepted, and a model-written command or open_url can never be read-only. Violations are sent back to you to fix.
+- Each item lists the supervisor's recentActions, snoozes, and dismissals for it. Do not recommend an action that already succeeded for the same state, that is snoozed, or that is dismissed.
 `
 
-const permissions = [
-	{ action: "*", resource: "*", effect: "deny" },
-	...["read", "glob", "grep", "external_directory"].map((action) => ({
-		action,
-		resource: "*",
-		effect: "allow",
-	})),
-	...["*.env", "*.env.*"].map((resource) => ({
-		action: "read",
-		resource,
-		effect: "deny",
-	})),
-	...[
-		"gh pr view *",
-		"gh pr checks *",
-		"gh pr diff *",
-		"gh pr list *",
-		"gh issue view *",
-		"gh run view *",
-		"acli jira workitem view *",
-		"acli jira workitem search *",
-		"herdr pane read *",
-		"herdr pane list *",
-		"agency context *",
-		"agency graph *",
-		"agency attention *",
-		"agency status *",
-	].map((resource) => ({ action: "shell", resource, effect: "allow" })),
+const SHELL_ALLOW = [
+	"gh pr view https://github.com/*",
+	"gh pr checks https://github.com/*",
+	"gh pr diff https://github.com/*",
+	"gh issue view https://github.com/*",
+	"acli jira workitem view *",
+	"acli jira workitem search *",
+	"herdr pane read *",
+	"herdr pane list *",
+	"agency context *",
+	"agency graph *",
+	"agency status *",
 ]
 
-/** The managed OpenCode configuration defining the read-only triage agent. */
-export const triageAgentConfig = () =>
+/**
+ * Denied after the allowlist, since the last matching rule wins and OpenCode
+ * matches a redirected command including its redirection: redirection (which
+ * could write files), browsers and watchers, other repositories or hosts, and
+ * a second URL.
+ */
+const SHELL_DENY = [
+	"*>*",
+	"*<*",
+	"*--web*",
+	"* -w",
+	"* -w *",
+	"*--watch*",
+	"* -R*",
+	"*--repo*",
+	"*--hostname*",
+	"*://*://*",
+]
+
+interface PermissionRule {
+	readonly action: string
+	readonly resource: string
+	readonly effect: "allow" | "deny" | "ask"
+}
+
+/**
+ * Deny everything, then allow reading the run directory (OpenCode reports
+ * paths inside it as relative) and the given roots, and read-only commands.
+ */
+const triagePermissions = (readRoots: readonly string[]): PermissionRule[] => [
+	{ action: "*", resource: "*", effect: "deny" },
+	{ action: "read", resource: "*", effect: "allow" },
+	{ action: "read", resource: "/*", effect: "deny" },
+	...readRoots.flatMap((root): PermissionRule[] => [
+		{ action: "read", resource: `${root}/*`, effect: "allow" },
+		{ action: "external_directory", resource: `${root}/*`, effect: "allow" },
+	]),
+	...["*.env", "*.env.*"].map(
+		(resource): PermissionRule => ({
+			action: "read",
+			resource,
+			effect: "deny",
+		}),
+	),
+	...SHELL_ALLOW.map(
+		(resource): PermissionRule => ({
+			action: "shell",
+			resource,
+			effect: "allow",
+		}),
+	),
+	...SHELL_DENY.map(
+		(resource): PermissionRule => ({
+			action: "shell",
+			resource,
+			effect: "deny",
+		}),
+	),
+]
+
+/** Settings carried over from the user's own OpenCode configuration. */
+export const CARRIED_SETTINGS = [
+	"model",
+	"small_model",
+	"providers",
+	"provider",
+	"enabled_providers",
+	"disabled_providers",
+] as const
+
+/**
+ * The isolated OpenCode configuration for one triage run: the user's model and
+ * provider settings, and the read-only triage agent.
+ */
+export const triageAgentConfig = (input: {
+	readonly readRoots: readonly string[]
+	readonly settings: Readonly<Record<string, unknown>>
+}) =>
 	`${JSON.stringify(
 		{
 			$schema: "https://opencode.ai/config.json",
+			...input.settings,
 			agents: {
 				[TRIAGE_AGENT]: {
 					description:
@@ -88,10 +150,16 @@ export const triageAgentConfig = () =>
 					mode: "primary",
 					steps: 40,
 					system: triageContract,
-					permissions,
+					permissions: triagePermissions(input.readRoots),
 				},
 			},
 		},
 		null,
 		2,
 	)}\n`
+
+/** Identifies the contract and agent profile, for item fingerprints. */
+export const triageProfile = {
+	contract: triageContract,
+	permissions: triagePermissions(["<root>"]),
+}

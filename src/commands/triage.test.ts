@@ -49,7 +49,26 @@ const fakeOpenCode = `#!/usr/bin/env bun
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs"
 const args = process.argv.slice(2)
 const log = process.env.FAKE_OPENCODE_LOG
-appendFileSync(log, JSON.stringify({ cwd: process.cwd(), args }) + "\\n")
+const pick = (names) => Object.fromEntries(names.map((name) => [name, process.env[name] ?? null]))
+const configDir = process.env.OPENCODE_CONFIG_DIR
+appendFileSync(
+	log,
+	JSON.stringify({
+		cwd: process.cwd(),
+		args,
+		env: pick([
+			"PWD",
+			"OPENCODE_CONFIG_DIR",
+			"OPENCODE_DISABLE_PROJECT_CONFIG",
+			"OPENCODE_SESSION_ID",
+			"AGENCY_SESSION_ID",
+			"AGENCY_STATE_DIR",
+			"HERDR_PANE_ID",
+			"HERDR_SOCKET_PATH",
+		]),
+		config: configDir ? readFileSync(configDir + "/opencode.jsonc", "utf8") : null,
+	}) + "\\n",
+)
 const session = args[args.indexOf("--session") + 1]
 const sessionId = args.includes("--session")
 	? session
@@ -74,6 +93,32 @@ const valid = {
 		actions: item.signals.flatMap((signal) => signal.actions).slice(0, 1),
 	})),
 }
+const modelAction = (item) =>
+	item.panes.slice(0, 1).map((pane) => ({
+		version: 1,
+		id: "triage:" + item.key + ":look",
+		type: "runtime",
+		title: "Look at " + pane.paneId,
+		rationale: "Check the question",
+		risk: "reversible",
+		subject: item.subject,
+		preconditions: [
+			{
+				kind: "pane_matches",
+				runtime: "herdr",
+				paneId: pane.paneId,
+				tabId: pane.tabId,
+				cwd: pane.foregroundCwd ?? pane.cwd,
+				agentSessionId: pane.agentSessionId,
+				agentStatuses: ["idle"],
+			},
+		],
+		payload: { runtime: "herdr", operation: "focus", target: "pane", id: pane.paneId },
+	}))
+if (mode === "model-action")
+	for (const [index, item] of valid.items.entries())
+		item.actions = [...modelAction(snapshot.items[index]), ...item.actions]
+if (mode === "hang") await new Promise((resolve) => setTimeout(resolve, 60_000))
 const retry = args.includes("--session")
 const reply =
 	mode === "invalid" || (mode === "invalid-then-valid" && !retry)
@@ -94,8 +139,13 @@ const saved: Record<string, string | undefined> = {}
 const ENV = [
 	"AGENCY_STATE_DIR",
 	"AGENCY_OPENCODE_BIN",
+	"AGENCY_SESSION_ID",
 	"FAKE_OPENCODE_LOG",
 	"FAKE_OPENCODE_MODE",
+	"HERDR_PANE_ID",
+	"HERDR_SOCKET_PATH",
+	"OPENCODE_CONFIG_DIR",
+	"OPENCODE_SESSION_ID",
 ]
 
 beforeEach(async () => {
@@ -112,6 +162,23 @@ beforeEach(async () => {
 	process.env.AGENCY_OPENCODE_BIN = bin
 	process.env.FAKE_OPENCODE_LOG = logPath
 	delete process.env.FAKE_OPENCODE_MODE
+	// The invoking session's identity must not reach the triage agent.
+	process.env.AGENCY_SESSION_ID = "agency-session"
+	process.env.OPENCODE_SESSION_ID = "ses_parent"
+	process.env.HERDR_PANE_ID = "w9:p9"
+	process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock"
+	process.env.OPENCODE_CONFIG_DIR = join(tempDir, "user-opencode")
+	await write(
+		tempDir,
+		"user-opencode/opencode.jsonc",
+		`{
+	// The user's own model and plugins.
+	"model": "user/model",
+	"providers": { "user": { "settings": { "apiKey": "{env:KEY}" } } },
+	"plugins": ["user-plugin"],
+	"permissions": [{ "action": "*", "resource": "*", "effect": "allow" }],
+}`,
+	)
 	await write(
 		root,
 		"agency.json",
@@ -233,7 +300,12 @@ const calls = async () => {
 		.split("\n")
 		.map(
 			(line) =>
-				JSON.parse(line) as { readonly cwd: string; readonly args: string[] },
+				JSON.parse(line) as {
+					readonly cwd: string
+					readonly args: string[]
+					readonly env: Record<string, string | null>
+					readonly config: string
+				},
 		)
 }
 
@@ -278,9 +350,7 @@ describe("agency triage", () => {
 		// One run per workbase: the registered one and the unowned pane.
 		const invocations = await calls()
 		expect(invocations).toHaveLength(2)
-		const directory = join(stateDirectory, "supervision/triage")
 		for (const invocation of invocations) {
-			expect(invocation.cwd).toBe(await realpath(directory))
 			expect(invocation.args.slice(0, 10)).toEqual([
 				"run",
 				"--standalone",
@@ -293,6 +363,40 @@ describe("agency triage", () => {
 				"--model",
 				"test/model",
 			])
+			// Each run is isolated: its own project directory and OpenCode
+			// config, outside the state directory, with no inherited identity.
+			expect(invocation.env).toEqual({
+				PWD: invocation.cwd,
+				OPENCODE_CONFIG_DIR: join(invocation.cwd, ".config"),
+				OPENCODE_DISABLE_PROJECT_CONFIG: "1",
+				OPENCODE_SESSION_ID: null,
+				AGENCY_SESSION_ID: null,
+				AGENCY_STATE_DIR: null,
+				HERDR_PANE_ID: null,
+				HERDR_SOCKET_PATH: "/tmp/herdr.sock",
+			})
+			expect(invocation.cwd.startsWith(stateDirectory)).toBe(false)
+			expect(await Bun.file(invocation.cwd).exists()).toBe(false)
+			const attached = invocation.args.filter(
+				(_, index, args) => args[index - 1] === "--file",
+			)
+			expect(attached.map((file) => dirname(file))).toEqual([
+				invocation.cwd,
+				invocation.cwd,
+				invocation.cwd,
+			])
+			const config = JSON.parse(invocation.config)
+			expect(config.model).toBe("user/model")
+			expect(config.providers).toEqual({
+				user: { settings: { apiKey: "{env:KEY}" } },
+			})
+			expect(config.plugins).toBeUndefined()
+			expect(config.permissions).toBeUndefined()
+			expect(config.agents["agency-triage"].permissions[0]).toEqual({
+				action: "*",
+				resource: "*",
+				effect: "deny",
+			})
 		}
 		const messages = invocations.map((invocation) => invocation.args.at(-1)!)
 		const message = messages.find((text) => text.includes("Workbase rule"))!
@@ -303,24 +407,31 @@ describe("agency triage", () => {
 		const unowned = messages.find((text) => text !== message)!
 		expect(unowned).toContain("Global rule: be brief.")
 		expect(unowned).not.toContain("Workbase rule")
+		// Only the workbase batch may read the workbase.
+		const reads = (invocation: (typeof invocations)[number]) =>
+			JSON.parse(invocation.config)
+				.agents["agency-triage"].permissions.filter(
+					(rule: { action: string; effect: string }) =>
+						rule.action === "read" && rule.effect === "allow",
+				)
+				.map((rule: { resource: string }) => rule.resource)
+		const workbaseRun = invocations.find((invocation) =>
+			invocation.args.at(-1)!.includes("Workbase rule"),
+		)!
+		expect(reads(workbaseRun)).toEqual(["*", `${root}/*`])
+		expect(
+			reads(invocations.find((invocation) => invocation !== workbaseRun)!),
+		).toEqual(["*"])
+	})
 
-		const config = JSON.parse(
-			await Bun.file(join(directory, ".opencode/opencode.jsonc")).text(),
-		)
-		expect(config.agents["agency-triage"].permissions[0]).toEqual({
-			action: "*",
-			resource: "*",
-			effect: "deny",
+	test("accepts checked model-written actions and marks them", async () => {
+		process.env.FAKE_OPENCODE_MODE = "model-action"
+		const report = await run({ item: "live" })
+		expect(report.items[0]!.assessment).toMatchObject({
+			actions: [{ id: `triage:${liveKey()}:look` }, { type: "runtime" }],
+			modelActionIds: [`triage:${liveKey()}:look`],
 		})
-		// Run inputs live outside the agent's project and are removed afterward.
-		const attached = invocations[0]!.args.filter(
-			(_, index, args) => args[index - 1] === "--file",
-		)
-		expect(attached).toHaveLength(3)
-		for (const file of attached) {
-			expect(file.startsWith(directory)).toBe(false)
-			expect(await Bun.file(file).exists()).toBe(false)
-		}
+		expect(await calls()).toHaveLength(1)
 	})
 
 	test("re-evaluates only items whose state changed", async () => {
@@ -345,43 +456,102 @@ describe("agency triage", () => {
 		expect(await calls()).toHaveLength(3)
 	})
 
-	test("feeds the action log, snoozes, and dismissals into the snapshot", async () => {
+	test("applies supervisor feedback per item", async () => {
+		const first = await run()
+		const orphan = first.items[1]!
+		const dropped = orphan.assessment!.actions[0]!.id
 		await runTestEffect(
 			Effect.gen(function* () {
 				const state = yield* SupervisionStateService
-				yield* state.appendAction({
-					key: liveKey(),
-					actionId: "focus",
-					type: "runtime",
-					title: "Focus pane",
-					outcome: "succeeded",
-					detail: null,
-				})
+				for (const key of [liveKey(), "elsewhere"])
+					yield* state.appendAction({
+						key,
+						actionId: "focus",
+						type: "runtime",
+						title: "Focus pane",
+						outcome: "succeeded",
+						detail: null,
+					})
 				yield* state.snooze({
 					key: liveKey(),
 					actionId: null,
 					until: "2999-01-01T00:00:00Z",
 					reason: "later",
 				})
+				yield* state.dismiss({
+					key: orphan.key,
+					actionId: dropped,
+					fingerprint: orphan.fingerprint,
+					reason: null,
+				})
+				yield* state.dismiss({
+					key: liveKey(),
+					actionId: "lapsed",
+					fingerprint: "an-earlier-state",
+					reason: null,
+				})
 			}),
 		)
-		await run()
-		const snapshot = (await snapshots()).find(
-			(entry) => entry.workbase !== null,
+
+		const report = await run()
+		// The action log changed only the live item; dismissals and snoozes are
+		// applied to results without re-running triage.
+		expect(report.items.map((item) => item.source)).toEqual([
+			"fresh",
+			"cached",
+			"cached",
+		])
+		expect(await calls()).toHaveLength(3)
+		expect(report.items[0]).toMatchObject({
+			suppressed: "snoozed",
+			assessment: { actions: [] },
+		})
+		expect(report.items[1]!.suppressed).toBeNull()
+		expect(
+			report.items[1]!.assessment!.actions.map((action) => action.id),
+		).not.toContain(dropped)
+
+		const snapshot = (await snapshots()).find((entry) =>
+			entry.items.some(
+				(item: { recentActions: unknown[] }) => item.recentActions.length,
+			),
 		)!
-		expect(snapshot.recentActions).toEqual([
-			expect.objectContaining({ actionId: "focus" }),
-		])
-		expect(snapshot.snoozes).toEqual([
-			expect.objectContaining({ key: liveKey(), reason: "later" }),
-		])
+		expect(snapshot.items).toHaveLength(1)
 		expect(snapshot.items[0]).toMatchObject({
 			key: liveKey(),
+			recentActions: [{ key: liveKey(), actionId: "focus" }],
+			snoozes: [{ key: liveKey(), reason: "later" }],
+			// The lapsed dismissal is not sent.
+			dismissals: [],
 			transcriptTails: [
 				{ paneId: "w1:p1", text: "Working...\n\nShould I rebase onto main?" },
 			],
-			previousAssessment: null,
+			previousAssessment: { status: "needs_input" },
 		})
+		// A full run prunes dismissals whose item state has moved on.
+		const dismissals = await runTestEffect(
+			Effect.flatMap(SupervisionStateService, (state) => state.dismissals()),
+		)
+		expect(dismissals.map((entry) => entry.actionId)).toEqual([dropped])
+	})
+
+	test("concurrent runs merge their cached results", async () => {
+		const quiet = (item: string) =>
+			runTestEffect(
+				triage({ cwd: tempDir, silent: true, configDirectory, item }).pipe(
+					Effect.provideService(
+						RuntimeService,
+						fakeRuntimeService(createFakeRuntimeProvider({ panes: panes() })),
+					),
+				),
+			)
+		await Promise.all([quiet("live"), quiet("orphan")])
+		const cache = await runTestEffect(
+			Effect.flatMap(SupervisionStateService, (state) => state.triageCache()),
+		)
+		expect(cache.map((entry) => entry.key).sort()).toEqual(
+			[liveKey(), `${root}:execution-unit:task/orphan`].sort(),
+		)
 	})
 
 	test("retries once with the validation errors", async () => {
@@ -439,4 +609,48 @@ describe("agency triage", () => {
 			"No supervised item matches 'nope'",
 		)
 	})
+
+	test("an interrupted CLI run stops opencode and removes its files", async () => {
+		const marker = join(tempDir, "hang.pid")
+		const hang = join(tempDir, "hang.sh")
+		await Bun.write(hang, `#!/bin/sh\necho "$$ $PWD" > ${marker}\nsleep 60\n`)
+		await chmod(hang, 0o755)
+		const cli = Bun.spawn(
+			[
+				process.execPath,
+				join(import.meta.dir, "../../cli.ts"),
+				"triage",
+				"--item",
+				"orphan",
+			],
+			{
+				cwd: root,
+				env: {
+					...process.env,
+					AGENCY_OPENCODE_BIN: hang,
+					XDG_CONFIG_HOME: configDirectory,
+				},
+				stdout: "pipe",
+				stderr: "pipe",
+			},
+		)
+		const deadline = Date.now() + 20_000
+		while (!(await Bun.file(marker).exists()) && Date.now() < deadline)
+			await Bun.sleep(50)
+		const [pid, directory] = (await Bun.file(marker).text()).trim().split(" ")
+		cli.kill("SIGINT")
+		expect(await cli.exited).toBe(130)
+		const alive = (() => {
+			try {
+				process.kill(Number(pid), 0)
+				return true
+			} catch {
+				return false
+			}
+		})()
+		expect(alive).toBe(false)
+		expect(await Bun.file(join(directory!, "snapshot.json")).exists()).toBe(
+			false,
+		)
+	}, 30_000)
 })

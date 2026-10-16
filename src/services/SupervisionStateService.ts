@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Data, Effect, Layer, Option, Schema } from "effect"
 import { join } from "node:path"
 import { TriageAssessment } from "../triage-schema"
 import { agencyStateDirectory } from "../workbase/state-directory"
@@ -78,15 +78,31 @@ const decodeDismissals = Schema.decodeUnknownOption(
 	Schema.fromJsonString(Dismissals),
 )
 
-const sameTarget = (
-	a: { readonly key: string; readonly actionId: string | null },
-	b: { readonly key: string; readonly actionId: string | null },
-) => a.key === b.key && a.actionId === b.actionId
+interface Target {
+	readonly key: string
+	readonly actionId: string | null
+}
+
+const sameTarget = (a: Target, b: Target) =>
+	a.key === b.key && a.actionId === b.actionId
+
+const LOCK_STALE_MS = 30_000
+const LOCK_TIMEOUT_MS = 10_000
+const LOCK_RETRY_MS = 20
+/** Compact the action log to its newest entries once it passes the limit. */
+const ACTION_LOG_KEEP = 1000
+const ACTION_LOG_LIMIT = 1200
+
+class SupervisionStateLockError extends Data.TaggedError(
+	"SupervisionStateLockError",
+)<{ readonly path: string; readonly message: string }> {}
 
 /**
  * Local supervision state: the triage result cache, the action log, snoozes,
  * and dismissals. It lives under $AGENCY_STATE_DIR/supervision, never in
- * TASK, PHASE, or EPIC documents. Unreadable state reads as empty.
+ * TASK, PHASE, or EPIC documents. Unreadable state reads as empty. Every
+ * read-modify-write holds an exclusive lock file, so concurrent triage runs
+ * and the supervisor cannot lose each other's updates.
  */
 export class SupervisionStateService extends Context.Service<SupervisionStateService>()(
 	"SupervisionStateService",
@@ -115,17 +131,44 @@ export class SupervisionStateService extends Context.Service<SupervisionStateSer
 			const write = (name: string, data: unknown, env?: NodeJS.ProcessEnv) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
-					const path = file(name, env)
-					const temporary = `${path}.${process.pid}.tmp`
 					yield* fs.createDirectory(directory(env))
-					yield* fs.writeJSON(temporary, data)
-					yield* fs
-						.moveDirectory(temporary, path)
-						.pipe(
-							Effect.tapError(() =>
-								fs.deleteFile(temporary).pipe(Effect.ignore),
-							),
-						)
+					yield* fs.writeFileAtomic(
+						file(name, env),
+						`${JSON.stringify(data, null, 2)}\n`,
+					)
+				})
+
+			/** Run `use` while holding an exclusive lock on one state file. */
+			const withLock = <A, E, R>(
+				name: string,
+				use: Effect.Effect<A, E, R>,
+				env?: NodeJS.ProcessEnv,
+			) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const path = file(`${name}.lock`, env)
+					yield* fs.createDirectory(directory(env))
+					const started = Date.now()
+					const acquire = Effect.gen(function* () {
+						while (!(yield* fs.createExclusive(path, `${process.pid}\n`))) {
+							const modified = yield* fs.modifiedAt(path)
+							if (modified !== null && Date.now() - modified > LOCK_STALE_MS) {
+								yield* fs.deleteFile(path).pipe(Effect.ignore)
+								continue
+							}
+							if (Date.now() - started > LOCK_TIMEOUT_MS)
+								return yield* new SupervisionStateLockError({
+									path,
+									message: `Timed out waiting for the supervision state lock ${path}`,
+								})
+							yield* Effect.sleep(LOCK_RETRY_MS)
+						}
+					})
+					return yield* Effect.acquireUseRelease(
+						acquire,
+						() => use,
+						() => fs.deleteFile(path).pipe(Effect.ignore),
+					)
 				})
 
 			const now = () => new Date().toISOString()
@@ -143,28 +186,81 @@ export class SupervisionStateService extends Context.Service<SupervisionStateSer
 			const dismissals = (env?: NodeJS.ProcessEnv) =>
 				read("dismissals.json", decodeDismissals, [], env)
 
+			const triageCache = (env?: NodeJS.ProcessEnv) =>
+				read(
+					"triage-cache.json",
+					decodeCache,
+					{ version: STATE_VERSION, entries: [] },
+					env,
+				).pipe(Effect.map((cache) => cache.entries))
+
+			const updateSnoozes = (
+				update: (entries: readonly Snooze[]) => readonly Snooze[],
+				env?: NodeJS.ProcessEnv,
+			) =>
+				withLock(
+					"snoozes",
+					Effect.flatMap(snoozes(env), (active) =>
+						write("snoozes.json", update(active), env),
+					),
+					env,
+				)
+
+			const updateDismissals = (
+				update: (entries: readonly Dismissal[]) => readonly Dismissal[],
+				env?: NodeJS.ProcessEnv,
+			) =>
+				withLock(
+					"dismissals",
+					Effect.flatMap(dismissals(env), (current) =>
+						write("dismissals.json", update(current), env),
+					),
+					env,
+				)
+
+			const readActions = (env?: NodeJS.ProcessEnv) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const content = yield* fs
+						.readFile(file("actions.jsonl", env))
+						.pipe(Effect.orElseSucceed(() => ""))
+					return content
+						.split("\n")
+						.flatMap((line) =>
+							line.trim() ? Option.toArray(decodeLogLine(line)) : [],
+						)
+				})
+
 			return {
 				directory,
 
 				/** Cached triage assessments, keyed by item. */
-				triageCache: (env?: NodeJS.ProcessEnv) =>
-					read(
-						"triage-cache.json",
-						decodeCache,
-						{ version: STATE_VERSION, entries: [] },
-						env,
-					).pipe(Effect.map((cache) => cache.entries)),
+				triageCache,
 
-				writeTriageCache: (
-					entries: readonly TriageCacheEntry[],
+				/**
+				 * Replace the cache with `update(current)`, reading the current cache
+				 * under the lock so concurrent runs merge rather than overwrite.
+				 */
+				updateTriageCache: (
+					update: (
+						entries: readonly TriageCacheEntry[],
+					) => readonly TriageCacheEntry[],
 					env?: NodeJS.ProcessEnv,
 				) =>
-					write(
-						"triage-cache.json",
-						{
-							version: STATE_VERSION,
-							entries: [...entries].sort((a, b) => a.key.localeCompare(b.key)),
-						},
+					withLock(
+						"triage-cache",
+						Effect.flatMap(triageCache(env), (current) =>
+							write(
+								"triage-cache.json",
+								{
+									version: STATE_VERSION,
+									entries: [...update(current)].sort((a, b) =>
+										a.key.localeCompare(b.key),
+									),
+								},
+								env,
+							),
+						),
 						env,
 					),
 
@@ -172,103 +268,96 @@ export class SupervisionStateService extends Context.Service<SupervisionStateSer
 					entry: Without<ActionLogEntry>,
 					env?: NodeJS.ProcessEnv,
 				) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const record: ActionLogEntry = {
-							version: STATE_VERSION,
-							...entry,
-							at: entry.at ?? now(),
-						}
-						yield* fs.createDirectory(directory(env))
-						yield* fs.appendFile(
-							file("actions.jsonl", env),
-							`${JSON.stringify(record)}\n`,
-						)
-						return record
-					}),
+					withLock(
+						"actions",
+						Effect.gen(function* () {
+							const fs = yield* FileSystemService
+							const record: ActionLogEntry = {
+								version: STATE_VERSION,
+								...entry,
+								at: entry.at ?? now(),
+							}
+							const path = file("actions.jsonl", env)
+							yield* fs.appendFile(path, `${JSON.stringify(record)}\n`)
+							const entries = yield* readActions(env)
+							if (entries.length > ACTION_LOG_LIMIT)
+								yield* fs.writeFileAtomic(
+									path,
+									entries
+										.slice(-ACTION_LOG_KEEP)
+										.map((item) => `${JSON.stringify(item)}\n`)
+										.join(""),
+								)
+							return record
+						}),
+						env,
+					),
 
 				/** The most recent action log entries, oldest first. */
 				actions: (
 					options: { readonly limit?: number } = {},
 					env?: NodeJS.ProcessEnv,
 				) =>
-					Effect.gen(function* () {
-						const fs = yield* FileSystemService
-						const content = yield* fs
-							.readFile(file("actions.jsonl", env))
-							.pipe(Effect.orElseSucceed(() => ""))
-						const entries = content
-							.split("\n")
-							.flatMap((line) =>
-								line.trim() ? Option.toArray(decodeLogLine(line)) : [],
-							)
-						return options.limit === undefined
-							? entries
-							: entries.slice(-options.limit)
-					}),
+					readActions(env).pipe(
+						Effect.map((entries) =>
+							options.limit === undefined
+								? entries
+								: entries.slice(-options.limit),
+						),
+					),
 
 				/** Active snoozes; expired ones are ignored. */
 				snoozes,
 
-				snooze: (entry: Without<Snooze>, env?: NodeJS.ProcessEnv) =>
-					Effect.gen(function* () {
-						const record: Snooze = {
-							version: STATE_VERSION,
-							...entry,
-							at: entry.at ?? now(),
-						}
-						const active = yield* snoozes(env)
-						yield* write(
-							"snoozes.json",
-							[...active.filter((item) => !sameTarget(item, record)), record],
-							env,
-						)
-						return record
-					}),
+				snooze: (entry: Without<Snooze>, env?: NodeJS.ProcessEnv) => {
+					const record: Snooze = {
+						version: STATE_VERSION,
+						...entry,
+						at: entry.at ?? now(),
+					}
+					return updateSnoozes(
+						(active) => [
+							...active.filter((item) => !sameTarget(item, record)),
+							record,
+						],
+						env,
+					).pipe(Effect.as(record))
+				},
 
-				unsnooze: (
-					target: { readonly key: string; readonly actionId: string | null },
-					env?: NodeJS.ProcessEnv,
-				) =>
-					Effect.gen(function* () {
-						const active = yield* snoozes(env)
-						yield* write(
-							"snoozes.json",
-							active.filter((item) => !sameTarget(item, target)),
-							env,
-						)
-					}),
+				unsnooze: (target: Target, env?: NodeJS.ProcessEnv) =>
+					updateSnoozes(
+						(active) => active.filter((item) => !sameTarget(item, target)),
+						env,
+					),
 
 				dismissals,
 
-				dismiss: (entry: Without<Dismissal>, env?: NodeJS.ProcessEnv) =>
-					Effect.gen(function* () {
-						const record: Dismissal = {
-							version: STATE_VERSION,
-							...entry,
-							at: entry.at ?? now(),
-						}
-						const current = yield* dismissals(env)
-						yield* write(
-							"dismissals.json",
-							[...current.filter((item) => !sameTarget(item, record)), record],
-							env,
-						)
-						return record
-					}),
+				dismiss: (entry: Without<Dismissal>, env?: NodeJS.ProcessEnv) => {
+					const record: Dismissal = {
+						version: STATE_VERSION,
+						...entry,
+						at: entry.at ?? now(),
+					}
+					return updateDismissals(
+						(current) => [
+							...current.filter((item) => !sameTarget(item, record)),
+							record,
+						],
+						env,
+					).pipe(Effect.as(record))
+				},
 
-				undismiss: (
-					target: { readonly key: string; readonly actionId: string | null },
+				undismiss: (target: Target, env?: NodeJS.ProcessEnv) =>
+					updateDismissals(
+						(current) => current.filter((item) => !sameTarget(item, target)),
+						env,
+					),
+
+				/** Drop dismissals for which `keep` returns false. */
+				pruneDismissals: (
+					keep: (dismissal: Dismissal) => boolean,
 					env?: NodeJS.ProcessEnv,
-				) =>
-					Effect.gen(function* () {
-						const current = yield* dismissals(env)
-						yield* write(
-							"dismissals.json",
-							current.filter((item) => !sameTarget(item, target)),
-							env,
-						)
-					}),
+				) => updateDismissals((current) => current.filter(keep), env),
 			}
 		}),
 	},
