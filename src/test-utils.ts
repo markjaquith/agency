@@ -22,6 +22,7 @@ import { ReadinessService } from "./services/ReadinessService"
 import { GraphMutationService } from "./services/GraphMutationService"
 import { DoctorService } from "./services/DoctorService"
 import { ReviewService } from "./services/ReviewService"
+import { TicketService } from "./services/TicketService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -76,6 +77,7 @@ const TestLayer = Layer.mergeAll(
 	GraphMutationService.layer,
 	DoctorService.layer,
 	ReviewService.layer,
+	TicketService.layer,
 )
 
 export async function runTestEffect<A, E>(

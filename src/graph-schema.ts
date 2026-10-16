@@ -8,6 +8,7 @@ import {
 	TaskFrontmatter,
 	WorkStatus,
 } from "./workbase/schemas"
+import { TicketRecord } from "./tickets/provider"
 
 export const GRAPH_VERSION = 1 as const
 
@@ -31,6 +32,7 @@ export const GraphInclude = Schema.Literals([
 	"workspace",
 	"git",
 	"pr",
+	"ticket",
 ])
 
 export const GraphBlocker = Schema.Struct({
@@ -172,11 +174,13 @@ export const GraphNode = Schema.Union([
 		...DocumentNode,
 		kind: Schema.Literal("epic"),
 		data: GraphEpicData,
+		ticket: Schema.optional(TicketRecord),
 	}),
 	Schema.Struct({
 		...DocumentNode,
 		kind: Schema.Literal("task"),
 		data: GraphTaskData,
+		ticket: Schema.optional(TicketRecord),
 	}),
 	Schema.Struct({
 		...DocumentNode,
@@ -200,6 +204,7 @@ export const GraphNode = Schema.Union([
 		workspace: Schema.optional(GraphExecutionWorkspace),
 		git: Schema.optional(GraphExecutionGit),
 		pr: Schema.optional(GraphPr),
+		ticket: Schema.optional(TicketRecord),
 	}),
 ])
 

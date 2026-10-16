@@ -822,6 +822,9 @@ Pass `--full` to include document prose and low-level VCS details. Compact outpu
 retains identity, hashes, authority, paths, graph state, materialization state,
 recorded PR state, and validation warnings.
 
+Pass `--include ticket` to add a live `ticket` field read from the target's
+`ticketUrl` (a phase uses its task's ticket). See [Ticket Status](#ticket-status).
+
 ### Workbase Graph
 
 `agency graph --json` exports the complete workbase as graph contract version 1.
@@ -837,13 +840,32 @@ summary counts the statuses of all execution units, independent of filters.
 ```text
 agency graph [--json | --jsonl] [--ready | --blocked]
   [--status <status>...] [--repository <alias>...] [--kind <kind>...]
-  [--include <bodies|workspace|git|pr>...]
+  [--include <bodies|workspace|git|pr|ticket>...]
 ```
 
 Filters are applied after graph state is computed. Returned edges always have
 both endpoints in the filtered node set. Durable frontmatter and document hashes
-are always present; prose, absolute workspace paths, Git inspection, and live PR
-inspection are opt-in include layers.
+are always present; prose, absolute workspace paths, Git inspection, live PR
+inspection, and live ticket status are opt-in include layers. The `ticket` layer
+annotates epic, task, and execution-unit nodes that pass the filters.
+
+### Ticket Status
+
+The `ticket` include layer reads the live status of an item's `ticketUrl`
+through a read-only ticket provider. Jira URLs on `*.atlassian.net` are read
+with `acli jira workitem view`; GitHub issue URLs are read with `gh issue view`.
+Each result has a `state`:
+
+- `none`: the item has no `ticketUrl`.
+- `unsupported`: no provider recognizes the URL.
+- `unavailable`: the provider CLI is missing or the lookup failed; `reason`
+  explains why. The rest of the command still succeeds.
+- `available`: includes `provider`, `key`, the provider's `status`, a normalized
+  `statusCategory` (`todo`, `in_progress`, or `done`), `summary`, and
+  `resolution`.
+
+Lookups are deduplicated by URL, run with bounded concurrency, and cached
+briefly in memory.
 
 `--jsonl` emits a versioned `meta` record, one record per node and edge, then an
 `end` record with counts. Combining the metadata with the streamed node and edge

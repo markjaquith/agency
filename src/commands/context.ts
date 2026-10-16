@@ -7,6 +7,7 @@ interface ContextOptions extends BaseCommandOptions {
 	readonly target?: string
 	readonly compact?: boolean
 	readonly full?: boolean
+	readonly include?: readonly "ticket"[]
 	readonly json?: boolean
 }
 
@@ -31,6 +32,7 @@ Options:
   --json              Output a versioned machine result
   --compact           Use compact output (default)
   --full              Include prose bodies and low-level VCS details
+  --include ticket    Include live status of the target's ticketUrl
   --epic <id>         Select an epic
   --task <id>         Select a task
   --phase <id>        Select a phase together with --task

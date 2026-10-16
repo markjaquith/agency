@@ -279,6 +279,31 @@ Phase prose.
 		])
 	})
 
+	test("includes live ticket state only when requested", async () => {
+		const readWith = async (target: string, include?: "ticket"[]) => {
+			const logs = await captureLogs(() =>
+				runTestEffect(context({ cwd: root, target, include, json: true })),
+			)
+			return JSON.parse(logs[0]!)
+		}
+
+		expect(
+			(await readWith("tasks/agent-contract/phases/context-command")).ticket,
+		).toBeUndefined()
+		expect(
+			(
+				await readWith("tasks/agent-contract/phases/context-command", [
+					"ticket",
+				])
+			).ticket,
+		).toEqual({ url: null, state: "none" })
+		expect((await readWith("epics/contract", ["ticket"])).ticket).toEqual({
+			url: "https://example.com/contract",
+			state: "unsupported",
+			reason: "No ticket provider recognizes this URL",
+		})
+	})
+
 	test("reports dependency and validation blockers deterministically", async () => {
 		await write(
 			root,

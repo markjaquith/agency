@@ -39,6 +39,7 @@ const allowedIncludes = new Set<GraphInclude>([
 	"workspace",
 	"git",
 	"pr",
+	"ticket",
 ])
 
 const validated = <T extends string>(
@@ -99,5 +100,6 @@ Options:
   --status <status>         Filter by status (repeatable)
   --repository <alias>      Filter by repository (repeatable)
   --kind <kind>             Filter by entity kind (repeatable)
-  --include <layer>         Include bodies, workspace, git, or pr (repeatable)
+  --include <layer>         Include bodies, workspace, git, pr, or ticket
+                            (repeatable)
 `

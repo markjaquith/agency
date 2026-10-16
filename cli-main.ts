@@ -48,6 +48,7 @@ import { ReadinessService } from "./src/services/ReadinessService"
 import { GraphMutationService } from "./src/services/GraphMutationService"
 import { DoctorService } from "./src/services/DoctorService"
 import { ReviewService } from "./src/services/ReviewService"
+import { TicketService } from "./src/services/TicketService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -89,6 +90,7 @@ const CliLayer = Layer.mergeAll(
 	GraphMutationService.layer,
 	DoctorService.layer,
 	ReviewService.layer,
+	TicketService.layer,
 )
 
 /**
@@ -698,6 +700,7 @@ const commands: Record<string, Command> = {
 								: args[0],
 					compact: options.compact,
 					full: options.full,
+					include: options.include,
 					json: options.json,
 					silent: options.silent,
 					verbose: options.verbose,
