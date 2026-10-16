@@ -20,6 +20,7 @@ import {
 import { RuntimeBindingService } from "./RuntimeBindingService"
 import { RuntimeService } from "./RuntimeService"
 import { SupervisionStateService } from "./SupervisionStateService"
+import { TicketService } from "./TicketService"
 import { SupervisorExecutor } from "./SupervisorExecutor"
 
 let tempDir: string
@@ -29,6 +30,8 @@ let agencyCommand: string[]
 let calls: unknown[][]
 let panes: RuntimePane[]
 let failures: Record<string, string>
+let prReads: { url: string; fresh: boolean }[]
+let ticketReads: { url: string | null; fresh: boolean }[]
 
 const task = (status: string) => `---
 repo: agency
@@ -175,11 +178,63 @@ const run = <A, E>(
 				),
 			),
 			Effect.provideService(PullRequestStatusService, {
-				read: () => Effect.succeed(livePr),
+				read: (url, readOptions) => {
+					prReads.push({ url, fresh: readOptions?.fresh === true })
+					return Effect.succeed(livePr)
+				},
 				mergeMethod: () => Effect.succeed("squash"),
 			}),
+			Effect.provideService(TicketService, {
+				read: (url: string | null, readOptions?: { fresh?: boolean }) => {
+					ticketReads.push({ url, fresh: readOptions?.fresh === true })
+					return Effect.succeed({
+						url: url!,
+						state: "available" as const,
+						provider: "jira",
+						key: "CAN-1",
+						status: "In Progress",
+						statusCategory: "in_progress" as const,
+						summary: "Ticket",
+						resolution: null,
+					})
+				},
+			} as unknown as TicketService["Service"]),
 		),
 	)
+
+const confirmAndExecute = (
+	executor: SupervisorExecutor["Service"],
+	plan: Parameters<SupervisorExecutor["Service"]["confirm"]>[0],
+	key: string | null,
+) =>
+	Effect.flatMap(
+		executor.confirm(
+			plan,
+			{ confirmed: true, destructiveConfirmed: true },
+			key,
+			options(),
+		),
+		(token) => executor.execute(token, key, options()),
+	)
+
+/** Resolve, confirm (twice when destructive), and execute. */
+const runAction = (
+	executor: SupervisorExecutor["Service"],
+	action: unknown,
+	values: Record<string, string> = {},
+	key: string | null = null,
+) =>
+	Effect.gen(function* () {
+		const resolution = yield* executor.resolve(action, values, options())
+		if (resolution.kind !== "ready") throw new Error(resolution.kind)
+		const token = yield* executor.confirm(
+			resolution.plan,
+			{ confirmed: true, destructiveConfirmed: true },
+			key,
+			options(),
+		)
+		return yield* executor.execute(token, key, options())
+	})
 
 const options = () => ({ agencyCommand, env })
 
@@ -195,6 +250,8 @@ beforeEach(async () => {
 	calls = []
 	panes = []
 	failures = {}
+	prReads = []
+	ticketReads = []
 	agencyCommand = ["false"]
 	await write(join(root, "agency.json"), '{"version":2}\n')
 	await write(join(root, "tasks/alpha/TASK.md"), task("working"))
@@ -339,12 +396,13 @@ describe("SupervisorExecutor preconditions", () => {
 			"alpha is now working",
 			"alpha is no longer archived",
 			"missing no longer exists",
+			"The pull request head changed since it was reviewed",
+			`${join(root, "nope")} no longer exists`,
 			"The agent in pane w1:p1 is working",
 			"Pane w1:p9 is gone",
 			"Tab w1:t1's agent panes changed",
-			"The pull request head changed since it was reviewed",
-			`${join(root, "nope")} no longer exists`,
 		])
+		expect(prReads).toEqual([{ url: livePr.url, fresh: true }])
 	})
 })
 
@@ -391,13 +449,14 @@ describe("SupervisorExecutor actions", () => {
 					"agency task rename alpha beta --note 'hi there'",
 					"agency sync alpha",
 				])
-				return yield* executor.execute(resolution.plan, "item", options())
+				return yield* confirmAndExecute(executor, resolution.plan, "item")
 			}),
 		)
 		expect(result).toEqual({
 			outcome: "succeeded",
 			detail: "ran sync",
 			fallback: null,
+			logError: null,
 		})
 		expect(await Bun.file(join(tempDir, "ran.log")).text()).toBe(
 			"task rename alpha beta --note hi there\nsync alpha\n",
@@ -443,7 +502,7 @@ describe("SupervisorExecutor actions", () => {
 					options(),
 				)
 				if (resolution.kind !== "ready") throw new Error(resolution.kind)
-				return yield* executor.execute(resolution.plan, null, options())
+				return yield* confirmAndExecute(executor, resolution.plan, null)
 			}),
 		)
 		expect(result.outcome).toBe("succeeded")
@@ -491,7 +550,7 @@ describe("SupervisorExecutor actions", () => {
 					options(),
 				)
 				if (resolution.kind !== "ready") throw new Error(resolution.kind)
-				return yield* executor.execute(resolution.plan, null, options())
+				return yield* confirmAndExecute(executor, resolution.plan, null)
 			}),
 		)
 		expect(result.detail).toBe("Created adopted and bound pane w1:p5")
@@ -539,7 +598,7 @@ describe("SupervisorExecutor actions", () => {
 				if (resolution.kind !== "ready") throw new Error(resolution.kind)
 				expect(resolution.plan.destructive).toBe(true)
 				expect(resolution.plan.preview).toEqual(["herdr: close tab w1:t1"])
-				return yield* executor.execute(resolution.plan, "item", options())
+				return yield* confirmAndExecute(executor, resolution.plan, "item")
 			}),
 		)
 		expect(result).toMatchObject({
@@ -555,8 +614,26 @@ describe("SupervisorExecutor actions", () => {
 		])
 	})
 
-	test("offers a fresh kickoff when the prompted agent is busy", async () => {
+	test("waits for a working agent and offers a kickoff only when it is blocked", async () => {
 		panes = [runtimePane({ paneId: "w1:p1", agentStatus: "working" })]
+		const busy = await run((executor) =>
+			runAction(executor, {
+				...base(),
+				type: "prompt_agent",
+				payload: {
+					runtime: "herdr",
+					paneId: "w1:p1",
+					agentSessionId: null,
+					prompt: "Rebase onto main",
+				},
+			}),
+		)
+		expect(busy).toMatchObject({
+			outcome: "skipped",
+			detail: "The agent in pane w1:p1 is working; try again once it settles",
+			fallback: null,
+		})
+		panes = [runtimePane({ paneId: "w1:p1", agentStatus: "blocked" })]
 		const prompt: SupervisorAction = {
 			...base(),
 			type: "prompt_agent",
@@ -571,12 +648,12 @@ describe("SupervisorExecutor actions", () => {
 			Effect.gen(function* () {
 				const resolution = yield* executor.resolve(prompt, {}, options())
 				if (resolution.kind !== "ready") throw new Error(resolution.kind)
-				return yield* executor.execute(resolution.plan, null, options())
+				return yield* confirmAndExecute(executor, resolution.plan, null)
 			}),
 		)
 		expect(result).toMatchObject({
 			outcome: "skipped",
-			detail: "The agent in pane w1:p1 is working",
+			detail: "The agent in pane w1:p1 is blocked by a dialog",
 			fallback: {
 				type: "delegate",
 				payload: {
@@ -598,7 +675,7 @@ describe("SupervisorExecutor actions", () => {
 				expect(resolution.plan.preview[1]).toBe(
 					"agency work --task alpha --auto --instructions 'Rebase onto main'",
 				)
-				return yield* executor.execute(resolution.plan, null, options())
+				return yield* confirmAndExecute(executor, resolution.plan, null)
 			}),
 		)
 		expect(calls).toEqual([
@@ -645,7 +722,7 @@ describe("SupervisorExecutor actions", () => {
 				Effect.gen(function* () {
 					const resolution = yield* executor.resolve(delegate, {}, options())
 					if (resolution.kind !== "ready") throw new Error(resolution.kind)
-					return yield* executor.execute(resolution.plan, null, options())
+					return yield* confirmAndExecute(executor, resolution.plan, null)
 				}),
 			)
 		expect((await executeOnce()).outcome).toBe("succeeded")
@@ -667,5 +744,278 @@ describe("SupervisorExecutor actions", () => {
 			reason: "No live agent is bound to execution-unit:task/alpha",
 			fallback: { payload: { via: "kickoff" } },
 		})
+	})
+})
+
+describe("SupervisorExecutor safeguards", () => {
+	const close = (): SupervisorAction => ({
+		...base(),
+		risk: "destructive",
+		type: "runtime",
+		payload: {
+			runtime: "herdr",
+			operation: "close",
+			target: "pane",
+			id: "w1:p1",
+		},
+	})
+
+	test("runs only plans confirmed through confirm, twice when destructive", async () => {
+		panes = [runtimePane({ paneId: "w1:p1" })]
+		const outcomes = await run((executor) =>
+			Effect.gen(function* () {
+				const resolution = yield* executor.resolve(close(), {}, options())
+				if (resolution.kind !== "ready") throw new Error(resolution.kind)
+				const once = yield* Effect.flip(
+					executor.confirm(
+						resolution.plan,
+						{ confirmed: true, destructiveConfirmed: false },
+						"item",
+						options(),
+					),
+				)
+				const declined = yield* Effect.flip(
+					executor.confirm(
+						resolution.plan,
+						{ confirmed: false, destructiveConfirmed: false },
+						"item",
+						options(),
+					),
+				)
+				const forged = yield* executor.execute(
+					{ plan: resolution.plan } as unknown as Parameters<
+						typeof executor.execute
+					>[0],
+					"item",
+					options(),
+				)
+				const token = yield* executor.confirm(
+					resolution.plan,
+					{ confirmed: true, destructiveConfirmed: true },
+					"item",
+					options(),
+				)
+				const first = yield* executor.execute(token, "item", options())
+				const replay = yield* executor.execute(token, "item", options())
+				return [once.message, declined.message, forged, first, replay]
+			}),
+		)
+		expect(outcomes).toMatchObject([
+			"The destructive action was not confirmed twice",
+			"The action was not confirmed",
+			{ outcome: "failed", detail: "The action was not confirmed" },
+			{ outcome: "succeeded" },
+			{ outcome: "failed", detail: "The action was not confirmed" },
+		])
+		expect(calls).toEqual([["close", "pane", "w1:p1"]])
+		expect((await actionLog()).map((entry) => entry.outcome)).toEqual([
+			"cancelled",
+			"cancelled",
+			"failed",
+			"succeeded",
+			"failed",
+		])
+	})
+
+	test("rejects malformed actions and unknown preconditions", async () => {
+		const invalid = await run((executor) =>
+			Effect.flip(
+				executor.resolve({ ...close(), type: "teleport" }, {}, options()),
+			),
+		)
+		expect(invalid.message).toStartWith("Invalid action:")
+		const failures = await run((executor) =>
+			executor.checkPreconditions(
+				{
+					...close(),
+					preconditions: [
+						{ kind: "moon_phase" } as unknown as ActionPrecondition,
+						{
+							kind: "tab_agent_panes",
+							runtime: "tmux",
+							tabId: "w1:t1",
+							paneIds: [],
+						} as unknown as ActionPrecondition,
+						{
+							kind: "ticket_status_category",
+							url: "https://acme.atlassian.net/browse/CAN-1",
+							statusCategories: ["done"],
+						},
+					],
+				},
+				env,
+			),
+		)
+		expect(failures).toEqual([
+			'Unknown precondition: {"kind":"moon_phase"}',
+			"CAN-1 is now In Progress",
+			"The action targets tmux, but the runtime is herdr",
+		])
+		expect(ticketReads).toEqual([
+			{ url: "https://acme.atlassian.net/browse/CAN-1", fresh: true },
+		])
+	})
+
+	test("refuses agency command actions and unsafe URLs", async () => {
+		const resolutions = await run((executor) =>
+			Effect.all(
+				[
+					{
+						...base(),
+						type: "command",
+						payload: { argv: ["agency", "task", "status"], cwd: null },
+					},
+					{
+						...base(),
+						type: "open_url",
+						payload: { url: "file:///etc/passwd" },
+					},
+					{ ...base(), type: "open_url", payload: { url: "-a Terminal" } },
+					{
+						...base(),
+						type: "open_url",
+						payload: { url: "https://github.com/acme/agency/pull/1" },
+					},
+				].map((action) => executor.resolve(action, {}, options())),
+			),
+		)
+		expect(resolutions.map((item) => item.kind)).toEqual([
+			"unavailable",
+			"unavailable",
+			"unavailable",
+			"ready",
+		])
+	})
+
+	test("skips an agency action whose discovered command changed after preview", async () => {
+		await fakeAgency({
+			id: "sync",
+			description: "Sync",
+			icon: "x",
+			color: "x",
+			available: true,
+			command: ["agency", "sync", "alpha"],
+		})
+		const result = await run((executor) =>
+			Effect.gen(function* () {
+				const resolution = yield* executor.resolve(
+					agencyAction("sync"),
+					{},
+					options(),
+				)
+				if (resolution.kind !== "ready") throw new Error(resolution.kind)
+				yield* Effect.promise(() =>
+					Bun.write(
+						join(tempDir, "discovery.json"),
+						discovery({
+							id: "sync",
+							description: "Sync",
+							icon: "x",
+							color: "x",
+							available: true,
+							command: ["agency", "sync", "beta"],
+						}),
+					),
+				)
+				return yield* confirmAndExecute(executor, resolution.plan, null)
+			}),
+		)
+		expect(result).toMatchObject({
+			outcome: "skipped",
+			detail: "'sync' changed since it was previewed",
+		})
+		expect(await Bun.file(join(tempDir, "ran.log")).exists()).toBe(false)
+	})
+
+	test("never prompts a reused pane hosting a different agent session", async () => {
+		panes = [runtimePane({ paneId: "w1:p1", agentSessionId: "ses_new" })]
+		const prompt = await run((executor) =>
+			runAction(executor, {
+				...base(),
+				type: "prompt_agent",
+				payload: {
+					runtime: "herdr",
+					paneId: "w1:p1",
+					agentSessionId: "ses_old",
+					prompt: "Continue",
+				},
+			}),
+		)
+		expect(prompt).toMatchObject({
+			outcome: "skipped",
+			detail: "Pane w1:p1 now hosts a different agent session",
+			fallback: { payload: { via: "kickoff" } },
+		})
+		await runTestEffect(
+			Effect.flatMap(RuntimeBindingService, (service) =>
+				service.record(
+					{
+						root,
+						unit: "execution-unit:task/alpha",
+						runtime: "herdr",
+						paneId: "w1:p1",
+						tabId: "w1:t1",
+						workspaceId: "w1",
+						agent: "opencode",
+						agentSessionId: "ses_old",
+						agencySessionId: null,
+					},
+					env,
+				),
+			),
+		)
+		const delegate = await run((executor) =>
+			executor.resolve(
+				{
+					...base(),
+					subject: {
+						...subject(),
+						runtime: [
+							{
+								runtime: "herdr",
+								paneId: "w1:p1",
+								tabId: "w1:t1",
+								workspaceId: "w1",
+								agent: "opencode",
+								agentSessionId: "ses_old",
+							},
+						],
+					},
+					type: "delegate",
+					payload: {
+						unit: "execution-unit:task/alpha",
+						instructions: "Continue",
+						via: "prompt_bound_agent",
+					},
+				},
+				{},
+				options(),
+			),
+		)
+		expect(delegate).toMatchObject({
+			kind: "unavailable",
+			reason: "No live agent is bound to execution-unit:task/alpha",
+		})
+		expect(calls).toEqual([])
+	})
+
+	test("reports action log write failures", async () => {
+		await write(join(tempDir, "not-a-directory"), "")
+		env = { ...env, AGENCY_STATE_DIR: join(tempDir, "not-a-directory") }
+		panes = [runtimePane({ paneId: "w1:p1" })]
+		const result = await run((executor) =>
+			runAction(executor, {
+				...base(),
+				type: "runtime",
+				payload: {
+					runtime: "herdr",
+					operation: "focus",
+					target: "pane",
+					id: "w1:p1",
+				},
+			}),
+		)
+		expect(result.outcome).toBe("succeeded")
+		expect(result.logError).toStartWith("Unable to write the action log:")
 	})
 })

@@ -1,4 +1,4 @@
-import { Effect, FiberHandle, Queue, Stream } from "effect"
+import { Deferred, Effect, FiberHandle, Queue, Stream } from "effect"
 import { dirname, join } from "node:path"
 import type { AttentionReport, SupervisorAction } from "../attention-schema"
 import { FileSystemService } from "../services/FileSystemService"
@@ -20,6 +20,20 @@ import {
 
 type NoticeTone = "info" | "success" | "warning" | "error"
 
+interface ConfirmRequest {
+	readonly title: string
+	readonly rationale: string
+	readonly risk: SupervisorAction["risk"]
+	readonly preview: readonly string[]
+	readonly destructive: boolean
+}
+
+/** What the user confirmed: once, and for destructive actions, twice. */
+interface Confirmation {
+	readonly confirmed: boolean
+	readonly destructiveConfirmed: boolean
+}
+
 /** The terminal surface the supervisor drives; the OpenTUI session or a fake. */
 interface SupervisorUi {
 	readonly update: (model: ReturnType<typeof superviseModel>) => void
@@ -30,13 +44,7 @@ interface SupervisorUi {
 		readonly updatedAt?: Date | null
 	}) => void
 	readonly notice: (text: string, tone?: NoticeTone) => void
-	readonly confirm: (request: {
-		readonly title: string
-		readonly rationale: string
-		readonly risk: SupervisorAction["risk"]
-		readonly preview: readonly string[]
-		readonly destructive: boolean
-	}) => Promise<boolean>
+	readonly confirm: (request: ConfirmRequest) => Promise<Confirmation>
 	readonly text: (prompt: string) => Promise<string | null>
 	readonly choose: (
 		prompt: string,
@@ -57,7 +65,7 @@ interface SupervisorUiHandlers {
 	readonly onQuit: () => void
 }
 
-export type OpenSupervisorUi = (
+type OpenSupervisorUi = (
 	handlers: SupervisorUiHandlers,
 ) => Promise<SupervisorUi>
 
@@ -69,6 +77,8 @@ interface SuperviseOptions extends BaseCommandOptions {
 	readonly agencyCommand?: readonly string[]
 	/** Seconds between full refreshes without runtime events. */
 	readonly pollSeconds?: number
+	/** Minimum milliseconds between refreshes. */
+	readonly minRefreshMs?: number
 	/** LLM judgment layered over signals, once triage is available. */
 	readonly annotate?: Annotate
 }
@@ -83,7 +93,6 @@ type Intent =
 	| { readonly kind: "edit"; readonly item: SuperviseItem | null }
 	| { readonly kind: "snooze"; readonly item: SuperviseItem }
 	| { readonly kind: "dismiss"; readonly item: SuperviseItem }
-	| { readonly kind: "quit" }
 
 const SNOOZES = [
 	{ key: "3600000", label: "1 hour" },
@@ -93,7 +102,10 @@ const SNOOZES = [
 ] as const
 
 const DEBOUNCE_MS = 400
+const MIN_REFRESH_MS = 2_500
 const RESUBSCRIBE_MS = 5_000
+/** A subscription that survives this long without failing counts as live. */
+const LIVE_AFTER_MS = 2_000
 
 /** The per-workbase prompt the supervisor's `e` key edits. */
 const supervisionPromptPath = (root: string) =>
@@ -155,15 +167,23 @@ export const supervise = (
 			agencyCommand: options.agencyCommand ?? defaultAgencyCommand(),
 			env,
 		}
-		const intents = yield* Queue.unbounded<Intent>()
+		// One intent at a time: while one is pending, further key presses are
+		// dropped rather than queued to replay against a changed list.
+		const intents = yield* Queue.dropping<Intent>(1)
+		const quit = yield* Deferred.make<void>()
+		let pending = false
 		const refreshes = yield* Queue.sliding<true>(1)
 		const requestRefresh = () => {
 			Queue.offerUnsafe(refreshes, true)
 		}
+		let ui: SupervisorUi | undefined
 		const offer = (intent: Intent) => {
+			if (pending) return
+			pending = true
+			ui?.status({ busy: true })
 			Queue.offerUnsafe(intents, intent)
 		}
-		const ui = yield* Effect.acquireRelease(
+		const opened = yield* Effect.acquireRelease(
 			Effect.tryPromise({
 				try: () =>
 					openUi({
@@ -174,12 +194,16 @@ export const supervise = (
 						onEditPrompt: (item) => offer({ kind: "edit", item }),
 						onSnooze: (item) => offer({ kind: "snooze", item }),
 						onDismiss: (item) => offer({ kind: "dismiss", item }),
-						onQuit: () => offer({ kind: "quit" }),
+						onQuit: () => {
+							Deferred.doneUnsafe(quit, Effect.void)
+						},
 					}),
 				catch: (cause) => new Error("Unable to open the supervisor", { cause }),
 			}),
 			(ui) => Effect.promise(() => ui.close()),
 		)
+		ui = opened
+		const surface = opened
 		const ask = <A>(run: () => Promise<A>) => Effect.promise(run)
 
 		const view: {
@@ -194,7 +218,7 @@ export const supervise = (
 				stateService.snoozes(env),
 				stateService.dismissals(env),
 			])
-			ui.update(
+			surface.update(
 				superviseModel(view.report, {
 					snapshot: view.snapshot,
 					state: { snoozes, dismissals },
@@ -216,12 +240,25 @@ export const supervise = (
 					subscription,
 					Effect.gen(function* () {
 						while (true) {
-							ui.status({ live: true })
-							yield* runtime.subscribe(wanted).pipe(
-								Stream.runForEach(() => Effect.sync(requestRefresh)),
-								Effect.catch(() => Effect.void),
+							yield* Effect.raceFirst(
+								runtime.subscribe(wanted).pipe(
+									Stream.runForEach(() =>
+										Effect.sync(() => {
+											surface.status({ live: true })
+											requestRefresh()
+										}),
+									),
+									Effect.catch(() => Effect.void),
+								),
+								// Never resolves: it only marks a healthy subscription live.
+								Effect.sleep(LIVE_AFTER_MS).pipe(
+									Effect.andThen(
+										Effect.sync(() => surface.status({ live: true })),
+									),
+									Effect.andThen(Effect.never),
+								),
 							)
-							ui.status({ live: false })
+							surface.status({ live: false })
 							yield* Effect.sleep(RESUBSCRIBE_MS)
 						}
 					}),
@@ -229,7 +266,7 @@ export const supervise = (
 			})
 
 		const refresh = Effect.gen(function* () {
-			ui.status({ refreshing: true })
+			surface.status({ refreshing: true })
 			const runtime = yield* provider
 			const [report, snapshot] = yield* Effect.all(
 				[
@@ -250,24 +287,30 @@ export const supervise = (
 			view.report = report
 			view.snapshot = snapshot
 			yield* render
-			ui.status({ refreshing: false, updatedAt: new Date() })
+			surface.status({ refreshing: false, updatedAt: new Date() })
 			yield* subscribe(snapshot)
 		}).pipe(
 			Effect.catch((error) =>
 				Effect.sync(() => {
-					ui.status({ refreshing: false })
-					ui.notice(`Refresh failed: ${message(error)}`, "error")
+					surface.status({ refreshing: false })
+					surface.notice(`Refresh failed: ${message(error)}`, "error")
 				}),
 			),
 		)
 
-		// Coalesce bursts of runtime events and key presses into one refresh.
+		// Coalesce bursts of runtime events and key presses into one refresh,
+		// and never refresh more often than the minimum interval.
+		const minRefreshMs = options.minRefreshMs ?? MIN_REFRESH_MS
 		yield* Effect.forkScoped(
 			Effect.gen(function* () {
+				let last = Number.NEGATIVE_INFINITY
 				while (true) {
 					yield* Queue.take(refreshes)
-					yield* Effect.sleep(DEBOUNCE_MS)
+					yield* Effect.sleep(
+						Math.max(DEBOUNCE_MS, last + minRefreshMs - Date.now()),
+					)
 					yield* Queue.clear(refreshes)
+					last = Date.now()
 					yield* refresh
 				}
 			}),
@@ -282,36 +325,106 @@ export const supervise = (
 		)
 		requestRefresh()
 
+		const warnLog = (logError: string | null) => {
+			if (logError) surface.notice(logError, "warning")
+		}
+
+		const confirmAndRun = (
+			item: SuperviseItem,
+			plan: Extract<
+				Effect.Success<ReturnType<typeof executor.resolve>>,
+				{ kind: "ready" }
+			>["plan"],
+			reason: string | null,
+		) =>
+			Effect.gen(function* () {
+				const { action } = plan
+				surface.notice(`Confirm ${action.title}`)
+				const confirmation = yield* ask(() =>
+					surface.confirm({
+						title: action.title,
+						rationale: reason
+							? `${reason}. ${action.rationale}`
+							: action.rationale,
+						risk: action.risk,
+						preview: plan.preview,
+						destructive: plan.destructive,
+					}),
+				)
+				const token = yield* executor
+					.confirm(plan, confirmation, item.key, executorOptions)
+					.pipe(Effect.option)
+				if (token._tag === "None") {
+					surface.notice(`Cancelled ${action.title}`, "warning")
+					return null
+				}
+				surface.notice(`Running ${action.title}…`)
+				const result = yield* executor.execute(
+					token.value,
+					item.key,
+					executorOptions,
+				)
+				requestRefresh()
+				if (result.outcome === "succeeded")
+					surface.notice(
+						`✓ ${action.title}${result.detail ? ` — ${result.detail}` : ""}`,
+						"success",
+					)
+				else
+					surface.notice(
+						`${result.outcome === "skipped" ? "Skipped" : "Failed"}: ${action.title} — ${result.detail ?? "unknown error"}`,
+						"error",
+					)
+				warnLog(result.logError)
+				return result
+			})
+
 		const execute = (
 			item: SuperviseItem,
 			initial: SupervisorAction,
 		): Effect.Effect<void, never, any> =>
 			Effect.gen(function* () {
 				let action = initial
+				/** Why the current action replaced the one the user chose. */
+				let reason: string | null = null
 				const values: Record<string, string> = {}
 				while (true) {
-					ui.notice(`Preparing ${action.title}…`)
-					const resolution = yield* executor.resolve(
-						action,
-						values,
-						executorOptions,
-					)
+					surface.notice(`Preparing ${action.title}…`)
+					const current = action
+					const resolution = yield* executor
+						.resolve(current, values, executorOptions)
+						.pipe(
+							Effect.tapError((error) =>
+								Effect.flatMap(
+									executor.record(
+										current,
+										item.key,
+										"failed",
+										error.message,
+										env,
+									),
+									(logError) => Effect.sync(() => warnLog(logError)),
+								),
+							),
+						)
 					if (resolution.kind === "inputs") {
 						for (const input of resolution.inputs) {
 							const value = yield* ask(() =>
-								ui.text(
+								surface.text(
 									`${input.label}${input.required ? "" : " (optional; leave blank to skip)"}`,
 								),
 							)
 							if (value === null || (input.required && !value.trim())) {
-								yield* executor.record(
-									action,
-									item.key,
-									"cancelled",
-									`No value for ${input.label}`,
-									env,
+								warnLog(
+									yield* executor.record(
+										action,
+										item.key,
+										"cancelled",
+										`No value for ${input.label}`,
+										env,
+									),
 								)
-								ui.notice(`Cancelled ${action.title}`, "warning")
+								surface.notice(`Cancelled ${action.title}`, "warning")
 								return
 							}
 							values[input.id] = value
@@ -320,84 +433,113 @@ export const supervise = (
 					}
 					if (resolution.kind === "unavailable") {
 						if (resolution.fallback) {
-							const accepted = yield* ask(() =>
-								ui.confirm({
-									title: resolution.fallback!.title,
-									rationale: `${resolution.reason}. ${resolution.fallback!.rationale}`,
-									risk: resolution.fallback!.risk,
-									preview: ["Resolve the delegation to see exactly what runs."],
-									destructive: false,
-								}),
-							)
-							if (accepted) {
-								action = resolution.fallback
-								continue
-							}
+							// Resolve the fallback and show its real plan once.
+							reason = resolution.reason
+							action = resolution.fallback
+							continue
 						}
-						ui.notice(
+						surface.notice(
 							`${action.title} is unavailable: ${resolution.reason}`,
 							"warning",
 						)
 						return
 					}
-					const { plan } = resolution
-					ui.notice(`Confirm ${action.title}`)
-					const confirmed = yield* ask(() =>
-						ui.confirm({
-							title: action.title,
-							rationale: action.rationale,
-							risk: action.risk,
-							preview: plan.preview,
-							destructive: plan.destructive,
-						}),
-					)
-					if (!confirmed) {
-						yield* executor.record(
-							action,
-							item.key,
-							"cancelled",
-							"Declined at confirmation",
-							env,
-						)
-						ui.notice(`Cancelled ${action.title}`, "warning")
-						return
-					}
-					ui.notice(`Running ${action.title}…`)
-					const result = yield* executor.execute(
-						plan,
-						item.key,
-						executorOptions,
-					)
-					requestRefresh()
-					if (result.outcome === "succeeded") {
-						ui.notice(
-							`✓ ${action.title}${result.detail ? ` — ${result.detail}` : ""}`,
-							"success",
-						)
-						return
-					}
-					ui.notice(
-						`${result.outcome === "skipped" ? "Skipped" : "Failed"}: ${action.title} — ${result.detail ?? "unknown error"}`,
-						"error",
-					)
-					if (!result.fallback) return
-					const delegate = yield* ask(() =>
-						ui.confirm({
-							title: result.fallback!.title,
-							rationale: `${result.detail ?? "The agent is unavailable"}. ${result.fallback!.rationale}`,
-							risk: result.fallback!.risk,
-							preview: ["Resolve the delegation to see exactly what runs."],
-							destructive: false,
-						}),
-					)
-					if (!delegate) return
+					const result: {
+						readonly outcome: string
+						readonly detail: string | null
+						readonly fallback: SupervisorAction | null
+					} | null = yield* confirmAndRun(item, resolution.plan, reason)
+					if (!result?.fallback || result.outcome === "succeeded") return
+					reason = result.detail ?? "The agent is unavailable"
 					action = result.fallback
 				}
 			}).pipe(
 				Effect.catch((error) =>
-					Effect.sync(() => ui.notice(message(error), "error")),
+					Effect.sync(() => surface.notice(message(error), "error")),
 				),
 			)
+
+		/** Focus through the executor, with the pane's identity rechecked. */
+		const focus = (item: SuperviseItem) => {
+			const existing = item.actions.find(
+				(action) =>
+					action.type === "runtime" &&
+					action.payload.operation === "focus" &&
+					action.payload.target === "pane",
+			)
+			const ref = item.subject.runtime[0]
+			const pane = ref
+				? view.snapshot?.panes.find(
+						(candidate) => candidate.paneId === ref.paneId,
+					)
+				: undefined
+			const action: SupervisorAction | null =
+				existing ??
+				(ref && pane
+					? {
+							version: 1,
+							id: `${item.key}/focus-pane-${ref.paneId}`,
+							type: "runtime",
+							title: `Focus pane ${ref.paneId}`,
+							rationale: "Look at the session.",
+							risk: "reversible",
+							subject: item.subject,
+							preconditions: [
+								{
+									kind: "pane_matches",
+									runtime: ref.runtime,
+									paneId: pane.paneId,
+									tabId: pane.tabId,
+									cwd: pane.foregroundCwd ?? pane.cwd,
+									agentSessionId: pane.agentSessionId,
+									agentStatuses: [
+										"idle",
+										"working",
+										"blocked",
+										"done",
+										"unknown",
+									],
+								},
+							],
+							payload: {
+								runtime: ref.runtime,
+								operation: "focus",
+								target: "pane",
+								id: ref.paneId,
+							},
+						}
+					: null)
+			if (!action) {
+				surface.notice("This item has no pane to focus", "warning")
+				return Effect.void
+			}
+			// `f` is itself the explicit, single confirmation of a reversible focus.
+			return Effect.gen(function* () {
+				const resolution = yield* executor.resolve(action, {}, executorOptions)
+				if (resolution.kind !== "ready") {
+					surface.notice(`Cannot focus: ${action.title}`, "warning")
+					return
+				}
+				const token = yield* executor.confirm(
+					resolution.plan,
+					{ confirmed: true, destructiveConfirmed: false },
+					item.key,
+					executorOptions,
+				)
+				const result = yield* executor.execute(token, item.key, executorOptions)
+				surface.notice(
+					result.outcome === "succeeded"
+						? (result.detail ?? action.title)
+						: `Not focused — ${result.detail}`,
+					result.outcome === "succeeded" ? "info" : "error",
+				)
+				warnLog(result.logError)
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.sync(() => surface.notice(message(error), "error")),
+				),
+			)
+		}
 
 		const editPrompt = (item: SuperviseItem | null) =>
 			Effect.gen(function* () {
@@ -407,7 +549,7 @@ export const supervise = (
 						: (view.report?.workbases.find((workbase) => !workbase.error)
 								?.root ?? null)
 				if (!root) {
-					ui.notice("No workbase to edit a prompt for", "warning")
+					surface.notice("No workbase to edit a prompt for", "warning")
 					return
 				}
 				const path = supervisionPromptPath(root)
@@ -417,53 +559,40 @@ export const supervise = (
 					.filter(Boolean)
 				const read = fs.readFile(path).pipe(Effect.orElseSucceed(() => null))
 				const before = yield* read
-				ui.suspend()
+				surface.suspend()
 				const result = yield* fs
 					.runCommand([...editor, path], { cwd: root, passthrough: true })
-					.pipe(Effect.ensuring(Effect.sync(() => ui.resume())))
+					.pipe(Effect.ensuring(Effect.sync(() => surface.resume())))
 				if (result.exitCode !== 0) {
-					ui.notice(
+					surface.notice(
 						`${editor[0]} exited with code ${result.exitCode}`,
 						"warning",
 					)
 					return
 				}
 				const after = yield* read
-				ui.notice(
+				surface.notice(
 					after === before ? `No changes to ${path}` : `Saved ${path}`,
 					after === before ? "info" : "success",
 				)
 			}).pipe(
 				Effect.catch((error) =>
-					Effect.sync(() => ui.notice(message(error), "error")),
+					Effect.sync(() => surface.notice(message(error), "error")),
 				),
 			)
 
-		const handle = (intent: Exclude<Intent, { kind: "quit" }>) => {
+		const handle = (intent: Intent) => {
 			switch (intent.kind) {
 				case "execute":
 					return execute(intent.item, intent.action)
 				case "focus":
-					return Effect.gen(function* () {
-						const pane = intent.item.subject.runtime[0]
-						const runtime = yield* provider
-						if (!pane || !runtime) {
-							ui.notice("This item has no pane to focus", "warning")
-							return
-						}
-						yield* runtime.focus("pane", pane.paneId)
-						ui.notice(`Focused pane ${pane.paneId}`)
-					}).pipe(
-						Effect.catch((error) =>
-							Effect.sync(() => ui.notice(message(error), "error")),
-						),
-					)
+					return focus(intent.item)
 				case "edit":
 					return editPrompt(intent.item)
 				case "snooze":
 					return Effect.gen(function* () {
 						const choice = yield* ask(() =>
-							ui.choose(`Snooze ${intent.item.label} for`, SNOOZES),
+							surface.choose(`Snooze ${intent.item.label} for`, SNOOZES),
 						)
 						if (choice === null) return
 						yield* stateService.snooze(
@@ -476,12 +605,12 @@ export const supervise = (
 							env,
 						)
 						yield* render
-						ui.notice(
+						surface.notice(
 							`Snoozed ${intent.item.label} for ${SNOOZES.find((item) => item.key === choice)?.label}`,
 						)
 					}).pipe(
 						Effect.catch((error) =>
-							Effect.sync(() => ui.notice(message(error), "error")),
+							Effect.sync(() => surface.notice(message(error), "error")),
 						),
 					)
 				case "dismiss":
@@ -496,21 +625,29 @@ export const supervise = (
 							env,
 						)
 						yield* render
-						ui.notice(`Dismissed ${intent.item.label} until it changes`)
+						surface.notice(`Dismissed ${intent.item.label} until it changes`)
 					}).pipe(
 						Effect.catch((error) =>
-							Effect.sync(() => ui.notice(message(error), "error")),
+							Effect.sync(() => surface.notice(message(error), "error")),
 						),
 					)
 			}
 		}
 
 		while (true) {
-			const intent = yield* Queue.take(intents)
-			if (intent.kind === "quit") break
-			ui.status({ busy: true })
-			yield* handle(intent)
-			ui.status({ busy: false })
+			const intent = yield* Effect.raceFirst(
+				Queue.take(intents),
+				Effect.as(Deferred.await(quit), null),
+			)
+			if (intent === null) break
+			yield* handle(intent).pipe(
+				Effect.ensuring(
+					Effect.sync(() => {
+						pending = false
+						surface.status({ busy: false })
+					}),
+				),
+			)
 		}
 	}).pipe(Effect.scoped)
 

@@ -1077,27 +1077,35 @@ unit merge into one entry. The view refreshes on runtime events (Herdr
 `events.subscribe`, debounced) and every minute for pull request and ticket
 changes.
 
-| Key                           | Action                                              |
-| ----------------------------- | --------------------------------------------------- |
-| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                |
-| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                    |
-| `Enter`                       | Preview, confirm, and run the action                |
-| `f`                           | Focus the entry's pane                              |
-| `r`                           | Refresh now                                         |
-| `e`                           | Edit the workbase's supervision prompt in `$EDITOR` |
-| `s` / `d`                     | Snooze, or dismiss until the entry changes          |
-| `?` / `Esc` / `C-c`           | Help / close a dialog / quit                        |
+| Key                           | Action                                                     |
+| ----------------------------- | ---------------------------------------------------------- |
+| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                       |
+| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                           |
+| `Enter`                       | Preview, confirm, and run the action                       |
+| `f`                           | Focus the entry's pane                                     |
+| `r`                           | Refresh now                                                |
+| `e`                           | Edit the workbase's supervision prompt in `$EDITOR`        |
+| `s` / `d`                     | Snooze, or dismiss until the entry changes                 |
+| `?` / `Esc` / `q` or `C-c`    | Help / cancel a dialog / quit (cancelling any open dialog) |
 
 Before running, the supervisor shows exactly what will run: the argv, runtime
-operation, or prompt. After confirmation it rechecks every precondition against
-fresh state (document revisions, item status, pane identity, a tab's exact agent
-panes, live pull request state and head, ticket status, and paths) and skips the
-action if anything changed. Destructive actions need a second confirmation.
+operation, or prompt. Enter is ignored for a moment after a dialog opens and
+held keys never act, so a double press cannot confirm; further actions are
+ignored while one is pending. After confirmation it rechecks every precondition
+against fresh state (document revisions, item status, pull request state and
+head, ticket status, and paths first, then one runtime snapshot for pane
+identity and a tab's exact agent panes) and skips the action if anything
+changed. Destructive actions need a second confirmation (`y`), which the
+executor itself requires. If a refresh moves the selection, the supervisor says
+so and the next Enter only acknowledges the change.
 `agency` actions are re-resolved with `agency act --action <id> --json` and
-never run a stored argv; template inputs are prompted for. Work and fresh
+never run a stored argv; template inputs are prompted for, and the action is
+rediscovered just before running and skipped if its command changed. Work and fresh
 delegations start in a new, unfocused tab. `prompt_agent` and delegation to a
-bound agent require that agent to be idle and not blocked by a dialog;
-otherwise the supervisor offers a fresh kickoff with the same instructions.
+bound agent require the same agent session still in its pane, idle and not
+blocked by a dialog. When that agent is gone or blocked, the supervisor offers a
+fresh kickoff with the same instructions; a working agent is never doubled.
+Agency commands must arrive as `agency` actions, and only `https` URLs open.
 Every outcome, including declined confirmations, is appended to the local
 action log; snoozes and dismissals persist in local supervision state under
 `$AGENCY_STATE_DIR/supervision`.

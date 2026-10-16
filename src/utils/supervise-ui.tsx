@@ -6,7 +6,14 @@ import {
 	type TextNodeOptions,
 } from "@opentui/core"
 import { render, useKeyboard, useTerminalDimensions } from "@opentui/solid"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import {
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	Show,
+	untrack,
+} from "solid-js"
 import type { SupervisorAction } from "../attention-schema"
 import type {
 	BadgeTone,
@@ -57,13 +64,28 @@ export interface ConfirmRequest {
 	readonly destructive: boolean
 }
 
+/** What the user confirmed: once, and for destructive actions, twice. */
+export interface SupervisorConfirmation {
+	readonly confirmed: boolean
+	readonly destructiveConfirmed: boolean
+}
+
+const DECLINED: SupervisorConfirmation = {
+	confirmed: false,
+	destructiveConfirmed: false,
+}
+
+/** Enter is ignored this long after a dialog opens, so a double press can't confirm. */
+const CONFIRM_DELAY_MS = 250
+
 type Modal =
 	| { readonly kind: "help" }
 	| {
 			readonly kind: "confirm"
 			readonly request: ConfirmRequest
 			readonly stage: 1 | 2
-			readonly resolve: (value: boolean) => void
+			readonly openedAt: number
+			readonly resolve: (value: SupervisorConfirmation) => void
 	  }
 	| {
 			readonly kind: "text"
@@ -113,8 +135,16 @@ export const SUPERVISOR_BINDINGS: readonly Binding[] = [
 		footer: "d dismiss",
 	},
 	{ keys: "?", description: "Show or hide this help", footer: "? help" },
-	{ keys: "Esc", description: "Close a dialog or this help" },
-	{ keys: "C-c", description: "Quit", footer: "C-c quit" },
+	{
+		keys: "Esc",
+		description:
+			"Cancel a dialog (in text input, clear it first) or close this help; does nothing in the list",
+	},
+	{
+		keys: "q / C-c",
+		description: "Quit (C-c also cancels an open dialog)",
+		footer: "q quit",
+	},
 ]
 
 const toneColor: Record<BadgeTone, string> = {
@@ -180,41 +210,130 @@ export const SupervisorApp = (props: {
 }) => {
 	const dimensions = useTerminalDimensions()
 	const [selectedKey, setSelectedKey] = createSignal<string | null>(null)
-	const [actionIndex, setActionIndex] = createSignal(0)
+	const [selectedActionId, setSelectedActionId] = createSignal<string | null>(
+		null,
+	)
+	/** A refresh changed the selection; the next Enter only acknowledges it. */
+	const [guard, setGuard] = createSignal(false)
+	const [selectionNotice, setSelectionNotice] = createSignal<string | null>(
+		null,
+	)
 	const items = createMemo(() =>
 		(props.model?.groups ?? []).flatMap((group) => group.items),
 	)
-	const selectedIndex = createMemo(() => {
-		const list = items()
-		if (!list.length) return -1
-		const index = list.findIndex((item) => item.key === selectedKey())
-		return index >= 0 ? index : 0
-	})
+	const selectedIndex = createMemo(() =>
+		items().findIndex((item) => item.key === selectedKey()),
+	)
 	const selected = () => items()[selectedIndex()] ?? null
 	const selectedAction = () => {
 		const actions = selected()?.actions ?? []
-		return actions[Math.min(actionIndex(), actions.length - 1)] ?? null
+		return (
+			actions.find((action) => action.id === selectedActionId()) ??
+			actions[0] ??
+			null
+		)
+	}
+	let last: { index: number; label: string; actionTitle: string | null } = {
+		index: 0,
+		label: "",
+		actionTitle: null,
+	}
+	createEffect(() => {
+		const item = selected()
+		if (item)
+			last = {
+				index: selectedIndex(),
+				label: item.label,
+				actionTitle: selectedAction()?.title ?? null,
+			}
+	})
+	// Keep the selection on the same item and action across refreshes; when
+	// either disappears, move to a neighbour and say so.
+	createEffect(() => {
+		const list = items()
+		untrack(() => {
+			if (!list.length) return
+			const key = selectedKey()
+			const index = list.findIndex((item) => item.key === key)
+			if (key === null) {
+				setSelectedKey(list[0]!.key)
+				return
+			}
+			if (index < 0) {
+				const neighbour = list[Math.min(last.index, list.length - 1)]!
+				setSelectedKey(neighbour.key)
+				setSelectedActionId(null)
+				setGuard(true)
+				setSelectionNotice(
+					`${last.label} is gone; selected ${neighbour.label} instead`,
+				)
+				return
+			}
+			const actionId = selectedActionId()
+			if (
+				actionId !== null &&
+				!list[index]!.actions.some((action) => action.id === actionId)
+			) {
+				setSelectedActionId(null)
+				setGuard(true)
+				setSelectionNotice(
+					`${last.actionTitle ?? "The selected action"} is no longer offered`,
+				)
+			}
+		})
+	})
+	const userMoved = () => {
+		setGuard(false)
+		setSelectionNotice(null)
 	}
 	const select = (index: number) => {
 		const list = items()
 		if (!list.length) return
 		const next = list[Math.max(0, Math.min(list.length - 1, index))]!
-		if (next.key !== selected()?.key) setActionIndex(0)
+		if (next.key !== selected()?.key) setSelectedActionId(null)
 		setSelectedKey(next.key)
+		userMoved()
+	}
+	const selectAction = (index: number) => {
+		const actions = selected()?.actions ?? []
+		const action = actions[index]
+		if (!action) return
+		setSelectedActionId(action.id)
+		userMoved()
 	}
 	const moveAction = (offset: number) => {
-		const count = selected()?.actions.length ?? 0
-		if (!count) return
-		setActionIndex(
-			(Math.min(actionIndex(), count - 1) + offset + count) % count,
-		)
+		const actions = selected()?.actions ?? []
+		if (!actions.length) return
+		const current = Math.max(0, actions.indexOf(selectedAction()!))
+		selectAction((current + offset + actions.length) % actions.length)
+	}
+	const cancelModal = () => {
+		const modal = props.modal
+		props.setModal(null)
+		if (modal?.kind === "confirm") modal.resolve(DECLINED)
+		else if (modal?.kind === "text" || modal?.kind === "choose")
+			modal.resolve(null)
+	}
+	const quit = () => {
+		cancelModal()
+		props.handlers.onQuit()
 	}
 
 	useKeyboard((key) => {
 		if (key.ctrl && key.name === "c") {
 			key.preventDefault()
 			key.stopPropagation()
-			props.handlers.onQuit()
+			quit()
+			return
+		}
+		// A held key must never run or confirm anything; text entry keeps repeats.
+		if (
+			key.repeated &&
+			(key.name === "return" ||
+				(props.modal?.kind !== "text" && props.modal?.kind !== "choose"))
+		) {
+			key.preventDefault()
+			key.stopPropagation()
 			return
 		}
 		const modal = props.modal
@@ -228,22 +347,25 @@ export const SupervisorApp = (props: {
 			}
 			if (modal.kind !== "confirm") return
 			key.stopPropagation()
-			if (key.name === "escape") {
-				props.setModal(null)
-				modal.resolve(false)
+			if (key.name === "escape" || (modal.stage === 2 && key.name === "n")) {
+				cancelModal()
 				return
 			}
-			if (modal.stage === 1 && key.name === "return") {
+			if (
+				modal.stage === 1 &&
+				key.name === "return" &&
+				Date.now() - modal.openedAt >= CONFIRM_DELAY_MS
+			) {
 				if (modal.request.destructive) props.setModal({ ...modal, stage: 2 })
 				else {
 					props.setModal(null)
-					modal.resolve(true)
+					modal.resolve({ confirmed: true, destructiveConfirmed: false })
 				}
 				return
 			}
 			if (modal.stage === 2 && key.name === "y" && !key.ctrl && !key.meta) {
 				props.setModal(null)
-				modal.resolve(true)
+				modal.resolve({ confirmed: true, destructiveConfirmed: true })
 			}
 			return
 		}
@@ -299,18 +421,28 @@ export const SupervisorApp = (props: {
 		const item = selected()
 		if (/^[1-9]$/.test(key.name)) {
 			handled()
-			const index = Number(key.name) - 1
-			if (item && index < item.actions.length) setActionIndex(index)
+			selectAction(Number(key.name) - 1)
 			return
 		}
 		switch (key.name) {
 			case "return": {
 				handled()
+				if (guard()) {
+					setGuard(false)
+					setSelectionNotice(
+						`Selection changed: ${selected()?.label ?? "nothing"} · ${selectedAction()?.title ?? "no action"}. Press Enter again to run.`,
+					)
+					return
+				}
 				const action = selectedAction()
 				if (item && action && !props.status.busy)
 					props.handlers.onExecute(item, action)
 				return
 			}
+			case "q":
+				handled()
+				quit()
+				return
 			case "f":
 				handled()
 				if (item && !props.status.busy) props.handlers.onFocus(item)
@@ -387,7 +519,7 @@ export const SupervisorApp = (props: {
 	}
 	const footer = () =>
 		props.status.busy
-			? "working… · ? help · C-c quit"
+			? "working… · ? help · q quit"
 			: SUPERVISOR_BINDINGS.flatMap((binding) =>
 					binding.footer ? [binding.footer] : [],
 				).join(" · ")
@@ -522,7 +654,10 @@ export const SupervisorApp = (props: {
 			<box height={1} flexShrink={0} />
 			<text height={1} wrapMode="none">
 				{confirmProps.modal.stage === 2
-					? span("Destructive: press y to confirm · esc cancel", macchiato.red)
+					? span(
+							"Destructive: press y to confirm · n or esc cancel",
+							macchiato.red,
+						)
 					: span(
 							confirmProps.modal.request.destructive
 								? "enter continue · esc cancel"
@@ -660,9 +795,15 @@ export const SupervisorApp = (props: {
 				flexShrink={0}
 				wrapMode="none"
 				paddingLeft={1}
-				fg={props.notice ? noticeColor[props.notice.tone] : macchiato.overlay1}
+				fg={
+					selectionNotice()
+						? macchiato.yellow
+						: props.notice
+							? noticeColor[props.notice.tone]
+							: macchiato.overlay1
+				}
 			>
-				{props.notice?.text ?? " "}
+				{selectionNotice() ?? props.notice?.text ?? " "}
 			</text>
 			<text
 				height={1}
@@ -700,6 +841,8 @@ export const createSupervisorSession = async (handlers: SupervisorHandlers) => {
 	let closed = false
 	let quitting = false
 	const quit = () => {
+		// An open dialog is cancelled before the quit is queued.
+		dismissModal()
 		if (quitting) return
 		quitting = true
 		handlers.onQuit()
@@ -716,7 +859,7 @@ export const createSupervisorSession = async (handlers: SupervisorHandlers) => {
 	const dismissModal = () => {
 		const current = modal()
 		setModal(null)
-		if (current?.kind === "confirm") current.resolve(false)
+		if (current?.kind === "confirm") current.resolve(DECLINED)
 		else if (current?.kind === "text" || current?.kind === "choose")
 			current.resolve(null)
 	}
@@ -761,9 +904,15 @@ export const createSupervisorSession = async (handlers: SupervisorHandlers) => {
 			changed()
 		},
 		confirm: (request: ConfirmRequest) =>
-			open<boolean>(
-				(resolve) => ({ kind: "confirm", request, stage: 1, resolve }),
-				false,
+			open<SupervisorConfirmation>(
+				(resolve) => ({
+					kind: "confirm",
+					request,
+					stage: 1,
+					openedAt: Date.now(),
+					resolve,
+				}),
+				DECLINED,
 			),
 		text: (prompt: string) =>
 			open<string | null>(

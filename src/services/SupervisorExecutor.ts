@@ -3,17 +3,17 @@ import { dirname, join } from "node:path"
 import { ActDiscovery } from "../act-schema"
 import {
 	ACTION_VERSION,
+	SupervisorAction,
 	type ActionPrecondition,
-	type SupervisorAction,
 } from "../attention-schema"
 import { shellCommand } from "../utils/command"
 import { archivedTaskDirectory } from "../workbase/archive"
 import { documentRevision } from "../workbase/document-revision"
 import { parseFrontmatterSync } from "../workbase/frontmatter"
 import type {
+	RuntimeKind,
 	RuntimePane,
 	RuntimeProvider,
-	RuntimeSnapshot,
 } from "../workbase/runtime"
 import { FileSystemService } from "./FileSystemService"
 import {
@@ -31,6 +31,8 @@ import { TicketService } from "./TicketService"
 class SupervisorActionError extends Data.TaggedError("SupervisorActionError")<{
 	readonly message: string
 	readonly cause?: unknown
+	/** Whether a fresh kickoff is a sensible alternative to this failure. */
+	readonly fallbackAllowed?: boolean
 }> {}
 
 type Action<T extends SupervisorAction["type"]> = Extract<
@@ -54,17 +56,39 @@ type Services =
 	| RuntimeBindingService
 	| SupervisionStateService
 
+/** The runtime as seen by one snapshot, or null when unavailable. */
+type RuntimeView = {
+	readonly kind: RuntimeKind
+	readonly panes: readonly RuntimePane[]
+} | null
+
+interface RuntimeCheck {
+	readonly failures: readonly string[]
+	/** Offer the plan's fallback, such as when the bound agent is gone. */
+	readonly fallbackAllowed: boolean
+}
+
+const RUNTIME_OK: RuntimeCheck = { failures: [], fallbackAllowed: false }
+
 interface ExecutionPlan {
 	readonly action: SupervisorAction
 	/** Exactly what will run: argv, runtime operation, prompt, or URL. */
 	readonly preview: readonly string[]
 	/** Destructive actions need a second confirmation. */
 	readonly destructive: boolean
-	/** Plan-specific readiness checks, run with the preconditions. */
+	/** File, network, and discovery checks, run before the runtime snapshot. */
 	readonly verify: Effect.Effect<readonly string[], never, Services>
+	/** Checks against the one runtime snapshot taken right before running. */
+	readonly verifyRuntime: (runtime: RuntimeView) => RuntimeCheck
 	readonly run: Effect.Effect<string | null, SupervisorActionError, Services>
-	/** Offered when the plan cannot run, such as a busy bound agent. */
+	/** Offered when the plan cannot run because its agent is gone or blocked. */
 	readonly fallback: SupervisorAction | null
+}
+
+/** A plan the user confirmed; only `confirm` creates one. */
+interface ConfirmedPlan {
+	readonly plan: ExecutionPlan
+	readonly __confirmed: unique symbol
 }
 
 type Resolution =
@@ -82,10 +106,12 @@ interface ExecutionResult {
 	readonly outcome: "succeeded" | "failed" | "skipped"
 	readonly detail: string | null
 	readonly fallback: SupervisorAction | null
+	/** Why the outcome could not be appended to the action log. */
+	readonly logError: string | null
 }
 
 export interface ExecutorOptions {
-	/** The argv that runs this Agency CLI; replaces a leading `agency`. */
+	/** The argv that runs this Agency CLI; replaces `agency` in discovered argv. */
 	readonly agencyCommand: readonly string[]
 	readonly env?: NodeJS.ProcessEnv
 }
@@ -141,6 +167,9 @@ const errorMessage = (error: unknown) =>
 			? error.message
 			: String(error)
 
+const absurd = (value: never): string =>
+	`Unknown precondition: ${JSON.stringify(value)}`
+
 /**
  * Substitute `<input>` placeholders and append optional inputs by their option.
  * Empty optional values are omitted.
@@ -161,27 +190,129 @@ const fillTemplate = (
 	return argv
 }
 
+/** Only https URLs open; anything else could launch a local handler. */
+const safeUrl = (value: string) => {
+	if (value.startsWith("-")) return null
+	try {
+		const url = new URL(value)
+		return url.protocol === "https:" ? url.href : null
+	} catch {
+		return null
+	}
+}
+
 const decodeDiscovery = Schema.decodeUnknownOption(
 	Schema.Struct({ ok: Schema.Literal(true), result: ActDiscovery }),
 )
+const decodeAction = Schema.decodeUnknownEffect(SupervisorAction)
 
 const StatusDocument = Schema.Struct({ status: Schema.optional(Schema.String) })
 const decodeStatus = Schema.decodeUnknownOption(StatusDocument)
+
+type RuntimePrecondition = Extract<
+	ActionPrecondition,
+	{ kind: "pane_matches" | "tab_agent_panes" }
+>
+
+const isRuntimePrecondition = (
+	precondition: ActionPrecondition,
+): precondition is RuntimePrecondition =>
+	precondition.kind === "pane_matches" ||
+	precondition.kind === "tab_agent_panes"
+
+/** Evaluate pane and tab preconditions against one runtime snapshot. */
+const checkRuntimePrecondition = (
+	precondition: RuntimePrecondition,
+	runtime: RuntimeView,
+): string | null => {
+	if (!runtime) return "The runtime is unavailable"
+	if (precondition.runtime !== runtime.kind)
+		return `The action targets ${precondition.runtime}, but the runtime is ${runtime.kind}`
+	if (precondition.kind === "tab_agent_panes") {
+		const current = runtime.panes
+			.filter(
+				(pane) => pane.tabId === precondition.tabId && pane.agent !== null,
+			)
+			.map((pane) => pane.paneId)
+			.sort()
+		const expected = [...precondition.paneIds].sort()
+		return current.join("\n") === expected.join("\n")
+			? null
+			: `Tab ${precondition.tabId}'s agent panes changed`
+	}
+	const pane = runtime.panes.find((item) => item.paneId === precondition.paneId)
+	if (!pane) return `Pane ${precondition.paneId} is gone`
+	if (pane.tabId !== precondition.tabId)
+		return `Pane ${precondition.paneId} moved to tab ${pane.tabId}`
+	if ((pane.foregroundCwd ?? pane.cwd) !== precondition.cwd)
+		return `Pane ${precondition.paneId} changed directory`
+	if (pane.agentSessionId !== precondition.agentSessionId)
+		return `Pane ${precondition.paneId} hosts a different session`
+	return precondition.agentStatuses.includes(pane.agentStatus)
+		? null
+		: `The agent in pane ${precondition.paneId} is ${pane.agentStatus}`
+}
+
+/**
+ * Whether a pane hosts the expected agent and it can take a prompt now. A
+ * fresh kickoff is offered only when that agent is gone or blocked, never
+ * while it works, which would start a second session on the unit.
+ */
+const agentReadiness = (
+	runtime: RuntimeView,
+	paneId: string,
+	expected: {
+		readonly agentSessionId: string | null
+		readonly tabId: string | null
+	},
+): RuntimeCheck => {
+	const fail = (message: string, fallbackAllowed: boolean) => ({
+		failures: [message],
+		fallbackAllowed,
+	})
+	if (!runtime) return fail("The runtime is unavailable", false)
+	const pane = runtime.panes.find((item) => item.paneId === paneId)
+	if (!pane || pane.agent === null)
+		return fail(`The agent in pane ${paneId} is gone`, true)
+	if (
+		expected.agentSessionId !== null &&
+		pane.agentSessionId !== expected.agentSessionId
+	)
+		return fail(`Pane ${paneId} now hosts a different agent session`, true)
+	if (expected.tabId !== null && pane.tabId !== expected.tabId)
+		return fail(`Pane ${paneId} moved to tab ${pane.tabId}`, false)
+	if (pane.agentStatus === "blocked")
+		return fail(`The agent in pane ${paneId} is blocked by a dialog`, true)
+	return READY_AGENT.has(pane.agentStatus)
+		? RUNTIME_OK
+		: fail(
+				`The agent in pane ${paneId} is ${pane.agentStatus}; try again once it settles`,
+				false,
+			)
+}
 
 export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 	"SupervisorExecutor",
 	{
 		make: Effect.sync(() => {
+			const confirmations = new WeakSet<object>()
+
 			const provider = (env: NodeJS.ProcessEnv | undefined) =>
 				Effect.flatMap(RuntimeService, (runtime) => runtime.provider(env))
 
-			const freshSnapshot = (env: NodeJS.ProcessEnv | undefined) =>
+			const runtimeView = (env: NodeJS.ProcessEnv | undefined) =>
 				Effect.gen(function* () {
 					const runtime = yield* provider(env)
 					if (!runtime) return null
-					return yield* runtime
-						.snapshot()
-						.pipe(Effect.orElseSucceed((): RuntimeSnapshot | null => null))
+					return yield* runtime.snapshot().pipe(
+						Effect.map(
+							(snapshot): RuntimeView => ({
+								kind: runtime.kind,
+								panes: snapshot.panes,
+							}),
+						),
+						Effect.orElseSucceed((): RuntimeView => null),
+					)
 				})
 
 			const workbaseRoot = (action: SupervisorAction) =>
@@ -208,153 +339,161 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					}
 				})
 
+			/** File, document, pull request, and ticket preconditions, in parallel. */
+			const checkStatePreconditions = (action: SupervisorAction) =>
+				Effect.gen(function* () {
+					const fs = yield* FileSystemService
+					const pullRequests = yield* PullRequestStatusService
+					const tickets = yield* TicketService
+					const root = workbaseRoot(action)
+					const urls = [
+						...new Set(
+							action.preconditions.flatMap((precondition) =>
+								precondition.kind === "pull_request_state" ||
+								precondition.kind === "pull_request_head"
+									? [precondition.url]
+									: [],
+							),
+						),
+					]
+					const live = new Map<string, LivePullRequest>(
+						yield* Effect.forEach(
+							urls,
+							(url) =>
+								Effect.map(
+									pullRequests.read(url, { fresh: true }),
+									(pr) => [url, pr] as const,
+								),
+							{ concurrency: "unbounded" },
+						),
+					)
+					const check = (
+						precondition: Exclude<ActionPrecondition, RuntimePrecondition>,
+					): Effect.Effect<string | null, never, Services> =>
+						Effect.gen(function* () {
+							switch (precondition.kind) {
+								case "document_revision": {
+									const content = yield* fs
+										.readFile(precondition.path)
+										.pipe(Effect.orElseSucceed(() => null))
+									if (content === null)
+										return `${precondition.path} no longer exists`
+									return documentRevision(content) === precondition.sha256
+										? null
+										: `${precondition.path} changed`
+								}
+								case "item_status":
+								case "item_archived": {
+									const unit = parseUnit(precondition.unit)
+									if (!unit || !root)
+										return `Cannot locate ${precondition.unit}`
+									const documents = unitDocuments(root, unit)
+									const active = yield* readStatus(documents.active)
+									const archived =
+										active === null
+											? yield* readStatus(documents.archived)
+											: null
+									if (active === null && archived === null)
+										return `${unitLabel(unit)} no longer exists`
+									if (precondition.kind === "item_archived") {
+										const isArchived = active === null
+										return isArchived === precondition.archived
+											? null
+											: `${unitLabel(unit)} is ${isArchived ? "" : "no longer "}archived`
+									}
+									const status = active ?? archived!
+									return (precondition.statuses as readonly string[]).includes(
+										status,
+									)
+										? null
+										: `${unitLabel(unit)} is now ${status}`
+								}
+								case "pull_request_state":
+								case "pull_request_head": {
+									const pr = live.get(precondition.url)!
+									if (pr.state !== "available")
+										return `Cannot read ${precondition.url}: ${pr.reason}`
+									if (precondition.kind === "pull_request_head")
+										return pr.headSha === precondition.sha
+											? null
+											: "The pull request head changed since it was reviewed"
+									return (precondition.states as readonly string[]).includes(
+										pr.prState,
+									)
+										? null
+										: `The pull request is now ${pr.prState}`
+								}
+								case "ticket_status_category": {
+									const ticket = yield* tickets.read(precondition.url, {
+										fresh: true,
+									})
+									if (ticket.state !== "available")
+										return `Cannot read ${precondition.url}`
+									return precondition.statusCategories.includes(
+										ticket.statusCategory,
+									)
+										? null
+										: `${ticket.key} is now ${ticket.status}`
+								}
+								case "path_exists": {
+									const exists = yield* fs
+										.exists(precondition.path)
+										.pipe(Effect.orElseSucceed(() => !precondition.exists))
+									return exists === precondition.exists
+										? null
+										: `${precondition.path} ${exists ? "exists again" : "no longer exists"}`
+								}
+								default:
+									return absurd(precondition)
+							}
+						})
+					const failures = yield* Effect.forEach(
+						action.preconditions.filter(
+							(
+								precondition,
+							): precondition is Exclude<
+								ActionPrecondition,
+								RuntimePrecondition
+							> => !isRuntimePrecondition(precondition),
+						),
+						check,
+						{ concurrency: "unbounded" },
+					)
+					return failures.filter((failure): failure is string => !!failure)
+				})
+
+			const checkRuntimePreconditions = (
+				action: SupervisorAction,
+				runtime: RuntimeView,
+			) =>
+				action.preconditions
+					.filter(isRuntimePrecondition)
+					.flatMap((precondition) => {
+						const failure = checkRuntimePrecondition(precondition, runtime)
+						return failure ? [failure] : []
+					})
+
 			/** Recheck every precondition against fresh state; returns failures. */
 			const checkPreconditions = (
 				action: SupervisorAction,
 				env: NodeJS.ProcessEnv | undefined,
 			) =>
 				Effect.gen(function* () {
-					const fs = yield* FileSystemService
-					const pullRequests = yield* PullRequestStatusService
-					const tickets = yield* TicketService
-					const root = workbaseRoot(action)
-					let snapshot: RuntimeSnapshot | null | undefined
-					const panes = function* () {
-						if (snapshot === undefined) snapshot = yield* freshSnapshot(env)
-						return snapshot?.panes ?? null
-					}
-					const pullRequestCache = new Map<string, LivePullRequest>()
-					const pullRequest = function* (url: string) {
-						const cached = pullRequestCache.get(url)
-						if (cached) return cached
-						const live = yield* pullRequests.read(url, { fresh: true })
-						pullRequestCache.set(url, live)
-						return live
-					}
-					const failures: string[] = []
-					const check = function* (precondition: ActionPrecondition) {
-						switch (precondition.kind) {
-							case "document_revision": {
-								const content = yield* fs
-									.readFile(precondition.path)
-									.pipe(Effect.orElseSucceed(() => null))
-								if (content === null)
-									return `${precondition.path} no longer exists`
-								return documentRevision(content) === precondition.sha256
-									? null
-									: `${precondition.path} changed`
-							}
-							case "item_status":
-							case "item_archived": {
-								const unit = parseUnit(precondition.unit)
-								if (!unit || !root) return `Cannot locate ${precondition.unit}`
-								const documents = unitDocuments(root, unit)
-								const active = yield* readStatus(documents.active)
-								const archived =
-									active === null ? yield* readStatus(documents.archived) : null
-								if (active === null && archived === null)
-									return `${unitLabel(unit)} no longer exists`
-								if (precondition.kind === "item_archived") {
-									const isArchived = active === null
-									return isArchived === precondition.archived
-										? null
-										: `${unitLabel(unit)} is ${isArchived ? "" : "no longer "}archived`
-								}
-								const status = active ?? archived!
-								return (precondition.statuses as readonly string[]).includes(
-									status,
-								)
-									? null
-									: `${unitLabel(unit)} is now ${status}`
-							}
-							case "pane_matches": {
-								const live = yield* panes()
-								if (!live) return "The runtime is unavailable"
-								const pane = live.find(
-									(item) => item.paneId === precondition.paneId,
-								)
-								if (!pane) return `Pane ${precondition.paneId} is gone`
-								if (pane.tabId !== precondition.tabId)
-									return `Pane ${precondition.paneId} moved to tab ${pane.tabId}`
-								if ((pane.foregroundCwd ?? pane.cwd) !== precondition.cwd)
-									return `Pane ${precondition.paneId} changed directory`
-								if (pane.agentSessionId !== precondition.agentSessionId)
-									return `Pane ${precondition.paneId} hosts a different session`
-								return precondition.agentStatuses.includes(pane.agentStatus)
-									? null
-									: `The agent in pane ${precondition.paneId} is ${pane.agentStatus}`
-							}
-							case "tab_agent_panes": {
-								const live = yield* panes()
-								if (!live) return "The runtime is unavailable"
-								const current = live
-									.filter(
-										(pane) =>
-											pane.tabId === precondition.tabId && pane.agent !== null,
-									)
-									.map((pane) => pane.paneId)
-									.sort()
-								const expected = [...precondition.paneIds].sort()
-								return current.join("\n") === expected.join("\n")
-									? null
-									: `Tab ${precondition.tabId}'s agent panes changed`
-							}
-							case "pull_request_state": {
-								const live = yield* pullRequest(precondition.url)
-								if (live.state !== "available")
-									return `Cannot read ${precondition.url}: ${live.reason}`
-								return (precondition.states as readonly string[]).includes(
-									live.prState,
-								)
-									? null
-									: `The pull request is now ${live.prState}`
-							}
-							case "pull_request_head": {
-								const live = yield* pullRequest(precondition.url)
-								if (live.state !== "available")
-									return `Cannot read ${precondition.url}: ${live.reason}`
-								return live.headSha === precondition.sha
-									? null
-									: "The pull request head changed since it was reviewed"
-							}
-							case "ticket_status_category": {
-								const ticket = yield* tickets.read(precondition.url, {
-									fresh: true,
-								})
-								if (ticket.state !== "available")
-									return `Cannot read ${precondition.url}`
-								return precondition.statusCategories.includes(
-									ticket.statusCategory,
-								)
-									? null
-									: `${ticket.key} is now ${ticket.status}`
-							}
-							case "path_exists": {
-								const exists = yield* fs
-									.exists(precondition.path)
-									.pipe(Effect.orElseSucceed(() => !precondition.exists))
-								return exists === precondition.exists
-									? null
-									: `${precondition.path} ${exists ? "exists again" : "no longer exists"}`
-							}
-						}
-					}
-					for (const precondition of action.preconditions) {
-						const failure = yield* Effect.gen(() => check(precondition))
-						if (failure) failures.push(failure)
-					}
-					return failures
+					const state = yield* checkStatePreconditions(action)
+					const runtime = yield* runtimeView(env)
+					return [...state, ...checkRuntimePreconditions(action, runtime)]
 				})
 
 			const runArgv = (
 				argv: readonly string[],
 				cwd: string | undefined,
 				options: ExecutorOptions,
+				discovered: boolean,
 			) =>
 				Effect.gen(function* () {
 					const fs = yield* FileSystemService
 					const resolved =
-						argv[0] === "agency"
+						discovered && argv[0] === "agency"
 							? [...options.agencyCommand, ...argv.slice(1)]
 							: [...argv]
 					const result = yield* fs
@@ -381,8 +520,15 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					return lastLine(result.stdout, result.stderr)
 				})
 
-			const runtimeError = (error: { readonly message: string }) =>
-				new SupervisorActionError({ message: error.message, cause: error })
+			const runtimeError = (error: {
+				readonly message: string
+				readonly code?: string | null
+			}) =>
+				new SupervisorActionError({
+					message: error.message,
+					cause: error,
+					fallbackAllowed: error.code === "agent_blocked",
+				})
 
 			const requireRuntime = (env: NodeJS.ProcessEnv | undefined) =>
 				Effect.flatMap(provider(env), (runtime) =>
@@ -407,47 +553,34 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					type: "delegate",
 					title: "Delegate to a fresh agent",
 					rationale:
-						"The bound agent is gone, busy, or blocked by a dialog; start a new session instead.",
+						"The bound agent is gone or blocked by a dialog; start a new session instead.",
 					risk: "reversible",
 					subject: { ...action.subject, runtime: [] },
 					preconditions: action.preconditions.filter(
-						(precondition) =>
-							precondition.kind !== "pane_matches" &&
-							precondition.kind !== "tab_agent_panes",
+						(precondition) => !isRuntimePrecondition(precondition),
 					),
 					payload: { unit, instructions, via: "kickoff" },
 				}
 			}
 
-			/** Whether a pane hosts an agent that can take a prompt now. */
-			const agentReadiness = (
-				paneId: string,
-				env: NodeJS.ProcessEnv | undefined,
-			) =>
-				Effect.map(freshSnapshot(env), (snapshot): string | null => {
-					if (!snapshot) return "The runtime is unavailable"
-					const pane = snapshot.panes.find((item) => item.paneId === paneId)
-					if (!pane) return `Pane ${paneId} is gone`
-					if (pane.agent === null) return `No agent runs in pane ${paneId}`
-					if (pane.agentStatus === "blocked")
-						return `The agent in pane ${paneId} is blocked by a dialog`
-					return READY_AGENT.has(pane.agentStatus)
-						? null
-						: `The agent in pane ${paneId} is ${pane.agentStatus}`
-				})
-
 			const promptPlan = (
 				action: SupervisorAction,
 				paneId: string,
 				prompt: string,
+				expected: {
+					readonly agentSessionId: string | null
+					readonly tabId: string | null
+				},
 				options: ExecutorOptions,
 			): ExecutionPlan => ({
 				action,
-				preview: [`Prompt the agent in pane ${paneId}:`, prompt],
+				preview: [
+					`Prompt the agent in pane ${paneId}${expected.agentSessionId ? ` (session ${expected.agentSessionId})` : ""}:`,
+					prompt,
+				],
 				destructive: action.risk === "destructive",
-				verify: Effect.map(agentReadiness(paneId, options.env), (reason) =>
-					reason ? [reason] : [],
-				),
+				verify: Effect.succeed([]),
+				verifyRuntime: (runtime) => agentReadiness(runtime, paneId, expected),
 				run: Effect.gen(function* () {
 					const runtime = yield* requireRuntime(options.env)
 					yield* runtime
@@ -465,6 +598,7 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					readonly unit: { taskId: string; phaseId?: string }
 					readonly argv: readonly string[]
 					readonly instructions?: string
+					readonly verify?: Effect.Effect<readonly string[], never, Services>
 				},
 				options: ExecutorOptions,
 			): ExecutionPlan => {
@@ -493,12 +627,21 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					destructive: action.risk === "destructive",
 					verify: Effect.gen(function* () {
 						const fs = yield* FileSystemService
-						return (yield* fs
+						const exists = yield* fs
 							.isDirectory(directory)
-							.pipe(Effect.orElseSucceed(() => false)))
-							? []
-							: [`${directory} does not exist`]
+							.pipe(Effect.orElseSucceed(() => false))
+						return [
+							...(exists ? [] : [`${directory} does not exist`]),
+							...(input.verify ? yield* input.verify : []),
+						]
 					}),
+					verifyRuntime: (runtime) =>
+						runtime
+							? RUNTIME_OK
+							: {
+									failures: ["No runtime is available"],
+									fallbackAllowed: false,
+								},
 					run: Effect.gen(function* () {
 						const runtime = yield* requireRuntime(options.env)
 						const launched = yield* runtime
@@ -552,20 +695,27 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 				}
 			}
 
-			/** The live pane bound to (or hosting) a unit, if any. */
+			/**
+			 * The live pane hosting a unit's bound agent. Pane IDs are reused, so a
+			 * known session must match; a recorded pane counts alone only when its
+			 * binding never knew the session.
+			 */
 			const boundPane = (
 				action: Action<"delegate">,
 				env: NodeJS.ProcessEnv | undefined,
 			) =>
 				Effect.gen(function* () {
-					const snapshot = yield* freshSnapshot(env)
-					if (!snapshot) return null
-					const live = (paneId: string) =>
-						snapshot.panes.find(
-							(pane) => pane.paneId === paneId && pane.agent !== null,
+					const runtime = yield* runtimeView(env)
+					if (!runtime) return null
+					const agentPane = (paneId: string, session: string | null) =>
+						runtime.panes.find(
+							(pane) =>
+								pane.paneId === paneId &&
+								pane.agent !== null &&
+								(session === null || pane.agentSessionId === session),
 						) ?? null
 					for (const ref of action.subject.runtime) {
-						const pane = live(ref.paneId)
+						const pane = agentPane(ref.paneId, ref.agentSessionId)
 						if (pane) return pane
 					}
 					const root = action.subject.workbase?.root
@@ -576,15 +726,16 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					const binding = bindings.find(
 						(item) => item.unit === action.payload.unit,
 					)
-					const pane: RuntimePane | null = binding
-						? (snapshot.panes.find(
-								(item) =>
-									item.agent !== null &&
-									binding.agentSessionId !== null &&
-									item.agentSessionId === binding.agentSessionId,
-							) ?? live(binding.paneId))
-						: null
-					return pane
+					if (!binding) return null
+					if (binding.agentSessionId === null)
+						return agentPane(binding.paneId, null)
+					return (
+						runtime.panes.find(
+							(pane) =>
+								pane.agent !== null &&
+								pane.agentSessionId === binding.agentSessionId,
+						) ?? null
+					)
 				})
 
 			const discover = (action: Action<"agency">, options: ExecutorOptions) =>
@@ -646,6 +797,18 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					)
 				})
 
+			/** The parts of a discovered action that determine what runs. */
+			const signature = (entry: {
+				readonly command?: readonly string[] | null
+				readonly commandTemplate?: readonly string[]
+				readonly followUpCommands?: readonly (readonly string[])[]
+			}) =>
+				JSON.stringify([
+					entry.command ?? null,
+					entry.commandTemplate ?? null,
+					entry.followUpCommands ?? [],
+				])
+
 			const agencyResolution = (
 				action: Action<"agency">,
 				values: Readonly<Record<string, string>>,
@@ -682,6 +845,21 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 							reason: `Action '${entry.id}' has no command`,
 							fallback: null,
 						} satisfies Resolution
+					const previewed = signature(entry)
+					// Immediately before running, the action must still be discovered
+					// exactly as previewed.
+					const rediscover = discover(action, options).pipe(
+						Effect.map((current) =>
+							!current
+								? [`Action '${action.payload.actionId}' no longer applies`]
+								: !current.available
+									? [current.blockedReason ?? `'${current.id}' is unavailable`]
+									: signature(current) !== previewed
+										? [`'${current.id}' changed since it was previewed`]
+										: [],
+						),
+						Effect.catch((error) => Effect.succeed([error.message])),
+					)
 					const selector = action.payload.selector
 					if (entry.id === "work" && selector)
 						return {
@@ -692,6 +870,7 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 									root: action.payload.cwd,
 									unit: { taskId: selector.task, phaseId: selector.phase },
 									argv,
+									verify: rediscover,
 								},
 								options,
 							),
@@ -706,13 +885,23 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 							action,
 							preview: [argv, ...followUps].map(shellCommand),
 							destructive: action.risk === "destructive",
-							verify: Effect.succeed([]),
+							verify: rediscover,
+							verifyRuntime: () => RUNTIME_OK,
 							run: Effect.gen(function* () {
-								let detail = yield* runArgv(argv, action.payload.cwd, options)
+								let detail = yield* runArgv(
+									argv,
+									action.payload.cwd,
+									options,
+									true,
+								)
 								for (const followUp of followUps)
 									detail =
-										(yield* runArgv(followUp, action.payload.cwd, options)) ??
-										detail
+										(yield* runArgv(
+											followUp,
+											action.payload.cwd,
+											options,
+											true,
+										)) ?? detail
 								if (bind && createdTask) {
 									yield* (yield* RuntimeBindingService)
 										.record(
@@ -747,11 +936,13 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 					} satisfies Resolution
 				})
 
-			/**
-			 * Turn an action into an exact, previewable plan. Agency actions are
-			 * re-resolved through `agency act --json`; stored argv is never run.
-			 */
-			const resolve = (
+			const unavailable = (reason: string): Resolution => ({
+				kind: "unavailable",
+				reason,
+				fallback: null,
+			})
+
+			const resolveDecoded = (
 				action: SupervisorAction,
 				values: Readonly<Record<string, string>>,
 				options: ExecutorOptions,
@@ -768,14 +959,28 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 								preview: [`${runtime}: ${operation} ${target} ${id}`],
 								destructive: action.risk === "destructive",
 								verify: Effect.succeed([]),
+								verifyRuntime: (view) =>
+									!view
+										? {
+												failures: ["The runtime is unavailable"],
+												fallbackAllowed: false,
+											}
+										: view.kind !== runtime
+											? {
+													failures: [
+														`The action targets ${runtime}, but the runtime is ${view.kind}`,
+													],
+													fallbackAllowed: false,
+												}
+											: RUNTIME_OK,
 								run: Effect.gen(function* () {
-									const provider: RuntimeProvider = yield* requireRuntime(
+									const live: RuntimeProvider = yield* requireRuntime(
 										options.env,
 									)
 									yield* (
 										operation === "focus"
-											? provider.focus(target, id)
-											: provider.close(target, id)
+											? live.focus(target, id)
+											: live.close(target, id)
 									).pipe(Effect.mapError(runtimeError))
 									return `${operation === "focus" ? "Focused" : "Closed"} ${target} ${id}`
 								}),
@@ -784,6 +989,12 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 						})
 					}
 					case "command": {
+						if (action.payload.argv[0] === "agency")
+							return Effect.succeed(
+								unavailable(
+									"Agency commands must be agency actions so they are re-resolved",
+								),
+							)
 						const cwd =
 							action.payload.cwd ?? action.subject.workbase?.root ?? undefined
 						return Effect.succeed({
@@ -796,7 +1007,8 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 								],
 								destructive: action.risk === "destructive",
 								verify: Effect.succeed([]),
-								run: runArgv(action.payload.argv, cwd, options),
+								verifyRuntime: () => RUNTIME_OK,
+								run: runArgv(action.payload.argv, cwd, options, false),
 								fallback: null,
 							},
 						})
@@ -808,6 +1020,13 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 								action,
 								action.payload.paneId,
 								action.payload.prompt,
+								{
+									agentSessionId: action.payload.agentSessionId,
+									tabId:
+										action.subject.runtime.find(
+											(ref) => ref.paneId === action.payload.paneId,
+										)?.tabId ?? null,
+								},
 								options,
 							),
 						})
@@ -822,6 +1041,10 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 											action,
 											pane.paneId,
 											action.payload.instructions,
+											{
+												agentSessionId: pane.agentSessionId,
+												tabId: pane.tabId,
+											},
 											options,
 										),
 									}
@@ -835,9 +1058,14 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 									},
 						)
 					case "open_url": {
+						const url = safeUrl(action.payload.url)
+						if (!url)
+							return Effect.succeed(
+								unavailable(`Only https URLs open: ${action.payload.url}`),
+							)
 						const argv = [
 							process.platform === "darwin" ? "open" : "xdg-open",
-							action.payload.url,
+							url,
 						]
 						return Effect.succeed({
 							kind: "ready",
@@ -846,9 +1074,10 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 								preview: [shellCommand(argv)],
 								destructive: false,
 								verify: Effect.succeed([]),
+								verifyRuntime: () => RUNTIME_OK,
 								run: Effect.as(
-									runArgv(argv, undefined, options),
-									`Opened ${action.payload.url}`,
+									runArgv(argv, undefined, options, false),
+									`Opened ${url}`,
 								),
 								fallback: null,
 							},
@@ -857,6 +1086,28 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 				}
 			}
 
+			/**
+			 * Validate an action and turn it into an exact, previewable plan. Agency
+			 * actions are re-resolved through `agency act --json`; stored argv is
+			 * never run.
+			 */
+			const resolve = (
+				action: unknown,
+				values: Readonly<Record<string, string>>,
+				options: ExecutorOptions,
+			) =>
+				decodeAction(action).pipe(
+					Effect.mapError(
+						(error) =>
+							new SupervisorActionError({
+								message: `Invalid action: ${error.message}`,
+								cause: error,
+							}),
+					),
+					Effect.flatMap((decoded) => resolveDecoded(decoded, values, options)),
+				)
+
+			/** Append to the action log; returns why that failed, if it did. */
 			const record = (
 				action: SupervisorAction,
 				key: string | null,
@@ -876,56 +1127,106 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 						},
 						env,
 					),
-				).pipe(Effect.ignore)
+				).pipe(
+					Effect.as(null as string | null),
+					Effect.catch((error) =>
+						Effect.succeed(`Unable to write the action log: ${error.message}`),
+					),
+				)
 
 			/**
-			 * Recheck preconditions and plan readiness against fresh state, run the
-			 * plan, and append the outcome to the action log.
+			 * Turn the user's confirmation into the only token `execute` accepts.
+			 * Destructive plans also need the second confirmation.
 			 */
-			const execute = (
+			const confirm = (
 				plan: ExecutionPlan,
+				proof: {
+					readonly confirmed: boolean
+					readonly destructiveConfirmed: boolean
+				},
 				key: string | null,
 				options: ExecutorOptions,
 			) =>
 				Effect.gen(function* () {
-					const failures = [
-						...(yield* checkPreconditions(plan.action, options.env)),
-						...(yield* plan.verify),
-					]
-					if (failures.length) {
-						const detail = failures.join("; ")
-						yield* record(
-							plan.action,
-							key,
-							"failed",
-							`Precondition failed: ${detail}`,
-							options.env,
-						)
-						return {
-							outcome: "skipped",
-							detail,
-							fallback: plan.fallback,
-						} satisfies ExecutionResult
+					const missing = !proof.confirmed
+						? "The action was not confirmed"
+						: plan.destructive && !proof.destructiveConfirmed
+							? "The destructive action was not confirmed twice"
+							: null
+					if (missing) {
+						yield* record(plan.action, key, "cancelled", missing, options.env)
+						return yield* new SupervisorActionError({ message: missing })
 					}
-					return yield* plan.run.pipe(
-						Effect.flatMap((detail) =>
-							Effect.as(
-								record(plan.action, key, "succeeded", detail, options.env),
-								{
-									outcome: "succeeded",
-									detail,
-									fallback: null,
-								} satisfies ExecutionResult,
+					const token = { plan } as ConfirmedPlan
+					confirmations.add(token)
+					return token
+				})
+
+			/**
+			 * Recheck state against fresh reads (files and network first, then one
+			 * runtime snapshot), run the plan, and append the outcome to the log.
+			 */
+			const execute = (
+				token: ConfirmedPlan,
+				key: string | null,
+				options: ExecutorOptions,
+			) =>
+				Effect.gen(function* () {
+					const { plan } = token
+					const finish = (
+						outcome: ExecutionResult["outcome"],
+						detail: string | null,
+						fallback: SupervisorAction | null,
+					) =>
+						Effect.map(
+							record(
+								plan.action,
+								key,
+								outcome === "skipped" ? "failed" : outcome,
+								outcome === "skipped"
+									? `Precondition failed: ${detail}`
+									: detail,
+								options.env,
 							),
-						),
+							(logError): ExecutionResult => ({
+								outcome,
+								detail,
+								fallback,
+								logError,
+							}),
+						)
+					if (!confirmations.has(token))
+						return yield* finish("failed", "The action was not confirmed", null)
+					confirmations.delete(token)
+					const [state, planState] = yield* Effect.all(
+						[checkStatePreconditions(plan.action), plan.verify],
+						{ concurrency: "unbounded" },
+					)
+					if (state.length || planState.length)
+						return yield* finish(
+							"skipped",
+							[...state, ...planState].join("; "),
+							null,
+						)
+					const runtime = yield* runtimeView(options.env)
+					const runtimeFailures = checkRuntimePreconditions(
+						plan.action,
+						runtime,
+					)
+					const readiness = plan.verifyRuntime(runtime)
+					if (runtimeFailures.length || readiness.failures.length)
+						return yield* finish(
+							"skipped",
+							[...runtimeFailures, ...readiness.failures].join("; "),
+							readiness.fallbackAllowed ? plan.fallback : null,
+						)
+					return yield* plan.run.pipe(
+						Effect.flatMap((detail) => finish("succeeded", detail, null)),
 						Effect.catch((error) =>
-							Effect.as(
-								record(plan.action, key, "failed", error.message, options.env),
-								{
-									outcome: "failed",
-									detail: error.message,
-									fallback: plan.fallback,
-								} satisfies ExecutionResult,
+							finish(
+								"failed",
+								error.message,
+								error.fallbackAllowed ? plan.fallback : null,
 							),
 						),
 					)
@@ -934,8 +1235,9 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 			return {
 				resolve,
 				checkPreconditions,
+				confirm,
 				execute,
-				/** Log an action that was not run, such as a declined confirmation. */
+				/** Log an action that did not run, such as a declined confirmation. */
 				record,
 			}
 		}),

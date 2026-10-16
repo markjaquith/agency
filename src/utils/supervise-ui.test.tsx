@@ -3,7 +3,11 @@ import { testRender } from "@opentui/solid"
 import { createSignal } from "solid-js"
 import type { SupervisorAction } from "../attention-schema"
 import type { SuperviseItem, SuperviseModel } from "../workbase/supervise-view"
-import { SupervisorApp, type SupervisorHandlers } from "./supervise-ui"
+import {
+	SupervisorApp,
+	type SupervisorConfirmation,
+	type SupervisorHandlers,
+} from "./supervise-ui"
 
 const subject = {
 	workbase: { id: null, name: "Main", root: "/work" },
@@ -74,10 +78,11 @@ const setup = async () => {
 	}
 	const [modal, setModal] =
 		createSignal<Parameters<typeof SupervisorApp>[0]["modal"]>(null)
+	const [current, setCurrent] = createSignal<SuperviseModel>(model)
 	const rendered = await testRender(
 		() => (
 			<SupervisorApp
-				model={model}
+				model={current()}
 				status={{ live: true, refreshing: false, busy: false, updatedAt: null }}
 				notice={null}
 				modal={modal()}
@@ -94,7 +99,7 @@ const setup = async () => {
 		await rendered.renderOnce()
 		return rendered.captureCharFrame()
 	}
-	return { ...rendered, events, setModal, modal, frame }
+	return { ...rendered, events, setModal, modal, frame, setCurrent }
 }
 
 describe("supervisor view", () => {
@@ -114,7 +119,7 @@ describe("supervisor view", () => {
 			view.mockInput.typeText("e")
 			view.mockInput.typeText("r")
 			view.mockInput.typeText("q")
-			await view.waitFor(() => view.events.length >= 7)
+			await view.waitFor(() => view.events.length >= 8)
 			expect(view.events).toEqual([
 				"run beta b1",
 				"run alpha a2",
@@ -123,9 +128,8 @@ describe("supervisor view", () => {
 				"dismiss alpha",
 				"edit alpha",
 				"refresh",
+				"quit",
 			])
-			view.mockInput.pressCtrlC()
-			await view.waitFor(() => view.events.includes("quit"))
 		} finally {
 			view.renderer.destroy()
 		}
@@ -152,10 +156,11 @@ describe("supervisor view", () => {
 	test("requires a second confirmation for destructive actions", async () => {
 		const view = await setup()
 		try {
-			const answers: boolean[] = []
+			const answers: SupervisorConfirmation[] = []
 			view.setModal({
 				kind: "confirm",
 				stage: 1,
+				openedAt: 0,
 				request: {
 					title: "Close tab w1:t1",
 					rationale: "Done.",
@@ -171,13 +176,139 @@ describe("supervisor view", () => {
 			view.mockInput.pressEnter()
 			expect(await view.frame()).toContain("press y to confirm")
 			expect(answers).toEqual([])
-			view.mockInput.typeText("n")
+			view.mockInput.pressEnter()
+			view.mockInput.typeText("x")
 			expect(answers).toEqual([])
 			view.mockInput.typeText("y")
 			await view.waitFor(() => answers.length > 0)
-			expect(answers).toEqual([true])
+			expect(answers).toEqual([{ confirmed: true, destructiveConfirmed: true }])
 			expect(view.modal()).toBeNull()
 			expect(view.events).toEqual([])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	const confirm = (
+		view: Awaited<ReturnType<typeof setup>>,
+		openedAt: number,
+		destructive = false,
+	) => {
+		const answers: SupervisorConfirmation[] = []
+		view.setModal({
+			kind: "confirm",
+			stage: 1,
+			openedAt,
+			request: {
+				title: "Act",
+				rationale: "Because.",
+				risk: destructive ? "destructive" : "reversible",
+				preview: ["open https://example.com"],
+				destructive,
+			},
+			resolve: (value) => answers.push(value),
+		})
+		return answers
+	}
+
+	test("ignores Enter right after a dialog opens, so a double press cannot confirm", async () => {
+		const view = await setup()
+		try {
+			const answers = confirm(view, Date.now())
+			await view.frame()
+			view.mockInput.pressEnter()
+			await view.frame()
+			expect(answers).toEqual([])
+			expect(view.modal()).not.toBeNull()
+			await Bun.sleep(260)
+			view.mockInput.pressEnter()
+			await view.waitFor(() => answers.length > 0)
+			expect(answers).toEqual([
+				{ confirmed: true, destructiveConfirmed: false },
+			])
+			expect(view.events).toEqual([])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("n cancels the destructive second confirmation", async () => {
+		const view = await setup()
+		try {
+			const answers = confirm(view, 0, true)
+			await view.frame()
+			view.mockInput.pressEnter()
+			await view.frame()
+			view.mockInput.typeText("n")
+			await view.waitFor(() => answers.length > 0)
+			expect(answers).toEqual([
+				{ confirmed: false, destructiveConfirmed: false },
+			])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("C-c cancels an open dialog and quits", async () => {
+		const view = await setup()
+		try {
+			const answers = confirm(view, 0)
+			await view.frame()
+			view.mockInput.pressCtrlC()
+			await view.waitFor(() => view.events.includes("quit"))
+			expect(answers).toEqual([
+				{ confirmed: false, destructiveConfirmed: false },
+			])
+			expect(view.modal()).toBeNull()
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("announces a refresh that moves the selection and holds the next Enter", async () => {
+		const view = await setup()
+		try {
+			view.mockInput.pressArrow("right")
+			await view.frame()
+			view.setCurrent({
+				...model,
+				groups: [{ ...model.groups[0]!, items: [model.groups[0]!.items[1]!] }],
+			})
+			expect(await view.frame()).toContain(
+				"alpha is gone; selected beta instead",
+			)
+			view.mockInput.pressEnter()
+			expect(await view.frame()).toContain("Press Enter again to run")
+			expect(view.events).toEqual([])
+			view.mockInput.pressEnter()
+			await view.waitFor(() => view.events.length > 0)
+			expect(view.events).toEqual(["run beta b1"])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("ignores held-key repeats", async () => {
+		const view = await setup()
+		try {
+			view.renderer.keyInput.processParsedKey({
+				name: "return",
+				ctrl: false,
+				meta: false,
+				shift: false,
+				option: false,
+				sequence: "\r",
+				number: false,
+				raw: "\r",
+				eventType: "press",
+				source: "raw",
+				repeated: true,
+			})
+			await view.frame()
+			expect(view.events).toEqual([])
+			view.mockInput.pressEnter()
+			await view.waitFor(() => view.events.length > 0)
+			expect(view.events).toEqual(["run alpha a1"])
 		} finally {
 			view.renderer.destroy()
 		}

@@ -56,7 +56,16 @@ const waitFor = async <A>(read: () => A | undefined, label: string) => {
 	throw new Error(`Timed out waiting for ${label}`)
 }
 
-const fakeUi = (answers: { choose?: string | null; confirm?: boolean }) => {
+const fakeUi = (answers: {
+	choose?: string | null
+	confirm?: boolean
+	/** Hold confirmations open until the test settles them. */
+	holdConfirm?: boolean
+}) => {
+	const held: ((value: {
+		confirmed: boolean
+		destructiveConfirmed: boolean
+	}) => void)[] = []
 	const models: SuperviseModel[] = []
 	const notices: string[] = []
 	const confirmations: { title: string; preview: readonly string[] }[] = []
@@ -66,9 +75,17 @@ const fakeUi = (answers: { choose?: string | null; confirm?: boolean }) => {
 		update: (model) => models.push(model),
 		status: () => {},
 		notice: (text) => notices.push(text),
-		confirm: async (request) => {
+		confirm: (request) => {
 			confirmations.push(request)
-			return answers.confirm ?? true
+			if (answers.holdConfirm)
+				return new Promise((resolve) => {
+					held.push(resolve)
+				})
+			const confirmed = answers.confirm ?? true
+			return Promise.resolve({
+				confirmed,
+				destructiveConfirmed: confirmed,
+			})
 		},
 		text: async () => null,
 		choose: async () => answers.choose ?? null,
@@ -88,6 +105,7 @@ const fakeUi = (answers: { choose?: string | null; confirm?: boolean }) => {
 		confirmations,
 		handlers: () => handlers!,
 		closed: () => closed,
+		held,
 	}
 }
 
@@ -141,6 +159,11 @@ describe("agency supervise", () => {
 			}),
 		])
 		expect(calls).toContainEqual(["focus", "pane", "w1:p7"])
+		ui.handlers().onFocus(item)
+		await waitFor(
+			() => (calls.length === 2 ? true : undefined),
+			"the focus key",
+		)
 
 		const before = ui.models.length
 		ui.handlers().onSnooze(item)
@@ -159,6 +182,7 @@ describe("agency supervise", () => {
 			),
 		)
 		expect(log).toMatchObject([
+			{ key: "herdr:w1:p7", type: "runtime", outcome: "succeeded" },
 			{ key: "herdr:w1:p7", type: "runtime", outcome: "succeeded" },
 		])
 	})
@@ -222,6 +246,41 @@ describe("agency supervise", () => {
 		expect(
 			await Bun.file(join(root, ".agency/supervisor-prompt.md")).text(),
 		).toBe("Prefer small PRs.\n")
+	})
+
+	test("a second Enter while one action is pending opens nothing and runs nothing", async () => {
+		const calls: unknown[][] = []
+		await mkdir(join(tempDir, "elsewhere"))
+		const provider = createFakeRuntimeProvider({
+			calls,
+			panes: [
+				runtimePane({ paneId: "w1:p7", cwd: join(tempDir, "elsewhere") }),
+			],
+		})
+		const ui = fakeUi({ holdConfirm: true })
+		const done = runTestEffect(
+			supervise(
+				{ cwd: root, configDirectory, env, agencyCommand: ["false"] },
+				ui.open,
+			).pipe(
+				Effect.provideService(RuntimeService, fakeRuntimeService(provider)),
+			),
+		)
+		const model = await waitFor(() => ui.models[0], "the first model")
+		const item = model.groups.at(-1)!.items[0]!
+		const focus = item.actions.find((action) => action.type === "runtime")!
+		ui.handlers().onExecute(item, focus)
+		ui.handlers().onExecute(item, focus)
+		ui.handlers().onFocus(item)
+		await waitFor(() => ui.held[0], "the dialog")
+		await Bun.sleep(50)
+		expect(ui.confirmations).toHaveLength(1)
+		// Quitting cancels the open dialog, as the real UI does.
+		ui.held[0]!({ confirmed: false, destructiveConfirmed: false })
+		ui.handlers().onQuit()
+		await done
+		expect(ui.confirmations).toHaveLength(1)
+		expect(calls).toEqual([])
 	})
 
 	test("requires an interactive terminal", async () => {
