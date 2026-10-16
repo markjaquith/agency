@@ -1,6 +1,15 @@
-export const loadInteractive = async () => {
+const preload = async () => {
 	// Resolve this at runtime so the Node-target bundle still selects Bun's preload.
-	const preload = ["@opentui", "solid", "preload"].join("/")
-	await import(preload)
+	const path = ["@opentui", "solid", "preload"].join("/")
+	await import(path)
+}
+
+export const loadInteractive = async () => {
+	await preload()
 	return import("./interactive")
+}
+
+export const loadSupervisorUi = async () => {
+	await preload()
+	return import("./supervise-ui")
 }

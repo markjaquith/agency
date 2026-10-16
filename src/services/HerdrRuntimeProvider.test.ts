@@ -250,6 +250,96 @@ describe("Herdr runtime provider", () => {
 	})
 })
 
+describe("Herdr runtime control", () => {
+	const stderrError = (code: string, message: string): Result => ({
+		exitCode: 1,
+		stdout: "",
+		stderr: JSON.stringify({ id: "cli", error: { code, message } }),
+	})
+
+	test("focuses agents directly and other panes through their tab", async () => {
+		const { fs, calls } = fakeFs((args) =>
+			args[1] === "agent"
+				? stderrError("agent_not_found", "agent target w1:p3 not found")
+				: args[1] === "pane"
+					? ok({ result: { pane: { ...herdrPane, pane_id: "w1:p3" } } })
+					: ok(""),
+		)
+		const provider = createHerdrRuntimeProvider(fs, "herdr", {})
+		await Effect.runPromise(provider.focus("pane", "w1:p3"))
+		await Effect.runPromise(provider.focus("workspace", "w2"))
+		await Effect.runPromise(provider.close("tab", "w1:t2"))
+		expect(calls).toEqual([
+			["herdr", "agent", "focus", "w1:p3"],
+			["herdr", "pane", "get", "w1:p3"],
+			["herdr", "tab", "focus", "w1:t2"],
+			["herdr", "workspace", "focus", "w2"],
+			["herdr", "tab", "close", "w1:t2"],
+		])
+	})
+
+	test("reports a blocked agent prompt with its Herdr error code", async () => {
+		const { fs, calls } = fakeFs(() =>
+			stderrError("agent_blocked", "agent is waiting at a dialog"),
+		)
+		const error = await Effect.runPromise(
+			Effect.flip(
+				createHerdrRuntimeProvider(fs, "herdr", {}).promptAgent(
+					"w1:p2",
+					"Continue",
+				),
+			),
+		)
+		expect(calls).toEqual([["herdr", "agent", "prompt", "w1:p2", "Continue"]])
+		expect(error).toMatchObject({
+			_tag: "RuntimeError",
+			code: "agent_blocked",
+			message: "agent is waiting at a dialog",
+		})
+	})
+
+	test("launches a command in a new unfocused tab", async () => {
+		const { fs, calls } = fakeFs((args) =>
+			args[1] === "tab"
+				? ok({
+						result: {
+							type: "tab_created",
+							tab: { tab_id: "w1:t9" },
+							root_pane: { pane_id: "w1:p9" },
+						},
+					})
+				: ok(""),
+		)
+		const launched = await Effect.runPromise(
+			createHerdrRuntimeProvider(fs, "herdr", {}).launch({
+				workspaceId: "w1",
+				cwd: "/wb/tasks/alpha",
+				label: "alpha",
+				command: "agency work --task alpha --auto",
+				env: { EXTRA: "1" },
+			}),
+		)
+		expect(launched).toEqual({ tabId: "w1:t9", paneId: "w1:p9" })
+		expect(calls).toEqual([
+			[
+				"herdr",
+				"tab",
+				"create",
+				"--workspace",
+				"w1",
+				"--cwd",
+				"/wb/tasks/alpha",
+				"--label",
+				"alpha",
+				"--no-focus",
+				"--env",
+				"EXTRA=1",
+			],
+			["herdr", "pane", "run", "w1:p9", "agency work --task alpha --auto"],
+		])
+	})
+})
+
 describe("Herdr event subscription", () => {
 	let tempDir: string
 	beforeEach(async () => {

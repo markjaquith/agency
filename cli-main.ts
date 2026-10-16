@@ -19,6 +19,7 @@ import { graph, help as graphHelp } from "./src/commands/graph"
 import { next, help as nextHelp } from "./src/commands/next"
 import { attention, help as attentionHelp } from "./src/commands/attention"
 import { triage, help as triageHelp } from "./src/commands/triage"
+import { supervise, help as superviseHelp } from "./src/commands/supervise"
 import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -57,6 +58,7 @@ import { PullRequestStatusService } from "./src/services/PullRequestStatusServic
 import { SupervisionService } from "./src/services/SupervisionService"
 import { SupervisionStateService } from "./src/services/SupervisionStateService"
 import { TriageService } from "./src/services/TriageService"
+import { SupervisorExecutor } from "./src/services/SupervisorExecutor"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -105,14 +107,22 @@ const CliLayer = Layer.mergeAll(
 	SupervisionService.layer,
 	SupervisionStateService.layer,
 	TriageService.layer,
+	SupervisorExecutor.layer,
 )
 
 /**
  * Run a command Effect with all services provided
  */
+interface SignalOptions {
+	/** Interrupt the command on SIGINT, SIGTERM, or SIGHUP so finalizers run. */
+	readonly interruptOnSignal?: boolean
+	/** The exit status after such an interruption completes (default 130). */
+	readonly interruptedExitCode?: number
+}
+
 async function runEffect<A, E>(
 	effect: Effect.Effect<A, E, any>,
-	options: { readonly interruptOnSignal?: boolean } = {},
+	options: SignalOptions = {},
 ): Promise<A> {
 	const providedEffect = Effect.provide(effect, CliLayer) as Effect.Effect<
 		A,
@@ -135,19 +145,18 @@ async function runEffect<A, E>(
 		return new Error(String(error))
 	}
 
-	// Optionally interrupt the command on SIGINT or SIGTERM so its finalizers
-	// run: child processes in their own process group are killed and temporary
-	// files removed. A second signal exits immediately. Interactive commands
-	// own their terminal's signals and do not opt in.
+	// Optionally interrupt the command on SIGINT, SIGTERM, or SIGHUP (a closed
+	// terminal) so its finalizers run: child processes in their own process
+	// group are killed, temporary files removed, and a TUI's terminal restored.
+	// A second signal exits immediately.
 	const interrupt = new AbortController()
 	const onSignal = () => {
 		if (interrupt.signal.aborted) process.exit(130)
 		interrupt.abort()
 	}
-	if (options.interruptOnSignal) {
-		process.on("SIGINT", onSignal)
-		process.on("SIGTERM", onSignal)
-	}
+	const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
+	if (options.interruptOnSignal)
+		for (const signal of signals) process.on(signal, onSignal)
 	try {
 		const result = await Effect.runPromise(
 			providedEffect.pipe(
@@ -156,20 +165,20 @@ async function runEffect<A, E>(
 			),
 			{ signal: interrupt.signal },
 		).catch((error: unknown) => {
-			if (interrupt.signal.aborted) process.exit(130)
+			if (interrupt.signal.aborted)
+				process.exit(options.interruptedExitCode ?? 130)
 			throw error
 		})
 		if (Result.isFailure(result)) throw result.failure
 		return result.success
 	} finally {
-		process.off("SIGINT", onSignal)
-		process.off("SIGTERM", onSignal)
+		for (const signal of signals) process.off(signal, onSignal)
 	}
 }
 
 const runCommand = <E>(
 	effect: Effect.Effect<void, E, any>,
-	options?: { readonly interruptOnSignal?: boolean },
+	options?: SignalOptions,
 ) => runEffect(effect, options)
 
 const resolveInvocationCwd = (
@@ -186,7 +195,8 @@ const resolveInvocationCwd = (
 				commandName === "init" ||
 				commandName === "workbase" ||
 				commandName === "attention" ||
-				commandName === "triage"
+				commandName === "triage" ||
+				commandName === "supervise"
 			) {
 				return resolve(options.cwd ?? process.cwd())
 			}
@@ -609,6 +619,7 @@ const commands: Record<string, Command> = {
 					claude: options.claude,
 					agent: options.agent,
 					auto: options.auto,
+					instructions: options.instructions,
 					printCommand: options["print-command"],
 					force: options.force,
 					allowWorkingDependencies: options["allow-working-dependencies"],
@@ -814,6 +825,26 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	supervise: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(superviseHelp)
+				return
+			}
+			await runCommand(
+				supervise({
+					workbase: options.workbase,
+					inputAllowed: options.inputAllowed,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+				// Background triage runs stop with their process groups, the
+				// terminal is restored, and the supervisor exits cleanly.
+				{ interruptOnSignal: true, interruptedExitCode: 0 },
+			)
+		},
+	},
 	sync: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -858,6 +889,7 @@ Commands:
   next                   List or select ready execution units
   attention              Report work and sessions that need attention
   triage                 Assess supervised work and rank next actions
+  supervise              Supervise and act on everything needing attention
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
   rebase <task> [phase]  Rebase a checkout onto a new base and record it

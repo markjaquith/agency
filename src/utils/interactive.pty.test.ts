@@ -141,6 +141,52 @@ describe("interactive CLI terminal restoration", () => {
 		}
 	}, 12_000)
 
+	for (const signal of ["SIGTERM", "SIGHUP"] as const) {
+		test(`supervise restores the terminal and exits cleanly on ${signal}`, async () => {
+			const root = await createWorkbase()
+			const home = await createTempDir()
+			tempDirs.push(home)
+			let output = ""
+			const decoder = new TextDecoder()
+			const terminal = new Bun.Terminal({
+				cols: 100,
+				rows: 24,
+				data: (_, bytes) => {
+					output += decoder.decode(bytes, { stream: true })
+				},
+			})
+			const initialModes = modes(terminal)
+			const subprocess = Bun.spawn([process.execPath, cliPath, "supervise"], {
+				cwd: root,
+				env: {
+					TERM: "xterm-256color",
+					HOME: home,
+					XDG_CONFIG_HOME: join(home, "config"),
+					AGENCY_STATE_DIR: join(home, "state"),
+					// No runtime: keep the real Herdr session out of the test.
+					PATH: "/usr/bin:/bin",
+				},
+				terminal,
+			})
+			try {
+				await waitFor(
+					() => output.includes("Agency Supervisor"),
+					() => output,
+				)
+				subprocess.kill(signal)
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
+				expect(modes(terminal)).toEqual(initialModes)
+				expect(output.match(/\x1b\[\?1049l/g)?.length).toBeGreaterThan(0)
+			} finally {
+				if (subprocess.exitCode === null) {
+					subprocess.kill("SIGKILL")
+					await subprocess.exited
+				}
+				terminal.close()
+			}
+		}, 12_000)
+	}
+
 	for (const shutdown of ["ctrl-c", "SIGTERM"] as const) {
 		test(`persistent session cancels in-flight work and restores the terminal (${shutdown})`, async () => {
 			const root = await createTempDir()

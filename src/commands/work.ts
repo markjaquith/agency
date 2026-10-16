@@ -54,6 +54,8 @@ export interface WorkOptions extends BaseCommandOptions {
 	readonly agent?: string
 	readonly printCommand?: boolean
 	readonly auto?: boolean
+	/** Additional instructions appended to the generated --auto prompt. */
+	readonly instructions?: string
 	readonly force?: boolean
 	readonly allowWorkingDependencies?: boolean
 	readonly evidence?: string
@@ -319,6 +321,8 @@ export const work = (
 			writablePath = workspace.writablePath ?? undefined
 		}
 		prompt = `Agency worker launch target: ${targetNodeId(target)}. ${prompt}`
+		if (options.instructions?.trim())
+			prompt += `\n\nSupervisor instructions:\n${options.instructions.trim()}`
 
 		const invocationAgent =
 			options.agent ??
@@ -731,6 +735,7 @@ Options:
   --cwd <path>         Resolve context from a specific directory
   --agent <name>      Select a configured agent or built-in preset
   --auto               Send the generated context prompt to the agent
+  --instructions <text>  Append instructions to the --auto prompt
   --print-command      Print cwd, argv, and non-secret environment without launch
   --opencode           Require the OpenCode preset
   --claude             Require the Claude Code preset

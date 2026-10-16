@@ -6,7 +6,7 @@ import { FileSystemService } from "../services/FileSystemService"
 import { GraphService } from "../services/GraphService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import { WorktreeService } from "../services/WorktreeService"
-import type { BaseCommandOptions } from "../utils/command"
+import { shellCommand, type BaseCommandOptions } from "../utils/command"
 import type { Choice } from "../utils/chooser"
 import { createLoggers } from "../utils/effect"
 import { macchiato } from "../utils/theme"
@@ -162,14 +162,6 @@ const pathEntityKey = (root: string, path: string) => {
 		? `phase:${parts[1]}/${parts[3]}`
 		: `task:${parts[1]}`
 }
-const shellCommand = (argv: readonly string[]) =>
-	argv
-		.map((arg) =>
-			/^[A-Za-z0-9_./:=+@%-]+$/.test(arg)
-				? arg
-				: `'${arg.replaceAll("'", `'\\''`)}'`,
-		)
-		.join(" ")
 const creationDefaults = (config: {
 	readonly branchNameCommand?: readonly string[]
 }) => ({

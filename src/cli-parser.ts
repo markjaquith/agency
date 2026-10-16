@@ -895,6 +895,7 @@ const commands = {
 			force: { type: "boolean" },
 			"allow-working-dependencies": { type: "boolean" },
 			evidence: { type: "string" },
+			instructions: { type: "string" },
 		},
 		command: {
 			usage:
@@ -915,6 +916,7 @@ const commands = {
 				"force",
 				"evidence",
 				"allow-working-dependencies",
+				"instructions",
 			],
 			conflicts: [
 				["opencode", "claude"],
@@ -1037,6 +1039,16 @@ const commands = {
 			minArgs: 0,
 			maxArgs: 0,
 			options: ["item", "archived", "json"],
+		},
+	},
+	supervise: {
+		usage: "agency supervise [--workbase <selector>]",
+		options: commonOptions,
+		command: {
+			usage: "agency supervise [--workbase <selector>]",
+			minArgs: 0,
+			maxArgs: 0,
+			options: [],
 		},
 	},
 	next: {
@@ -1810,6 +1822,9 @@ export function parseCli(args: readonly string[]): ParsedCli {
 					: "The work command accepts at most one target.",
 				spec.usage,
 			)
+		}
+		if (parsed.values.instructions !== undefined && !parsed.values.auto) {
+			throw usageError("Option '--instructions' requires '--auto'.", spec.usage)
 		}
 		if (
 			!preparing &&

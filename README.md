@@ -1025,7 +1025,7 @@ one of the item's signal actions is model-written: its ID must start with
 `triage:`, it may reference only the item's panes, tabs, and unit, pane targets
 need a `pane_matches` precondition, `agency` actions must copy an available
 action's argv, inputs, selector, and `cwd` exactly (filling template `values`),
-and a model-written `command` or `open_url` can never be `read-only`. Its ID is
+and no model-written action can be `read-only`. Its ID is
 listed in the assessment's `modelActionIds`. Agency retries once in the same
 session with any validation errors, then reports a structured failure.
 
@@ -1050,8 +1050,10 @@ re-evaluated, and the rest reuse cached assessments (`source: "cached"`).
 Snoozes and dismissals are applied to every reported assessment: snoozed or
 dismissed actions are removed, and a snoozed or dismissed item reports
 `suppressed` with no actions. A dismissal with a fingerprint lapses when the
-item changes; full runs prune lapsed dismissals and those for items that are
-gone. If re-evaluation fails, an earlier assessment is reported
+item changes: supervisor dismissals pin `<signals>:<triage>` fingerprints, and
+triage compares its own part, or the signals part when the dismissal predates
+any triage of the item. Full runs prune lapsed dismissals and those for items
+that are gone. If re-evaluation fails, an earlier assessment is reported
 as `stale`, otherwise the item is `failed`. `--item` re-evaluates one item,
 selected by task, `task/phase`, execution unit ID, pane ID, or item key. The
 report follows
@@ -1061,6 +1063,78 @@ Supervision state lives in `$AGENCY_STATE_DIR/supervision/`, never in workbase
 documents: `triage-cache.json`, the `actions.jsonl` action log (compacted to its
 newest 1,000 entries), `snoozes.json`, and `dismissals.json`. Each update holds a
 lock file and replaces the file atomically, so concurrent runs merge.
+
+### Supervisor
+
+```sh
+agency supervise [--workbase <selector>]
+```
+
+`agency supervise` is a long-lived TUI, meant for its own Herdr tab, built on
+the [attention signals](#attention-signals). It groups everything needing
+attention by workbase, plus an Unmanaged group for agent panes outside any item.
+Each entry shows a status badge (such as Needs You, Blocked, Ready to Merge,
+Done, Needs Ticket, or Stale), its runtime location (`workspace › tab`), a
+one-line summary, and its ranked suggested actions. Signals for one execution
+unit merge into one entry. The view refreshes on runtime events (Herdr
+`events.subscribe`, debounced) and every minute for pull request and ticket
+changes.
+
+[Triage](#triage) results merge into the same entries: cached assessments show
+immediately (labelled with the time they were made), and `r` or `R` runs triage
+in the background (the header shows progress) and refreshes when it finishes.
+Triage's status, summary, and open question replace the signal summary (a more
+urgent signal badge is kept), its recommended actions rank first, and items
+triage knows without a signal appear too. When the model's action duplicates a
+signal action, the signal's own copy, with its preconditions and risk, is the
+one shown. Actions tagged `triage` were recommended by triage and `model` ones
+were written by the model; the confirmation says so. Every triage action is
+decoded against the action schema (invalid ones are dropped with a warning) and
+runs through the same executor checks as signal actions. Closing a pane, tab,
+or workspace is always destructive, and so is any command or agency action the
+model wrote, whatever risk it claims. Hiding follows live snoozes and
+dismissals. A dismissal pins both the entry's signals and triage's fingerprint,
+so it lapses when either changes. `e` opens `triage.promptFile` from the
+workbase's `agency.json`; when none is set it opens `triage.md` beside it and,
+once saved with content and confirmed, records `"promptFile": "triage.md"`
+(changing only that key, atomically, and refusing if `agency.json` changed in
+the meantime). An inline `triage.prompt` is kept and still applies first.
+`agency supervise` cleans up on SIGINT, SIGTERM, or SIGHUP: running triage stops,
+the terminal is restored, and it exits 0.
+
+| Key                           | Action                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                                   |
+| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                                       |
+| `Enter`                       | Preview, confirm, and run the action                                   |
+| `f`                           | Focus the entry's pane                                                 |
+| `r` / `R`                     | Triage the selected entry, or everything (takes minutes), then refresh |
+| `e`                           | Edit the workbase's triage prompt file in `$EDITOR`                    |
+| `s` / `d`                     | Snooze, or dismiss until the entry changes                             |
+| `?` / `Esc` / `C-c`           | Help / close one dialog or help (never quits) / quit                   |
+
+Before running, the supervisor shows exactly what will run: the argv, runtime
+operation, or prompt. Enter is ignored for a moment after a dialog opens and
+held keys never act, so a double press cannot confirm; further actions are
+ignored while one is pending. After confirmation it rechecks every precondition
+against fresh state (document revisions, item status, pull request state and
+head, ticket status, and paths first, then one runtime snapshot for pane
+identity and a tab's exact agent panes) and skips the action if anything
+changed. Destructive actions need a second confirmation (`y`), which the
+executor itself requires. If a refresh moves the selection, the supervisor says
+so and the next Enter only acknowledges the change.
+`agency` actions are re-resolved with `agency act --action <id> --json` and
+never run a stored argv; template inputs are prompted for, and the action is
+rediscovered just before running and skipped if its command changed. Work and fresh
+delegations start in a new, unfocused tab. `prompt_agent` and delegation to a
+bound agent require the same agent session still in its pane, idle and not
+blocked by a dialog. When that agent is gone or blocked, the supervisor offers a
+fresh kickoff with the same instructions; a working agent is never doubled.
+Agency commands (including through a path or `bunx`/`npx`) must arrive as
+`agency` actions, and only `https` URLs open.
+Every outcome, including declined confirmations, is appended to the local
+action log; snoozes and dismissals persist in local supervision state under
+`$AGENCY_STATE_DIR/supervision`.
 
 ### Next Ready Work
 
@@ -1511,7 +1585,7 @@ clean managed checkouts, so paths inside the task may cease to exist.
 ### Work, Publication, and Pull Requests
 
 ```text
-agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto] [--print-command]
+agency work [<directory> | --epic <epic-id>] [--agent <name>] [--auto [--instructions <text>]] [--print-command]
 agency work prepare [target] [--evidence <json-or-path>] [--force] [--dry-run] [--json]
 agency worktree <list|inspect|prepare|remove|rebuild|repair>
 agency push [--force-with-lease] [--json]
@@ -1531,6 +1605,7 @@ Agency automatically uses the first available agent in this order: `opencode2`,
 `opencode`, then `claude`. `--opencode` and `--claude` remain aliases for
 requiring their corresponding built-in presets. Launches are interactive and
 promptless by default; use `--auto` to send Agency's generated context prompt.
+`--instructions <text>` appends supervisor instructions to that prompt.
 
 `agency work prepare` resolves an execution unit and creates or reuses its
 writable and reference worktrees, or its single pinned review checkout, without
