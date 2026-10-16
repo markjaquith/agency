@@ -496,12 +496,12 @@ const modelActionErrors = (
 			break
 		case "command":
 		case "open_url":
-			if (action.risk === "read-only")
-				errors.push(
-					`${where} is written by the model, so its risk cannot be read-only.`,
-				)
 			break
 	}
+	if (action.risk === "read-only")
+		errors.push(
+			`${where} is written by the model, so its risk cannot be read-only.`,
+		)
 	return errors
 }
 

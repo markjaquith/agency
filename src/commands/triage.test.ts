@@ -490,6 +490,20 @@ describe("agency triage", () => {
 					fingerprint: "an-earlier-state",
 					reason: null,
 				})
+				// Supervisor dismissals pin `<signals>:<triage>`; triage compares
+				// its own part, or the signal part when it has none.
+				yield* state.dismiss({
+					key: orphan.key,
+					actionId: "composite-kept",
+					fingerprint: `0123456789abcdef:${orphan.fingerprint}`,
+					reason: null,
+				})
+				yield* state.dismiss({
+					key: orphan.key,
+					actionId: "composite-pruned",
+					fingerprint: "0123456789abcdef:",
+					reason: null,
+				})
 			}),
 		)
 
@@ -532,7 +546,10 @@ describe("agency triage", () => {
 		const dismissals = await runTestEffect(
 			Effect.flatMap(SupervisionStateService, (state) => state.dismissals()),
 		)
-		expect(dismissals.map((entry) => entry.actionId)).toEqual([dropped])
+		expect(dismissals.map((entry) => entry.actionId)).toEqual([
+			dropped,
+			"composite-kept",
+		])
 	})
 
 	test("concurrent runs merge their cached results", async () => {

@@ -45,6 +45,7 @@ const item = (key: string, actions: SupervisorAction[]): SuperviseItem => ({
 	modelActionIds: [],
 	triageActionIds: [],
 	triage: null,
+	fingerprints: { signal: key, triage: null },
 	fingerprint: key,
 })
 
@@ -323,6 +324,59 @@ describe("supervisor view", () => {
 			view.mockInput.pressEnter()
 			await view.waitFor(() => view.events.length > 0)
 			expect(view.events).toEqual(["run alpha a1"])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("keeps the pinned action when a refresh changes the default", async () => {
+		const view = await setup()
+		try {
+			await view.frame()
+			const alpha = model.groups[0]!.items[0]!
+			view.setCurrent({
+				...model,
+				groups: [
+					{
+						...model.groups[0]!,
+						items: [
+							{ ...alpha, actions: [action("t1"), ...alpha.actions] },
+							model.groups[0]!.items[1]!,
+						],
+					},
+				],
+			})
+			await view.frame()
+			view.mockInput.pressEnter()
+			await view.waitFor(() => view.events.length > 0)
+			expect(view.events).toEqual(["run alpha a1"])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
+	test("flags model-written actions in the confirmation", async () => {
+		const view = await setup()
+		try {
+			view.setModal({
+				kind: "confirm",
+				stage: 1,
+				openedAt: 0,
+				request: {
+					source: "model",
+					title: "Run",
+					rationale: "Because.",
+					risk: "destructive",
+					preview: ["true"],
+					destructive: true,
+				},
+				resolve: () => {},
+			})
+			const frame = await view.frame()
+			expect(frame).toContain("Written by the triage model")
+			expect(frame.indexOf("Written by the triage model")).toBeLessThan(
+				frame.indexOf("Will run:"),
+			)
 		} finally {
 			view.renderer.destroy()
 		}

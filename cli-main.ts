@@ -113,9 +113,16 @@ const CliLayer = Layer.mergeAll(
 /**
  * Run a command Effect with all services provided
  */
+interface SignalOptions {
+	/** Interrupt the command on SIGINT, SIGTERM, or SIGHUP so finalizers run. */
+	readonly interruptOnSignal?: boolean
+	/** The exit status after such an interruption completes (default 130). */
+	readonly interruptedExitCode?: number
+}
+
 async function runEffect<A, E>(
 	effect: Effect.Effect<A, E, any>,
-	options: { readonly interruptOnSignal?: boolean } = {},
+	options: SignalOptions = {},
 ): Promise<A> {
 	const providedEffect = Effect.provide(effect, CliLayer) as Effect.Effect<
 		A,
@@ -138,19 +145,18 @@ async function runEffect<A, E>(
 		return new Error(String(error))
 	}
 
-	// Optionally interrupt the command on SIGINT or SIGTERM so its finalizers
-	// run: child processes in their own process group are killed and temporary
-	// files removed. A second signal exits immediately. Interactive commands
-	// own their terminal's signals and do not opt in.
+	// Optionally interrupt the command on SIGINT, SIGTERM, or SIGHUP (a closed
+	// terminal) so its finalizers run: child processes in their own process
+	// group are killed, temporary files removed, and a TUI's terminal restored.
+	// A second signal exits immediately.
 	const interrupt = new AbortController()
 	const onSignal = () => {
 		if (interrupt.signal.aborted) process.exit(130)
 		interrupt.abort()
 	}
-	if (options.interruptOnSignal) {
-		process.on("SIGINT", onSignal)
-		process.on("SIGTERM", onSignal)
-	}
+	const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
+	if (options.interruptOnSignal)
+		for (const signal of signals) process.on(signal, onSignal)
 	try {
 		const result = await Effect.runPromise(
 			providedEffect.pipe(
@@ -159,20 +165,20 @@ async function runEffect<A, E>(
 			),
 			{ signal: interrupt.signal },
 		).catch((error: unknown) => {
-			if (interrupt.signal.aborted) process.exit(130)
+			if (interrupt.signal.aborted)
+				process.exit(options.interruptedExitCode ?? 130)
 			throw error
 		})
 		if (Result.isFailure(result)) throw result.failure
 		return result.success
 	} finally {
-		process.off("SIGINT", onSignal)
-		process.off("SIGTERM", onSignal)
+		for (const signal of signals) process.off(signal, onSignal)
 	}
 }
 
 const runCommand = <E>(
 	effect: Effect.Effect<void, E, any>,
-	options?: { readonly interruptOnSignal?: boolean },
+	options?: SignalOptions,
 ) => runEffect(effect, options)
 
 const resolveInvocationCwd = (
@@ -833,6 +839,9 @@ const commands: Record<string, Command> = {
 					verbose: options.verbose,
 					cwd: options.cwd,
 				}),
+				// Background triage runs stop with their process groups, the
+				// terminal is restored, and the supervisor exits cleanly.
+				{ interruptOnSignal: true, interruptedExitCode: 0 },
 			)
 		},
 	},

@@ -9,6 +9,11 @@ import type {
 } from "../attention-schema"
 import type { Dismissal, Snooze } from "../services/SupervisionStateService"
 import type { TriageReportItem } from "../triage-schema"
+import {
+	dismissalApplies,
+	dismissalFingerprint,
+	signalFingerprint,
+} from "./dismissal"
 import type { RuntimeSnapshot } from "./runtime"
 
 export type BadgeTone = "red" | "yellow" | "green" | "blue" | "mauve" | "muted"
@@ -39,10 +44,11 @@ export interface SuperviseItem {
 	/** Actions triage recommended, model-written or copied from a signal. */
 	readonly triageActionIds: readonly string[]
 	readonly triage: SuperviseTriage | null
-	/**
-	 * Triage's fingerprint when triage knows the item, else one over its
-	 * signals; dismissals pin it and lapse when it changes.
-	 */
+	readonly fingerprints: {
+		readonly signal: string
+		readonly triage: string | null
+	}
+	/** `<signal>:<triage>` fingerprints; dismissals pin it. */
 	readonly fingerprint: string
 }
 
@@ -223,17 +229,6 @@ const paneLocation = (
 const actionIdentity = (action: SupervisorAction) =>
 	JSON.stringify([action.type, action.payload])
 
-const fingerprintOf = (signals: readonly AttentionSignal[]) =>
-	new Bun.CryptoHasher("sha256")
-		.update(
-			signals
-				.map((signal) => `${signal.id}\u0000${signal.title}`)
-				.sort()
-				.join("\u0001"),
-		)
-		.digest("hex")
-		.slice(0, 16)
-
 const buildItem = (
 	key: string,
 	signals: readonly AttentionSignal[],
@@ -267,7 +262,8 @@ const buildItem = (
 		modelActionIds: [],
 		triageActionIds: [],
 		triage: null,
-		fingerprint: fingerprintOf(ranked),
+		fingerprints: { signal: signalFingerprint(ranked), triage: null },
+		fingerprint: dismissalFingerprint(signalFingerprint(ranked), null),
 	}
 }
 
@@ -296,7 +292,8 @@ const triageOnlyItem = (
 	modelActionIds: [],
 	triageActionIds: [],
 	triage: null,
-	fingerprint: entry.fingerprint,
+	fingerprints: { signal: "", triage: entry.fingerprint },
+	fingerprint: dismissalFingerprint("", entry.fingerprint),
 })
 
 /** Layer a triage result over an item; triage's actions rank first. */
@@ -309,12 +306,28 @@ const withTriage = (item: SuperviseItem, entry: TriageEntry): SuperviseItem => {
 		question: assessment?.question ?? null,
 		error: entry.error,
 	}
-	if (!assessment) return { ...item, triage, fingerprint: entry.fingerprint }
+	const fingerprints = {
+		signal: item.fingerprints.signal,
+		triage: entry.fingerprint,
+	}
+	const fingerprint = dismissalFingerprint(
+		fingerprints.signal,
+		fingerprints.triage,
+	)
+	if (!assessment) return { ...item, triage, fingerprints, fingerprint }
+	// Triage ranks first, but a signal's own copy of an action always wins a
+	// collision, keeping its preconditions and risk.
+	const signalActions = new Map(
+		item.actions.map((action) => [actionIdentity(action), action]),
+	)
 	const actions = new Map<string, SupervisorAction>()
 	for (const action of [...assessment.actions, ...item.actions]) {
 		const identity = actionIdentity(action)
-		if (!actions.has(identity)) actions.set(identity, action)
+		if (!actions.has(identity))
+			actions.set(identity, signalActions.get(identity) ?? action)
 	}
+	const kept = new Set([...actions.values()].map((action) => action.id))
+	const signalIds = new Set(item.actions.map((action) => action.id))
 	const triageBadge = TRIAGE_BADGES[assessment.status]
 	const badge =
 		triageBadge &&
@@ -328,10 +341,16 @@ const withTriage = (item: SuperviseItem, entry: TriageEntry): SuperviseItem => {
 			? `${assessment.summary} — asks: ${assessment.question}`
 			: assessment.summary,
 		actions: [...actions.values()],
-		modelActionIds: assessment.modelActionIds,
-		triageActionIds: assessment.actions.map((action) => action.id),
+		modelActionIds: assessment.modelActionIds.filter(
+			(id) => kept.has(id) && !signalIds.has(id),
+		),
+		triageActionIds: assessment.actions.flatMap((action) => {
+			const winner = actions.get(actionIdentity(action))
+			return winner ? [winner.id] : []
+		}),
 		triage,
-		fingerprint: entry.fingerprint,
+		fingerprints,
+		fingerprint,
 	}
 }
 
@@ -354,14 +373,14 @@ const dismissed = (
 	dismissal: Dismissal,
 	key: string,
 	actionId: string | null,
-	fingerprint: string,
+	fingerprints: SuperviseItem["fingerprints"],
 ) =>
 	dismissal.key === key &&
 	dismissal.actionId === actionId &&
-	(dismissal.fingerprint === null || dismissal.fingerprint === fingerprint)
+	dismissalApplies(dismissal.fingerprint, fingerprints)
 
 const isHidden = (
-	item: Pick<SuperviseItem, "key" | "fingerprint">,
+	item: Pick<SuperviseItem, "key" | "fingerprints">,
 	state: HiddenState,
 	now: Date,
 ): "snoozed" | "dismissed" | null => {
@@ -369,7 +388,7 @@ const isHidden = (
 		return "snoozed"
 	if (
 		state.dismissals.some((entry) =>
-			dismissed(entry, item.key, null, item.fingerprint),
+			dismissed(entry, item.key, null, item.fingerprints),
 		)
 	)
 		return "dismissed"
@@ -389,7 +408,7 @@ const visibleActions = (
 				snoozed(entry, item.key, action.id, now),
 			) &&
 			!state.dismissals.some((entry) =>
-				dismissed(entry, item.key, action.id, item.fingerprint),
+				dismissed(entry, item.key, action.id, item.fingerprints),
 			),
 	),
 })
@@ -430,7 +449,9 @@ export const superviseModel = (
 	for (const candidate of candidates) {
 		const entry = triage.get(candidate.key)
 		const item = entry ? withTriage(candidate, entry) : candidate
-		const hidden = entry?.suppressed ?? isHidden(item, options.state, now)
+		// Hiding follows live snooze and dismissal state, never a triage run's
+		// possibly stale `suppressed` value.
+		const hidden = isHidden(item, options.state, now)
 		if (hidden === "snoozed") snoozedCount++
 		else if (hidden === "dismissed") dismissedCount++
 		else items.push(visibleActions(item, options.state, now))

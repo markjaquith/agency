@@ -29,6 +29,10 @@ import {
 	type TriageItem,
 } from "../workbase/triage"
 import {
+	dismissalAppliesToTriage,
+	signalFingerprint,
+} from "../workbase/dismissal"
+import {
 	CARRIED_SETTINGS,
 	TRIAGE_AGENT,
 	triageAgentConfig,
@@ -501,13 +505,21 @@ export class TriageService extends Context.Service<TriageService>()(
 					}
 					const snoozes = yield* state.snoozes(options.env)
 					const allDismissals = yield* state.dismissals(options.env)
+					const signalFingerprints = new Map(
+						items.map((item) => [item.key, signalFingerprint(item.signals)]),
+					)
+					const stillApplies = (entry: {
+						readonly key: string
+						readonly fingerprint: string | null
+					}) =>
+						dismissalAppliesToTriage(entry.fingerprint, {
+							signal: signalFingerprints.get(entry.key) ?? "",
+							triage: fingerprints.get(entry.key) ?? "",
+						})
 					/** Dismissals that still apply: unconditional, or for this state. */
 					const dismissalsFor = (key: string) =>
 						allDismissals.filter(
-							(entry) =>
-								entry.key === key &&
-								(entry.fingerprint === null ||
-									entry.fingerprint === fingerprints.get(key)),
+							(entry) => entry.key === key && stillApplies(entry),
 						)
 					const snoozesFor = (key: string) =>
 						snoozes.filter((entry) => entry.key === key)
@@ -691,10 +703,7 @@ export class TriageService extends Context.Service<TriageService>()(
 					// that are gone or whose dismissed state has changed.
 					if (full && !options.workbase)
 						yield* state.pruneDismissals(
-							(entry) =>
-								present.has(entry.key) &&
-								(entry.fingerprint === null ||
-									entry.fingerprint === fingerprints.get(entry.key)),
+							(entry) => present.has(entry.key) && stillApplies(entry),
 							options.env,
 						)
 

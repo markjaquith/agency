@@ -284,6 +284,15 @@ describe("validateResponse", () => {
 						{ risk: "read-only" },
 					),
 					model("open_url", { url: "https://x" }, { risk: "read-only" }),
+					model(
+						"delegate",
+						{
+							unit: "execution-unit:task/alpha",
+							instructions: "Go",
+							via: "prompt_bound_agent",
+						},
+						{ id: "triage:a:read-only-delegate", risk: "read-only" },
+					),
 					model("delegate", {
 						unit: "execution-unit:task/other",
 						instructions: "Go",
@@ -297,6 +306,7 @@ describe("validateResponse", () => {
 			expect.stringContaining("targets pane w9:p9, which is not the item's"),
 			expect.stringContaining("needs a pane_matches precondition for w9:p9"),
 			expect.stringContaining("needs a pane_matches precondition for w1:p1"),
+			expect.stringContaining("its risk cannot be read-only"),
 			expect.stringContaining("its risk cannot be read-only"),
 			expect.stringContaining("its risk cannot be read-only"),
 			expect.stringContaining("delegates a unit that is not the item's"),

@@ -276,7 +276,7 @@ describe("supervise view model", () => {
 		expect(item).toMatchObject({
 			badge: { label: "Needs You" },
 			summary: `${key} assessed — asks: Which base?`,
-			fingerprint: `triage-${key}`,
+			fingerprint: expect.stringMatching(new RegExp(`^[0-9a-f]{16}:triage-`)),
 			modelActionIds: [written.id],
 			triageActionIds: [written.id, copied.id],
 			triage: { source: "fresh", question: "Which base?" },
@@ -300,43 +300,146 @@ describe("supervise view model", () => {
 		expect(item!.badge.label).toBe("Blocked")
 	})
 
-	test("adds triage-only items and honors suppression", () => {
+	test("adds triage-only items and hides from live state, not a stale suppressed value", () => {
 		const subjectOf = (unit: string) =>
 			unitSignal("claim_without_session", unit).subject
-		const model = superviseModel(report([]), {
-			state: empty,
-			triage: new Map([
-				[
-					"k:gamma",
-					entry("k:gamma", {
-						subject: subjectOf("gamma"),
-						status: "in_progress",
-					}),
+		const at = "2026-10-16T12:00:00.000Z"
+		const triage = new Map([
+			[
+				"k:gamma",
+				entry("k:gamma", {
+					subject: subjectOf("gamma"),
+					status: "in_progress",
+				}),
+			],
+			[
+				"k:delta",
+				entry("k:delta", {
+					subject: subjectOf("delta"),
+					suppressed: "snoozed",
+				}),
+			],
+			// Cached results without a subject only annotate signal items.
+			["k:zeta", entry("k:zeta", { source: "cached" })],
+		])
+		// The snooze triage saw has expired: delta shows again.
+		const expired = superviseModel(report([]), {
+			state: {
+				snoozes: [
+					{
+						version: 1,
+						at,
+						key: "k:delta",
+						actionId: null,
+						until: "2026-10-16T12:30:00.000Z",
+						reason: null,
+					},
 				],
-				[
-					"k:delta",
-					entry("k:delta", {
-						subject: subjectOf("delta"),
-						suppressed: "snoozed",
-					}),
-				],
-				[
-					"k:epsilon",
-					entry("k:epsilon", {
-						subject: subjectOf("epsilon"),
-						suppressed: "dismissed",
-					}),
-				],
-				// Cached results without a subject only annotate signal items.
-				["k:zeta", entry("k:zeta", { source: "cached" })],
-			]),
+				dismissals: [],
+			},
+			now: new Date("2026-10-16T13:00:00.000Z"),
+			triage,
 		})
-		expect(model).toMatchObject({ total: 1, snoozed: 1, dismissed: 1 })
-		expect(model.groups[0]!.items[0]).toMatchObject({
+		expect(expired.total).toBe(2)
+		expect(expired.groups[0]!.items.map((item) => item.label)).toEqual([
+			"delta",
+			"gamma",
+		])
+		expect(expired.groups[0]!.items[1]).toMatchObject({
 			key: "k:gamma",
-			label: "gamma",
 			badge: { label: "Working" },
 			summary: "k:gamma assessed",
 		})
+		const snoozed = superviseModel(report([]), {
+			state: {
+				snoozes: [
+					{
+						version: 1,
+						at,
+						key: "k:delta",
+						actionId: null,
+						until: "2026-10-16T14:00:00.000Z",
+						reason: null,
+					},
+				],
+				dismissals: [],
+			},
+			now: new Date("2026-10-16T13:00:00.000Z"),
+			triage,
+		})
+		expect(snoozed).toMatchObject({ total: 1, snoozed: 1 })
+	})
+
+	test("keeps a signal's own copy of an action when the model rewrites it", () => {
+		const signal = unitSignal("agent_waiting", "alpha", {
+			paneId: "w1:p1",
+			agentStatus: "idle",
+		})
+		const original = signal.actions[0]!
+		const safer = {
+			...original,
+			risk: "destructive" as const,
+			preconditions: [
+				{ kind: "path_exists" as const, path: "/work", exists: true },
+			],
+		}
+		const key = `${canonical}:execution-unit:task/alpha`
+		const rewritten = {
+			...original,
+			id: "triage:rewritten",
+			risk: "reversible" as const,
+			preconditions: [],
+		}
+		const [item] = superviseModel(report([{ ...signal, actions: [safer] }]), {
+			state: empty,
+			triage: new Map([
+				[
+					key,
+					entry(key, {
+						actions: [rewritten],
+						modelActionIds: [rewritten.id],
+					}),
+				],
+			]),
+		}).groups[0]!.items
+		expect(item!.actions).toEqual([safer])
+		expect(item!.modelActionIds).toEqual([])
+		expect(item!.triageActionIds).toEqual([safer.id])
+	})
+
+	test("un-dismisses when signals change even while triage is unchanged", () => {
+		const key = `${canonical}:execution-unit:task/alpha`
+		const triage = new Map([[key, entry(key)]])
+		const before = superviseModel(
+			report([unitSignal("claim_without_session", "alpha")]),
+			{ state: empty, triage },
+		).groups[0]!.items[0]!
+		const state = {
+			snoozes: [],
+			dismissals: [
+				{
+					version: 1 as const,
+					at: "2026-10-16T00:00:00.000Z",
+					key,
+					actionId: null,
+					fingerprint: before.fingerprint,
+					reason: null,
+				},
+			],
+		}
+		expect(
+			superviseModel(report([unitSignal("claim_without_session", "alpha")]), {
+				state,
+				triage,
+			}).dismissed,
+		).toBe(1)
+		const changed = superviseModel(
+			report([
+				unitSignal("claim_without_session", "alpha"),
+				unitSignal("pr_ready_to_merge", "alpha"),
+			]),
+			{ state, triage },
+		)
+		expect(changed).toMatchObject({ total: 1, dismissed: 0 })
 	})
 })

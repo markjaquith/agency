@@ -1019,3 +1019,110 @@ describe("SupervisorExecutor safeguards", () => {
 		expect(result.logError).toStartWith("Unable to write the action log:")
 	})
 })
+
+describe("SupervisorExecutor risk floor", () => {
+	const resolvedRisk = (
+		action: unknown,
+		source?: "signal" | "triage" | "model",
+	) =>
+		run((executor) =>
+			Effect.map(
+				executor.resolve(action, {}, options(), source),
+				(resolution) =>
+					resolution.kind === "ready"
+						? [resolution.plan.action.risk, resolution.plan.destructive]
+						: resolution.kind,
+			),
+		)
+
+	test("makes model-written commands and agency actions destructive", async () => {
+		await fakeAgency({
+			id: "sync",
+			description: "Sync",
+			icon: "x",
+			color: "x",
+			available: true,
+			command: ["agency", "sync", "alpha"],
+		})
+		const merge = {
+			...base(),
+			id: "triage:merge",
+			type: "command",
+			payload: {
+				argv: ["gh", "pr", "merge", "https://github.com/acme/agency/pull/1"],
+				cwd: null,
+			},
+		}
+		expect(await resolvedRisk(merge, "model")).toEqual(["destructive", true])
+		expect(await resolvedRisk(merge, "signal")).toEqual(["reversible", false])
+		expect(await resolvedRisk(agencyAction("sync"), "model")).toEqual([
+			"destructive",
+			true,
+		])
+	})
+
+	test("always treats a runtime close as destructive", async () => {
+		const close = {
+			...base(),
+			type: "runtime",
+			payload: {
+				runtime: "herdr",
+				operation: "close",
+				target: "tab",
+				id: "w1:t1",
+			},
+		}
+		for (const source of ["signal", "triage", "model"] as const)
+			expect(await resolvedRisk(close, source)).toEqual(["destructive", true])
+		panes = [runtimePane({ paneId: "w1:p1", tabId: "w1:t1" })]
+		const once = await run((executor) =>
+			Effect.gen(function* () {
+				const resolution = yield* executor.resolve(
+					close,
+					{},
+					options(),
+					"model",
+				)
+				if (resolution.kind !== "ready") throw new Error(resolution.kind)
+				return yield* Effect.flip(
+					executor.confirm(
+						resolution.plan,
+						{ confirmed: true, destructiveConfirmed: false },
+						null,
+						options(),
+					),
+				)
+			}),
+		)
+		expect(once.message).toBe("The destructive action was not confirmed twice")
+		expect(calls).toEqual([])
+	})
+
+	test("refuses commands that run Agency by path or package runner", async () => {
+		const kinds = await run((executor) =>
+			Effect.all(
+				[
+					["/usr/local/bin/agency", "task", "status"],
+					["bunx", "agency", "archive"],
+					["npx", "-y", "@markjaquith/agency@latest", "sync"],
+					["bunx", "cowsay", "agency"],
+				].map((argv) =>
+					Effect.map(
+						executor.resolve(
+							{ ...base(), type: "command", payload: { argv, cwd: null } },
+							{},
+							options(),
+						),
+						(resolution) => resolution.kind,
+					),
+				),
+			),
+		)
+		expect(kinds).toEqual([
+			"unavailable",
+			"unavailable",
+			"unavailable",
+			"ready",
+		])
+	})
+})

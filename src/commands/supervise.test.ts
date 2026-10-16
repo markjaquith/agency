@@ -276,6 +276,59 @@ describe("agency supervise", () => {
 		)
 	})
 
+	test("sets triage.promptFile in place, and refuses when agency.json changed meanwhile", async () => {
+		await write(
+			join(root, "agency.json"),
+			'{\n\t"version": 2,\n\t"triage": {\n\t\t"prompt": "Be brief."\n\t},\n\t"autoArchive": false\n}\n',
+		)
+		const editor = join(tempDir, "editor.sh")
+		await write(editor, '#!/bin/sh\necho "Prefer small PRs." > "$1"\n')
+		const ui = fakeUi({})
+		const done = runTestEffect(
+			supervise(
+				{
+					cwd: root,
+					configDirectory,
+					env: { ...env, VISUAL: `sh ${editor}` },
+					agencyCommand: ["false"],
+				},
+				ui.open,
+			).pipe(Effect.provideService(RuntimeService, fakeRuntimeService(null))),
+		)
+		await waitFor(() => ui.models[0], "the first model")
+		ui.handlers().onEditPrompt(null)
+		await waitFor(
+			() =>
+				ui.notices.find((notice) => notice.includes("set triage.promptFile")),
+			"the prompt file",
+		)
+		expect(await Bun.file(join(root, "agency.json")).text()).toBe(
+			'{\n\t"version": 2,\n\t"triage": {\n\t\t"prompt": "Be brief.",\n\t\t"promptFile": "triage.md"\n\t},\n\t"autoArchive": false\n}\n',
+		)
+
+		// An editor (or anyone) changing agency.json meanwhile blocks the write.
+		await write(join(root, "agency.json"), '{"version":2}\n')
+		await write(
+			editor,
+			`#!/bin/sh\necho "Other." > "$1"\nprintf '{"version":2,"autoArchive":true}\\n' > "${join(root, "agency.json")}"\n`,
+		)
+		await Bun.write(join(root, "triage.md"), "")
+		ui.handlers().onEditPrompt(null)
+		await waitFor(
+			() =>
+				ui.notices.find((notice) =>
+					notice.includes("changed since it was read"),
+				),
+			"the conflict",
+		)
+		ui.handlers().onQuit()
+		await done
+		expect(await Bun.file(join(root, "agency.json")).json()).toEqual({
+			version: 2,
+			autoArchive: true,
+		})
+	})
+
 	test("triages the selected item or everything and merges the results", async () => {
 		await mkdir(join(tempDir, "elsewhere"))
 		const pane = runtimePane({
@@ -299,21 +352,21 @@ describe("agency supervise", () => {
 						triageCalls.push(options?.item)
 						const model = ui.models[0]!
 						const item = model.groups.at(-1)!.items[0]!
+						// A model rewrite of the signal's focus action, without its checks.
+						const rewritten = {
+							...item.actions[0]!,
+							id: "triage:focus-rewritten",
+							title: "Look at the waiting agent",
+							preconditions: [],
+						}
 						const written = {
 							...item.actions[0]!,
-							id: "triage:focus-written",
-							title: "Look at the waiting agent",
-							preconditions: [
-								{
-									kind: "pane_matches",
-									runtime: "herdr",
-									paneId: "w1:p7",
-									tabId: "w1:t7",
-									cwd: join(tempDir, "elsewhere"),
-									agentSessionId: "ses_7",
-									agentStatuses: ["idle"],
-								},
-							],
+							id: "triage:run-true",
+							type: "command",
+							title: "Run a harmless command",
+							risk: "reversible",
+							preconditions: [],
+							payload: { argv: ["true"], cwd: null },
 						}
 						return Effect.succeed({
 							version: 1,
@@ -332,10 +385,15 @@ describe("agency supervise", () => {
 										summary: "Waiting for a decision",
 										question: null,
 										actions: [
+											rewritten,
 											written,
 											{ ...written, id: "triage:bogus", type: "teleport" },
 										],
-										modelActionIds: ["triage:focus-written", "triage:bogus"],
+										modelActionIds: [
+											"triage:focus-rewritten",
+											"triage:run-true",
+											"triage:bogus",
+										],
 									},
 									suppressed: null,
 									error: null,
@@ -362,21 +420,34 @@ describe("agency supervise", () => {
 		expect(triageCalls).toEqual(["herdr:w1:p7"])
 		expect(item).toMatchObject({
 			badge: { label: "Needs You" },
-			modelActionIds: ["triage:focus-written"],
+			modelActionIds: ["triage:run-true"],
 			triage: { source: "fresh" },
 		})
-		expect(item.actions[0]!.id).toBe("triage:focus-written")
+		// The signal's own focus action beats the model's rewrite of it.
+		expect(item.actions.map((action) => action.id)).toEqual([
+			first.groups.at(-1)!.items[0]!.actions[0]!.id,
+			"triage:run-true",
+			...first.groups
+				.at(-1)!
+				.items[0]!.actions.slice(1)
+				.map((a) => a.id),
+		])
 		expect(ui.notices).toContain(
 			"Ignored 1 triage action(s) that failed the action schema",
 		)
 
-		// The model-written action still goes through the executor's checks.
-		ui.handlers().onExecute(item, item.actions[0]!)
+		// The model-written command is flagged and needs both confirmations.
+		ui.handlers().onExecute(item, item.actions[1]!)
 		await waitFor(
-			() => ui.notices.find((notice) => notice.startsWith("✓ Look at")),
-			"the triage action",
+			() => ui.notices.find((notice) => notice.startsWith("✓ Run a harmless")),
+			"the model action",
 		)
-		expect(calls).toEqual([["focus", "pane", "w1:p7"]])
+		expect(ui.confirmations.at(-1)).toMatchObject({
+			source: "model",
+			risk: "destructive",
+			destructive: true,
+			preview: ["true"],
+		})
 
 		ui.handlers().onTriage(null)
 		await waitFor(

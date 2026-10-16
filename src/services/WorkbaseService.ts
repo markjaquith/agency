@@ -427,19 +427,58 @@ export class WorkbaseService extends Context.Service<WorkbaseService>()(
 					return { root, autoArchive: enabled }
 				}),
 
-			/** Point the workbase triage prompt at a file relative to its root. */
-			setTriagePromptFile: (root: string, promptFile: string) =>
+			/**
+			 * Point the workbase triage prompt at a file relative to its root.
+			 * Only `triage.promptFile` changes, keeping key order and indentation;
+			 * the write is atomic and refused if agency.json no longer matches
+			 * `expected`, the text the caller based its decision on.
+			 */
+			setTriagePromptFile: (
+				root: string,
+				promptFile: string,
+				expected: string,
+			) =>
 				Effect.gen(function* () {
-					const service = yield* WorkbaseService
 					const fs = yield* FileSystemService
-					const loaded = yield* service.loadConfig(root)
-					const updated = {
-						...loaded.config,
-						triage: { ...loaded.config.triage, promptFile },
+					const configPath = join(root, "agency.json")
+					const raw = yield* fs.readFile(configPath)
+					if (raw !== expected)
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `${configPath} changed since it was read; triage.promptFile was not set`,
+						})
+					let parsed: unknown
+					try {
+						parsed = JSON.parse(raw)
+					} catch (cause) {
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `Invalid JSON in ${configPath}`,
+							cause,
+						})
 					}
-					yield* fs.writeFile(
-						join(loaded.root, "agency.json"),
-						`${JSON.stringify(updated, null, 2)}\n`,
+					if (
+						typeof parsed !== "object" ||
+						parsed === null ||
+						Array.isArray(parsed)
+					)
+						return yield* new WorkbaseConfigError({
+							path: configPath,
+							message: `Invalid workbase configuration in ${configPath}`,
+						})
+					const config = parsed as Record<string, unknown>
+					const triage = config.triage
+					if (
+						typeof triage === "object" &&
+						triage !== null &&
+						!Array.isArray(triage)
+					)
+						(triage as Record<string, unknown>).promptFile = promptFile
+					else config.triage = { promptFile }
+					const indent = raw.match(/^([ \t]+)"/m)?.[1] ?? "  "
+					yield* fs.writeFileAtomic(
+						configPath,
+						`${JSON.stringify(config, null, indent)}${raw.endsWith("\n") ? "\n" : ""}`,
 					)
 				}),
 

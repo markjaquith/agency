@@ -65,6 +65,8 @@ export interface SupervisorHandlers {
 }
 
 export interface ConfirmRequest {
+	/** Where the action came from; model-written actions are flagged. */
+	readonly source?: "signal" | "triage" | "model"
 	readonly title: string
 	readonly rationale: string
 	readonly risk: SupervisorAction["risk"]
@@ -301,6 +303,14 @@ export const SupervisorApp = (props: {
 			}
 		})
 	})
+	// Pin the effective action, so a new default (such as triage's ranking
+	// landing) never silently changes what Enter runs.
+	createEffect(() => {
+		const item = selected()
+		const first = item?.actions[0]
+		if (first && selectedActionId() === null)
+			untrack(() => setSelectedActionId(first.id))
+	})
 	const userMoved = () => {
 		setGuard(false)
 		setSelectionNotice(null)
@@ -531,7 +541,11 @@ export const SupervisorApp = (props: {
 		const age = triage.evaluatedAt
 			? `${Math.max(0, Math.round((now() - Date.parse(triage.evaluatedAt)) / 60_000))}m ago`
 			: "never"
-		return `triage ${triage.source} · ${age}${triage.error ? ` · ${triage.error}` : ""}`
+		const when =
+			triage.source === "cached" && triage.evaluatedAt
+				? `as of ${new Date(triage.evaluatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+				: `${triage.source} · ${age}`
+		return `triage ${when}${triage.error ? ` · ${triage.error}` : ""}`
 	}
 	const actionSource = (item: SuperviseItem, action: SupervisorAction) =>
 		item.modelActionIds.includes(action.id)
@@ -688,6 +702,11 @@ export const SupervisorApp = (props: {
 				{confirmProps.modal.request.rationale}
 			</text>
 			<box height={1} flexShrink={0} />
+			<Show when={confirmProps.modal.request.source === "model"}>
+				<text height={1} wrapMode="none" fg={macchiato.red}>
+					Written by the triage model
+				</text>
+			</Show>
 			<text height={1} fg={macchiato.blue}>
 				Will run:
 			</text>

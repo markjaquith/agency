@@ -1025,7 +1025,7 @@ one of the item's signal actions is model-written: its ID must start with
 `triage:`, it may reference only the item's panes, tabs, and unit, pane targets
 need a `pane_matches` precondition, `agency` actions must copy an available
 action's argv, inputs, selector, and `cwd` exactly (filling template `values`),
-and a model-written `command` or `open_url` can never be `read-only`. Its ID is
+and no model-written action can be `read-only`. Its ID is
 listed in the assessment's `modelActionIds`. Agency retries once in the same
 session with any validation errors, then reports a structured failure.
 
@@ -1050,8 +1050,10 @@ re-evaluated, and the rest reuse cached assessments (`source: "cached"`).
 Snoozes and dismissals are applied to every reported assessment: snoozed or
 dismissed actions are removed, and a snoozed or dismissed item reports
 `suppressed` with no actions. A dismissal with a fingerprint lapses when the
-item changes; full runs prune lapsed dismissals and those for items that are
-gone. If re-evaluation fails, an earlier assessment is reported
+item changes: supervisor dismissals pin `<signals>:<triage>` fingerprints, and
+triage compares its own part, or the signals part when the dismissal predates
+any triage of the item. Full runs prune lapsed dismissals and those for items
+that are gone. If re-evaluation fails, an earlier assessment is reported
 as `stale`, otherwise the item is `failed`. `--item` re-evaluates one item,
 selected by task, `task/phase`, execution unit ID, pane ID, or item key. The
 report follows
@@ -1079,20 +1081,26 @@ unit merge into one entry. The view refreshes on runtime events (Herdr
 changes.
 
 [Triage](#triage) results merge into the same entries: cached assessments show
-immediately, and `r` or `R` runs triage in the background (the header shows
-progress) and refreshes when it finishes. Triage's status, summary, and open
-question replace the signal summary (a more urgent signal badge is kept), its
-recommended actions rank first, and items triage knows without a signal appear
-too. Each entry shows whether triage is fresh, cached, stale, or failed and how
-old it is; actions tagged `triage` were recommended by triage and `model` ones
-were written by the model. Every triage action is decoded against the action
-schema (invalid ones are dropped with a warning) and runs through the same
-executor checks as signal actions. Items triage reports as `suppressed` are
-hidden, and dismissals pin triage's item fingerprint so they lapse when triage
-sees the item change. `e` opens `triage.promptFile` from the workbase's
-`agency.json`; when none is set it opens `triage.md` beside it and, once saved
-with content and confirmed, records `"promptFile": "triage.md"` (an inline
-`triage.prompt` is kept and still applies first).
+immediately (labelled with the time they were made), and `r` or `R` runs triage
+in the background (the header shows progress) and refreshes when it finishes.
+Triage's status, summary, and open question replace the signal summary (a more
+urgent signal badge is kept), its recommended actions rank first, and items
+triage knows without a signal appear too. When the model's action duplicates a
+signal action, the signal's own copy, with its preconditions and risk, is the
+one shown. Actions tagged `triage` were recommended by triage and `model` ones
+were written by the model; the confirmation says so. Every triage action is
+decoded against the action schema (invalid ones are dropped with a warning) and
+runs through the same executor checks as signal actions. Closing a pane, tab,
+or workspace is always destructive, and so is any command or agency action the
+model wrote, whatever risk it claims. Hiding follows live snoozes and
+dismissals. A dismissal pins both the entry's signals and triage's fingerprint,
+so it lapses when either changes. `e` opens `triage.promptFile` from the
+workbase's `agency.json`; when none is set it opens `triage.md` beside it and,
+once saved with content and confirmed, records `"promptFile": "triage.md"`
+(changing only that key, atomically, and refusing if `agency.json` changed in
+the meantime). An inline `triage.prompt` is kept and still applies first.
+`agency supervise` cleans up on SIGINT, SIGTERM, or SIGHUP: running triage stops,
+the terminal is restored, and it exits 0.
 
 | Key                           | Action                                                                 |
 | ----------------------------- | ---------------------------------------------------------------------- |
@@ -1122,7 +1130,8 @@ delegations start in a new, unfocused tab. `prompt_agent` and delegation to a
 bound agent require the same agent session still in its pane, idle and not
 blocked by a dialog. When that agent is gone or blocked, the supervisor offers a
 fresh kickoff with the same instructions; a working agent is never doubled.
-Agency commands must arrive as `agency` actions, and only `https` URLs open.
+Agency commands (including through a path or `bunx`/`npx`) must arrive as
+`agency` actions, and only `https` URLs open.
 Every outcome, including declined confirmations, is appended to the local
 action log; snoozes and dismissals persist in local supervision state under
 `$AGENCY_STATE_DIR/supervision`.

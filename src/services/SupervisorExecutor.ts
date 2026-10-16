@@ -1,5 +1,5 @@
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { ActDiscovery } from "../act-schema"
 import {
 	ACTION_VERSION,
@@ -188,6 +188,38 @@ const fillTemplate = (
 		if (input.option && !input.required && value) argv.push(input.option, value)
 	}
 	return argv
+}
+
+/** Where an action came from: a deterministic signal, or triage. */
+export type ActionSource = "signal" | "triage" | "model"
+
+/**
+ * Closing panes, tabs, or workspaces is always destructive, and so is any
+ * command or agency action the triage model wrote itself, whatever risk it
+ * claims: destructive plans need the second confirmation.
+ */
+const withRiskFloor = (
+	action: SupervisorAction,
+	source: ActionSource,
+): SupervisorAction =>
+	(action.type === "runtime" && action.payload.operation === "close") ||
+	(source === "model" &&
+		(action.type === "command" || action.type === "agency"))
+		? { ...action, risk: "destructive" }
+		: action
+
+/** argv that runs the Agency CLI, directly or through a package runner. */
+const runsAgency = (argv: readonly string[]) => {
+	const name = (part: string | undefined) =>
+		part ? basename(part).replace(/\.(?:ts|js|cmd|exe)$/, "") : ""
+	if (name(argv[0]) === "agency") return true
+	if (["bunx", "npx", "pnpx"].includes(name(argv[0]))) {
+		const target = argv.slice(1).find((part) => !part.startsWith("-"))
+		return (
+			target !== undefined && /^(?:@markjaquith\/)?agency(?:@.*)?$/.test(target)
+		)
+	}
+	return false
 }
 
 /** Only https URLs open; anything else could launch a local handler. */
@@ -989,7 +1021,7 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 						})
 					}
 					case "command": {
-						if (action.payload.argv[0] === "agency")
+						if (runsAgency(action.payload.argv))
 							return Effect.succeed(
 								unavailable(
 									"Agency commands must be agency actions so they are re-resolved",
@@ -1095,6 +1127,7 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 				action: unknown,
 				values: Readonly<Record<string, string>>,
 				options: ExecutorOptions,
+				source: ActionSource = "signal",
 			) =>
 				decodeAction(action).pipe(
 					Effect.mapError(
@@ -1104,7 +1137,9 @@ export class SupervisorExecutor extends Context.Service<SupervisorExecutor>()(
 								cause: error,
 							}),
 					),
-					Effect.flatMap((decoded) => resolveDecoded(decoded, values, options)),
+					Effect.flatMap((decoded) =>
+						resolveDecoded(withRiskFloor(decoded, source), values, options),
+					),
 				)
 
 			/** Append to the action log; returns why that failed, if it did. */
