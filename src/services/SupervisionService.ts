@@ -62,7 +62,7 @@ const DEFAULT_JIRA = { doneStatus: "Done", reopenStatus: "In Progress" }
 
 type WorkbaseSource = AttentionWorkbase["source"]
 
-interface SupervisionOptions {
+export interface SupervisionOptions {
 	/** Restrict supervision to one registered workbase ID, name, or path. */
 	readonly workbase?: string
 	/** Also inspect every archived execution unit, not only bound ones. */
@@ -664,45 +664,51 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 					} satisfies AttentionSnapshot
 				})
 
+			/** The snapshot and its deterministic attention report. */
+			const inspect = (options: SupervisionOptions = {}) =>
+				Effect.gen(function* () {
+					const current = yield* snapshot(options)
+					const selected = new Set(
+						current.workbases.map((workbase) => workbase.ref.root),
+					)
+					// A selected workbase excludes panes that belong to no workbase or
+					// to another one.
+					const signals = attentionSignals(current).filter(
+						(signal) =>
+							!options.workbase ||
+							(signal.subject.workbase !== null &&
+								selected.has(signal.subject.workbase.root)),
+					)
+					const kinds: Record<string, number> = {}
+					for (const signal of signals)
+						kinds[signal.kind] = (kinds[signal.kind] ?? 0) + 1
+					const report = {
+						version: ATTENTION_VERSION,
+						generatedAt: new Date().toISOString(),
+						runtime: {
+							provider: current.runtime.provider,
+							available: current.runtime.available,
+							error: current.runtime.error,
+						},
+						workbases: current.workbases.map((workbase) => ({
+							...workbase.ref,
+							source: workbase.source,
+							available: workbase.error === null,
+							error: workbase.error,
+						})),
+						signals,
+						summary: { total: signals.length, kinds },
+					} satisfies AttentionReport
+					return { snapshot: current, report }
+				})
+
 			return {
 				/** Join graph, PR, ticket, and runtime state across workbases. */
 				snapshot,
+				inspect,
 				/** Deterministic attention signals with suggested actions. */
 				attention: (options: SupervisionOptions = {}) =>
-					Effect.gen(function* () {
-						const current = yield* snapshot(options)
-						const selected = new Set(
-							current.workbases.map((workbase) => workbase.ref.root),
-						)
-						// A selected workbase excludes panes that belong to no workbase or
-						// to another one.
-						const signals = attentionSignals(current).filter(
-							(signal) =>
-								!options.workbase ||
-								(signal.subject.workbase !== null &&
-									selected.has(signal.subject.workbase.root)),
-						)
-						const kinds: Record<string, number> = {}
-						for (const signal of signals)
-							kinds[signal.kind] = (kinds[signal.kind] ?? 0) + 1
-						return {
-							version: ATTENTION_VERSION,
-							generatedAt: new Date().toISOString(),
-							runtime: {
-								provider: current.runtime.provider,
-								available: current.runtime.available,
-								error: current.runtime.error,
-							},
-							workbases: current.workbases.map((workbase) => ({
-								...workbase.ref,
-								source: workbase.source,
-								available: workbase.error === null,
-								error: workbase.error,
-							})),
-							signals,
-							summary: { total: signals.length, kinds },
-						} satisfies AttentionReport
-					}),
+					inspect(options).pipe(Effect.map(({ report }) => report)),
 			}
 		}),
 	},

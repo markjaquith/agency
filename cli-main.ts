@@ -18,6 +18,7 @@ import { context, help as contextHelp } from "./src/commands/context"
 import { graph, help as graphHelp } from "./src/commands/graph"
 import { next, help as nextHelp } from "./src/commands/next"
 import { attention, help as attentionHelp } from "./src/commands/attention"
+import { triage, help as triageHelp } from "./src/commands/triage"
 import { sync, help as syncHelp } from "./src/commands/sync"
 import { repo, help as repoHelp } from "./src/commands/repo"
 import { epic, help as epicHelp } from "./src/commands/epic"
@@ -55,6 +56,7 @@ import { RuntimeBindingService } from "./src/services/RuntimeBindingService"
 import { PullRequestStatusService } from "./src/services/PullRequestStatusService"
 import { SupervisionService } from "./src/services/SupervisionService"
 import { SupervisionStateService } from "./src/services/SupervisionStateService"
+import { TriageService } from "./src/services/TriageService"
 import {
 	GitVersionControlService,
 	VersionControlService,
@@ -102,6 +104,7 @@ const CliLayer = Layer.mergeAll(
 	PullRequestStatusService.layer,
 	SupervisionService.layer,
 	SupervisionStateService.layer,
+	TriageService.layer,
 )
 
 /**
@@ -154,7 +157,8 @@ const resolveInvocationCwd = (
 				options.help ||
 				commandName === "init" ||
 				commandName === "workbase" ||
-				commandName === "attention"
+				commandName === "attention" ||
+				commandName === "triage"
 			) {
 				return resolve(options.cwd ?? process.cwd())
 			}
@@ -762,6 +766,25 @@ const commands: Record<string, Command> = {
 			)
 		},
 	},
+	triage: {
+		run: async (_args: string[], options: Record<string, any>) => {
+			if (options.help) {
+				console.log(triageHelp)
+				return
+			}
+			await runCommand(
+				triage({
+					workbase: options.workbase,
+					archived: options.archived,
+					item: options.item,
+					json: options.json,
+					silent: options.silent,
+					verbose: options.verbose,
+					cwd: options.cwd,
+				}),
+			)
+		},
+	},
 	sync: {
 		run: async (args: string[], options: Record<string, any>) => {
 			if (options.help) {
@@ -805,6 +828,7 @@ Commands:
   worktree <subcommand>  Inspect and maintain managed workspaces
   next                   List or select ready execution units
   attention              Report work and sessions that need attention
+  triage                 Assess supervised work and rank next actions
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
   rebase <task> [phase]  Rebase a checkout onto a new base and record it

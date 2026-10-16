@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/markjaquith/agency/schemas/agency-triage-v1.schema.json",
+  "title": "Agency triage response v1",
+  "description": "The locked response contract for the Agency triage agent: one assessment per snapshot item, each with ranked agency-action-v1 actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "items"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "status", "summary", "question", "actions"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The snapshot item key this assessment is about."
+          },
+          "status": {
+            "$ref": "#/$defs/status"
+          },
+          "summary": {
+            "type": "string",
+            "description": "One line describing where the item stands."
+          },
+          "question": {
+            "type": ["string", "null"],
+            "description": "The open question the item's agent is waiting on, or null."
+          },
+          "actions": {
+            "type": "array",
+            "description": "Recommended actions, best first.",
+            "items": {
+              "$ref": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "status": {
+      "enum": [
+        "needs_input",
+        "blocked",
+        "in_progress",
+        "awaiting_review",
+        "ready_to_merge",
+        "complete",
+        "idle",
+        "unknown"
+      ]
+    }
+  }
+}

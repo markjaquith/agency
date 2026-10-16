@@ -269,6 +269,8 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 					readonly captureOutput?: boolean
 					readonly forwardOutput?: boolean
 					readonly passthrough?: boolean
+					/** Give the process no stdin, for commands that read piped input. */
+					readonly ignoreStdin?: boolean
 					readonly env?: Record<string, string>
 					readonly timeoutMs?: number
 				},
@@ -276,7 +278,11 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 				pipe(
 					spawnProcess(args, {
 						cwd: options?.cwd,
-						stdin: options?.passthrough ? "inherit" : "pipe",
+						stdin: options?.passthrough
+							? "inherit"
+							: options?.ignoreStdin
+								? "ignore"
+								: "pipe",
 						stdout: options?.passthrough
 							? "inherit"
 							: options?.forwardOutput

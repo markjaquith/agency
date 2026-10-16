@@ -102,7 +102,7 @@ const registryPath = (configDirectory?: string) =>
 		"workbases.json",
 	)
 
-const globalConfigPath = (configDirectory?: string) =>
+export const globalConfigPath = (configDirectory?: string) =>
 	join(
 		configDirectory ||
 			process.env.XDG_CONFIG_HOME ||

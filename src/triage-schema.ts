@@ -9,7 +9,7 @@ import { RuntimeKind } from "./workbase/runtime"
 /** The locked triage response contract version, shipped with Agency. */
 export const TRIAGE_VERSION = 1 as const
 
-export const TriageStatus = Schema.Literals([
+const TriageStatus = Schema.Literals([
 	"needs_input",
 	"blocked",
 	"in_progress",
@@ -43,7 +43,7 @@ export const TriageResponse = Schema.Struct({
 	),
 })
 
-export const TriageItemSource = Schema.Literals([
+const TriageItemSource = Schema.Literals([
 	/** Evaluated in this run. */
 	"fresh",
 	/** Unchanged since its cached evaluation. */
@@ -101,7 +101,6 @@ export const TriageReport = Schema.Struct({
 	}),
 })
 
-export type TriageStatus = Schema.Schema.Type<typeof TriageStatus>
 export type TriageAssessment = Schema.Schema.Type<typeof TriageAssessment>
 export type TriageResponse = Schema.Schema.Type<typeof TriageResponse>
 export type TriageReportItem = Schema.Schema.Type<typeof TriageReportItem>

@@ -7,7 +7,7 @@ import { FileSystemService } from "./FileSystemService"
 const STATE_VERSION = 1 as const
 
 /** One executed (or attempted) supervisor action, fed back into triage. */
-export const ActionLogEntry = Schema.Struct({
+const ActionLogEntry = Schema.Struct({
 	version: Schema.Literal(STATE_VERSION),
 	at: Schema.String,
 	/** The supervised item key, or null for an action about no item. */
@@ -20,7 +20,7 @@ export const ActionLogEntry = Schema.Struct({
 })
 
 /** Hide an item, or one of its actions, until a time. */
-export const Snooze = Schema.Struct({
+const Snooze = Schema.Struct({
 	version: Schema.Literal(STATE_VERSION),
 	at: Schema.String,
 	key: Schema.String,
@@ -34,7 +34,7 @@ export const Snooze = Schema.Struct({
  * Hide an item, or one of its actions. With a fingerprint, the dismissal
  * lapses once the item's state changes.
  */
-export const Dismissal = Schema.Struct({
+const Dismissal = Schema.Struct({
 	version: Schema.Literal(STATE_VERSION),
 	at: Schema.String,
 	key: Schema.String,
@@ -60,9 +60,9 @@ const TriageCache = Schema.Struct({
 const Snoozes = Schema.Array(Snooze)
 const Dismissals = Schema.Array(Dismissal)
 
-export type ActionLogEntry = Schema.Schema.Type<typeof ActionLogEntry>
-export type Snooze = Schema.Schema.Type<typeof Snooze>
-export type Dismissal = Schema.Schema.Type<typeof Dismissal>
+type ActionLogEntry = Schema.Schema.Type<typeof ActionLogEntry>
+type Snooze = Schema.Schema.Type<typeof Snooze>
+type Dismissal = Schema.Schema.Type<typeof Dismissal>
 export type TriageCacheEntry = Schema.Schema.Type<typeof TriageCacheEntry>
 
 type Without<T> = Omit<T, "version" | "at"> & { readonly at?: string }

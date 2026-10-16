@@ -977,6 +977,68 @@ default to `Done` and `In Progress`; override them per workbase in
 The report itself follows
 [`schemas/agency-attention-v1.schema.json`](schemas/agency-attention-v1.schema.json).
 
+### Triage
+
+`agency triage` adds judgment to attention signals. It assesses every supervised
+item (a unit with signals, a live agent pane, or a `working` or `delegated`
+claim, plus panes that signals report outside any unit) and ranks recommended
+actions in the `agency-action-v1` schema. It proposes; it never executes.
+
+```sh
+agency triage [--json] [--item <ref>] [--archived] [--workbase <selector>]
+```
+
+Triage runs headless `opencode run --standalone` (OpenCode V2) once per
+workbase with changed items, using the `agency-triage` agent that Agency
+manages in `$AGENCY_STATE_DIR/supervision/triage/.opencode/opencode.jsonc`. The
+agent denies every tool except reading files and a short list of read-only
+commands (`gh pr view`/`checks`/`diff`/`list`, `gh issue view`, `gh run view`,
+`acli jira workitem view`/`search`, `herdr pane read`/`list`, and
+`agency context`/`graph`/`attention`/`status`). Set `AGENCY_OPENCODE_BIN` to use
+another `opencode` executable.
+
+The agent receives a locked, versioned contract as its system prompt and three
+attachments. The first is the structured snapshot: items with Agency, PR,
+ticket, and pane state, signals with their actions, available `agency act`
+actions, bounded transcript tails of idle, done, or blocked agents, and the
+previous assessment, plus the recent action log, snoozes, and dismissals. The
+others are the
+[`schemas/agency-triage-v1.schema.json`](schemas/agency-triage-v1.schema.json)
+response schema and the action schema. Each reply item names a snapshot item
+`key` and gives a `status` (`needs_input`, `blocked`, `in_progress`,
+`awaiting_review`, `ready_to_merge`, `complete`, `idle`, or `unknown`), a
+one-line `summary`, the agent's open `question` or `null`, and ranked
+`actions`. Agency validates the reply against the schema and the requested
+keys, retries once in the same session with the validation errors, and then
+reports a structured failure.
+
+Your own instructions are added to the user message, global first. Both the
+global `agency.json` (in `$XDG_CONFIG_HOME/agency/`, else `~/.config/agency/`)
+and each workbase's `agency.json` accept an inline `prompt` and a `promptFile`
+relative to that file's directory; the global file also selects the model:
+
+```json
+{
+	"triage": {
+		"promptFile": "triage.md",
+		"model": "anthropic/claude-sonnet-4-5"
+	}
+}
+```
+
+Triage is incremental. Each item's fingerprint covers its snapshot facts, a hash
+of its transcript tails, the contract version, and the prompts; only items whose
+fingerprint changed are re-evaluated, and the rest reuse cached assessments
+(`source: "cached"`). If re-evaluation fails, an earlier assessment is reported
+as `stale`, otherwise the item is `failed`. `--item` re-evaluates one item,
+selected by task, `task/phase`, execution unit ID, pane ID, or item key. The
+report follows
+[`schemas/agency-triage-report-v1.schema.json`](schemas/agency-triage-report-v1.schema.json).
+
+Supervision state lives in `$AGENCY_STATE_DIR/supervision/`, never in workbase
+documents: `triage-cache.json`, the `actions.jsonl` action log, `snoozes.json`,
+and `dismissals.json`.
+
 ### Next Ready Work
 
 `agency next` lists ready execution units in descending unlock priority, with

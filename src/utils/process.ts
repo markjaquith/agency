@@ -14,7 +14,7 @@ interface ProcessResult {
  */
 interface SpawnOptions {
 	readonly cwd?: string
-	readonly stdin?: "pipe" | "inherit"
+	readonly stdin?: "pipe" | "inherit" | "ignore"
 	readonly stdout?: "pipe" | "inherit" | "tee"
 	readonly stderr?: "pipe" | "inherit" | "tee"
 	readonly env?: Record<string, string>
