@@ -2,161 +2,504 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/markjaquith/agency/schemas/agency-action-v1.schema.json",
   "title": "Agency supervisor action v1",
-  "description": "A suggested action shared by attention signals, triage, and the supervisor. Executors must recheck preconditions; destructive actions need a second confirmation.",
-  "type": "object",
-  "required": [
-    "version",
-    "id",
-    "type",
-    "title",
-    "rationale",
-    "risk",
-    "subject",
-    "preconditions",
-    "payload"
-  ],
-  "properties": {
-    "version": {
-      "const": 1
-    },
-    "id": {
-      "type": "string"
-    },
-    "type": {
-      "enum": [
-        "agency",
-        "runtime",
-        "command",
-        "prompt_agent",
-        "delegate",
-        "open_url"
-      ]
-    },
-    "title": {
-      "type": "string"
-    },
-    "rationale": {
-      "type": "string"
-    },
-    "risk": {
-      "enum": ["read-only", "reversible", "destructive"]
-    },
-    "subject": {
-      "$ref": "#/$defs/subject"
-    },
-    "preconditions": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/precondition"
-      }
-    },
-    "payload": {
-      "type": "object"
-    }
-  },
-  "additionalProperties": false,
-  "allOf": [
+  "description": "A suggested action shared by attention signals, triage, and the supervisor. Executors must recheck every precondition at execution time; destructive actions need a second confirmation.",
+  "oneOf": [
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "agency"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "type",
+        "title",
+        "rationale",
+        "risk",
+        "subject",
+        "preconditions",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "agency"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": ["read-only", "reversible", "destructive"]
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/precondition"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/agencyPayload"
-          }
+        "payload": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "actionId",
+                "selector",
+                "inputs",
+                "values",
+                "cwd",
+                "bindRuntime",
+                "command",
+                "commandTemplate"
+              ],
+              "properties": {
+                "actionId": {
+                  "type": "string",
+                  "description": "An agency act action ID. Executors re-resolve the argv at execution time with `agency act --action <actionId> [--task <task> [--phase <phase>]] --json` from cwd; command/commandTemplate show the argv as discovered."
+                },
+                "selector": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["task"],
+                      "properties": {
+                        "task": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inputs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/actInput"
+                  }
+                },
+                "values": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Input values by input ID, for a filled-in commandTemplate."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "The workbase root to run the command from."
+                },
+                "bindRuntime": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/runtimeRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "command": {
+                  "$ref": "#/$defs/argv"
+                },
+                "commandTemplate": {
+                  "type": "null"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "actionId",
+                "selector",
+                "inputs",
+                "values",
+                "cwd",
+                "bindRuntime",
+                "command",
+                "commandTemplate"
+              ],
+              "properties": {
+                "actionId": {
+                  "type": "string",
+                  "description": "An agency act action ID. Executors re-resolve the argv at execution time with `agency act --action <actionId> [--task <task> [--phase <phase>]] --json` from cwd; command/commandTemplate show the argv as discovered."
+                },
+                "selector": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["task"],
+                      "properties": {
+                        "task": {
+                          "type": "string"
+                        },
+                        "phase": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inputs": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/actInput"
+                  }
+                },
+                "values": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Input values by input ID, for a filled-in commandTemplate."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "The workbase root to run the command from."
+                },
+                "bindRuntime": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/runtimeRef"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "command": {
+                  "type": "null"
+                },
+                "commandTemplate": {
+                  "$ref": "#/$defs/argv"
+                }
+              }
+            }
+          ]
         }
-      }
+      },
+      "title": "agency action"
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "runtime"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "type",
+        "title",
+        "rationale",
+        "risk",
+        "subject",
+        "preconditions",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "runtime"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": ["read-only", "reversible", "destructive"]
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/precondition"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/runtimePayload"
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtime", "operation", "target", "id"],
+          "properties": {
+            "runtime": {
+              "$ref": "#/$defs/runtimeKind"
+            },
+            "operation": {
+              "enum": ["focus", "close"]
+            },
+            "target": {
+              "enum": ["pane", "tab", "workspace"]
+            },
+            "id": {
+              "type": "string"
+            }
           }
         }
-      }
+      },
+      "title": "runtime action"
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "command"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "type",
+        "title",
+        "rationale",
+        "risk",
+        "subject",
+        "preconditions",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "command"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": ["read-only", "reversible", "destructive"]
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/precondition"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/commandPayload"
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["argv", "cwd"],
+          "properties": {
+            "argv": {
+              "$ref": "#/$defs/argv"
+            },
+            "cwd": {
+              "type": ["string", "null"]
+            }
           }
         }
-      }
+      },
+      "title": "command action"
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "prompt_agent"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "type",
+        "title",
+        "rationale",
+        "risk",
+        "subject",
+        "preconditions",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "prompt_agent"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": ["read-only", "reversible", "destructive"]
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/precondition"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/prompt_agentPayload"
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["runtime", "paneId", "agentSessionId", "prompt"],
+          "properties": {
+            "runtime": {
+              "$ref": "#/$defs/runtimeKind"
+            },
+            "paneId": {
+              "type": "string"
+            },
+            "agentSessionId": {
+              "type": ["string", "null"]
+            },
+            "prompt": {
+              "type": "string"
+            }
           }
         }
-      }
+      },
+      "title": "prompt_agent action"
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "delegate"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "type",
+        "title",
+        "rationale",
+        "risk",
+        "subject",
+        "preconditions",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "delegate"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": ["read-only", "reversible", "destructive"]
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/precondition"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/delegatePayload"
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unit", "instructions", "via"],
+          "properties": {
+            "unit": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "via": {
+              "enum": ["prompt_bound_agent", "kickoff"]
+            }
           }
         }
-      }
+      },
+      "title": "delegate action"
     },
     {
-      "if": {
-        "properties": {
-          "type": {
-            "const": "open_url"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "type",
+        "title",
+        "rationale",
+        "risk",
+        "subject",
+        "preconditions",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "open_url"
+        },
+        "title": {
+          "type": "string"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "risk": {
+          "enum": ["read-only", "reversible", "destructive"]
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "preconditions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/precondition"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "properties": {
-          "payload": {
-            "$ref": "#/$defs/open_urlPayload"
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url"],
+          "properties": {
+            "url": {
+              "type": "string"
+            }
           }
         }
-      }
+      },
+      "title": "open_url action"
     }
   ],
   "$defs": {
@@ -171,6 +514,9 @@
     },
     "runtimeKind": {
       "enum": ["herdr"]
+    },
+    "agentStatus": {
+      "enum": ["idle", "working", "blocked", "done", "unknown"]
     },
     "workbaseRef": {
       "type": "object",
@@ -317,6 +663,7 @@
       }
     },
     "precondition": {
+      "description": "A state fact that must still hold when the action is executed.",
       "oneOf": [
         {
           "type": "object",
@@ -376,12 +723,14 @@
             "kind",
             "runtime",
             "paneId",
-            "present",
-            "agentSessionId"
+            "tabId",
+            "cwd",
+            "agentSessionId",
+            "agentStatuses"
           ],
           "properties": {
             "kind": {
-              "const": "pane_present"
+              "const": "pane_matches"
             },
             "runtime": {
               "$ref": "#/$defs/runtimeKind"
@@ -389,13 +738,46 @@
             "paneId": {
               "type": "string"
             },
-            "present": {
-              "type": "boolean"
+            "tabId": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": ["string", "null"]
             },
             "agentSessionId": {
               "type": ["string", "null"]
+            },
+            "agentStatuses": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/agentStatus"
+              }
             }
-          }
+          },
+          "description": "The pane must still exist with this tab, working directory, and session (pane IDs are reused), in one of agentStatuses."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "runtime", "tabId", "paneIds"],
+          "properties": {
+            "kind": {
+              "const": "tab_agent_panes"
+            },
+            "runtime": {
+              "$ref": "#/$defs/runtimeKind"
+            },
+            "tabId": {
+              "type": "string"
+            },
+            "paneIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "The tab's agent panes must be exactly paneIds."
         },
         {
           "type": "object",
@@ -415,6 +797,23 @@
               }
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "url", "sha"],
+          "properties": {
+            "kind": {
+              "const": "pull_request_head"
+            },
+            "url": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
+            }
+          },
+          "description": "The pull request head must still be sha."
         },
         {
           "type": "object",
@@ -471,137 +870,6 @@
           "type": "boolean"
         },
         "option": {
-          "type": "string"
-        }
-      }
-    },
-    "agencyPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "actionId",
-        "command",
-        "commandTemplate",
-        "inputs",
-        "cwd",
-        "bindRuntime"
-      ],
-      "properties": {
-        "actionId": {
-          "type": "string",
-          "description": "An agency act action ID; argv comes from its discovery output."
-        },
-        "command": {
-          "type": ["array", "null"],
-          "items": {
-            "type": "string"
-          }
-        },
-        "commandTemplate": {
-          "type": ["array", "null"],
-          "items": {
-            "type": "string"
-          }
-        },
-        "inputs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/actInput"
-          }
-        },
-        "cwd": {
-          "type": "string",
-          "description": "The workbase root to run the command from."
-        },
-        "bindRuntime": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/runtimeRef"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "After success, bind the resulting execution unit to this pane."
-        }
-      }
-    },
-    "runtimePayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["runtime", "operation", "target", "id"],
-      "properties": {
-        "runtime": {
-          "$ref": "#/$defs/runtimeKind"
-        },
-        "operation": {
-          "enum": ["focus", "close"]
-        },
-        "target": {
-          "enum": ["pane", "tab", "workspace"]
-        },
-        "id": {
-          "type": "string"
-        }
-      }
-    },
-    "commandPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["argv", "cwd"],
-      "properties": {
-        "argv": {
-          "$ref": "#/$defs/argv"
-        },
-        "cwd": {
-          "type": ["string", "null"]
-        }
-      }
-    },
-    "prompt_agentPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["runtime", "paneId", "agentSessionId", "prompt"],
-      "properties": {
-        "runtime": {
-          "$ref": "#/$defs/runtimeKind"
-        },
-        "paneId": {
-          "type": "string"
-        },
-        "agentSessionId": {
-          "type": ["string", "null"]
-        },
-        "prompt": {
-          "type": "string"
-        }
-      }
-    },
-    "delegatePayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["unit", "instructions", "command"],
-      "properties": {
-        "unit": {
-          "type": ["string", "null"]
-        },
-        "instructions": {
-          "type": "string"
-        },
-        "command": {
-          "type": ["array", "null"],
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
-    "open_urlPayload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["url"],
-      "properties": {
-        "url": {
           "type": "string"
         }
       }

@@ -140,6 +140,18 @@ export const WorkbaseConfig = Schema.Struct({
 		),
 	),
 	delivery: Schema.optional(DeliveryProvider),
+	tickets: Schema.optional(
+		Schema.Struct({
+			jira: Schema.optional(
+				Schema.Struct({
+					/** Status name for suggested completion transitions (default: Done). */
+					doneStatus: Schema.optional(NonEmptyString),
+					/** Status name for suggested reopen transitions (default: In Progress). */
+					reopenStatus: Schema.optional(NonEmptyString),
+				}),
+			),
+		}),
+	),
 })
 
 export const LegacyWorkbaseRegistry = Schema.Struct({

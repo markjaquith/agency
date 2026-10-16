@@ -6,7 +6,6 @@ import {
 	type ActEntity,
 } from "../commands/act-actions"
 import type { GraphNode } from "../graph-schema"
-import type { TicketRecord } from "../tickets/provider"
 import {
 	attentionSignals,
 	isReadyToMerge,
@@ -49,6 +48,8 @@ import { TicketService } from "./TicketService"
 import { WorkbaseService } from "./WorkbaseService"
 
 const PR_CONCURRENCY = 8
+const WORKBASE_CONCURRENCY = 4
+const DEFAULT_JIRA = { doneStatus: "Done", reopenStatus: "In Progress" }
 
 type WorkbaseSource = AttentionWorkbase["source"]
 
@@ -73,11 +74,11 @@ interface UnitSeed {
 	readonly revision: string | null
 	readonly repo: string
 	readonly pr: unknown
-	readonly ticket: TicketRecord | null
 	readonly ticketUrl: string | null
 	readonly directories: readonly string[]
 	readonly entity: ActEntity | null
 	readonly parent: AttentionUnit["parent"]
+	readonly review: boolean
 }
 
 const ArchivedDocument = Schema.Struct({
@@ -199,7 +200,7 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 							revision: document.revision,
 							repo: data.review?.repo ?? data.repo ?? "",
 							pr: data.review ? null : (data.pr ?? null),
-							ticket: null,
+							review: data.review !== undefined,
 							ticketUrl: task.ticketUrl ?? null,
 							directories: [directory, original.directory],
 							entity: null,
@@ -237,6 +238,7 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 			const pullRequest = (
 				raw: unknown,
 				config: WorkbaseConfig,
+				archived: boolean,
 			): Effect.Effect<
 				AttentionPullRequest | null,
 				never,
@@ -263,20 +265,24 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 					if (
 						config.delivery ||
 						record.provider !== "github" ||
-						record.state === "merged"
+						record.state === "merged" ||
+						(archived && record.state === "closed")
 					)
 						return base
 					const service = yield* PullRequestStatusService
 					const live = yield* service.read(record.url)
-					const mergeCommand = isReadyToMerge(live)
-						? [
-								"gh",
-								"pr",
-								"merge",
-								record.url,
-								`--${yield* service.mergeMethod(repository)}`,
-							]
-						: null
+					const mergeCommand =
+						isReadyToMerge(live) && live.state === "available" && live.headSha
+							? [
+									"gh",
+									"pr",
+									"merge",
+									record.url,
+									`--${yield* service.mergeMethod(repository)}`,
+									"--match-head-commit",
+									live.headSha,
+								]
+							: null
 					return { ...base, live, mergeCommand }
 				})
 
@@ -297,7 +303,7 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 					const root = loadedConfig.root
 					const graph = yield* graphs.get({
 						loadedConfig,
-						include: ["pr", "ticket"],
+						include: ["pr"],
 					})
 					const entities = new Map(
 						graph.nodes.flatMap((node) =>
@@ -331,8 +337,16 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 										? node.data.review.repo
 										: node.data.repo,
 								pr: "review" in node.data ? null : node.data.pr,
-								ticket: node.ticket ?? null,
-								ticketUrl: null,
+								review: "review" in node.data,
+								ticketUrl:
+									(phaseId
+										? (() => {
+												const task = entities.get(`task:${taskId}`)
+												return task && "ticketUrl" in task.data
+													? task.data.ticketUrl
+													: null
+											})()
+										: node.data.ticketUrl) ?? null,
 								directories: [paths.directory],
 								entity,
 								parent: phaseId
@@ -393,20 +407,20 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 							return true
 						}),
 					)
-					const archivedTickets = yield* tickets.readMany(
-						archived.map((unit) => unit.ticketUrl),
+					const seeds = [...active, ...archived]
+					// Ticket and PR lookups are slow external calls; run them together.
+					const [ticketRecords, prs] = yield* Effect.all(
+						[
+							tickets.readMany(seeds.map((unit) => unit.ticketUrl)),
+							Effect.forEach(
+								seeds,
+								(unit) =>
+									pullRequest(unit.pr, loadedConfig.config, unit.archived),
+								{ concurrency: PR_CONCURRENCY },
+							),
+						],
+						{ concurrency: "unbounded" },
 					)
-					const seeds = [
-						...active,
-						...archived.map((unit) => ({
-							...unit,
-							ticket: (unit.ticketUrl &&
-								archivedTickets.get(unit.ticketUrl)) || {
-								url: null,
-								state: "none" as const,
-							},
-						})),
-					]
 
 					const rebase = (path: string) =>
 						roots.map((base) =>
@@ -428,11 +442,6 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 						? reconcileRuntime(bindings, snapshot, runtimeUnits)
 						: null
 
-					const prs = yield* Effect.forEach(
-						seeds,
-						(unit) => pullRequest(unit.pr, loadedConfig.config),
-						{ concurrency: PR_CONCURRENCY },
-					)
 					const workbaseCatalog = catalog(graph.nodes, root)
 					const units: AttentionUnit[] = seeds.map((unit, index) => {
 						const binding = reconciled
@@ -450,10 +459,14 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 								archived: unit.archived,
 							},
 							parent: unit.parent,
+							review: unit.review,
 							status: unit.status,
 							revision: unit.revision,
 							pr: prs[index] ?? null,
-							ticket: unit.ticket ?? { url: null, state: "none" },
+							ticket: (unit.ticketUrl && ticketRecords.get(unit.ticketUrl)) || {
+								url: null,
+								state: "none",
+							},
 							binding: !binding
 								? null
 								: "binding" in binding
@@ -471,11 +484,18 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 								: [],
 						}
 					})
+					const jira = loadedConfig.config.tickets?.jira
 					return {
 						ref: { ...ref, root },
+						roots,
+						key: canonical,
 						source,
 						isDefault,
 						error: null,
+						jira: {
+							doneStatus: jira?.doneStatus ?? DEFAULT_JIRA.doneStatus,
+							reopenStatus: jira?.reopenStatus ?? DEFAULT_JIRA.reopenStatus,
+						},
 						units,
 						actions: workbaseCatalog,
 						claimedPaneIds: reconciled
@@ -491,9 +511,12 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 					Effect.catch((error) =>
 						Effect.succeed<AttentionWorkbase>({
 							ref,
+							roots: [ref.root],
+							key: ref.root,
 							source,
 							isDefault,
 							error: message(error),
+							jira: DEFAULT_JIRA,
 							units: [],
 							actions: [],
 							claimedPaneIds: [],
@@ -527,43 +550,26 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 								entry !== undefined && entry.id === registrations.defaultId,
 						}
 					}
-					if (options.workbase) {
-						return [
-							refFor(
-								yield* workbases.resolveRegistered(
-									options.workbase,
-									options.configDirectory,
-									cwd,
-								),
-								"current",
-							),
-						]
-					}
-					const refs = registrations.workbases.map((entry) =>
-						refFor(entry.path, "registered"),
-					)
-					const roots = new Set<string>()
-					for (const item of refs) {
-						roots.add(item.ref.root)
-						roots.add(
-							yield* fs
-								.realPath(item.ref.root)
-								.pipe(Effect.orElseSucceed(() => item.ref.root)),
-						)
-					}
+					const refs: ReturnType<typeof refFor>[] = []
+					const roots = new Map<string, string>()
+					const canonicalOf = (path: string) =>
+						fs.realPath(path).pipe(Effect.orElseSucceed(() => path))
+					const push = (path: string, source: WorkbaseSource) =>
+						Effect.gen(function* () {
+							const canonical = yield* canonicalOf(path)
+							if (roots.has(path) || roots.has(canonical)) return
+							roots.set(path, canonical)
+							roots.set(canonical, canonical)
+							refs.push(refFor(path, source))
+						})
+					for (const entry of registrations.workbases)
+						yield* push(entry.path, "registered")
 					const add = (path: string, source: WorkbaseSource) =>
 						Effect.gen(function* () {
 							const discovered = yield* workbases
 								.discover(path)
 								.pipe(Effect.orElseSucceed(() => null))
-							if (!discovered) return
-							const canonical = yield* fs
-								.realPath(discovered)
-								.pipe(Effect.orElseSucceed(() => discovered))
-							if (roots.has(discovered) || roots.has(canonical)) return
-							roots.add(discovered)
-							roots.add(canonical)
-							refs.push(refFor(discovered, source))
+							if (discovered) yield* push(discovered, source)
 						})
 					yield* add(cwd, "current")
 					// Live agents may run in workbases that were never registered.
@@ -575,7 +581,23 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 					)) {
 						yield* add(path, "runtime")
 					}
-					return refs
+					if (!options.workbase) return { inspect: refs, otherRoots: [] }
+					// A selected workbase is inspected alone; the others only mark
+					// which panes belong elsewhere.
+					const selected = yield* workbases.resolveRegistered(
+						options.workbase,
+						options.configDirectory,
+						cwd,
+					)
+					const selectedCanonical = yield* canonicalOf(selected)
+					const otherRoots = refs
+						.map((item) => item.ref.root)
+						.filter((root) => roots.get(root) !== selectedCanonical)
+						.flatMap((root) => [root, roots.get(root)!])
+					return {
+						inspect: [refFor(selected, "current")],
+						otherRoots: [...new Set(otherRoots)],
+					}
 				})
 
 			const snapshot = (options: SupervisionOptions = {}) =>
@@ -595,19 +617,13 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 							)
 						: { snapshot: null, error: null }
 					const panes: readonly RuntimePane[] = live.snapshot?.panes ?? []
-					const refs = yield* workbaseRefs(options, panes)
-					const workbases: AttentionWorkbase[] = []
-					for (const { ref, source, isDefault } of refs) {
-						workbases.push(
-							yield* inspectWorkbase(
-								ref,
-								source,
-								isDefault,
-								live.snapshot,
-								options,
-							),
-						)
-					}
+					const { inspect, otherRoots } = yield* workbaseRefs(options, panes)
+					const workbases = yield* Effect.forEach(
+						inspect,
+						({ ref, source, isDefault }) =>
+							inspectWorkbase(ref, source, isDefault, live.snapshot, options),
+						{ concurrency: WORKBASE_CONCURRENCY },
+					)
 					const directories = [
 						...new Set(
 							panes.flatMap((pane) => {
@@ -616,10 +632,12 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 							}),
 						),
 					]
-					const missingPaths: string[] = []
-					for (const directory of directories) {
-						if (!(yield* fs.exists(directory))) missingPaths.push(directory)
-					}
+					const exists = yield* Effect.forEach(
+						directories,
+						(directory) => fs.exists(directory),
+						{ concurrency: 16 },
+					)
+					const missingPaths = directories.filter((_, index) => !exists[index])
 					return {
 						runtime: {
 							provider: provider?.kind ?? null,
@@ -628,6 +646,7 @@ export class SupervisionService extends Context.Service<SupervisionService>()(
 							panes,
 						},
 						workbases,
+						otherRoots,
 						missingPaths,
 					} satisfies AttentionSnapshot
 				})

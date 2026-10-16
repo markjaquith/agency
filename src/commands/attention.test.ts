@@ -11,6 +11,7 @@ import { RuntimeBindingService } from "../services/RuntimeBindingService"
 import { RuntimeService } from "../services/RuntimeService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import {
+	attentionValidators,
 	captureLogs,
 	cleanupTempDir,
 	createFakeRuntimeProvider,
@@ -105,14 +106,19 @@ const livePullRequests: PullRequestStatusService["Service"] = {
 			review: "approved",
 			checks: "passing",
 			mergeable: "unknown",
+			mergeState: "UNKNOWN",
+			headSha: "abc123",
 		}),
 	mergeMethod: () => Effect.succeed("squash"),
 }
 
-const run = async (panes: readonly RuntimePane[] | null) => {
+const run = async (
+	panes: readonly RuntimePane[] | null,
+	options: { readonly workbase?: string } = {},
+) => {
 	const logs = await captureLogs(() =>
 		runTestEffect(
-			attention({ cwd: tempDir, json: true, configDirectory }).pipe(
+			attention({ cwd: tempDir, json: true, configDirectory, ...options }).pipe(
 				Effect.provideService(
 					RuntimeService,
 					fakeRuntimeService(
@@ -124,7 +130,12 @@ const run = async (panes: readonly RuntimePane[] | null) => {
 		),
 	)
 	expect(logs).toHaveLength(1)
-	return Schema.decodeUnknownSync(AttentionReport)(JSON.parse(logs[0]!))
+	const json = JSON.parse(logs[0]!)
+	const { report } = attentionValidators()
+	expect(report(json) ? [] : report.errors).toEqual([])
+	return Schema.decodeUnknownSync(AttentionReport, {
+		onExcessProperty: "error",
+	})(json)
 }
 
 describe("agency attention", () => {
@@ -193,7 +204,6 @@ describe("agency attention", () => {
 			["complete_session_open", "finished"],
 			["complete_session_open", "old"],
 			["pr_merged_item_open", "merged"],
-			["claim_without_session", "merged"],
 			["claim_without_session", "orphan"],
 			["agent_waiting", "stray"],
 			["unmanaged_session", "w1:p5"],
@@ -231,36 +241,40 @@ describe("agency attention", () => {
 		expect(report.summary.total).toBe(report.signals.length)
 	})
 
-	test("restricts supervision to one selected workbase", async () => {
-		const logs = await captureLogs(() =>
-			runTestEffect(
-				attention({
-					cwd: tempDir,
-					json: true,
-					configDirectory,
-					workbase: "main",
-				}).pipe(
-					Effect.provideService(
-						RuntimeService,
-						fakeRuntimeService(
-							createFakeRuntimeProvider({
-								panes: [
-									runtimePane({
-										paneId: "w1:p4",
-										cwd: join(other, "tasks/stray"),
-									}),
-								],
-							}),
-						),
-					),
-					Effect.provideService(PullRequestStatusService, livePullRequests),
-				),
-			),
+	test("restricts supervision without claiming other workbases' panes", async () => {
+		await mkdir(join(other, "notes"))
+		await runTestEffect(
+			Effect.gen(function* () {
+				const service = yield* WorkbaseService
+				yield* service.register(other, configDirectory, "other")
+				yield* service.setDefault("main", configDirectory)
+			}),
 		)
-		const report = Schema.decodeUnknownSync(AttentionReport)(
-			JSON.parse(logs[0]!),
+		const report = await run(
+			[
+				runtimePane({
+					paneId: "w1:p4",
+					agentStatus: "working",
+					cwd: join(other, "notes"),
+				}),
+				runtimePane({
+					paneId: "w1:p5",
+					agentStatus: "working",
+					cwd: join(tempDir, "notes"),
+				}),
+			],
+			{ workbase: "main" },
 		)
 		expect(report.workbases.map((workbase) => workbase.root)).toEqual([root])
+		const panes = report.signals.flatMap((signal) =>
+			signal.subject.runtime.map((ref) => ref.paneId),
+		)
+		expect(panes).not.toContain("w1:p4")
+		expect(
+			report.signals.find((signal) => signal.kind === "unmanaged_session"),
+		).toMatchObject({
+			subject: { workbase: { root }, runtime: [{ paneId: "w1:p5" }] },
+		})
 		expect(
 			report.signals.every((signal) => signal.subject.workbase?.root === root),
 		).toBe(true)

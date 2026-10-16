@@ -136,6 +136,15 @@
         },
         "value": {
           "type": ["string", "number", "boolean", "null"]
+        },
+        "unit": {
+          "type": "string"
+        },
+        "phaseId": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
         }
       }
     },

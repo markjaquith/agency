@@ -54,6 +54,8 @@ describe("live pull request status", () => {
 			await read({
 				reviewDecision: "APPROVED",
 				mergeable: "MERGEABLE",
+				mergeStateStatus: "CLEAN",
+				headRefOid: "abc123",
 				statusCheckRollup: [
 					{
 						__typename: "CheckRun",
@@ -76,6 +78,8 @@ describe("live pull request status", () => {
 			review: "approved",
 			checks: "passing",
 			mergeable: "mergeable",
+			mergeState: "CLEAN",
+			headSha: "abc123",
 		})
 	})
 

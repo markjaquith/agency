@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { TicketStatusCategory } from "./tickets/provider"
-import { RuntimeKind } from "./workbase/runtime"
+import { RuntimeAgentStatus, RuntimeKind } from "./workbase/runtime"
 import { WorkStatus } from "./workbase/schemas"
 
 export const ACTION_VERSION = 1 as const
@@ -62,17 +62,37 @@ export const ActionPrecondition = Schema.Union([
 		unit: Schema.String,
 		archived: Schema.Boolean,
 	}),
+	/**
+	 * The pane must still exist with this identity. Pane IDs are reused, so the
+	 * tab, working directory, and session must also match, and the agent status
+	 * must be one of `agentStatuses`.
+	 */
 	Schema.Struct({
-		kind: Schema.Literal("pane_present"),
+		kind: Schema.Literal("pane_matches"),
 		runtime: RuntimeKind,
 		paneId: Schema.String,
-		present: Schema.Boolean,
+		tabId: Schema.String,
+		cwd: Schema.NullOr(Schema.String),
 		agentSessionId: Schema.NullOr(Schema.String),
+		agentStatuses: Schema.Array(RuntimeAgentStatus),
+	}),
+	/** The tab's agent panes must be exactly this set. */
+	Schema.Struct({
+		kind: Schema.Literal("tab_agent_panes"),
+		runtime: RuntimeKind,
+		tabId: Schema.String,
+		paneIds: Schema.Array(Schema.String),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("pull_request_state"),
 		url: Schema.String,
 		states: Schema.Array(PullRequestState),
+	}),
+	/** The pull request head must still be this commit. */
+	Schema.Struct({
+		kind: Schema.Literal("pull_request_head"),
+		url: Schema.String,
+		sha: Schema.String,
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("ticket_status_category"),
@@ -110,21 +130,47 @@ const ActInput = Schema.Struct({
 	option: Schema.optional(Schema.String),
 })
 
+const AgencyPayloadFields = {
+	/**
+	 * An `agency act` action ID. Executors re-resolve the argv at execution time
+	 * with `agency act --action <actionId> [--task <task> [--phase <phase>]]
+	 * --json` from `cwd`; `command`/`commandTemplate` show the argv as discovered.
+	 */
+	actionId: Schema.String,
+	/** The `agency act` item selector, or null for a workbase-level action. */
+	selector: Schema.NullOr(
+		Schema.Struct({
+			task: Schema.String,
+			phase: Schema.optional(Schema.String),
+		}),
+	),
+	inputs: Schema.Array(ActInput),
+	/** Input values by input ID, for a filled-in `commandTemplate`. */
+	values: Schema.Record(Schema.String, Schema.String),
+	/** The workbase root to run the command from. */
+	cwd: Schema.String,
+	/** After success, bind the resulting execution unit to this pane. */
+	bindRuntime: Schema.NullOr(AttentionRuntimeRef),
+}
+
+const AgencyActionPayload = Schema.Union([
+	Schema.Struct({
+		...AgencyPayloadFields,
+		command: Argv,
+		commandTemplate: Schema.Null,
+	}),
+	Schema.Struct({
+		...AgencyPayloadFields,
+		command: Schema.Null,
+		commandTemplate: Argv,
+	}),
+])
+
 export const SupervisorAction = Schema.Union([
 	Schema.Struct({
 		...ActionFields,
 		type: Schema.Literal("agency"),
-		payload: Schema.Struct({
-			/** An `agency act` action ID; argv comes from its discovery output. */
-			actionId: Schema.String,
-			command: Schema.NullOr(Argv),
-			commandTemplate: Schema.NullOr(Argv),
-			inputs: Schema.Array(ActInput),
-			/** The workbase root to run the command from. */
-			cwd: Schema.String,
-			/** After success, bind the resulting execution unit to this pane. */
-			bindRuntime: Schema.NullOr(AttentionRuntimeRef),
-		}),
+		payload: AgencyActionPayload,
 	}),
 	Schema.Struct({
 		...ActionFields,
@@ -158,9 +204,9 @@ export const SupervisorAction = Schema.Union([
 		...ActionFields,
 		type: Schema.Literal("delegate"),
 		payload: Schema.Struct({
-			unit: Schema.NullOr(Schema.String),
+			unit: Schema.String,
 			instructions: Schema.String,
-			command: Schema.NullOr(Argv),
+			via: Schema.Literals(["prompt_bound_agent", "kickoff"]),
 		}),
 	}),
 	Schema.Struct({
@@ -197,6 +243,11 @@ export const AttentionEvidence = Schema.Struct({
 		Schema.Boolean,
 		Schema.Null,
 	]),
+	/** The execution unit the fact describes, when a signal spans several. */
+	unit: Schema.optional(Schema.String),
+	phaseId: Schema.optional(Schema.String),
+	/** The pane the fact describes, when a signal spans several. */
+	paneId: Schema.optional(Schema.String),
 })
 
 export const AttentionSignal = Schema.Struct({

@@ -14,7 +14,7 @@ import {
 } from "../attention-schema"
 import type { LivePullRequest } from "../services/PullRequestStatusService"
 import type { TicketRecord } from "../tickets/provider"
-import type { RuntimeKind, RuntimePane } from "./runtime"
+import type { RuntimeAgentStatus, RuntimeKind, RuntimePane } from "./runtime"
 import type { InferredBinding, RuntimeBinding } from "./runtime-bindings"
 import type { WorkStatus } from "./schemas"
 
@@ -57,6 +57,8 @@ export interface AttentionUnit {
 		readonly path: string
 		readonly revision: string | null
 	} | null
+	/** A review task, which finishes instead of delivering a PR. */
+	readonly review: boolean
 	readonly status: WorkStatus
 	readonly revision: string | null
 	readonly pr: AttentionPullRequest | null
@@ -68,10 +70,16 @@ export interface AttentionUnit {
 
 export interface AttentionWorkbase {
 	readonly ref: AttentionWorkbaseRef
+	/** The root as configured and as resolved through symlinks. */
+	readonly roots: readonly string[]
+	/** A stable key (the resolved root) for signal IDs. */
+	readonly key: string
 	/** Why the workbase is supervised: registered, the current directory, or a live pane. */
 	readonly source: "registered" | "current" | "runtime"
 	readonly isDefault: boolean
 	readonly error: string | null
+	/** Status names for suggested Jira transitions. */
+	readonly jira: { readonly doneStatus: string; readonly reopenStatus: string }
 	readonly units: readonly AttentionUnit[]
 	/** Workbase-level `agency act` actions, such as task creation. */
 	readonly actions: readonly CatalogAction[]
@@ -87,6 +95,8 @@ export interface AttentionSnapshot {
 		readonly panes: readonly RuntimePane[]
 	}
 	readonly workbases: readonly AttentionWorkbase[]
+	/** Roots of other known workbases that are not inspected in this run. */
+	readonly otherRoots: readonly string[]
 	/** Pane working directories that no longer exist. */
 	readonly missingPaths: readonly string[]
 }
@@ -105,7 +115,17 @@ const SIGNAL_ORDER: readonly AttentionSignalKind[] = [
 
 const TERMINAL = new Set<WorkStatus>(["done", "dropped"])
 const ACTIVE: readonly WorkStatus[] = ["open", "working", "delegated"]
-const WAITING = new Set<RuntimePane["agentStatus"]>(["idle", "done", "blocked"])
+const WAITING = new Set<RuntimeAgentStatus>(["idle", "done", "blocked"])
+const ANY_STATUS: readonly RuntimeAgentStatus[] = [
+	"idle",
+	"working",
+	"blocked",
+	"done",
+	"unknown",
+]
+/** Agent states in which closing a pane cannot interrupt work in progress. */
+const CLOSABLE: readonly RuntimeAgentStatus[] = ["idle", "done", "blocked"]
+const MERGEABLE_STATES = new Set(["CLEAN", "HAS_HOOKS"])
 
 const contains = (parent: string, path: string) => {
 	const relation = relative(parent, path)
@@ -120,13 +140,23 @@ const contains = (parent: string, path: string) => {
 const effectivePullRequestState = (pr: AttentionPullRequest) =>
 	pr.live?.state === "available" ? pr.live.prState : pr.recordedState
 
+/**
+ * Approved, with checks that ran and passed, and a clean merge state for a
+ * known head commit. No checks at all is not green: it is normal just after a
+ * push, before checks register.
+ */
 export const isReadyToMerge = (live: LivePullRequest | null) =>
 	live?.state === "available" &&
 	live.prState === "open" &&
 	!live.draft &&
 	live.review === "approved" &&
-	(live.checks === "passing" || live.checks === "none") &&
-	live.mergeable !== "conflicting"
+	live.checks === "passing" &&
+	live.mergeable !== "conflicting" &&
+	live.mergeState !== null &&
+	MERGEABLE_STATES.has(live.mergeState) &&
+	live.headSha !== null
+
+const paneCwd = (pane: RuntimePane) => pane.foregroundCwd ?? pane.cwd
 
 const runtimeRef = (
 	runtime: RuntimeKind,
@@ -139,8 +169,6 @@ const runtimeRef = (
 	agent: pane.agent,
 	agentSessionId: pane.agentSessionId,
 })
-
-const workbaseKey = (ref: AttentionWorkbaseRef) => ref.id ?? ref.root
 
 const subjectFor = (
 	workbase: AttentionWorkbase | null,
@@ -160,52 +188,82 @@ const subjectFor = (
 			: null,
 })
 
+interface UnitPane {
+	readonly pane: RuntimePane
+	readonly binding: "recorded" | "inferred"
+	readonly matchedBy: "checkout" | "directory" | null
+}
+
 /** Panes that currently host a unit through its binding or an inference. */
-const unitPanes = (unit: AttentionUnit): RuntimePane[] => {
-	const panes = new Map<string, RuntimePane>()
+const unitPanes = (unit: AttentionUnit): UnitPane[] => {
+	const panes = new Map<string, UnitPane>()
 	if (
 		unit.binding &&
 		unit.binding.state !== "gone" &&
 		unit.binding.state !== "unknown"
 	) {
-		for (const pane of unit.binding.panes) panes.set(pane.paneId, pane)
+		for (const pane of unit.binding.panes)
+			panes.set(pane.paneId, { pane, binding: "recorded", matchedBy: null })
 	}
-	for (const inferred of unit.inferred)
-		panes.set(inferred.pane.paneId, inferred.pane)
-	return [...panes.values()].sort((a, b) => a.paneId.localeCompare(b.paneId))
+	for (const inferred of unit.inferred) {
+		if (!panes.has(inferred.pane.paneId))
+			panes.set(inferred.pane.paneId, {
+				pane: inferred.pane,
+				binding: "inferred",
+				matchedBy: inferred.matchedBy,
+			})
+	}
+	return [...panes.values()].sort((a, b) =>
+		a.pane.paneId.localeCompare(b.pane.paneId),
+	)
 }
 
 const evidence = (
 	source: AttentionEvidence["source"],
 	label: string,
 	value: AttentionEvidence["value"],
-): AttentionEvidence => ({ source, label, value })
+	about: Pick<AttentionEvidence, "unit" | "phaseId" | "paneId"> = {},
+): AttentionEvidence => ({ source, label, value, ...about })
 
-const unitEvidence = (unit: AttentionUnit): AttentionEvidence[] => [
-	evidence("agency", "status", unit.status),
-	evidence("agency", "archived", unit.item.archived),
+const unitAbout = (unit: AttentionUnit) => ({
+	unit: unit.item.unit,
+	...(unit.item.phaseId ? { phaseId: unit.item.phaseId } : {}),
+})
+
+const unitEvidence = (
+	unit: AttentionUnit,
+	about: Pick<AttentionEvidence, "unit" | "phaseId"> = {},
+): AttentionEvidence[] => [
+	evidence("agency", "status", unit.status, about),
+	evidence("agency", "archived", unit.item.archived, about),
 ]
 
-const prEvidence = (pr: AttentionPullRequest | null): AttentionEvidence[] => {
-	if (!pr) return [evidence("pull_request", "state", "none")]
+const prEvidence = (
+	pr: AttentionPullRequest | null,
+	about: Pick<AttentionEvidence, "unit" | "phaseId"> = {},
+): AttentionEvidence[] => {
+	if (!pr) return [evidence("pull_request", "state", "none", about)]
 	const items = [
-		evidence("pull_request", "url", pr.url),
-		evidence("pull_request", "state", effectivePullRequestState(pr)),
+		evidence("pull_request", "url", pr.url, about),
+		evidence("pull_request", "state", effectivePullRequestState(pr), about),
 		evidence(
 			"pull_request",
 			"source",
 			pr.live?.state === "available" ? "live" : "recorded",
+			about,
 		),
 	]
 	if (pr.live?.state === "available") {
 		items.push(
-			evidence("pull_request", "draft", pr.live.draft),
-			evidence("pull_request", "review", pr.live.review),
-			evidence("pull_request", "checks", pr.live.checks),
-			evidence("pull_request", "mergeable", pr.live.mergeable),
+			evidence("pull_request", "draft", pr.live.draft, about),
+			evidence("pull_request", "review", pr.live.review, about),
+			evidence("pull_request", "checks", pr.live.checks, about),
+			evidence("pull_request", "mergeable", pr.live.mergeable, about),
+			evidence("pull_request", "mergeState", pr.live.mergeState, about),
+			evidence("pull_request", "headSha", pr.live.headSha, about),
 		)
 	} else if (pr.live?.state === "unavailable") {
-		items.push(evidence("pull_request", "liveError", pr.live.reason))
+		items.push(evidence("pull_request", "liveError", pr.live.reason, about))
 	}
 	return items
 }
@@ -228,12 +286,26 @@ const ticketEvidence = (ticket: TicketRecord): AttentionEvidence[] => {
 	}
 }
 
-const paneEvidence = (pane: RuntimePane): AttentionEvidence[] => [
-	evidence("runtime", "paneId", pane.paneId),
-	evidence("runtime", "agent", pane.agent),
-	evidence("runtime", "agentStatus", pane.agentStatus),
-	evidence("runtime", "cwd", pane.foregroundCwd ?? pane.cwd),
-]
+const paneEvidence = (
+	pane: RuntimePane,
+	provenance?: Pick<UnitPane, "binding" | "matchedBy">,
+): AttentionEvidence[] => {
+	const about = { paneId: pane.paneId }
+	return [
+		evidence("runtime", "paneId", pane.paneId, about),
+		evidence("runtime", "tabId", pane.tabId, about),
+		evidence("runtime", "agent", pane.agent, about),
+		evidence("runtime", "agentSessionId", pane.agentSessionId, about),
+		evidence("runtime", "agentStatus", pane.agentStatus, about),
+		evidence("runtime", "cwd", paneCwd(pane), about),
+		...(provenance
+			? [
+					evidence("runtime", "binding", provenance.binding, about),
+					evidence("runtime", "matchedBy", provenance.matchedBy, about),
+				]
+			: []),
+	]
+}
 
 interface ActionBase {
 	readonly slug: string
@@ -290,15 +362,18 @@ const unitPreconditions = (
 			]),
 ]
 
-const panePrecondition = (
+const paneMatches = (
 	runtime: RuntimeKind,
 	pane: RuntimePane,
+	agentStatuses: readonly RuntimeAgentStatus[],
 ): ActionPrecondition => ({
-	kind: "pane_present",
+	kind: "pane_matches",
 	runtime,
 	paneId: pane.paneId,
-	present: true,
+	tabId: pane.tabId,
+	cwd: paneCwd(pane),
 	agentSessionId: pane.agentSessionId,
+	agentStatuses,
 })
 
 const agencyAction = (
@@ -310,10 +385,17 @@ const agencyAction = (
 		readonly title?: string
 		readonly slug?: string
 	},
+	unit: AttentionUnit | null,
 	bindRuntime: AttentionRuntimeRef | null = null,
 ): SupervisorAction[] => {
 	const entry = catalog.find((action) => action.id === actionId)
 	if (!entry?.available) return []
+	const argv = entry.command
+		? { command: entry.command, commandTemplate: null }
+		: entry.commandTemplate
+			? { command: null, commandTemplate: entry.commandTemplate }
+			: null
+	if (!argv) return []
 	return [
 		makeAction(
 			signalId,
@@ -325,12 +407,18 @@ const agencyAction = (
 			},
 			{
 				actionId,
-				command: entry.command,
-				commandTemplate: entry.commandTemplate,
+				selector: unit
+					? {
+							task: unit.item.taskId,
+							...(unit.item.phaseId ? { phase: unit.item.phaseId } : {}),
+						}
+					: null,
+				...argv,
 				inputs: entry.inputs,
+				values: {},
 				cwd: workbase.ref.root,
 				bindRuntime,
-			},
+			} as ActionPayloads["agency"],
 		),
 	]
 }
@@ -340,25 +428,48 @@ const focusAction = (
 	runtime: RuntimeKind,
 	pane: RuntimePane,
 	subject: AttentionSubject,
-	slug = `focus-pane-${pane.paneId}`,
 ): SupervisorAction =>
 	makeAction(
 		signalId,
 		"runtime",
 		{
-			slug,
+			slug: `focus-pane-${pane.paneId}`,
 			title: `Focus pane ${pane.paneId}`,
 			rationale: "Look at the session before deciding what to do with it.",
 			risk: "reversible",
 			subject,
-			preconditions: [panePrecondition(runtime, pane)],
+			preconditions: [paneMatches(runtime, pane, ANY_STATUS)],
 		},
 		{ runtime, operation: "focus", target: "pane", id: pane.paneId },
 	)
 
+const closePaneAction = (
+	signalId: string,
+	runtime: RuntimeKind,
+	pane: RuntimePane,
+	subject: AttentionSubject,
+	title: string,
+	rationale: string,
+	preconditions: readonly ActionPrecondition[],
+): SupervisorAction =>
+	makeAction(
+		signalId,
+		"runtime",
+		{
+			slug: `close-pane-${pane.paneId}`,
+			title,
+			rationale,
+			risk: "destructive",
+			subject,
+			preconditions: [...preconditions, paneMatches(runtime, pane, CLOSABLE)],
+		},
+		{ runtime, operation: "close", target: "pane", id: pane.paneId },
+	)
+
 /**
- * Close whole tabs when every agent pane in them belongs to the subject (the
- * remaining panes, such as an editor, belong with it); otherwise close panes.
+ * Close whole tabs when every agent pane in them is one of `panes` (the rest,
+ * such as an editor, belong with them); otherwise close individual panes. Only
+ * agents that are not working are closed.
  */
 const closeActions = (
 	signalId: string,
@@ -370,18 +481,16 @@ const closeActions = (
 ): SupervisorAction[] => {
 	const runtime = snapshot.runtime.provider
 	if (!runtime) return []
-	const ids = new Set(panes.map((pane) => pane.paneId))
-	const tabs = [...new Set(panes.map((pane) => pane.tabId))].sort()
+	const closable = panes.filter((pane) => CLOSABLE.includes(pane.agentStatus))
+	const ids = new Set(closable.map((pane) => pane.paneId))
+	const tabs = [...new Set(closable.map((pane) => pane.tabId))].sort()
 	return tabs.flatMap((tabId) => {
-		const inTab = panes.filter((pane) => pane.tabId === tabId)
-		const preconditions = [
-			...extraPreconditions,
-			...inTab.map((pane) => panePrecondition(runtime, pane)),
-		]
-		const whole = snapshot.runtime.panes
+		const inTab = closable.filter((pane) => pane.tabId === tabId)
+		const tabAgents = snapshot.runtime.panes
 			.filter((pane) => pane.tabId === tabId && pane.agent !== null)
-			.every((pane) => ids.has(pane.paneId))
-		if (whole) {
+			.map((pane) => pane.paneId)
+			.sort()
+		if (tabAgents.every((paneId) => ids.has(paneId))) {
 			return [
 				makeAction(
 					signalId,
@@ -392,28 +501,25 @@ const closeActions = (
 						rationale,
 						risk: "destructive",
 						subject,
-						preconditions,
+						preconditions: [
+							...extraPreconditions,
+							{ kind: "tab_agent_panes", runtime, tabId, paneIds: tabAgents },
+							...inTab.map((pane) => paneMatches(runtime, pane, CLOSABLE)),
+						],
 					},
 					{ runtime, operation: "close", target: "tab", id: tabId },
 				),
 			]
 		}
 		return inTab.map((pane) =>
-			makeAction(
+			closePaneAction(
 				signalId,
-				"runtime",
-				{
-					slug: `close-pane-${pane.paneId}`,
-					title: `Close pane ${pane.paneId}`,
-					rationale,
-					risk: "destructive",
-					subject,
-					preconditions: [
-						...extraPreconditions,
-						panePrecondition(runtime, pane),
-					],
-				},
-				{ runtime, operation: "close", target: "pane", id: pane.paneId },
+				runtime,
+				pane,
+				subject,
+				`Close pane ${pane.paneId}`,
+				rationale,
+				extraPreconditions,
 			),
 		)
 	})
@@ -443,10 +549,11 @@ const openUrlAction = (
 /** Explicit provider transition argv; transitions are never automatic. */
 const ticketTransition = (
 	ticket: Extract<TicketRecord, { state: "available" }>,
-	target: "done" | "not_planned" | "reopen",
+	target: "done" | "reopen",
+	jira: AttentionWorkbase["jira"],
 ): { readonly argv: readonly string[]; readonly title: string } | null => {
 	if (ticket.provider === "jira") {
-		const status = target === "reopen" ? "In Progress" : "Done"
+		const status = target === "reopen" ? jira.reopenStatus : jira.doneStatus
 		return {
 			argv: [
 				"acli",
@@ -463,25 +570,15 @@ const ticketTransition = (
 		}
 	}
 	if (ticket.provider === "github") {
-		if (target === "reopen")
-			return {
-				argv: ["gh", "issue", "reopen", ticket.url],
-				title: `Reopen ${ticket.key}`,
-			}
-		return {
-			argv: [
-				"gh",
-				"issue",
-				"close",
-				ticket.url,
-				"--reason",
-				target === "done" ? "completed" : "not planned",
-			],
-			title:
-				target === "done"
-					? `Close ${ticket.key} as completed`
-					: `Close ${ticket.key} as not planned`,
-		}
+		return target === "reopen"
+			? {
+					argv: ["gh", "issue", "reopen", ticket.url],
+					title: `Reopen ${ticket.key}`,
+				}
+			: {
+					argv: ["gh", "issue", "close", ticket.url, "--reason", "completed"],
+					title: `Close ${ticket.key} as completed`,
+				}
 	}
 	return null
 }
@@ -506,7 +603,7 @@ const signal = (
 }
 
 const unitScope = (workbase: AttentionWorkbase, unit: AttentionUnit) =>
-	`${workbaseKey(workbase.ref)}:${unit.item.unit}`
+	`${workbase.key}:${unit.item.unit}`
 
 const unitLabel = (unit: AttentionUnit) =>
 	unit.item.phaseId
@@ -519,8 +616,8 @@ const completeSessionOpen = (
 	unit: AttentionUnit,
 ): AttentionSignal[] => {
 	const runtime = snapshot.runtime.provider
-	const panes = unitPanes(unit)
-	if (!runtime || panes.length === 0) return []
+	const entries = unitPanes(unit)
+	if (!runtime || entries.length === 0) return []
 	if (!TERMINAL.has(unit.status) && !unit.item.archived) return []
 	const prState = unit.pr ? effectivePullRequestState(unit.pr) : null
 	// Dropped work may legitimately end with a closed, unmerged PR.
@@ -532,9 +629,16 @@ const completeSessionOpen = (
 		unit.ticket.state === "none" ||
 		(unit.ticket.state === "available" && unit.ticket.statusCategory === "done")
 	if (!prSettled || !ticketSettled) return []
-	const refs = panes.map((pane) => runtimeRef(runtime, pane))
-	const subject = subjectFor(workbase, unit, refs)
+	const panes = entries.map((entry) => entry.pane)
+	const subject = subjectFor(
+		workbase,
+		unit,
+		panes.map((pane) => runtimeRef(runtime, pane)),
+	)
 	const state = unit.item.archived ? "archived" : unit.status
+	const preconditions: ActionPrecondition[] = unit.item.archived
+		? [{ kind: "item_archived", unit: unit.item.unit, archived: true }]
+		: unitPreconditions(unit, ["done", "dropped"])
 	return [
 		signal(
 			"complete_session_open",
@@ -545,7 +649,7 @@ const completeSessionOpen = (
 				...unitEvidence(unit),
 				...prEvidence(unit.pr),
 				...ticketEvidence(unit.ticket),
-				...panes.flatMap(paneEvidence),
+				...entries.flatMap((entry) => paneEvidence(entry.pane, entry)),
 			],
 			(id) => [
 				...closeActions(
@@ -554,325 +658,204 @@ const completeSessionOpen = (
 					panes,
 					subject,
 					"The work is complete; its session no longer needs supervision.",
-					unit.item.archived
-						? [
-								{
-									kind: "item_archived",
-									unit: unit.item.unit,
-									archived: true,
-								},
-							]
-						: unitPreconditions(unit, ["done", "dropped"]),
+					preconditions,
 				),
-				focusAction(id, runtime, panes[0]!, subject),
+				...panes.map((pane) => focusAction(id, runtime, pane, subject)),
 				...(unit.item.archived
 					? []
-					: agencyAction(id, workbase, unit.actions, "archive", {
-							rationale:
-								"Terminal work can move to the archive once its session closes.",
-							risk: "reversible",
-							subject,
-							preconditions: unitPreconditions(unit, ["done", "dropped"]),
-						})),
+					: agencyAction(
+							id,
+							workbase,
+							unit.actions,
+							"archive",
+							{
+								rationale:
+									"Terminal work can move to the archive once its session closes.",
+								risk: "reversible",
+								subject,
+								preconditions,
+							},
+							unit,
+						)),
 			],
 		),
 	]
 }
 
-const ticketStatusMismatch = (
-	workbase: AttentionWorkbase,
-	unit: AttentionUnit,
-): AttentionSignal[] => {
-	const ticket = unit.ticket
-	if (ticket.state !== "available") return []
-	const subject = subjectFor(workbase, unit)
-	const prState = unit.pr ? effectivePullRequestState(unit.pr) : null
-	const evidenceItems = [
-		...unitEvidence(unit),
-		...prEvidence(unit.pr),
-		...ticketEvidence(ticket),
-	]
-	const scope = unitScope(workbase, unit)
-	if (
-		unit.status === "done" &&
-		prState === "merged" &&
-		ticket.statusCategory !== "done"
-	) {
-		const transition = ticketTransition(ticket, "done")
-		return [
-			signal(
-				"ticket_status_mismatch",
-				scope,
-				`${unitLabel(unit)} is done with a merged PR, but ${ticket.key} is ${ticket.status}`,
-				subject,
-				evidenceItems,
-				(id) => [
-					...(transition
-						? [
-								makeAction(
-									id,
-									"command",
-									{
-										slug: "ticket-transition",
-										title: transition.title,
-										rationale:
-											"The delivered work is merged; the ticket should reflect completion.",
-										risk: "reversible",
-										subject,
-										preconditions: [
-											{
-												kind: "ticket_status_category",
-												url: ticket.url,
-												statusCategories: ["todo", "in_progress"],
-											},
-										],
-									},
-									{ argv: transition.argv, cwd: null },
-								),
-							]
-						: []),
-					openUrlAction(
-						id,
-						"open-ticket",
-						`Open ${ticket.key}`,
-						ticket.url,
-						subject,
-					),
-				],
-			),
-		]
-	}
-	if (
-		ticket.statusCategory === "done" &&
-		!unit.item.archived &&
-		ACTIVE.includes(unit.status)
-	) {
-		const transition = ticketTransition(ticket, "reopen")
-		return [
-			signal(
-				"ticket_status_mismatch",
-				scope,
-				`${ticket.key} is ${ticket.status}, but ${unitLabel(unit)} is still ${unit.status}`,
-				subject,
-				evidenceItems,
-				(id) => [
-					openUrlAction(
-						id,
-						"open-ticket",
-						`Open ${ticket.key}`,
-						ticket.url,
-						subject,
-					),
-					...(transition
-						? [
-								makeAction(
-									id,
-									"command",
-									{
-										slug: "ticket-transition",
-										title: transition.title,
-										rationale:
-											"The work item is still active; the ticket may have been closed early.",
-										risk: "reversible",
-										subject,
-										preconditions: [
-											{
-												kind: "ticket_status_category",
-												url: ticket.url,
-												statusCategories: ["done"],
-											},
-											...unitPreconditions(unit, ACTIVE),
-										],
-									},
-									{ argv: transition.argv, cwd: null },
-								),
-							]
-						: []),
-				],
-			),
-		]
-	}
-	return []
+interface Member {
+	readonly workbase: AttentionWorkbase
+	readonly unit: AttentionUnit
 }
 
-/** A multi-phase task's ticket reflects every phase, so compare it once. */
-const phasedTicketStatusMismatch = (
-	workbase: AttentionWorkbase,
-	phases: readonly AttentionUnit[],
+const mergedPr = (unit: AttentionUnit) =>
+	unit.pr !== null && effectivePullRequestState(unit.pr) === "merged"
+
+/**
+ * One ticket may be shared by several units (phases, or follow-up tasks). It
+ * is delivered only when every sharing unit is terminal, at least one is done
+ * with a merged PR, and none is done with an unmerged PR.
+ */
+const ticketStatusMismatch = (
+	ticket: Extract<TicketRecord, { state: "available" }>,
+	members: readonly Member[],
 ): AttentionSignal[] => {
-	const first = phases[0]!
-	const ticket = first.ticket
-	if (ticket.state !== "available" || !first.parent) return []
-	const archived = phases.every((phase) => phase.item.archived)
+	const first = members[0]!
+	const units = members.map((member) => member.unit)
+	const delivered =
+		units.every((unit) => TERMINAL.has(unit.status)) &&
+		units.some((unit) => unit.status === "done" && mergedPr(unit)) &&
+		units.every(
+			(unit) => unit.status !== "done" || unit.pr === null || mergedPr(unit),
+		)
+	const active = units.filter(
+		(unit) => !unit.item.archived && ACTIVE.includes(unit.status),
+	)
+	// A done ticket is consistent with active follow-up work once any sharing
+	// unit has been completed.
+	const reopened =
+		ticket.statusCategory === "done" &&
+		active.length > 0 &&
+		!units.some((unit) => unit.status === "done")
+	const forward = delivered && ticket.statusCategory !== "done"
+	if (!forward && !reopened) return []
+
+	const tasks = new Set(units.map((unit) => unit.item.taskId))
+	const single = units.length === 1 ? units[0]! : null
+	const item: AttentionItemRef | null = single
+		? single.item
+		: tasks.size === 1 && first.unit.parent
+			? {
+					unit: null,
+					kind: "task",
+					taskId: first.unit.item.taskId,
+					path: first.unit.parent.path,
+					archived: units.every((unit) => unit.item.archived),
+				}
+			: null
 	const subject: AttentionSubject = {
-		...subjectFor(workbase, first),
-		item: {
-			unit: null,
-			kind: "task",
-			taskId: first.item.taskId,
-			path: first.parent.path,
-			archived,
-		},
-		pullRequest: null,
+		workbase: first.workbase.ref,
+		item,
+		runtime: [],
+		pullRequest: single?.pr ? { url: single.pr.url } : null,
+		ticket: { url: ticket.url, key: ticket.key },
 	}
 	const evidenceItems = [
-		...phases.flatMap((phase) => [
-			evidence("agency", `${phase.item.phaseId} status`, phase.status),
-			evidence(
-				"pull_request",
-				`${phase.item.phaseId} state`,
-				phase.pr ? effectivePullRequestState(phase.pr) : "none",
-			),
-		]),
+		...members.flatMap(({ unit }) => {
+			const about = unitAbout(unit)
+			return [
+				...unitEvidence(unit, about),
+				evidence(
+					"pull_request",
+					"state",
+					unit.pr ? effectivePullRequestState(unit.pr) : "none",
+					about,
+				),
+			]
+		}),
 		...ticketEvidence(ticket),
 	]
-	const scope = `${workbaseKey(workbase.ref)}:task:${first.item.taskId}`
-	const taskRevision: ActionPrecondition[] = first.parent.revision
+	const label =
+		item?.unit === null
+			? item.taskId
+			: single
+				? unitLabel(single)
+				: `${units.length} items`
+	const transition = ticketTransition(
+		ticket,
+		forward ? "done" : "reopen",
+		first.workbase.jira,
+	)
+	const preconditions: ActionPrecondition[] = forward
 		? [
 				{
-					kind: "document_revision",
-					path: first.parent.path,
-					sha256: first.parent.revision,
+					kind: "ticket_status_category",
+					url: ticket.url,
+					statusCategories: ["todo", "in_progress"],
 				},
+				...units.flatMap((unit) => [
+					...unitPreconditions(unit, [unit.status]),
+					...(unit.pr && mergedPr(unit)
+						? [
+								{
+									kind: "pull_request_state",
+									url: unit.pr.url,
+									states: ["merged"],
+								} as const,
+							]
+						: []),
+				]),
 			]
-		: []
-	const phaseStatuses = (statuses: readonly WorkStatus[]) =>
-		phases
-			.filter((phase) => !phase.item.archived)
-			.map(
-				(phase): ActionPrecondition => ({
-					kind: "item_status",
-					unit: phase.item.unit,
-					statuses,
-				}),
-			)
-	const delivered =
-		phases.every((phase) => TERMINAL.has(phase.status)) &&
-		phases.some(
-			(phase) =>
-				phase.status === "done" &&
-				phase.pr !== null &&
-				effectivePullRequestState(phase.pr) === "merged",
-		) &&
-		phases.every(
-			(phase) =>
-				phase.status !== "done" ||
-				phase.pr === null ||
-				effectivePullRequestState(phase.pr) === "merged",
-		)
-	const active = phases.filter(
-		(phase) => !phase.item.archived && ACTIVE.includes(phase.status),
-	)
-	const transitionAction = (
-		id: string,
-		target: "done" | "reopen",
-		rationale: string,
-		preconditions: readonly ActionPrecondition[],
-	) => {
-		const transition = ticketTransition(ticket, target)
-		return transition
-			? [
-					makeAction(
-						id,
-						"command",
-						{
-							slug: "ticket-transition",
-							title: transition.title,
-							rationale,
-							risk: "reversible",
-							subject,
-							preconditions,
-						},
-						{ argv: transition.argv, cwd: null },
-					),
-				]
-			: []
-	}
-	if (delivered && ticket.statusCategory !== "done") {
-		return [
-			signal(
-				"ticket_status_mismatch",
-				scope,
-				`Every phase of ${first.item.taskId} is complete, but ${ticket.key} is ${ticket.status}`,
-				subject,
-				evidenceItems,
-				(id) => [
-					...transitionAction(
-						id,
-						"done",
-						"Every phase is delivered; the ticket should reflect completion.",
-						[
-							{
-								kind: "ticket_status_category",
-								url: ticket.url,
-								statusCategories: ["todo", "in_progress"],
-							},
-							...phaseStatuses(["done", "dropped"]),
-						],
-					),
-					openUrlAction(
-						id,
-						"open-ticket",
-						`Open ${ticket.key}`,
-						ticket.url,
-						subject,
-					),
-				],
-			),
-		]
-	}
-	if (ticket.statusCategory === "done" && active.length > 0) {
-		return [
-			signal(
-				"ticket_status_mismatch",
-				scope,
-				`${ticket.key} is ${ticket.status}, but ${active.length} phase${active.length === 1 ? "" : "s"} of ${first.item.taskId} remain active`,
-				subject,
-				evidenceItems,
-				(id) => [
-					openUrlAction(
-						id,
-						"open-ticket",
-						`Open ${ticket.key}`,
-						ticket.url,
-						subject,
-					),
-					...transitionAction(
-						id,
-						"reopen",
-						"Phases are still active; the ticket may have been closed early.",
-						[
-							{
-								kind: "ticket_status_category",
-								url: ticket.url,
-								statusCategories: ["done"],
-							},
-							...taskRevision,
-						],
-					),
-				],
-			),
-		]
-	}
-	return []
+		: [
+				{
+					kind: "ticket_status_category",
+					url: ticket.url,
+					statusCategories: ["done"],
+				},
+				...active.flatMap((unit) => unitPreconditions(unit, ACTIVE)),
+			]
+	return [
+		signal(
+			"ticket_status_mismatch",
+			ticket.url,
+			forward
+				? `${label} is delivered, but ${ticket.key} is ${ticket.status}`
+				: `${ticket.key} is ${ticket.status}, but ${label} ${active.length === 1 && single ? "is" : "remain"} active with nothing done`,
+			subject,
+			evidenceItems,
+			(id) => [
+				...(transition
+					? [
+							makeAction(
+								id,
+								"command",
+								{
+									slug: "ticket-transition",
+									title: transition.title,
+									rationale: forward
+										? "Every unit sharing the ticket is delivered; the ticket should reflect completion."
+										: "No sharing unit is done; the ticket may have been closed early.",
+									risk: "reversible",
+									subject,
+									preconditions,
+								},
+								{ argv: transition.argv, cwd: null },
+							),
+						]
+					: []),
+				openUrlAction(
+					id,
+					"open-ticket",
+					`Open ${ticket.key}`,
+					ticket.url,
+					subject,
+				),
+			],
+		),
+	]
 }
 
-const ticketSignals = (workbase: AttentionWorkbase): AttentionSignal[] => {
-	const phased = new Map<string, AttentionUnit[]>()
-	const signals: AttentionSignal[] = []
-	for (const unit of workbase.units) {
-		if (!unit.item.phaseId) {
-			signals.push(...ticketStatusMismatch(workbase, unit))
-			continue
+const ticketSignals = (snapshot: AttentionSnapshot): AttentionSignal[] => {
+	const groups = new Map<
+		string,
+		{
+			ticket: Extract<TicketRecord, { state: "available" }>
+			members: Member[]
 		}
-		phased.set(unit.item.taskId, [
-			...(phased.get(unit.item.taskId) ?? []),
-			unit,
-		])
+	>()
+	for (const workbase of snapshot.workbases) {
+		for (const unit of workbase.units) {
+			if (unit.ticket.state !== "available") continue
+			const group = groups.get(unit.ticket.url) ?? {
+				ticket: unit.ticket,
+				members: [],
+			}
+			group.members.push({ workbase, unit })
+			groups.set(unit.ticket.url, group)
+		}
 	}
-	for (const phases of phased.values())
-		signals.push(...phasedTicketStatusMismatch(workbase, phases))
-	return signals
+	return [...groups.values()].flatMap((group) =>
+		ticketStatusMismatch(group.ticket, group.members),
+	)
 }
 
 const prMergedItemOpen = (
@@ -891,17 +874,24 @@ const prMergedItemOpen = (
 			subject,
 			[...unitEvidence(unit), ...prEvidence(pr)],
 			(id) =>
-				agencyAction(id, workbase, unit.actions, "sync", {
-					title: "Sync to record the merge",
-					rationale:
-						"Sync reconciles the merged pull request and marks the unit done.",
-					risk: "reversible",
-					subject,
-					preconditions: [
-						{ kind: "pull_request_state", url: pr.url, states: ["merged"] },
-						...unitPreconditions(unit, ACTIVE),
-					],
-				}),
+				agencyAction(
+					id,
+					workbase,
+					unit.actions,
+					"sync",
+					{
+						title: "Sync to record the merge",
+						rationale:
+							"Sync reconciles the merged pull request and marks the unit done.",
+						risk: "reversible",
+						subject,
+						preconditions: [
+							{ kind: "pull_request_state", url: pr.url, states: ["merged"] },
+							...unitPreconditions(unit, ACTIVE),
+						],
+					},
+					unit,
+				),
 		),
 	]
 }
@@ -912,6 +902,7 @@ const prReadyToMerge = (
 ): AttentionSignal[] => {
 	const pr = unit.pr
 	if (!pr || unit.item.archived || !isReadyToMerge(pr.live)) return []
+	const live = pr.live as Extract<LivePullRequest, { state: "available" }>
 	const subject = subjectFor(workbase, unit)
 	return [
 		signal(
@@ -921,7 +912,7 @@ const prReadyToMerge = (
 			subject,
 			[...unitEvidence(unit), ...prEvidence(pr)],
 			(id) => [
-				...(pr.mergeCommand
+				...(pr.mergeCommand && live.headSha
 					? [
 							makeAction(
 								id,
@@ -929,7 +920,8 @@ const prReadyToMerge = (
 								{
 									slug: "merge",
 									title: "Merge the pull request",
-									rationale: "The PR is approved and its checks are green.",
+									rationale:
+										"The PR is approved, its checks passed, and it merges cleanly at the reviewed head.",
 									risk: "destructive",
 									subject,
 									preconditions: [
@@ -937,6 +929,11 @@ const prReadyToMerge = (
 											kind: "pull_request_state",
 											url: pr.url,
 											states: ["open"],
+										},
+										{
+											kind: "pull_request_head",
+											url: pr.url,
+											sha: live.headSha,
 										},
 									],
 								},
@@ -950,6 +947,10 @@ const prReadyToMerge = (
 	]
 }
 
+/**
+ * A working claim without a session is only unusual before review: a unit
+ * stays working while its PR is open, and a merged PR is pr_merged_item_open.
+ */
 const claimWithoutSession = (
 	snapshot: AttentionSnapshot,
 	workbase: AttentionWorkbase,
@@ -958,8 +959,35 @@ const claimWithoutSession = (
 	if (!snapshot.runtime.available) return []
 	if (unit.item.archived || unit.status !== "working") return []
 	if (unitPanes(unit).length > 0) return []
+	const prState = unit.pr ? effectivePullRequestState(unit.pr) : null
+	if (prState === "open" || prState === "merged") return []
 	const subject = subjectFor(workbase, unit)
-	const preconditions = unitPreconditions(unit, ["working"])
+	const preconditions = [
+		...unitPreconditions(unit, ["working"]),
+		...(unit.pr
+			? [
+					{
+						kind: "pull_request_state",
+						url: unit.pr.url,
+						states: ["closed"],
+					} as const,
+				]
+			: []),
+	]
+	const offer = (
+		id: string,
+		actionId: string,
+		title: string | undefined,
+		rationale: string,
+	) =>
+		agencyAction(
+			id,
+			workbase,
+			unit.actions,
+			actionId,
+			{ title, rationale, risk: "reversible", subject, preconditions },
+			unit,
+		)
 	return [
 		signal(
 			"claim_without_session",
@@ -968,31 +996,38 @@ const claimWithoutSession = (
 			subject,
 			[
 				...unitEvidence(unit),
+				...prEvidence(unit.pr),
 				evidence("runtime", "binding", unit.binding?.state ?? "none"),
 				...(unit.binding
 					? [evidence("runtime", "boundPaneId", unit.binding.record.paneId)]
 					: []),
 			],
 			(id) => [
-				...agencyAction(id, workbase, unit.actions, "work", {
-					title: "Resume with a fresh agent",
-					rationale: "Kick the claimed work off again in a new session.",
-					risk: "reversible",
-					subject,
-					preconditions,
-				}),
-				...agencyAction(id, workbase, unit.actions, "drop", {
-					rationale: "Abandon the claim if the work is no longer wanted.",
-					risk: "reversible",
-					subject,
-					preconditions,
-				}),
-				...agencyAction(id, workbase, unit.actions, "archive", {
-					rationale: "Archive the work if it is already terminal.",
-					risk: "reversible",
-					subject,
-					preconditions,
-				}),
+				...offer(
+					id,
+					"work",
+					"Resume with a fresh agent",
+					"Kick the claimed work off again in a new session.",
+				),
+				...(unit.review
+					? offer(
+							id,
+							"finish-review",
+							undefined,
+							"Finish the review if it is complete.",
+						)
+					: offer(
+							id,
+							"drop",
+							undefined,
+							"Abandon the claim if the work is no longer wanted.",
+						)),
+				...offer(
+					id,
+					"archive",
+					undefined,
+					"Archive the work if it is already terminal.",
+				),
 			],
 		),
 	]
@@ -1001,22 +1036,69 @@ const claimWithoutSession = (
 interface PaneOwner {
 	readonly workbase: AttentionWorkbase
 	readonly unit: AttentionUnit
+	readonly entry: UnitPane
 }
 
 const paneOwners = (snapshot: AttentionSnapshot) => {
 	const owners = new Map<string, PaneOwner>()
 	for (const workbase of snapshot.workbases) {
 		for (const unit of workbase.units) {
-			for (const pane of unitPanes(unit)) {
-				if (!owners.has(pane.paneId))
-					owners.set(pane.paneId, { workbase, unit })
+			for (const entry of unitPanes(unit)) {
+				if (!owners.has(entry.pane.paneId))
+					owners.set(entry.pane.paneId, { workbase, unit, entry })
 			}
 		}
 	}
 	return owners
 }
 
-const paneCwd = (pane: RuntimePane) => pane.foregroundCwd ?? pane.cwd
+const containsAny = (roots: readonly string[], path: string) =>
+	roots.some((root) => contains(root, path))
+
+/** The workbase whose root contains a pane, or "other" for an uninspected one. */
+const paneWorkbase = (
+	snapshot: AttentionSnapshot,
+	pane: RuntimePane,
+): AttentionWorkbase | "other" | null => {
+	const cwd = paneCwd(pane)
+	if (!cwd) return null
+	const depth = (roots: readonly string[]) =>
+		Math.max(
+			-1,
+			...roots.filter((root) => contains(root, cwd)).map((root) => root.length),
+		)
+	let best: { depth: number; workbase: AttentionWorkbase | "other" } | null =
+		null
+	for (const workbase of snapshot.workbases) {
+		const found = depth(workbase.roots)
+		if (found >= 0 && (!best || found > best.depth))
+			best = { depth: found, workbase }
+	}
+	const other = depth(snapshot.otherRoots)
+	if (other >= 0 && (!best || other > best.depth))
+		best = { depth: other, workbase: "other" }
+	return best?.workbase ?? null
+}
+
+const inspected = (owner: AttentionWorkbase | "other" | null) =>
+	owner === "other" ? null : owner
+
+/**
+ * Agents at a workbase root or in epic or non-unit task directories are
+ * orchestration sessions, not unmanaged ones.
+ */
+const isOrchestration = (workbase: AttentionWorkbase, pane: RuntimePane) => {
+	const cwd = paneCwd(pane)
+	if (!cwd) return false
+	return workbase.roots.some(
+		(root) =>
+			relative(root, cwd) === "" ||
+			["epics", "tasks"].some((directory) => {
+				const parent = join(root, directory)
+				return contains(parent, cwd) && relative(parent, cwd) !== ""
+			}),
+	)
+}
 
 const duplicateSessions = (
 	snapshot: AttentionSnapshot,
@@ -1039,12 +1121,16 @@ const duplicateSessions = (
 				a.paneId.localeCompare(b.paneId),
 			)
 			const owner = panes.map((pane) => owners.get(pane.paneId)).find(Boolean)
+			// Close duplicates only when a binding (or focus) says which to keep.
 			const primary =
 				panes.find(
 					(pane) => pane.paneId === owner?.unit.binding?.record.paneId,
-				) ?? panes[0]!
+				) ??
+				(panes.filter((pane) => pane.focused).length === 1
+					? panes.find((pane) => pane.focused)!
+					: null)
 			const subject = subjectFor(
-				owner?.workbase ?? containingWorkbase(snapshot, primary),
+				owner?.workbase ?? inspected(paneWorkbase(snapshot, panes[0]!)),
 				owner?.unit ?? null,
 				panes.map((pane) => runtimeRef(runtime, pane)),
 			)
@@ -1055,36 +1141,29 @@ const duplicateSessions = (
 				subject,
 				[
 					evidence("runtime", "agentSessionId", session),
-					evidence("runtime", "primaryPaneId", primary.paneId),
-					...panes.flatMap(paneEvidence),
+					evidence("runtime", "primaryPaneId", primary?.paneId ?? null),
+					...panes.flatMap((pane) => paneEvidence(pane)),
 				],
 				(id) => [
 					...panes.map((pane) => focusAction(id, runtime, pane, subject)),
-					...panes
-						.filter((pane) => pane !== primary)
-						.map((pane) =>
-							makeAction(
-								id,
-								"runtime",
-								{
-									slug: `close-pane-${pane.paneId}`,
-									title: `Close duplicate pane ${pane.paneId}`,
-									rationale: `Keep the session in ${primary.paneId}; a second pane on one session risks conflicting input.`,
-									risk: "destructive",
-									subject,
-									preconditions: [
-										panePrecondition(runtime, pane),
-										panePrecondition(runtime, primary),
-									],
-								},
-								{
-									runtime,
-									operation: "close",
-									target: "pane",
-									id: pane.paneId,
-								},
-							),
-						),
+					...(primary
+						? panes
+								.filter(
+									(pane) =>
+										pane !== primary && CLOSABLE.includes(pane.agentStatus),
+								)
+								.map((pane) =>
+									closePaneAction(
+										id,
+										runtime,
+										pane,
+										subject,
+										`Close duplicate pane ${pane.paneId}`,
+										`Keep the session in ${primary.paneId}; a second pane on one session risks conflicting input.`,
+										[paneMatches(runtime, primary, ANY_STATUS)],
+									),
+								)
+						: []),
 				],
 			)
 		})
@@ -1094,20 +1173,16 @@ const duplicateSessions = (
 const archivedOwner = (
 	snapshot: AttentionSnapshot,
 	path: string,
-): PaneOwner | null => {
+): Omit<PaneOwner, "entry"> | null => {
 	for (const workbase of snapshot.workbases) {
 		for (const unit of workbase.units) {
 			if (!unit.item.archived) continue
-			const original = unit.item.phaseId
-				? join(
-						workbase.ref.root,
-						"tasks",
-						unit.item.taskId,
-						"phases",
-						unit.item.phaseId,
-					)
-				: join(workbase.ref.root, "tasks", unit.item.taskId)
-			if (contains(original, path)) return { workbase, unit }
+			const original = workbase.roots.map((root) =>
+				unit.item.phaseId
+					? join(root, "tasks", unit.item.taskId, "phases", unit.item.phaseId)
+					: join(root, "tasks", unit.item.taskId),
+			)
+			if (containsAny(original, path)) return { workbase, unit }
 		}
 	}
 	return null
@@ -1133,9 +1208,10 @@ const sessionCwdMissing = (
 		})
 		.map((pane) => {
 			const cwd = paneCwd(pane)!
-			const owner = owners.get(pane.paneId) ?? archivedOwner(snapshot, cwd)
+			const bound = owners.get(pane.paneId)
+			const owner = bound ?? archivedOwner(snapshot, cwd)
 			const subject = subjectFor(
-				owner?.workbase ?? containingWorkbase(snapshot, pane),
+				owner?.workbase ?? inspected(paneWorkbase(snapshot, pane)),
 				owner?.unit ?? null,
 				[runtimeRef(runtime, pane)],
 			)
@@ -1145,9 +1221,9 @@ const sessionCwdMissing = (
 				`Pane ${pane.paneId} runs in a directory that no longer exists`,
 				subject,
 				[
-					...paneEvidence(pane),
+					...paneEvidence(pane, bound?.entry),
 					evidence("filesystem", "missingPath", cwd),
-					...(owner ? unitEvidence(owner.unit) : []),
+					...(owner ? unitEvidence(owner.unit, unitAbout(owner.unit)) : []),
 				],
 				(id) => [
 					...closeActions(
@@ -1173,63 +1249,22 @@ const agentWaiting = (
 	const runtime = snapshot.runtime.provider
 	if (!runtime || unit.item.archived || TERMINAL.has(unit.status)) return []
 	return unitPanes(unit)
-		.filter((pane) => {
+		.filter(({ pane }) => {
 			const cwd = paneCwd(pane)
 			return WAITING.has(pane.agentStatus) && !(cwd && missing.has(cwd))
 		})
-		.map((pane) => {
+		.map((entry) => {
+			const pane = entry.pane
 			const subject = subjectFor(workbase, unit, [runtimeRef(runtime, pane)])
 			return signal(
 				"agent_waiting",
 				`${unitScope(workbase, unit)}:${pane.paneId}`,
 				`The agent for ${unitLabel(unit)} is ${pane.agentStatus}`,
 				subject,
-				[...unitEvidence(unit), ...paneEvidence(pane)],
+				[...unitEvidence(unit), ...paneEvidence(pane, entry)],
 				(id) => [focusAction(id, runtime, pane, subject)],
 			)
 		})
-}
-
-const containingWorkbase = (
-	snapshot: AttentionSnapshot,
-	pane: RuntimePane,
-): AttentionWorkbase | null => {
-	const cwd = paneCwd(pane)
-	if (!cwd) return null
-	return (
-		snapshot.workbases
-			.filter((workbase) => contains(workbase.ref.root, cwd))
-			.sort((a, b) => b.ref.root.length - a.ref.root.length)[0] ?? null
-	)
-}
-
-/** Agents in epic or multi-phase task directories are orchestration sessions. */
-const isOrchestration = (
-	workbase: AttentionWorkbase | null,
-	pane: RuntimePane,
-) => {
-	const cwd = paneCwd(pane)
-	return (
-		workbase !== null &&
-		cwd !== null &&
-		["epics", "tasks"].some((directory) => {
-			const parent = join(workbase.ref.root, directory)
-			return contains(parent, cwd) && relative(parent, cwd) !== ""
-		})
-	)
-}
-
-const adoptionWorkbase = (
-	snapshot: AttentionSnapshot,
-	pane: RuntimePane,
-): AttentionWorkbase | null => {
-	const containing = containingWorkbase(snapshot, pane)
-	if (containing) return containing.error ? null : containing
-	return (
-		snapshot.workbases.find(
-			(workbase) => workbase.isDefault && !workbase.error,
-		) ?? null
-	)
 }
 
 const unmanagedSessions = (
@@ -1241,36 +1276,34 @@ const unmanagedSessions = (
 	const claimed = new Set(
 		snapshot.workbases.flatMap((workbase) => workbase.claimedPaneIds),
 	)
-	return snapshot.runtime.panes
-		.filter((pane) => {
-			const cwd = paneCwd(pane)
-			return (
-				pane.agent !== null &&
-				!claimed.has(pane.paneId) &&
-				!(cwd && missing.has(cwd)) &&
-				!isOrchestration(containingWorkbase(snapshot, pane), pane)
-			)
-		})
-		.map((pane) => {
-			const ref = runtimeRef(runtime, pane)
-			const workbase = adoptionWorkbase(snapshot, pane)
-			const subject = subjectFor(
-				workbase ?? containingWorkbase(snapshot, pane),
-				null,
-				[ref],
-			)
-			return signal(
+	const defaultWorkbase =
+		snapshot.workbases.find(
+			(workbase) => workbase.isDefault && !workbase.error,
+		) ?? null
+	return snapshot.runtime.panes.flatMap((pane) => {
+		const cwd = paneCwd(pane)
+		if (pane.agent === null || claimed.has(pane.paneId)) return []
+		if (cwd && missing.has(cwd)) return []
+		const owner = paneWorkbase(snapshot, pane)
+		// Panes inside another, uninspected workbase are not this run's concern.
+		if (owner === "other") return []
+		if (owner && isOrchestration(owner, pane)) return []
+		const target = owner ? (owner.error ? null : owner) : defaultWorkbase
+		const ref = runtimeRef(runtime, pane)
+		const subject = subjectFor(target ?? owner, null, [ref])
+		return [
+			signal(
 				"unmanaged_session",
 				`${runtime}:${pane.paneId}`,
 				`Pane ${pane.paneId} runs ${pane.agent} outside any Agency item`,
 				subject,
 				paneEvidence(pane),
 				(id) => [
-					...(workbase
+					...(target
 						? agencyAction(
 								id,
-								workbase,
-								workbase.actions,
+								target,
+								target.actions,
 								"task-create",
 								{
 									slug: "adopt",
@@ -1279,15 +1312,17 @@ const unmanagedSessions = (
 										"Create a task for the session and bind it to this pane.",
 									risk: "reversible",
 									subject,
-									preconditions: [panePrecondition(runtime, pane)],
+									preconditions: [paneMatches(runtime, pane, ANY_STATUS)],
 								},
+								null,
 								ref,
 							)
 						: []),
 					focusAction(id, runtime, pane, subject),
 				],
-			)
-		})
+			),
+		]
+	})
 }
 
 const signalOrder = (signal: AttentionSignal) =>
@@ -1299,9 +1334,8 @@ export const attentionSignals = (
 ): AttentionSignal[] => {
 	const missing = new Set(snapshot.missingPaths)
 	const owners = paneOwners(snapshot)
-	const signals: AttentionSignal[] = []
+	const signals: AttentionSignal[] = [...ticketSignals(snapshot)]
 	for (const workbase of snapshot.workbases) {
-		signals.push(...ticketSignals(workbase))
 		for (const unit of workbase.units) {
 			signals.push(
 				...completeSessionOpen(snapshot, workbase, unit),
@@ -1312,7 +1346,7 @@ export const attentionSignals = (
 			)
 		}
 	}
-	// Completed work already explains (and closes) its panes.
+	// Completed work already explains its panes.
 	const explained = new Set(
 		signals
 			.filter((signal) => signal.kind === "complete_session_open")

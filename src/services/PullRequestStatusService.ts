@@ -22,6 +22,9 @@ export type LivePullRequest =
 			readonly review: PullRequestReview
 			readonly checks: PullRequestChecks
 			readonly mergeable: "mergeable" | "conflicting" | "unknown"
+			/** GitHub's mergeStateStatus, such as CLEAN, BLOCKED, or BEHIND. */
+			readonly mergeState: string | null
+			readonly headSha: string | null
 	  }
 	| {
 			readonly state: "unavailable"
@@ -55,6 +58,8 @@ const GitHubPullRequestStatus = Schema.Struct({
 		),
 	),
 	mergeable: Schema.optional(Schema.NullOr(Schema.String)),
+	mergeStateStatus: Schema.optional(Schema.NullOr(Schema.String)),
+	headRefOid: Schema.optional(Schema.NullOr(Schema.String)),
 })
 type GitHubPullRequestStatus = Schema.Schema.Type<
 	typeof GitHubPullRequestStatus
@@ -151,6 +156,8 @@ const parseLivePullRequest = (url: string, stdout: string): LivePullRequest => {
 				: mergeable === "CONFLICTING"
 					? "conflicting"
 					: "unknown",
+		mergeState: status.mergeStateStatus?.toUpperCase() || null,
+		headSha: status.headRefOid || null,
 	}
 }
 
@@ -231,7 +238,7 @@ export class PullRequestStatusService extends Context.Service<PullRequestStatusS
 							"view",
 							url,
 							"--json",
-							"state,isDraft,reviewDecision,latestReviews,statusCheckRollup,mergeable",
+							"state,isDraft,reviewDecision,latestReviews,statusCheckRollup,mergeable,mergeStateStatus,headRefOid",
 						]).pipe(
 							Effect.map(
 								(result): LivePullRequest =>
