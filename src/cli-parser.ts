@@ -1072,18 +1072,22 @@ const commands = {
 		},
 	},
 	context: {
-		usage: "agency context [target] [--json] [--compact | --full]",
+		usage:
+			"agency context [target] [--json] [--compact | --full] [--include ticket]",
 		options: {
 			...outputOptions,
 			...entitySelectorOptions,
 			compact: { type: "boolean" },
 			full: { type: "boolean" },
+			include: { type: "string", multiple: true },
 		},
 		command: {
-			usage: "agency context [target] [--json] [--compact | --full]",
+			usage:
+				"agency context [target] [--json] [--compact | --full] [--include ticket]",
 			minArgs: 0,
 			maxArgs: 1,
-			options: ["json", "compact", "full", "epic", "task", "phase"],
+			options: ["json", "compact", "full", "epic", "task", "phase", "include"],
+			repeatable: ["include"],
 			conflicts: [["compact", "full"]],
 		},
 	},
@@ -1396,7 +1400,7 @@ function validateGraphOptions(values: ParsedCli["values"], spec: LeafCommand) {
 	const allowed = {
 		status: new Set(["open", "working", "delegated", "done", "dropped"]),
 		kind: new Set(["epic", "task", "phase", "repository", "execution-unit"]),
-		include: new Set(["bodies", "workspace", "git", "pr"]),
+		include: new Set(["bodies", "workspace", "git", "pr", "ticket"]),
 	}
 	for (const [name, accepted] of Object.entries(allowed)) {
 		const supplied = values[name]
@@ -1412,6 +1416,26 @@ function validateGraphOptions(values: ParsedCli["values"], spec: LeafCommand) {
 					spec.usage,
 				)
 			}
+		}
+	}
+}
+
+function validateContextOptions(
+	values: ParsedCli["values"],
+	spec: LeafCommand,
+) {
+	const supplied = values.include
+	const entries = Array.isArray(supplied)
+		? supplied
+		: supplied === undefined
+			? []
+			: [supplied]
+	for (const value of entries) {
+		if (value !== "ticket") {
+			throw usageError(
+				`Invalid '--include' value '${String(value)}'. Expected one of: ticket.`,
+				spec.usage,
+			)
 		}
 	}
 }
@@ -1681,6 +1705,9 @@ export function parseCli(args: readonly string[]): ParsedCli {
 	}
 	if (commandName === "graph") {
 		validateGraphOptions(parsed.values, spec)
+	}
+	if (commandName === "context") {
+		validateContextOptions(parsed.values, spec)
 	}
 	if (
 		commandName === "status" ||

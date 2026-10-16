@@ -7,6 +7,7 @@ interface ContextOptions extends BaseCommandOptions {
 	readonly target?: string
 	readonly compact?: boolean
 	readonly full?: boolean
+	readonly include?: readonly string[]
 	readonly json?: boolean
 }
 
@@ -14,7 +15,20 @@ export const context = (options: ContextOptions = {}) =>
 	Effect.gen(function* () {
 		const service = yield* ContextService
 		const { log } = createLoggers(options)
-		const result = yield* service.get(options)
+		const include = options.include ?? []
+		for (const value of include) {
+			if (value !== "ticket") {
+				return yield* Effect.fail(
+					new Error(
+						`Invalid --include value '${value}'. Expected one of: ticket`,
+					),
+				)
+			}
+		}
+		const result = yield* service.get({
+			...options,
+			include: include as readonly "ticket"[],
+		})
 		log(JSON.stringify(result, null, 2))
 	})
 
@@ -31,6 +45,7 @@ Options:
   --json              Output a versioned machine result
   --compact           Use compact output (default)
   --full              Include prose bodies and low-level VCS details
+  --include ticket    Include live status of the target's ticketUrl
   --epic <id>         Select an epic
   --task <id>         Select a task
   --phase <id>        Select a phase together with --task

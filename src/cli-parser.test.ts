@@ -834,13 +834,15 @@ describe("strict CLI parsing", () => {
 				"bodies",
 				"--include",
 				"git",
+				"--include",
+				"ticket",
 			]).values,
 		).toMatchObject({
 			json: true,
 			status: ["open", "working"],
 			repository: ["agency"],
 			kind: ["task", "phase"],
-			include: ["bodies", "git"],
+			include: ["bodies", "git", "ticket"],
 		})
 		expect(() => parseCli(["graph", "--json", "--jsonl"])).toThrow(
 			"cannot be combined",
@@ -857,6 +859,15 @@ describe("strict CLI parsing", () => {
 				`Invalid '--${option}' value`,
 			)
 		}
+	})
+
+	test("accepts only the ticket include layer for context", () => {
+		expect(
+			parseCli(["context", "--include", "ticket", "--json"]).values,
+		).toMatchObject({ include: ["ticket"], json: true })
+		expect(() => parseCli(["context", "--include", "git"])).toThrow(
+			"Invalid '--include' value 'git'",
+		)
 	})
 
 	test("reports unknown subcommands with parent usage", () => {

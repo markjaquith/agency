@@ -51,7 +51,7 @@
     },
     "includes": {
       "type": "array",
-      "items": { "enum": ["bodies", "workspace", "git", "pr"] },
+      "items": { "enum": ["bodies", "workspace", "git", "pr", "ticket"] },
       "uniqueItems": true
     },
     "nodes": {
@@ -197,7 +197,8 @@
             { "$ref": "#/$defs/executionGit" }
           ]
         },
-        "pr": { "$ref": "#/$defs/pr" }
+        "pr": { "$ref": "#/$defs/pr" },
+        "ticket": { "$ref": "#/$defs/ticket" }
       },
       "allOf": [
         {
@@ -247,7 +248,11 @@
               "aggregate": { "$ref": "#/$defs/progress" }
             },
             "not": {
-              "anyOf": [{ "required": ["git"] }, { "required": ["pr"] }]
+              "anyOf": [
+                { "required": ["git"] },
+                { "required": ["pr"] },
+                { "required": ["ticket"] }
+              ]
             }
           }
         },
@@ -263,7 +268,11 @@
               "aggregate": { "type": "null" }
             },
             "not": {
-              "anyOf": [{ "required": ["body"] }, { "required": ["pr"] }]
+              "anyOf": [
+                { "required": ["body"] },
+                { "required": ["pr"] },
+                { "required": ["ticket"] }
+              ]
             }
           }
         },
@@ -660,6 +669,65 @@
             "headRefName": { "type": "string" },
             "baseRefName": { "type": "string" },
             "url": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "ticket": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "state"],
+          "properties": {
+            "url": { "type": "null" },
+            "state": { "const": "none" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "state", "reason"],
+          "properties": {
+            "url": { "type": "string" },
+            "state": { "const": "unsupported" },
+            "reason": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "state", "provider", "key", "reason"],
+          "properties": {
+            "url": { "type": "string" },
+            "state": { "const": "unavailable" },
+            "provider": { "type": "string" },
+            "key": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "url",
+            "state",
+            "provider",
+            "key",
+            "status",
+            "statusCategory",
+            "summary",
+            "resolution"
+          ],
+          "properties": {
+            "url": { "type": "string" },
+            "state": { "const": "available" },
+            "provider": { "type": "string" },
+            "key": { "type": "string" },
+            "status": { "type": "string" },
+            "statusCategory": { "enum": ["todo", "in_progress", "done"] },
+            "summary": { "type": "string" },
+            "resolution": { "type": ["string", "null"] }
           }
         }
       ]

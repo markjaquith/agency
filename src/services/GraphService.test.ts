@@ -397,6 +397,38 @@ status: open
 		})
 	})
 
+	test("adds live ticket state only when requested", async () => {
+		const root = await createWorkbase()
+		roots.push(root)
+		const baseline = await getGraph(root)
+		for (const node of baseline.nodes) expect("ticket" in node).toBe(false)
+
+		const graph = await getGraph(root, { include: ["ticket"] })
+		expect(Schema.decodeUnknownSync(AgencyGraph)(graph)).toEqual(graph)
+		expect(graph.includes).toEqual(["ticket"])
+		const tickets = Object.fromEntries(
+			graph.nodes.map((node) => [
+				node.id,
+				"ticket" in node ? node.ticket : undefined,
+			]),
+		)
+		expect(tickets).toEqual({
+			"epic:delivery": {
+				url: "https://example.com/delivery",
+				state: "unsupported",
+				reason: "No ticket provider recognizes this URL",
+			},
+			"execution-unit:phase/ship/implement": { url: null, state: "none" },
+			"execution-unit:phase/ship/verify": { url: null, state: "none" },
+			"execution-unit:task/prepare": { url: null, state: "none" },
+			"phase:ship/implement": undefined,
+			"phase:ship/verify": undefined,
+			"repository:agency": undefined,
+			"task:prepare": { url: null, state: "none" },
+			"task:ship": { url: null, state: "none" },
+		})
+	})
+
 	test("adds body, workspace, git, and PR details only when requested", async () => {
 		const root = await createWorkbase()
 		roots.push(root)

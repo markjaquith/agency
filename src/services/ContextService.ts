@@ -11,6 +11,7 @@ import {
 import { join, relative, resolve, sep } from "node:path"
 import { locateItem } from "../workbase/item-selector"
 import { FileSystemService } from "./FileSystemService"
+import { TicketService } from "./TicketService"
 import { WorkbaseService } from "./WorkbaseService"
 import { normalizePullRequestRecord } from "../workbase/delivery-command"
 import { RepositoryService } from "./RepositoryService"
@@ -142,6 +143,7 @@ export class ContextService extends Context.Service<ContextService>()(
 				readonly cwd?: string
 				readonly compact?: boolean
 				readonly full?: boolean
+				readonly include?: readonly "ticket"[]
 			}) =>
 				Effect.gen(function* () {
 					const sourceFs = yield* FileSystemService
@@ -1160,6 +1162,15 @@ export class ContextService extends Context.Service<ContextService>()(
 					const pullRequestData =
 						phase?.data ??
 						(task?.data && "repo" in task.data ? task.data : null)
+					const ticket = options.include?.includes("ticket")
+						? yield* TicketService.pipe(
+								Effect.flatMap((service) =>
+									service.read(
+										task ? task.data.ticketUrl : (epic?.data.ticketUrl ?? null),
+									),
+								),
+							)
+						: undefined
 
 					return {
 						projection: compact ? "compact" : "complete",
@@ -1253,6 +1264,7 @@ export class ContextService extends Context.Service<ContextService>()(
 						pr: pullRequestData?.pr
 							? normalizePullRequestRecord(pullRequestData.pr)
 							: { url: null, state: "none" },
+						ticket,
 						validation: {
 							valid: validation.valid,
 							warnings: validation.issues,

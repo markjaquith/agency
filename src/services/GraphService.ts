@@ -34,6 +34,7 @@ import {
 	type WorkStatus,
 } from "../workbase/schemas"
 import { FileSystemService } from "./FileSystemService"
+import { TicketService } from "./TicketService"
 import {
 	VersionControlService,
 	type VersionControlBackend,
@@ -1003,6 +1004,32 @@ export class GraphService extends Context.Service<GraphService>()(
 								!options.kinds?.length || options.kinds.includes(node.kind),
 						)
 						.sort((a, b) => a.id.localeCompare(b.id))
+					const ticketUrl = (node: GraphNode) =>
+						node.kind === "epic" || node.kind === "task"
+							? node.data.ticketUrl
+							: node.kind === "execution-unit"
+								? (tasks.get(node.data.taskId)?.data.ticketUrl ?? null)
+								: undefined
+					const tickets = include.has("ticket")
+						? yield* TicketService.pipe(
+								Effect.flatMap((service) =>
+									service.readMany(filteredNodes.map(ticketUrl)),
+								),
+							)
+						: null
+					const outputNodes: GraphNode[] = tickets
+						? filteredNodes.map((node) => {
+								const url = ticketUrl(node)
+								if (url === undefined) return node
+								return {
+									...node,
+									ticket: (url && tickets.get(url)) || {
+										url: null,
+										state: "none",
+									},
+								}
+							})
+						: filteredNodes
 					const nodeIds = new Set(filteredNodes.map((node) => node.id))
 					const filteredEdges = edges
 						.filter((item) => nodeIds.has(item.from) && nodeIds.has(item.to))
@@ -1025,7 +1052,7 @@ export class GraphService extends Context.Service<GraphService>()(
 						},
 						filters,
 						includes,
-						nodes: filteredNodes,
+						nodes: outputNodes,
 						edges: filteredEdges,
 						summary: aggregateProgress(leafStatuses),
 						validation: {

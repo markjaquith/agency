@@ -31,6 +31,15 @@ describe("graph contract", () => {
 			additionalProperties: false,
 			required: ["source", "sourceRevision"],
 		})
+		expect(jsonSchema.properties.includes.items.enum).toContain("ticket")
+		expect(
+			jsonSchema.$defs.ticket.oneOf.map((variant) => variant.properties.state),
+		).toEqual([
+			{ const: "none" },
+			{ const: "unsupported" },
+			{ const: "unavailable" },
+			{ const: "available" },
+		])
 		expect(jsonSchema.$defs.singleTaskData.properties).toMatchObject({
 			purpose: { $ref: "#/$defs/taskPurpose" },
 			handoff: { $ref: "#/$defs/taskHandoff" },
