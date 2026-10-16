@@ -60,9 +60,9 @@ const TriageCache = Schema.Struct({
 const Snoozes = Schema.Array(Snooze)
 const Dismissals = Schema.Array(Dismissal)
 
-type ActionLogEntry = Schema.Schema.Type<typeof ActionLogEntry>
-type Snooze = Schema.Schema.Type<typeof Snooze>
-type Dismissal = Schema.Schema.Type<typeof Dismissal>
+export type ActionLogEntry = Schema.Schema.Type<typeof ActionLogEntry>
+export type Snooze = Schema.Schema.Type<typeof Snooze>
+export type Dismissal = Schema.Schema.Type<typeof Dismissal>
 export type TriageCacheEntry = Schema.Schema.Type<typeof TriageCacheEntry>
 
 type Without<T> = Omit<T, "version" | "at"> & { readonly at?: string }

@@ -6,7 +6,11 @@ import type {
 	SupervisorAction,
 } from "../attention-schema"
 import type { RuntimeSnapshot } from "./runtime"
-import { superviseModel, UNMANAGED_GROUP } from "./supervise-view"
+import {
+	superviseModel,
+	UNMANAGED_GROUP,
+	type TriageEntry,
+} from "./supervise-view"
 
 const root = "/work"
 const canonical = "/private/work"
@@ -225,27 +229,114 @@ describe("supervise view model", () => {
 		])
 	})
 
-	test("layers annotations ahead of signal actions", () => {
-		const signal = unitSignal("agent_waiting", "alpha", {
-			paneId: "w1:p1",
-			agentStatus: "idle",
-		})
-		const extra = focus("w1:p2", "triage")
+	const entry = (
+		key: string,
+		fields: Partial<TriageEntry> & {
+			readonly status?: string
+			readonly actions?: SupervisorAction[]
+			readonly modelActionIds?: string[]
+			readonly question?: string | null
+		} = {},
+	): TriageEntry => ({
+		key,
+		subject: fields.subject ?? null,
+		fingerprint: fields.fingerprint ?? `triage-${key}`,
+		source: fields.source ?? "fresh",
+		evaluatedAt: "2026-10-16T00:00:00.000Z",
+		assessment: {
+			status: (fields.status ?? "needs_input") as "needs_input",
+			summary: `${key} assessed`,
+			question: fields.question ?? null,
+			actions: fields.actions ?? [],
+			modelActionIds: fields.modelActionIds ?? [],
+		},
+		suppressed: fields.suppressed ?? null,
+		error: null,
+	})
+
+	test("layers triage over signal items, ranking its actions first", () => {
+		const signal = unitSignal("claim_without_session", "alpha")
+		const key = `${canonical}:execution-unit:task/alpha`
+		const written = { ...focus("w1:p2", "triage:x"), id: "triage:x/focus" }
+		const copied = focus("w1:p1", "signal")
 		const [item] = superviseModel(report([signal]), {
 			state: empty,
-			annotate: () => ({
-				badge: "In Review",
-				summary: "Waiting on review",
-				actions: [extra],
-			}),
+			triage: new Map([
+				[
+					key,
+					entry(key, {
+						status: "needs_input",
+						question: "Which base?",
+						actions: [written, copied],
+						modelActionIds: [written.id],
+					}),
+				],
+			]),
 		}).groups[0]!.items
 		expect(item).toMatchObject({
-			badge: { label: "In Review" },
-			summary: "Waiting on review",
+			badge: { label: "Needs You" },
+			summary: `${key} assessed — asks: Which base?`,
+			fingerprint: `triage-${key}`,
+			modelActionIds: [written.id],
+			triageActionIds: [written.id, copied.id],
+			triage: { source: "fresh", question: "Which base?" },
 		})
-		expect(item!.actions.map((action) => action.title)).toEqual([
-			"Focus pane w1:p2",
-			"Focus pane w1:p1",
+		expect(item!.actions.map((action) => action.id)).toEqual([
+			written.id,
+			copied.id,
 		])
+	})
+
+	test("keeps a more urgent signal badge over triage's", () => {
+		const signal = unitSignal("agent_waiting", "alpha", {
+			paneId: "w1:p1",
+			agentStatus: "blocked",
+		})
+		const key = `${canonical}:execution-unit:task/alpha`
+		const [item] = superviseModel(report([signal]), {
+			state: empty,
+			triage: new Map([[key, entry(key, { status: "in_progress" })]]),
+		}).groups[0]!.items
+		expect(item!.badge.label).toBe("Blocked")
+	})
+
+	test("adds triage-only items and honors suppression", () => {
+		const subjectOf = (unit: string) =>
+			unitSignal("claim_without_session", unit).subject
+		const model = superviseModel(report([]), {
+			state: empty,
+			triage: new Map([
+				[
+					"k:gamma",
+					entry("k:gamma", {
+						subject: subjectOf("gamma"),
+						status: "in_progress",
+					}),
+				],
+				[
+					"k:delta",
+					entry("k:delta", {
+						subject: subjectOf("delta"),
+						suppressed: "snoozed",
+					}),
+				],
+				[
+					"k:epsilon",
+					entry("k:epsilon", {
+						subject: subjectOf("epsilon"),
+						suppressed: "dismissed",
+					}),
+				],
+				// Cached results without a subject only annotate signal items.
+				["k:zeta", entry("k:zeta", { source: "cached" })],
+			]),
+		})
+		expect(model).toMatchObject({ total: 1, snoozed: 1, dismissed: 1 })
+		expect(model.groups[0]!.items[0]).toMatchObject({
+			key: "k:gamma",
+			label: "gamma",
+			badge: { label: "Working" },
+			summary: "k:gamma assessed",
+		})
 	})
 })

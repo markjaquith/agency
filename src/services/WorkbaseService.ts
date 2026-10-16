@@ -427,6 +427,22 @@ export class WorkbaseService extends Context.Service<WorkbaseService>()(
 					return { root, autoArchive: enabled }
 				}),
 
+			/** Point the workbase triage prompt at a file relative to its root. */
+			setTriagePromptFile: (root: string, promptFile: string) =>
+				Effect.gen(function* () {
+					const service = yield* WorkbaseService
+					const fs = yield* FileSystemService
+					const loaded = yield* service.loadConfig(root)
+					const updated = {
+						...loaded.config,
+						triage: { ...loaded.config.triage, promptFile },
+					}
+					yield* fs.writeFile(
+						join(loaded.root, "agency.json"),
+						`${JSON.stringify(updated, null, 2)}\n`,
+					)
+				}),
+
 			repositoryAliases: (startPath: string = process.cwd()) =>
 				Effect.gen(function* () {
 					const service = yield* WorkbaseService

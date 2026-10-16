@@ -1061,6 +1061,7 @@ Supervision state lives in `$AGENCY_STATE_DIR/supervision/`, never in workbase
 documents: `triage-cache.json`, the `actions.jsonl` action log (compacted to its
 newest 1,000 entries), `snoozes.json`, and `dismissals.json`. Each update holds a
 lock file and replaces the file atomically, so concurrent runs merge.
+
 ### Supervisor
 
 ```sh
@@ -1077,16 +1078,32 @@ unit merge into one entry. The view refreshes on runtime events (Herdr
 `events.subscribe`, debounced) and every minute for pull request and ticket
 changes.
 
-| Key                           | Action                                               |
-| ----------------------------- | ---------------------------------------------------- |
-| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                 |
-| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                     |
-| `Enter`                       | Preview, confirm, and run the action                 |
-| `f`                           | Focus the entry's pane                               |
-| `r`                           | Refresh now                                          |
-| `e`                           | Edit the workbase's supervision prompt in `$EDITOR`  |
-| `s` / `d`                     | Snooze, or dismiss until the entry changes           |
-| `?` / `Esc` / `C-c`           | Help / close one dialog or help (never quits) / quit |
+[Triage](#triage) results merge into the same entries: cached assessments show
+immediately, and `r` or `R` runs triage in the background (the header shows
+progress) and refreshes when it finishes. Triage's status, summary, and open
+question replace the signal summary (a more urgent signal badge is kept), its
+recommended actions rank first, and items triage knows without a signal appear
+too. Each entry shows whether triage is fresh, cached, stale, or failed and how
+old it is; actions tagged `triage` were recommended by triage and `model` ones
+were written by the model. Every triage action is decoded against the action
+schema (invalid ones are dropped with a warning) and runs through the same
+executor checks as signal actions. Items triage reports as `suppressed` are
+hidden, and dismissals pin triage's item fingerprint so they lapse when triage
+sees the item change. `e` opens `triage.promptFile` from the workbase's
+`agency.json`; when none is set it opens `triage.md` beside it and, once saved
+with content and confirmed, records `"promptFile": "triage.md"` (an inline
+`triage.prompt` is kept and still applies first).
+
+| Key                           | Action                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| `↑`/`↓`, `j`/`k`, `C-p`/`C-n` | Move between entries                                                   |
+| `←`/`→`, `Tab`, `1`–`9`       | Choose an action                                                       |
+| `Enter`                       | Preview, confirm, and run the action                                   |
+| `f`                           | Focus the entry's pane                                                 |
+| `r` / `R`                     | Triage the selected entry, or everything (takes minutes), then refresh |
+| `e`                           | Edit the workbase's triage prompt file in `$EDITOR`                    |
+| `s` / `d`                     | Snooze, or dismiss until the entry changes                             |
+| `?` / `Esc` / `C-c`           | Help / close one dialog or help (never quits) / quit                   |
 
 Before running, the supervisor shows exactly what will run: the argv, runtime
 operation, or prompt. Enter is ignored for a moment after a dialog opens and

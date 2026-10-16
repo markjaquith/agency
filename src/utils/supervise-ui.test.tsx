@@ -42,6 +42,9 @@ const item = (key: string, actions: SupervisorAction[]): SuperviseItem => ({
 	subject,
 	signals: [],
 	actions,
+	modelActionIds: [],
+	triageActionIds: [],
+	triage: null,
 	fingerprint: key,
 })
 
@@ -71,6 +74,7 @@ const setup = async () => {
 			events.push(`run ${target.key} ${chosen.id}`),
 		onFocus: (target) => events.push(`focus ${target.key}`),
 		onRefresh: () => events.push("refresh"),
+		onTriage: (target) => events.push(`triage ${target?.key ?? "all"}`),
 		onEditPrompt: (target) => events.push(`edit ${target?.key}`),
 		onSnooze: (target) => events.push(`snooze ${target.key}`),
 		onDismiss: (target) => events.push(`dismiss ${target.key}`),
@@ -83,7 +87,13 @@ const setup = async () => {
 		() => (
 			<SupervisorApp
 				model={current()}
-				status={{ live: true, refreshing: false, busy: false, updatedAt: null }}
+				status={{
+					live: true,
+					refreshing: false,
+					busy: false,
+					updatedAt: null,
+					triage: { running: null, startedAt: null, last: null },
+				}}
 				notice={null}
 				modal={modal()}
 				setModal={setModal}
@@ -118,8 +128,9 @@ describe("supervisor view", () => {
 			view.mockInput.typeText("d")
 			view.mockInput.typeText("e")
 			view.mockInput.typeText("r")
+			view.mockInput.typeText("R")
 			view.mockInput.typeText("q")
-			await view.waitFor(() => view.events.length >= 7)
+			await view.waitFor(() => view.events.length >= 8)
 			await view.frame()
 			expect(view.events).toEqual([
 				"run beta b1",
@@ -128,7 +139,8 @@ describe("supervisor view", () => {
 				"snooze alpha",
 				"dismiss alpha",
 				"edit alpha",
-				"refresh",
+				"triage alpha",
+				"triage all",
 			])
 			view.mockInput.pressCtrlC()
 			await view.waitFor(() => view.events.includes("quit"))

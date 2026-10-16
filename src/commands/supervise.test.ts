@@ -4,6 +4,7 @@ import { mkdir, realpath } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { RuntimeService } from "../services/RuntimeService"
 import { SupervisionStateService } from "../services/SupervisionStateService"
+import { TriageService } from "../services/TriageService"
 import { WorkbaseService } from "../services/WorkbaseService"
 import {
 	cleanupTempDir,
@@ -241,11 +242,150 @@ describe("agency supervise", () => {
 			() => ui.notices.find((notice) => notice.startsWith("Saved")),
 			"the editor",
 		)
+		expect(ui.notices.at(-1)).toBe(
+			`Saved ${join(root, "triage.md")} and set triage.promptFile`,
+		)
+		expect(ui.confirmations[0]?.preview).toEqual([
+			`Set "triage": { "promptFile": "triage.md" } in ${join(root, "agency.json")}`,
+		])
+		expect(await Bun.file(join(root, "triage.md")).text()).toBe(
+			"Prefer small PRs.\n",
+		)
+		expect(await Bun.file(join(root, "agency.json")).json()).toMatchObject({
+			triage: { promptFile: "triage.md" },
+		})
+
+		// A configured prompt file is edited in place, without asking again.
+		await write(
+			join(root, "agency.json"),
+			JSON.stringify({
+				version: 2,
+				triage: { prompt: "Be brief.", promptFile: "prompts/mine.md" },
+			}),
+		)
+		ui.handlers().onEditPrompt(null)
+		await waitFor(
+			() => ui.notices.find((notice) => notice.includes("prompts/mine.md")),
+			"the configured prompt",
+		)
 		ui.handlers().onQuit()
 		await done
-		expect(
-			await Bun.file(join(root, ".agency/supervisor-prompt.md")).text(),
-		).toBe("Prefer small PRs.\n")
+		expect(ui.confirmations).toHaveLength(1)
+		expect(await Bun.file(join(root, "prompts/mine.md")).text()).toBe(
+			"Prefer small PRs.\n",
+		)
+	})
+
+	test("triages the selected item or everything and merges the results", async () => {
+		await mkdir(join(tempDir, "elsewhere"))
+		const pane = runtimePane({
+			paneId: "w1:p7",
+			tabId: "w1:t7",
+			agentSessionId: "ses_7",
+			cwd: join(tempDir, "elsewhere"),
+		})
+		const calls: unknown[][] = []
+		const provider = createFakeRuntimeProvider({ calls, panes: [pane] })
+		const triageCalls: (string | undefined)[] = []
+		const ui = fakeUi({})
+		const done = runTestEffect(
+			supervise(
+				{ cwd: root, configDirectory, env, agencyCommand: ["false"] },
+				ui.open,
+			).pipe(
+				Effect.provideService(RuntimeService, fakeRuntimeService(provider)),
+				Effect.provideService(TriageService, {
+					triage: (options) => {
+						triageCalls.push(options?.item)
+						const model = ui.models[0]!
+						const item = model.groups.at(-1)!.items[0]!
+						const written = {
+							...item.actions[0]!,
+							id: "triage:focus-written",
+							title: "Look at the waiting agent",
+							preconditions: [
+								{
+									kind: "pane_matches",
+									runtime: "herdr",
+									paneId: "w1:p7",
+									tabId: "w1:t7",
+									cwd: join(tempDir, "elsewhere"),
+									agentSessionId: "ses_7",
+									agentStatuses: ["idle"],
+								},
+							],
+						}
+						return Effect.succeed({
+							version: 1,
+							generatedAt: new Date().toISOString(),
+							runtime: { provider: "herdr", available: true, error: null },
+							workbases: [],
+							items: [
+								{
+									key: item.key,
+									subject: item.subject,
+									fingerprint: "fp",
+									source: "fresh",
+									evaluatedAt: new Date().toISOString(),
+									assessment: {
+										status: "needs_input",
+										summary: "Waiting for a decision",
+										question: null,
+										actions: [
+											written,
+											{ ...written, id: "triage:bogus", type: "teleport" },
+										],
+										modelActionIds: ["triage:focus-written", "triage:bogus"],
+									},
+									suppressed: null,
+									error: null,
+								},
+							],
+							failures: [],
+							summary: { total: 1, fresh: 1, cached: 0, stale: 0, failed: 0 },
+						} as never)
+					},
+				}),
+			),
+		)
+		const first = await waitFor(() => ui.models[0], "the first model")
+		ui.handlers().onTriage(first.groups.at(-1)!.items[0]!)
+		const merged = await waitFor(
+			() =>
+				ui.models.find(
+					(model) =>
+						model.groups.at(-1)?.items[0]?.summary === "Waiting for a decision",
+				),
+			"the triage result",
+		)
+		const item = merged.groups.at(-1)!.items[0]!
+		expect(triageCalls).toEqual(["herdr:w1:p7"])
+		expect(item).toMatchObject({
+			badge: { label: "Needs You" },
+			modelActionIds: ["triage:focus-written"],
+			triage: { source: "fresh" },
+		})
+		expect(item.actions[0]!.id).toBe("triage:focus-written")
+		expect(ui.notices).toContain(
+			"Ignored 1 triage action(s) that failed the action schema",
+		)
+
+		// The model-written action still goes through the executor's checks.
+		ui.handlers().onExecute(item, item.actions[0]!)
+		await waitFor(
+			() => ui.notices.find((notice) => notice.startsWith("✓ Look at")),
+			"the triage action",
+		)
+		expect(calls).toEqual([["focus", "pane", "w1:p7"]])
+
+		ui.handlers().onTriage(null)
+		await waitFor(
+			() => (triageCalls.length === 2 ? true : undefined),
+			"a full run",
+		)
+		expect(triageCalls[1]).toBeUndefined()
+		ui.handlers().onQuit()
+		await done
 	})
 
 	test("a second Enter while one action is pending opens nothing and runs nothing", async () => {

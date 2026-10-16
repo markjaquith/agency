@@ -8,6 +8,7 @@ import type {
 	SupervisorAction,
 } from "../attention-schema"
 import type { Dismissal, Snooze } from "../services/SupervisionStateService"
+import type { TriageReportItem } from "../triage-schema"
 import type { RuntimeSnapshot } from "./runtime"
 
 export type BadgeTone = "red" | "yellow" | "green" | "blue" | "mauve" | "muted"
@@ -31,10 +32,34 @@ export interface SuperviseItem {
 	readonly summary: string
 	readonly subject: AttentionSubject
 	readonly signals: readonly AttentionSignal[]
-	/** Ranked, most relevant first. */
+	/** Ranked, most relevant first: triage's recommendations, then signals'. */
 	readonly actions: readonly SupervisorAction[]
-	/** Changes whenever the item's signals change; dismissals pin it. */
+	/** Actions the triage model wrote itself rather than copied from a signal. */
+	readonly modelActionIds: readonly string[]
+	/** Actions triage recommended, model-written or copied from a signal. */
+	readonly triageActionIds: readonly string[]
+	readonly triage: SuperviseTriage | null
+	/**
+	 * Triage's fingerprint when triage knows the item, else one over its
+	 * signals; dismissals pin it and lapse when it changes.
+	 */
 	readonly fingerprint: string
+}
+
+interface SuperviseTriage {
+	readonly source: TriageReportItem["source"]
+	readonly evaluatedAt: string | null
+	readonly status: string | null
+	readonly question: string | null
+	readonly error: string | null
+}
+
+/**
+ * One item's triage result: from a triage run (with its subject) or from the
+ * triage cache (without one). Actions must already be decoded.
+ */
+export type TriageEntry = Omit<TriageReportItem, "subject"> & {
+	readonly subject: AttentionSubject | null
 }
 
 interface SuperviseGroup {
@@ -52,18 +77,6 @@ export interface SuperviseModel {
 	readonly snoozed: number
 	readonly dismissed: number
 }
-
-/**
- * Judgment layered over deterministic items, such as LLM triage results.
- * Annotation actions rank ahead of signal actions.
- */
-interface ItemAnnotation {
-	readonly badge?: string
-	readonly summary?: string
-	readonly actions?: readonly SupervisorAction[]
-}
-
-export type Annotate = (item: SuperviseItem) => ItemAnnotation | null
 
 export const UNMANAGED_GROUP = "unmanaged"
 
@@ -85,20 +98,40 @@ const badgeFor = (signal: AttentionSignal): SuperviseBadge => {
 		duplicate_session: { label: "Duplicate", tone: "yellow" },
 		unmanaged_session: { label: "Unmanaged", tone: "muted" },
 	}
-	const order = [
-		"Blocked",
-		"Needs You",
-		"Ready to Merge",
-		"Lost",
-		"Merged",
-		"Done",
-		"Needs Ticket",
-		"Stale",
-		"Duplicate",
-		"Unmanaged",
-	]
-	const badge = badges[signal.kind]
-	return { ...badge, rank: order.indexOf(badge.label) }
+	return ranked(badges[signal.kind])
+}
+
+const BADGE_ORDER = [
+	"Blocked",
+	"Needs You",
+	"Ready to Merge",
+	"Lost",
+	"Merged",
+	"Done",
+	"Needs Ticket",
+	"Stale",
+	"Duplicate",
+	"In Review",
+	"Working",
+	"Idle",
+	"Unmanaged",
+	"Unknown",
+]
+
+const ranked = (badge: Omit<SuperviseBadge, "rank">): SuperviseBadge => ({
+	...badge,
+	rank: BADGE_ORDER.indexOf(badge.label),
+})
+
+const TRIAGE_BADGES: Record<string, Omit<SuperviseBadge, "rank"> | null> = {
+	needs_input: { label: "Needs You", tone: "yellow" },
+	blocked: { label: "Blocked", tone: "red" },
+	ready_to_merge: { label: "Ready to Merge", tone: "green" },
+	complete: { label: "Done", tone: "green" },
+	awaiting_review: { label: "In Review", tone: "blue" },
+	in_progress: { label: "Working", tone: "blue" },
+	idle: { label: "Idle", tone: "muted" },
+	unknown: null,
 }
 
 /** Signals scoped as `<kind>:<workbase key>:<unit>[...]`. */
@@ -217,9 +250,7 @@ const buildItem = (
 			if (!actions.has(identity)) actions.set(identity, action)
 		}
 	const refs = uniqueRefs(ranked)
-	const location = refs[0]
-		? `${paneLocation(refs[0], snapshot)}${refs.length > 1 ? ` +${refs.length - 1}` : ""}`
-		: null
+	const location = locationOf(refs, snapshot)
 	return {
 		key,
 		groupKey: groupKey(primary),
@@ -233,25 +264,74 @@ const buildItem = (
 		subject: { ...primary.subject, runtime: refs },
 		signals: ranked,
 		actions: [...actions.values()],
+		modelActionIds: [],
+		triageActionIds: [],
+		triage: null,
 		fingerprint: fingerprintOf(ranked),
 	}
 }
 
-const annotated = (item: SuperviseItem, annotate?: Annotate): SuperviseItem => {
-	const annotation = annotate?.(item)
-	if (!annotation) return item
+const locationOf = (
+	refs: readonly AttentionRuntimeRef[],
+	snapshot: RuntimeSnapshot | null,
+) =>
+	refs[0]
+		? `${paneLocation(refs[0], snapshot)}${refs.length > 1 ? ` +${refs.length - 1}` : ""}`
+		: null
+
+/** An item triage reports without any deterministic signal. */
+const triageOnlyItem = (
+	entry: TriageEntry & { readonly subject: AttentionSubject },
+	snapshot: RuntimeSnapshot | null,
+): SuperviseItem => ({
+	key: entry.key,
+	groupKey: entry.subject.workbase?.root ?? UNMANAGED_GROUP,
+	badge: ranked({ label: "Unknown", tone: "muted" }),
+	label: subjectLabel(entry.subject),
+	location: locationOf(entry.subject.runtime, snapshot),
+	summary: entry.error ?? "Not yet assessed",
+	subject: entry.subject,
+	signals: [],
+	actions: [],
+	modelActionIds: [],
+	triageActionIds: [],
+	triage: null,
+	fingerprint: entry.fingerprint,
+})
+
+/** Layer a triage result over an item; triage's actions rank first. */
+const withTriage = (item: SuperviseItem, entry: TriageEntry): SuperviseItem => {
+	const assessment = entry.assessment
+	const triage: SuperviseTriage = {
+		source: entry.source,
+		evaluatedAt: entry.evaluatedAt,
+		status: assessment?.status ?? null,
+		question: assessment?.question ?? null,
+		error: entry.error,
+	}
+	if (!assessment) return { ...item, triage, fingerprint: entry.fingerprint }
 	const actions = new Map<string, SupervisorAction>()
-	for (const action of [...(annotation.actions ?? []), ...item.actions]) {
+	for (const action of [...assessment.actions, ...item.actions]) {
 		const identity = actionIdentity(action)
 		if (!actions.has(identity)) actions.set(identity, action)
 	}
+	const triageBadge = TRIAGE_BADGES[assessment.status]
+	const badge =
+		triageBadge &&
+		(item.signals.length === 0 || ranked(triageBadge).rank < item.badge.rank)
+			? ranked(triageBadge)
+			: item.badge
 	return {
 		...item,
-		badge: annotation.badge
-			? { ...item.badge, label: annotation.badge }
-			: item.badge,
-		summary: annotation.summary ?? item.summary,
+		badge,
+		summary: assessment.question
+			? `${assessment.summary} — asks: ${assessment.question}`
+			: assessment.summary,
 		actions: [...actions.values()],
+		modelActionIds: assessment.modelActionIds,
+		triageActionIds: assessment.actions.map((action) => action.id),
+		triage,
+		fingerprint: entry.fingerprint,
 	}
 }
 
@@ -321,7 +401,8 @@ export const superviseModel = (
 		readonly snapshot?: RuntimeSnapshot | null
 		readonly state: HiddenState
 		readonly now?: Date
-		readonly annotate?: Annotate
+		/** Triage results by item key. */
+		readonly triage?: ReadonlyMap<string, TriageEntry>
 	},
 ): SuperviseModel => {
 	const now = options.now ?? new Date()
@@ -334,12 +415,22 @@ export const superviseModel = (
 	let snoozedCount = 0
 	let dismissedCount = 0
 	const items: SuperviseItem[] = []
-	for (const [key, signals] of bySubject) {
-		const item = annotated(
-			buildItem(key, signals, options.snapshot ?? null),
-			options.annotate,
-		)
-		const hidden = isHidden(item, options.state, now)
+	const snapshot = options.snapshot ?? null
+	const triage = options.triage ?? new Map<string, TriageEntry>()
+	const candidates = [
+		...[...bySubject].map(([key, signals]) =>
+			buildItem(key, signals, snapshot),
+		),
+		...[...triage.values()].flatMap((entry) =>
+			entry.subject && !bySubject.has(entry.key)
+				? [triageOnlyItem({ ...entry, subject: entry.subject }, snapshot)]
+				: [],
+		),
+	]
+	for (const candidate of candidates) {
+		const entry = triage.get(candidate.key)
+		const item = entry ? withTriage(candidate, entry) : candidate
+		const hidden = entry?.suppressed ?? isHidden(item, options.state, now)
 		if (hidden === "snoozed") snoozedCount++
 		else if (hidden === "dismissed") dismissedCount++
 		else items.push(visibleActions(item, options.state, now))

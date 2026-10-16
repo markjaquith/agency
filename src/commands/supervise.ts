@@ -1,6 +1,14 @@
-import { Deferred, Effect, FiberHandle, Queue, Stream } from "effect"
-import { dirname, join } from "node:path"
-import type { AttentionReport, SupervisorAction } from "../attention-schema"
+import {
+	Deferred,
+	Effect,
+	FiberHandle,
+	Option,
+	Queue,
+	Schema,
+	Stream,
+} from "effect"
+import { dirname, isAbsolute, join, resolve } from "node:path"
+import { SupervisorAction, type AttentionReport } from "../attention-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { RuntimeService } from "../services/RuntimeService"
 import { SupervisionService } from "../services/SupervisionService"
@@ -9,13 +17,16 @@ import {
 	SupervisorExecutor,
 	type ExecutorOptions,
 } from "../services/SupervisorExecutor"
+import { TriageService } from "../services/TriageService"
+import { WorkbaseService } from "../services/WorkbaseService"
+import type { TriageReportItem } from "../triage-schema"
 import type { BaseCommandOptions } from "../utils/command"
 import type { RuntimeSnapshot, RuntimeSubscription } from "../workbase/runtime"
 import {
 	superviseModel,
 	UNMANAGED_GROUP,
-	type Annotate,
 	type SuperviseItem,
+	type TriageEntry,
 } from "../workbase/supervise-view"
 
 type NoticeTone = "info" | "success" | "warning" | "error"
@@ -42,6 +53,7 @@ interface SupervisorUi {
 		readonly refreshing?: boolean
 		readonly busy?: boolean
 		readonly updatedAt?: Date | null
+		readonly triage?: TriageStatus
 	}) => void
 	readonly notice: (text: string, tone?: NoticeTone) => void
 	readonly confirm: (request: ConfirmRequest) => Promise<Confirmation>
@@ -55,10 +67,20 @@ interface SupervisorUi {
 	readonly close: () => Promise<void>
 }
 
+interface TriageStatus {
+	/** What is being triaged, or null when idle. */
+	readonly running: string | null
+	readonly startedAt: Date | null
+	/** The last run's outcome. */
+	readonly last: string | null
+}
+
 interface SupervisorUiHandlers {
 	readonly onExecute: (item: SuperviseItem, action: SupervisorAction) => void
 	readonly onFocus: (item: SuperviseItem) => void
 	readonly onRefresh: () => void
+	/** Triage one item, or everything when null, then refresh. */
+	readonly onTriage: (item: SuperviseItem | null) => void
 	readonly onEditPrompt: (item: SuperviseItem | null) => void
 	readonly onSnooze: (item: SuperviseItem) => void
 	readonly onDismiss: (item: SuperviseItem) => void
@@ -79,8 +101,6 @@ interface SuperviseOptions extends BaseCommandOptions {
 	readonly pollSeconds?: number
 	/** Minimum milliseconds between refreshes. */
 	readonly minRefreshMs?: number
-	/** LLM judgment layered over signals, once triage is available. */
-	readonly annotate?: Annotate
 }
 
 type Intent =
@@ -107,9 +127,43 @@ const RESUBSCRIBE_MS = 5_000
 /** A subscription that survives this long without failing counts as live. */
 const LIVE_AFTER_MS = 2_000
 
-/** The per-workbase prompt the supervisor's `e` key edits. */
-const supervisionPromptPath = (root: string) =>
-	join(root, ".agency", "supervisor-prompt.md")
+/** The prompt file `e` creates when a workbase names none. */
+const DEFAULT_PROMPT_FILE = "triage.md"
+
+const decodeAction = Schema.decodeUnknownOption(SupervisorAction)
+
+/**
+ * Validate every triage-sourced action against the action schema; invalid
+ * ones are dropped (and counted) rather than shown or executed.
+ */
+const decodeTriageEntry = (
+	entry: TriageEntry,
+): { readonly entry: TriageEntry; readonly dropped: number } => {
+	const assessment = entry.assessment
+	if (!assessment) return { entry, dropped: 0 }
+	const actions = assessment.actions.flatMap((action) =>
+		Option.toArray(decodeAction(action)),
+	)
+	const kept = new Set(actions.map((action) => action.id))
+	return {
+		entry: {
+			...entry,
+			assessment: {
+				...assessment,
+				actions,
+				modelActionIds: assessment.modelActionIds.filter((id) => kept.has(id)),
+			},
+		},
+		dropped: assessment.actions.length - actions.length,
+	}
+}
+
+const elapsed = (since: Date) => {
+	const seconds = Math.round((Date.now() - since.getTime()) / 1000)
+	return seconds < 60
+		? `${seconds}s`
+		: `${Math.floor(seconds / 60)}m${seconds % 60}s`
+}
 
 const defaultAgencyCommand = () =>
 	process.argv[1] ? [process.execPath, process.argv[1]] : ["agency"]
@@ -177,6 +231,7 @@ export const supervise = (
 			Queue.offerUnsafe(refreshes, true)
 		}
 		let ui: SupervisorUi | undefined
+		let startTriage: (item: SuperviseItem | null) => void = () => {}
 		const offer = (intent: Intent) => {
 			if (pending) return
 			pending = true
@@ -191,6 +246,7 @@ export const supervise = (
 							offer({ kind: "execute", item, action }),
 						onFocus: (item) => offer({ kind: "focus", item }),
 						onRefresh: requestRefresh,
+						onTriage: (item) => startTriage(item),
 						onEditPrompt: (item) => offer({ kind: "edit", item }),
 						onSnooze: (item) => offer({ kind: "snooze", item }),
 						onDismiss: (item) => offer({ kind: "dismiss", item }),
@@ -210,19 +266,69 @@ export const supervise = (
 			report: AttentionReport | null
 			snapshot: RuntimeSnapshot | null
 			subscriptionKey: string | null
-		} = { report: null, snapshot: null, subscriptionKey: null }
+			/** Results of triage runs in this session, by item key. */
+			triage: Map<string, TriageReportItem>
+			dropped: number
+		} = {
+			report: null,
+			snapshot: null,
+			subscriptionKey: null,
+			triage: new Map(),
+			dropped: 0,
+		}
+
+		/** Cached assessments, overlaid by this session's newer run results. */
+		const triageEntries = Effect.gen(function* () {
+			const entries = new Map<string, TriageEntry>()
+			for (const cached of yield* stateService.triageCache(env))
+				entries.set(cached.key, {
+					key: cached.key,
+					subject: null,
+					fingerprint: cached.fingerprint,
+					source: "cached",
+					evaluatedAt: cached.evaluatedAt,
+					assessment: cached.assessment,
+					suppressed: null,
+					error: null,
+				})
+			for (const item of view.triage.values()) {
+				const cached = entries.get(item.key)
+				if (
+					cached?.evaluatedAt &&
+					item.evaluatedAt &&
+					cached.evaluatedAt > item.evaluatedAt
+				)
+					entries.set(item.key, { ...cached, subject: item.subject })
+				else entries.set(item.key, item)
+			}
+			let dropped = 0
+			const decoded = new Map<string, TriageEntry>()
+			for (const [key, entry] of entries) {
+				const result = decodeTriageEntry(entry)
+				dropped += result.dropped
+				decoded.set(key, result.entry)
+			}
+			return { entries: decoded, dropped }
+		})
 
 		const render = Effect.gen(function* () {
 			if (!view.report) return
-			const [snoozes, dismissals] = yield* Effect.all([
+			const [snoozes, dismissals, triage] = yield* Effect.all([
 				stateService.snoozes(env),
 				stateService.dismissals(env),
+				triageEntries,
 			])
+			if (triage.dropped > view.dropped)
+				surface.notice(
+					`Ignored ${triage.dropped} triage action(s) that failed the action schema`,
+					"warning",
+				)
+			view.dropped = triage.dropped
 			surface.update(
 				superviseModel(view.report, {
 					snapshot: view.snapshot,
 					state: { snoozes, dismissals },
-					annotate: options.annotate,
+					triage: triage.entries,
 				}),
 			)
 		})
@@ -324,6 +430,73 @@ export const supervise = (
 			}),
 		)
 		requestRefresh()
+
+		// One triage run at a time, in the background so the view stays live.
+		const triageService = yield* TriageService
+		const triageRequests = yield* Queue.dropping<SuperviseItem | null>(1)
+		let triaging = false
+		let lastTriage: string | null = null
+		startTriage = (item) => {
+			if (triaging) {
+				surface.notice("Triage is already running", "warning")
+				return
+			}
+			triaging = true
+			Queue.offerUnsafe(triageRequests, item)
+		}
+		const runTriage = (item: SuperviseItem | null) => {
+			const label = item ? item.label : "everything"
+			const startedAt = new Date()
+			surface.status({
+				triage: { running: label, startedAt, last: lastTriage },
+			})
+			surface.notice(
+				item
+					? `Triaging ${label}…`
+					: "Triaging everything; a full run can take minutes…",
+			)
+			return Effect.gen(function* () {
+				const report = yield* triageService.triage({
+					workbase: options.workbase,
+					cwd: options.cwd,
+					configDirectory: options.configDirectory,
+					env,
+					...(item ? { item: item.key } : {}),
+				})
+				if (!item) view.triage.clear()
+				for (const entry of report.items) view.triage.set(entry.key, entry)
+				const { fresh, cached, stale, failed } = report.summary
+				lastTriage = `${item ? label : "full"} at ${startedAt.toLocaleTimeString()}: ${fresh} fresh, ${cached} cached${stale ? `, ${stale} stale` : ""}${failed ? `, ${failed} failed` : ""}`
+				surface.notice(
+					report.failures.length
+						? `Triage finished with ${report.failures.length} failure(s): ${report.failures[0]!.message}`
+						: `Triage finished in ${elapsed(startedAt)}`,
+					report.failures.length ? "warning" : "success",
+				)
+				yield* render
+				requestRefresh()
+			}).pipe(
+				Effect.catch((error) =>
+					Effect.sync(() => {
+						lastTriage = `${label} failed at ${startedAt.toLocaleTimeString()}`
+						surface.notice(`Triage failed: ${message(error)}`, "error")
+					}),
+				),
+				Effect.ensuring(
+					Effect.sync(() => {
+						triaging = false
+						surface.status({
+							triage: { running: null, startedAt: null, last: lastTriage },
+						})
+					}),
+				),
+			)
+		}
+		yield* Effect.forkScoped(
+			Effect.gen(function* () {
+				while (true) yield* runTriage(yield* Queue.take(triageRequests))
+			}),
+		)
 
 		const warnLog = (logError: string | null) => {
 			if (logError) surface.notice(logError, "warning")
@@ -541,8 +714,14 @@ export const supervise = (
 			)
 		}
 
+		/**
+		 * Edit the workbase's triage prompt file: `triage.promptFile` when set,
+		 * otherwise `triage.md` beside agency.json, which is then recorded as
+		 * `triage.promptFile` (after confirmation) so triage reads it.
+		 */
 		const editPrompt = (item: SuperviseItem | null) =>
 			Effect.gen(function* () {
+				const workbases = yield* WorkbaseService
 				const root =
 					item && item.groupKey !== UNMANAGED_GROUP
 						? item.groupKey
@@ -552,7 +731,10 @@ export const supervise = (
 					surface.notice("No workbase to edit a prompt for", "warning")
 					return
 				}
-				const path = supervisionPromptPath(root)
+				const loaded = yield* workbases.loadConfig(root)
+				const configured = loaded.config.triage?.promptFile
+				const file = configured ?? DEFAULT_PROMPT_FILE
+				const path = isAbsolute(file) ? file : resolve(loaded.root, file)
 				yield* fs.createDirectory(dirname(path))
 				const editor = (env.VISUAL || env.EDITOR || "vi")
 					.split(/\s+/)
@@ -561,7 +743,10 @@ export const supervise = (
 				const before = yield* read
 				surface.suspend()
 				const result = yield* fs
-					.runCommand([...editor, path], { cwd: root, passthrough: true })
+					.runCommand([...editor, path], {
+						cwd: loaded.root,
+						passthrough: true,
+					})
 					.pipe(Effect.ensuring(Effect.sync(() => surface.resume())))
 				if (result.exitCode !== 0) {
 					surface.notice(
@@ -571,10 +756,33 @@ export const supervise = (
 					return
 				}
 				const after = yield* read
-				surface.notice(
-					after === before ? `No changes to ${path}` : `Saved ${path}`,
-					after === before ? "info" : "success",
+				if (configured || !after?.trim()) {
+					surface.notice(
+						after === before ? `No changes to ${path}` : `Saved ${path}`,
+						after === before ? "info" : "success",
+					)
+					return
+				}
+				const confirmation = yield* ask(() =>
+					surface.confirm({
+						title: `Use ${file} as this workbase's triage prompt`,
+						rationale: `Triage reads only triage.promptFile${loaded.config.triage?.prompt ? " (after the inline triage.prompt, which is kept)" : ""}; record it in agency.json.`,
+						risk: "reversible",
+						preview: [
+							`Set "triage": { "promptFile": "${file}" } in ${join(loaded.root, "agency.json")}`,
+						],
+						destructive: false,
+					}),
 				)
+				if (!confirmation.confirmed) {
+					surface.notice(
+						`Saved ${path}, but triage will not read it until triage.promptFile names it`,
+						"warning",
+					)
+					return
+				}
+				yield* workbases.setTriagePromptFile(loaded.root, file)
+				surface.notice(`Saved ${path} and set triage.promptFile`, "success")
 			}).pipe(
 				Effect.catch((error) =>
 					Effect.sync(() => surface.notice(message(error), "error")),
@@ -663,7 +871,8 @@ Every action previews exactly what it runs, rechecks its preconditions against
 fresh state, and is appended to the local action log. Destructive actions need
 a second confirmation. Agency actions are re-resolved through agency act before
 running; work launches in a new, unfocused tab. Snoozes and dismissals persist
-in local supervision state. Press ? for keys.
+in local supervision state. Triage results merge into the view; r triages the
+selected item and R everything. Press ? for keys.
 
 Options:
   --workbase <selector>  Supervise only one registered workbase

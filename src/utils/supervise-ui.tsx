@@ -11,6 +11,7 @@ import {
 	createMemo,
 	createSignal,
 	For,
+	onCleanup,
 	Show,
 	untrack,
 } from "solid-js"
@@ -42,12 +43,21 @@ export interface SupervisorStatus {
 	/** An action is being prepared or run. */
 	readonly busy: boolean
 	readonly updatedAt: Date | null
+	readonly triage: {
+		/** What is being triaged, or null when idle. */
+		readonly running: string | null
+		readonly startedAt: Date | null
+		/** The last run's outcome. */
+		readonly last: string | null
+	}
 }
 
 export interface SupervisorHandlers {
 	readonly onExecute: (item: SuperviseItem, action: SupervisorAction) => void
 	readonly onFocus: (item: SuperviseItem) => void
 	readonly onRefresh: () => void
+	/** Triage one item, or everything when null, then refresh. */
+	readonly onTriage: (item: SuperviseItem | null) => void
 	readonly onEditPrompt: (item: SuperviseItem | null) => void
 	readonly onSnooze: (item: SuperviseItem) => void
 	readonly onDismiss: (item: SuperviseItem) => void
@@ -122,7 +132,16 @@ export const SUPERVISOR_BINDINGS: readonly Binding[] = [
 		footer: "enter run",
 	},
 	{ keys: "f", description: "Focus the item's pane", footer: "f focus" },
-	{ keys: "r", description: "Refresh now", footer: "r refresh" },
+	{
+		keys: "r",
+		description: "Triage the selected item with the LLM, then refresh",
+		footer: "r triage",
+	},
+	{
+		keys: "R",
+		description: "Triage everything (a full run can take minutes)",
+		footer: "R all",
+	},
 	{
 		keys: "e",
 		description: "Edit the workbase supervision prompt in $EDITOR",
@@ -445,7 +464,9 @@ export const SupervisorApp = (props: {
 				return
 			case "r":
 				handled()
-				props.handlers.onRefresh()
+				if (key.shift || key.sequence === "R") props.handlers.onTriage(null)
+				else if (item) props.handlers.onTriage(item)
+				else props.handlers.onRefresh()
 				return
 			case "e":
 				handled()
@@ -498,6 +519,26 @@ export const SupervisorApp = (props: {
 	const labelWidth = () => Math.min(32, Math.max(12, Math.floor(width() / 5)))
 	const locationWidth = () => Math.min(28, Math.max(0, Math.floor(width() / 6)))
 
+	// Tick while triage runs so its elapsed time stays current.
+	const [now, setNow] = createSignal(Date.now())
+	const timer = setInterval(() => {
+		if (props.status.triage.running) setNow(Date.now())
+	}, 1000)
+	onCleanup(() => clearInterval(timer))
+	const triageLine = (item: SuperviseItem) => {
+		const triage = item.triage
+		if (!triage) return "not triaged · r triages"
+		const age = triage.evaluatedAt
+			? `${Math.max(0, Math.round((now() - Date.parse(triage.evaluatedAt)) / 60_000))}m ago`
+			: "never"
+		return `triage ${triage.source} · ${age}${triage.error ? ` · ${triage.error}` : ""}`
+	}
+	const actionSource = (item: SuperviseItem, action: SupervisorAction) =>
+		item.modelActionIds.includes(action.id)
+			? { label: " model", color: macchiato.mauve }
+			: item.triageActionIds.includes(action.id)
+				? { label: " triage", color: macchiato.sapphire }
+				: { label: "", color: macchiato.overlay1 }
 	const header = () => {
 		const model = props.model
 		const parts = [
@@ -505,6 +546,11 @@ export const SupervisorApp = (props: {
 			model ? `${model.total} item${model.total === 1 ? "" : "s"}` : "loading",
 			...(model?.snoozed ? [`${model.snoozed} snoozed`] : []),
 			...(model?.dismissed ? [`${model.dismissed} dismissed`] : []),
+			...(props.status.triage.running && props.status.triage.startedAt
+				? [
+						`⟳ triage ${props.status.triage.running} ${Math.max(0, Math.round((now() - props.status.triage.startedAt.getTime()) / 1000))}s`,
+					]
+				: []),
 			...(props.status.refreshing
 				? ["refreshing…"]
 				: props.status.updatedAt
@@ -574,6 +620,7 @@ export const SupervisorApp = (props: {
 								item().location,
 								item().subject.pullRequest?.url,
 								item().subject.ticket?.key ?? item().subject.ticket?.url,
+								triageLine(item()),
 							]
 								.filter(Boolean)
 								.join("  ·  ") || " "}
@@ -602,6 +649,10 @@ export const SupervisorApp = (props: {
 											{span(`${index() + 1}  `, macchiato.overlay1)}
 											{span(fit(action.title, 44))}
 											{span(` ${action.risk}`, riskColor[action.risk])}
+											{span(
+												actionSource(item(), action).label,
+												actionSource(item(), action).color,
+											)}
 										</text>
 									)
 								}}
@@ -687,7 +738,11 @@ export const SupervisorApp = (props: {
 			<text fg={macchiato.overlay1} wrapMode="word">
 				Every action shows exactly what it runs and rechecks its preconditions
 				against fresh state before running. Destructive actions need a second
-				confirmation.
+				confirmation. Actions tagged "triage" were recommended by triage;
+				"model" ones were written by the triage model itself.
+			</text>
+			<text height={1} wrapMode="none" fg={macchiato.overlay1}>
+				{`Last triage: ${props.status.triage.last ?? "none this session"}`}
 			</text>
 		</box>
 	)
@@ -831,6 +886,7 @@ export const createSupervisorSession = async (handlers: SupervisorHandlers) => {
 		refreshing: true,
 		busy: false,
 		updatedAt: null,
+		triage: { running: null, startedAt: null, last: null },
 	})
 	const [notice, setNotice] = createSignal<SupervisorNotice | null>(null)
 	const [modal, setModal] = createSignal<Modal | null>(null)
