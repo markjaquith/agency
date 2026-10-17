@@ -9,7 +9,7 @@ export const loadInteractive = async () => {
 	return import("./interactive")
 }
 
-export const loadSupervisorUi = async () => {
+export const loadSupervisorTab = async () => {
 	await preload()
-	return import("./supervise-ui")
+	return import("./supervise-tab")
 }

@@ -195,8 +195,7 @@ const resolveInvocationCwd = (
 				commandName === "init" ||
 				commandName === "workbase" ||
 				commandName === "attention" ||
-				commandName === "triage" ||
-				commandName === "supervise"
+				commandName === "triage"
 			) {
 				return resolve(options.cwd ?? process.cwd())
 			}
@@ -889,7 +888,7 @@ Commands:
   next                   List or select ready execution units
   attention              Report work and sessions that need attention
   triage                 Assess supervised work and rank next actions
-  supervise              Supervise and act on everything needing attention
+  supervise              Open act on its Supervise tab
   pr create / pr [...]  Create an Agency PR or run gh pr with repository focus
   push                   Validate and publish the current execution unit
   rebase <task> [phase]  Rebase a checkout onto a new base and record it

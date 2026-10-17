@@ -4,7 +4,7 @@
     "cli.ts",
     "index.ts",
     "src/utils/interactive.tsx!",
-    "src/utils/supervise-ui.tsx!",
+    "src/utils/supervise-tab.tsx!",
     "scripts/build-interactive.ts!",
     "pi-extensions/agency.ts",
     "scripts/benchmark-act.ts",

@@ -13,6 +13,12 @@ import { epic } from "./epic"
 import { phase } from "./phase"
 import { task } from "./task"
 import { act, type ActInteraction } from "./act"
+import { collectActionInputs, isEntity } from "./act-wizard"
+import { actActions } from "./act-actions"
+import { actionPrompts } from "./act-prompts"
+import { work as startWork } from "./work"
+import { GraphService } from "../services/GraphService"
+import { ActCancelled } from "./act-prompts"
 import { worktree } from "./worktree"
 import { parseCli } from "../cli-parser"
 import { FileSystemService } from "../services/FileSystemService"
@@ -1988,4 +1994,199 @@ describe("act command", () => {
 				"",
 			].join("\n"),
 		)
+
+	describe("collectActionInputs (Supervise's act wizard handoff)", () => {
+		const answering = (answers: readonly string[], prompts: string[]) => {
+			let index = 0
+			return {
+				...scriptedInteraction([]),
+				text: (prompt: string) => {
+					prompts.push(prompt)
+					return Effect.succeed(answers[index++] ?? null)
+				},
+			} satisfies ActInteraction
+		}
+
+		test("prefills prompts from the action's values and reports answers by input ID", async () => {
+			const prompts: string[] = []
+			const values = await runTestEffect(
+				collectActionInputs(
+					{
+						root,
+						selector: null,
+						actionId: "task-create",
+						values: { description: "Prefilled outcome", base: "develop" },
+					},
+					answering(["", "", ""], prompts),
+				),
+			)
+			expect(prompts).toEqual([
+				"Outcome [Prefilled outcome]: ",
+				"New task ID [prefilled-outcome]: ",
+				"Base branch [develop]: ",
+			])
+			expect(values).toEqual({
+				description: "Prefilled outcome",
+				id: "prefilled-outcome",
+				repo: "agency",
+				base: "develop",
+			})
+		})
+
+		test("collects nothing for an action without inputs and fails closed when it is unavailable", async () => {
+			await createTask("example")
+			const prompts: string[] = []
+			const request = {
+				root,
+				selector: { task: "example" },
+				values: {},
+			}
+			expect(
+				await runTestEffect(
+					collectActionInputs(
+						{ ...request, actionId: "drop" },
+						answering([], prompts),
+					),
+				),
+			).toEqual({})
+			await expect(
+				runTestEffect(
+					collectActionInputs(
+						{ ...request, actionId: "archive" },
+						answering([], prompts),
+					),
+				),
+			).rejects.toThrow("Item and all children must be terminal")
+			await expect(
+				runTestEffect(
+					collectActionInputs(
+						{ ...request, selector: { task: "missing" }, actionId: "drop" },
+						answering([], prompts),
+					),
+				),
+			).rejects.toThrow("task:missing no longer exists")
+			expect(prompts).toEqual([])
+		})
+
+		test("every action's prompts answer its declared inputs in order", async () => {
+			await createTask("single")
+			await runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["investigate"],
+					repo: "agency",
+					branch: "task/investigate",
+					base: "main",
+					purpose: "investigation",
+					cwd: root,
+					silent: true,
+				}),
+			)
+			await runTestEffect(
+				task({
+					subcommand: "create",
+					args: ["multi"],
+					multiPhase: true,
+					cwd: root,
+					silent: true,
+				}),
+			)
+			await runTestEffect(
+				phase({
+					subcommand: "create",
+					args: ["multi", "build"],
+					repo: "agency",
+					branch: "task/multi-build",
+					base: "main",
+					cwd: root,
+					silent: true,
+				}),
+			)
+			await runTestEffect(
+				epic({
+					subcommand: "create",
+					args: ["group"],
+					ticketUrl: "https://example.com/group",
+					repos: ["agency:main"],
+					cwd: root,
+					silent: true,
+				}),
+			)
+			const { nodes } = await runTestEffect(
+				Effect.flatMap(GraphService, (graphs) => graphs.get({ cwd: root })),
+			)
+			const entities = nodes.filter(isEntity)
+			const checked = new Set<string>()
+			const mismatches: string[] = []
+			for (const node of [undefined, ...entities])
+				for (const action of actActions(
+					nodes,
+					{ cwd: root, silent: true },
+					startWork,
+					node,
+				)) {
+					const inputs = action.inputs ?? []
+					if (!inputs.length) continue
+					let answer = 0
+					const fields = {
+						inputs,
+						defaults: {},
+						values: {} as Record<string, string>,
+						answered: [] as (string | null)[],
+					}
+					const answers: ActInteraction = {
+						text: () => Effect.succeed(`answer${answer++}`),
+						select: (_prompt, choices) =>
+							Effect.succeed(choices[0]?.value ?? null),
+					}
+					await runTestEffect(
+						action.prepare(
+							actionPrompts(
+								answers,
+								nodes
+									.filter((candidate) => candidate.kind === "repository")
+									.map((candidate) => candidate.key),
+								entities.map((candidate) => candidate.key),
+								undefined,
+								fields,
+							),
+						),
+					)
+					checked.add(action.id)
+					const expected = inputs.map((input) => input.id)
+					if (JSON.stringify(fields.answered) !== JSON.stringify(expected))
+						mismatches.push(
+							`${action.id}${node ? ` on ${node.key}` : ""}: ${JSON.stringify(fields.answered)} != ${JSON.stringify(expected)}`,
+						)
+				}
+			expect(mismatches).toEqual([])
+			// The catalog's input-bearing actions were all exercised.
+			expect([...checked].sort()).toEqual(
+				expect.arrayContaining([
+					"epic-create",
+					"handoff",
+					"repo-add",
+					"split",
+					"task-create",
+					"task-create-in-epic",
+				]),
+			)
+		})
+
+		test("cancelling the wizard cancels the handoff", async () => {
+			await expect(
+				runTestEffect(
+					collectActionInputs(
+						{
+							root,
+							selector: null,
+							actionId: "task-create",
+							values: {},
+						},
+						answering([], []),
+					),
+				),
+			).rejects.toBeInstanceOf(ActCancelled)
+		})
+	})
 })
