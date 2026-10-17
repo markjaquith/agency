@@ -54,11 +54,33 @@ interface PromptProps<T> {
 const isCancel = (key: { name: string; ctrl: boolean }) =>
 	key.name === "escape" || (key.ctrl && key.name === "c")
 
+export const isQuestion = (key: { name: string; sequence: string }) =>
+	key.name === "?" || key.sequence === "?"
+
+/** Enter is ignored this long after a confirmation opens, so a double press can't confirm. */
+export const CONFIRM_DELAY_MS = 250
+
 interface PromptKey {
 	readonly name: string
 	readonly ctrl: boolean
 	preventDefault(): void
 	stopPropagation(): void
+}
+
+/**
+ * A held Enter must never submit, and a confirmation ignores Enter until it
+ * has been open for `delayMs`. Returns true when the key was swallowed.
+ */
+const guardEnter = (
+	key: PromptKey & { readonly repeated?: boolean },
+	openedAt: number,
+	delayMs = 0,
+) => {
+	if (key.name !== "return") return false
+	if (!key.repeated && Date.now() - openedAt >= delayMs) return false
+	key.preventDefault()
+	key.stopPropagation()
+	return true
 }
 
 const removedText = (before: string, after: string) => {
@@ -128,8 +150,10 @@ export const InteractiveTextPrompt = (props: PromptProps<string>) => {
 	// OpenTUI reserves the last wrap column, so clip a one-column-wider editor.
 	const inputWidth = () => dimensions().width + 1
 	const editing = createReadlineEditing(() => input)
+	const openedAt = Date.now()
 	useKeyboard((key) => {
 		if (key.propagationStopped) return
+		if (guardEnter(key, openedAt)) return
 		if (props.embedded && key.name === "escape" && editing.value) {
 			key.preventDefault()
 			key.stopPropagation()
@@ -203,8 +227,13 @@ interface SelectPromptProps extends PromptProps<string> {
 	readonly reservedRows?: number
 	readonly backgroundColor?: string
 	readonly emptyLabel?: string
-	readonly onTab?: () => void
 	readonly initialKey?: string
+	/** Called for `?` while the filter is empty. */
+	readonly onHelp?: () => void
+	/** Escape with an empty filter cancels; the front screen has nothing to close. */
+	readonly escapeCancels?: boolean
+	/** Ignore Enter for this long after opening, for confirmations. */
+	readonly confirmDelayMs?: number
 }
 
 const isWordBoundary = (value: string, index: number) =>
@@ -331,12 +360,15 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 		if (count === 0) return
 		setSelected((current) => (current + offset + count) % count)
 	}
+	const openedAt = Date.now()
 	useKeyboard((key) => {
 		if (props.active === false || key.propagationStopped) return
-		if (key.name === "tab" && props.onTab) {
+		if (guardEnter(key, openedAt, props.confirmDelayMs)) return
+		// Read the live input: its change event may not have reached query() yet.
+		if (props.onHelp && !(input?.plainText ?? query()) && isQuestion(key)) {
 			key.preventDefault()
 			key.stopPropagation()
-			props.onTab()
+			props.onHelp()
 			return
 		}
 		if (key.name === "escape" && query()) {
@@ -352,6 +384,7 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 			key.preventDefault()
 			key.stopPropagation()
 			if (key.ctrl && key.name === "c") props.onQuit?.()
+			else if (props.escapeCancels === false) return
 			props.onDone(null)
 			return
 		}
@@ -570,6 +603,11 @@ export const InteractiveSelectPrompt = (props: SelectPromptProps) => {
 	)
 }
 
+export interface InteractiveHelpEntry {
+	readonly keys: string
+	readonly description: string
+}
+
 export interface InteractiveTab {
 	readonly id: string
 	readonly label: string
@@ -577,6 +615,23 @@ export interface InteractiveTab {
 	readonly choices: readonly InteractiveChoice[]
 	readonly emptyLabel?: string
 	readonly initialKey?: string
+	/** Contextual help shown by `?` while the filter is empty. */
+	readonly help?: readonly InteractiveHelpEntry[]
+}
+
+export interface InteractivePanelContext {
+	/** The panel's tab is showing; only then may it handle keys. */
+	readonly active: () => boolean
+	/** Rows taken by the tab bar, notice, and queue footer. */
+	readonly reservedRows: () => number
+	readonly quit: () => void
+}
+
+/** A tab whose content is rendered by its owner instead of a choice list. */
+export interface InteractivePanel {
+	readonly render: (context: InteractivePanelContext) => JSX.Element
+	/** While true (an open dialog), Tab and Shift-Tab stay in the panel. */
+	readonly locked?: () => boolean
 }
 
 export interface InteractiveQueueEntry {
@@ -608,9 +663,11 @@ export const InteractiveTabbedPrompt = (props: {
 	readonly initialTab?: number
 	readonly onTabChange?: (index: number) => void
 	readonly content?: (reservedRows: () => number) => JSX.Element
+	readonly panels?: Readonly<Record<string, InteractivePanel>>
 }) => {
 	const dimensions = useTerminalDimensions()
 	const [active, setActive] = createSignal(props.initialTab ?? 0)
+	const [help, setHelp] = createSignal(false)
 	const showBrand = () =>
 		dimensions().width >=
 		props.tabs.reduce(
@@ -619,17 +676,35 @@ export const InteractiveTabbedPrompt = (props: {
 		)
 	const queue = () => queueRows(props.queue ?? [])
 	const reservedRows = () => 1 + (props.notice ? 1 : 0) + queue().length
-	const cycle = () => {
+	const activeTab = () => props.tabs[active()]
+	const panel = (tab: InteractiveTab | undefined) =>
+		tab ? props.panels?.[tab.id] : undefined
+	const cycle = (offset: 1 | -1) => {
 		if (!props.tabs.length) return
-		const next = (active() + 1) % props.tabs.length
+		const next = (active() + offset + props.tabs.length) % props.tabs.length
+		setHelp(false)
 		setActive(next)
 		props.onTabChange?.(next)
 	}
+	const quit = () => {
+		props.onQuit?.()
+		props.onDone(null)
+	}
 	useKeyboard((key) => {
-		if (!props.content || key.name !== "tab" || key.propagationStopped) return
+		if (key.propagationStopped) return
+		if (help()) {
+			// Help is one layer: it closes, and holds every other key but quit.
+			key.preventDefault()
+			key.stopPropagation()
+			if (key.ctrl && key.name === "c") quit()
+			else if (key.name === "escape" || isQuestion(key)) setHelp(false)
+			else if (key.name === "tab") cycle(key.shift ? -1 : 1)
+			return
+		}
+		if (key.name !== "tab" || panel(activeTab())?.locked?.()) return
 		key.preventDefault()
 		key.stopPropagation()
-		cycle()
+		cycle(key.shift ? -1 : 1)
 	})
 	return (
 		<box
@@ -682,30 +757,69 @@ export const InteractiveTabbedPrompt = (props: {
 				{props.content ? (
 					props.content(reservedRows)
 				) : (
-					<Index each={props.tabs}>
-						{(tab, index) => (
-							<box
-								visible={index === active()}
-								width="100%"
-								flexGrow={1}
-								minHeight={0}
-							>
-								<InteractiveSelectPrompt
-									embedded
-									active={index === active()}
-									reservedRows={reservedRows()}
-									backgroundColor={macchiato.base}
-									prompt={tab().prompt}
-									choices={tab().choices}
-									emptyLabel={tab().emptyLabel}
-									initialKey={tab().initialKey}
-									onTab={cycle}
-									onDone={props.onDone}
-									onQuit={props.onQuit}
-								/>
+					<>
+						<Index each={props.tabs}>
+							{(tab, index) => {
+								const shown = () => index === active() && !help()
+								const custom = () => panel(tab())
+								return (
+									<box
+										visible={shown()}
+										width="100%"
+										flexGrow={1}
+										minHeight={0}
+									>
+										<Show
+											when={custom()}
+											fallback={
+												<InteractiveSelectPrompt
+													embedded
+													active={shown()}
+													reservedRows={reservedRows()}
+													backgroundColor={macchiato.base}
+													prompt={tab().prompt}
+													choices={tab().choices}
+													emptyLabel={tab().emptyLabel}
+													initialKey={tab().initialKey}
+													escapeCancels={false}
+													onHelp={
+														tab().help?.length ? () => setHelp(true) : undefined
+													}
+													onDone={props.onDone}
+													onQuit={props.onQuit}
+												/>
+											}
+										>
+											{(current) =>
+												current().render({ active: shown, reservedRows, quit })
+											}
+										</Show>
+									</box>
+								)
+							}}
+						</Index>
+						<Show when={help()}>
+							<box flexDirection="column" flexGrow={1} minHeight={0}>
+								<text fg={macchiato.blue} height={1} wrapMode="none">
+									{`${activeTab()?.label.trim() ?? ""} keys`}
+								</text>
+								<For each={activeTab()?.help ?? []}>
+									{(entry) => (
+										<text height={1} wrapMode="none">
+											<span style={{ fg: macchiato.text } as TextNodeOptions}>
+												{entry.keys.padEnd(20)}
+											</span>
+											<span
+												style={{ fg: macchiato.subtext0 } as TextNodeOptions}
+											>
+												{entry.description}
+											</span>
+										</text>
+									)}
+								</For>
 							</box>
-						)}
-					</Index>
+						</Show>
+					</>
 				)}
 			</box>
 			<Show when={queue().length}>
@@ -748,15 +862,24 @@ type SessionView =
 			kind: "select"
 			prompt: string
 			choices: readonly InteractiveChoice[]
+			confirm: boolean
 			finish: (value: string | null) => void
 	  }
 	| { kind: "text"; prompt: string; finish: (value: string | null) => void }
 	| { kind: "progress"; prompt: string }
 
+interface SessionOptions {
+	/** Tabs rendered by their owner, by tab ID; they stay mounted on the front screen. */
+	readonly panels?: Readonly<Record<string, InteractivePanel>>
+	/** Called with the new and previous tab IDs whenever the user switches tabs. */
+	readonly onTabChange?: (id: string, previous: string | undefined) => void
+}
+
 /** One terminal owner for a complete guided flow, rather than one per prompt. */
 export const createInteractiveSession = async (
 	onCancel: () => void = () => {},
 	initialTabs: readonly InteractiveTab[] = [],
+	options: SessionOptions = {},
 ) => {
 	const [view, setView] = createSignal<SessionView>({
 		kind: "progress",
@@ -770,9 +893,15 @@ export const createInteractiveSession = async (
 	let frameTabs = initialTabs
 	const tabSelections = new Map<string, string>()
 	let navigationRequested = false
-	const navigate = (index: number) => {
+	const tabChanged = (index: number) => {
+		const previous = frameTabs[activeTab]?.id
 		activeTab = index
+		const id = frameTabs[index]?.id
+		if (id) options.onTabChange?.(id, previous)
+	}
+	const navigate = (index: number) => {
 		navigationRequested = true
+		tabChanged(index)
 		if (pending) pending(null)
 		else {
 			cancelled = true
@@ -831,9 +960,8 @@ export const createInteractiveSession = async (
 								notice={notice()}
 								queue={queue()}
 								initialTab={activeTab}
-								onTabChange={(index) => {
-									activeTab = index
-								}}
+								onTabChange={tabChanged}
+								panels={options.panels}
 							/>
 						) : (
 							<InteractiveTabbedPrompt
@@ -843,6 +971,7 @@ export const createInteractiveSession = async (
 								queue={queue()}
 								onDone={() => {}}
 								onTabChange={navigate}
+								panels={options.panels}
 								content={(reservedRows) =>
 									current.kind === "select" ? (
 										<InteractiveSelectPrompt
@@ -850,6 +979,9 @@ export const createInteractiveSession = async (
 											reservedRows={reservedRows()}
 											prompt={current.prompt}
 											choices={current.choices}
+											confirmDelayMs={
+												current.confirm ? CONFIRM_DELAY_MS : undefined
+											}
 											onDone={current.finish}
 											onQuit={quit}
 										/>
@@ -880,6 +1012,7 @@ export const createInteractiveSession = async (
 		prompt: string,
 		choices?: readonly InteractiveChoice[],
 		tabs?: readonly InteractiveTab[],
+		confirm = false,
 	) => {
 		if (closed || cancelled) return Promise.resolve(null)
 		return new Promise<string | null>((resolve) => {
@@ -894,7 +1027,7 @@ export const createInteractiveSession = async (
 				tabs
 					? { kind: "tabs", finish: pending }
 					: choices
-						? { kind: "select", prompt, choices, finish: pending }
+						? { kind: "select", prompt, choices, confirm, finish: pending }
 						: { kind: "text", prompt, finish: pending },
 			)
 			renderer.requestRender()
@@ -904,6 +1037,33 @@ export const createInteractiveSession = async (
 		activateTab: (id: string) => {
 			const index = frameTabs.findIndex((tab) => tab.id === id)
 			if (index >= 0) activeTab = index
+		},
+		get activeTabId() {
+			return frameTabs[activeTab]?.id
+		},
+		/**
+		 * Leave the front screen so its owner can run another step; false when
+		 * the front screen is not open (a step is already in progress).
+		 */
+		leaveTabs: () => {
+			if (closed || view().kind !== "tabs" || !pending) return false
+			navigationRequested = true
+			pending(null)
+			return true
+		},
+		/** Quit from a panel, as Ctrl-C does elsewhere. */
+		quit: () => {
+			quit()
+			pending?.(null)
+		},
+		requestRender: () => {
+			if (!closed) renderer.requestRender()
+		},
+		/** Hand the terminal to a child process, such as $EDITOR. */
+		suspend: () => renderer.suspend(),
+		resume: () => {
+			renderer.resume()
+			renderer.requestRender()
 		},
 		takeNavigation: () => {
 			const requested = navigationRequested
@@ -954,8 +1114,11 @@ export const createInteractiveSession = async (
 			return selected
 		},
 		text: (prompt: string) => ask(prompt),
-		select: (prompt: string, choices: readonly InteractiveChoice[]) =>
-			ask(prompt, choices),
+		select: (
+			prompt: string,
+			choices: readonly InteractiveChoice[],
+			confirm = false,
+		) => ask(prompt, choices, undefined, confirm),
 		show: (prompt: string) => {
 			setView({ kind: "progress", prompt })
 			renderer.requestRender()

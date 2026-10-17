@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises"
 // OpenTUI's runtime JSX transform excludes node_modules. Publish compiled
 // reactive JSX so an installed CLI behaves like the source checkout.
 const root = join(import.meta.dir, "..")
-const views = ["interactive", "supervise-ui"]
+const views = ["interactive", "supervise-tab"]
 if (process.argv.includes("--clean")) {
 	// Do not let the generated siblings shadow source edits after packing.
 	for (const view of views)

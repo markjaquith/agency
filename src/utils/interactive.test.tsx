@@ -236,11 +236,15 @@ describe("OpenTUI interaction", () => {
 		}
 	})
 
-	test("an empty workstream stays navigable and only the active tab handles cancellation", async () => {
+	test("an empty workstream stays navigable, Escape never quits the front screen, and Ctrl-C does", async () => {
 		let submitted: string | null | undefined
+		let quit = false
 		const setup = await testRender(
 			() => (
 				<InteractiveTabbedPrompt
+					onQuit={() => {
+						quit = true
+					}}
 					tabs={[
 						{
 							id: "workbase",
@@ -280,7 +284,121 @@ describe("OpenTUI interaction", () => {
 			// A standalone Escape waits for the terminal decoder's ambiguity timeout.
 			await Bun.sleep(30)
 			await setup.flush()
+			expect(submitted).toBeUndefined()
+			setup.mockInput.pressCtrlC()
+			await setup.flush()
 			expect(submitted).toBeNull()
+			expect(quit).toBe(true)
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("? shows the active tab's help with an empty filter and Escape closes it", async () => {
+		const setup = await testRender(
+			() => (
+				<InteractiveTabbedPrompt
+					tabs={[
+						{
+							id: "workstream",
+							label: "Workstream",
+							prompt: "",
+							choices: [{ key: "one", label: "First? task" }],
+							help: [{ keys: "Enter", description: "Act on the item" }],
+						},
+						{
+							id: "workbase",
+							label: "Workbase",
+							prompt: "",
+							choices: [],
+							help: [{ keys: "Enter", description: "Choose a group" }],
+						},
+					]}
+					onDone={() => {}}
+				/>
+			),
+			{ width: 60, height: 10 },
+		)
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			await setup.mockInput.typeText("?")
+			await setup.renderOnce()
+			let frame = setup.captureCharFrame()
+			expect(frame).toContain("Workstream keys")
+			expect(frame).toContain("Act on the item")
+			expect(frame).not.toContain("First? task")
+			setup.mockInput.pressTab()
+			await setup.renderOnce()
+			expect(setup.captureCharFrame()).not.toContain("keys")
+			setup.mockInput.pressTab()
+			await setup.renderOnce()
+			await setup.mockInput.typeText("?")
+			await setup.renderOnce()
+			setup.mockInput.pressEscape()
+			await Bun.sleep(30)
+			await setup.renderOnce()
+			frame = setup.captureCharFrame()
+			expect(frame).not.toContain("Workstream keys")
+			expect(frame).toContain("First? task")
+			// With a filter, ? is ordinary filter text.
+			await setup.mockInput.typeText("t?")
+			await setup.renderOnce()
+			frame = setup.captureCharFrame()
+			expect(frame).not.toContain("Workstream keys")
+			expect(frame).toContain("First? task")
+		} finally {
+			setup.renderer.destroy()
+		}
+	})
+
+	test("a confirmation ignores Enter right after opening and every held Enter", async () => {
+		let selected: string | null | undefined
+		const setup = await testRender(
+			() => (
+				<InteractiveSelectPrompt
+					prompt="Clear these local worktrees?"
+					confirmDelayMs={250}
+					choices={[
+						{ key: "confirm", label: "Clear local checkout" },
+						{ key: "cancel", label: "Cancel" },
+					]}
+					onDone={(value) => {
+						selected = value
+					}}
+				/>
+			),
+			{ width: 60, height: 8 },
+		)
+		const heldEnter = () =>
+			setup.renderer.keyInput.processParsedKey({
+				name: "return",
+				ctrl: false,
+				meta: false,
+				shift: false,
+				option: false,
+				sequence: "\r",
+				number: false,
+				raw: "\r",
+				eventType: "press",
+				source: "raw",
+				repeated: true,
+			})
+		try {
+			await setup.renderer.setupTerminal()
+			await setup.renderOnce()
+			await Bun.sleep(0)
+			setup.mockInput.pressEnter()
+			await setup.flush()
+			expect(selected).toBeUndefined()
+			await Bun.sleep(260)
+			heldEnter()
+			await setup.flush()
+			expect(selected).toBeUndefined()
+			setup.mockInput.pressEnter()
+			await setup.waitFor(() => selected !== undefined)
+			expect(selected).toBe("confirm")
 		} finally {
 			setup.renderer.destroy()
 		}

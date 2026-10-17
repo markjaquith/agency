@@ -1,6 +1,10 @@
 import { Data, Effect, Schema } from "effect"
 import { EntityId } from "../workbase/schemas"
 import { choose, type Choice } from "../utils/chooser"
+import type {
+	createSupervisorSurface,
+	SupervisorSurface,
+} from "../utils/supervise-tab"
 
 export interface ActInteraction {
 	readonly tabs?: <T>(
@@ -11,6 +15,8 @@ export interface ActInteraction {
 		prompt: string,
 		choices: readonly Choice<T>[],
 		command?: readonly string[],
+		/** A confirmation: Enter is ignored briefly after it opens. */
+		confirm?: boolean,
 	) => Effect.Effect<T | null, Error>
 }
 
@@ -20,6 +26,10 @@ interface ActTab<T> {
 	readonly prompt: string
 	readonly choices: readonly Choice<T>[]
 	readonly emptyLabel?: string
+	readonly help?: readonly {
+		readonly keys: string
+		readonly description: string
+	}[]
 }
 
 export class ActCancelled extends Data.TaggedError("ActCancelled") {}
@@ -59,12 +69,13 @@ export const wizardInputs = <T>(
 		const ui: ActInteraction = {
 			...interaction,
 			text: (prompt) => ask(() => (interaction.text ?? readText)(prompt)),
-			select: (prompt, choices, command) =>
+			select: (prompt, choices, command, confirm) =>
 				ask(() =>
 					interaction.select(
 						prompt,
 						choices.map((choice) => ({ ...choice, value: choice.key })),
 						command,
+						confirm,
 					),
 				).pipe(
 					Effect.flatMap((key) => {
@@ -120,12 +131,13 @@ export const recordingInteraction = (
 				}),
 			),
 		),
-	select: (prompt, choices, command) =>
+	select: (prompt, choices, command, confirm) =>
 		interaction
 			.select(
 				prompt,
 				choices.map((choice) => ({ ...choice, value: choice.key })),
 				command,
+				confirm,
 			)
 			.pipe(
 				Effect.map((key) => {
@@ -161,10 +173,38 @@ export const replayInteraction = (
 	}
 }
 
+const sharedHelp = [
+	{ keys: "type", description: "Filter the list" },
+	{ keys: "↑/↓ C-p/C-n", description: "Move the selection" },
+	{ keys: "Esc", description: "Clear the filter; does nothing when empty" },
+	{ keys: "Tab/S-Tab", description: "Switch tabs" },
+	{ keys: "?", description: "Show or hide this help (with an empty filter)" },
+	{ keys: "C-c", description: "Quit; queued changes finish first" },
+]
+
 export const actTabs = [
-	{ id: "workstream", label: "  Workstream", prompt: "" },
-	{ id: "workbase", label: "  Workbase", prompt: "" },
+	{
+		id: "workstream",
+		label: "  Workstream",
+		prompt: "",
+		help: [
+			{ keys: "Enter", description: "Choose actions for the task or phase" },
+			...sharedHelp,
+		],
+	},
+	{
+		id: "workbase",
+		label: "  Workbase",
+		prompt: "",
+		help: [
+			{ keys: "Enter", description: "Choose a workbase action group" },
+			...sharedHelp,
+		],
+	},
+	{ id: "supervise", label: "󰈈  Supervise", prompt: "" },
 ] as const
+
+export type ActTabId = (typeof actTabs)[number]["id"]
 
 const readText = (prompt: string) =>
 	Effect.tryPromise({
@@ -185,11 +225,32 @@ const readText = (prompt: string) =>
 	})
 
 export const defaultInteraction: ActInteraction = {
-	select: choose,
+	select: (prompt, choices, command) => choose(prompt, choices, command),
 	text: readText,
 }
 
-export const openActSession = () =>
+/** Load the Supervise tab; its state outlives each terminal session. */
+export const loadSupervisorSurface = (
+	options: Parameters<typeof createSupervisorSurface>[0],
+) =>
+	Effect.tryPromise({
+		try: async () => {
+			const { loadSupervisorTab } = await import("../utils/interactive-loader")
+			return (await loadSupervisorTab()).createSupervisorSurface(options)
+		},
+		catch: (cause) =>
+			new Error(
+				`Failed to load the Supervise tab: ${cause instanceof Error ? cause.message : String(cause)}`,
+				{ cause },
+			),
+	})
+
+export const openActSession = (
+	options: {
+		readonly supervisor?: SupervisorSurface
+		readonly onTabChange?: (id: string, previous: string | undefined) => void
+	} = {},
+) =>
 	Effect.tryPromise({
 		try: async () => {
 			const { loadInteractive } = await import("../utils/interactive-loader")
@@ -201,12 +262,20 @@ export const openActSession = () =>
 				})
 			}
 			resetCancellation()
+			const { supervisor } = options
 			const session = await (
 				await loadInteractive()
 			).createInteractiveSession(
 				() => cancel(),
-				actTabs.map((tab) => ({ ...tab, choices: [] })),
+				actTabs
+					.filter((tab) => supervisor || tab.id !== "supervise")
+					.map((tab) => ({ ...tab, choices: [] })),
+				{
+					panels: supervisor ? { supervise: supervisor.panel } : undefined,
+					onTabChange: options.onTabChange,
+				},
 			)
+			supervisor?.bind(session)
 			const attempt = <T>(run: () => Promise<T>) =>
 				Effect.tryPromise({
 					try: run,
@@ -234,7 +303,7 @@ export const openActSession = () =>
 						return choice.value
 					}),
 				text: (prompt) => attempt(() => session.text(prompt)),
-				select: (prompt, choices) =>
+				select: (prompt, choices, _command, confirm) =>
 					attempt(async () => {
 						const key = await session.select(
 							prompt,
@@ -242,6 +311,7 @@ export const openActSession = () =>
 								...choice,
 								label: choice.plainLabel ?? choice.label,
 							})),
+							confirm,
 						)
 						if (key === null) return null
 						const choice = choices.find((choice) => choice.key === key)
@@ -251,6 +321,10 @@ export const openActSession = () =>
 			}
 			return {
 				activateTab: session.activateTab,
+				get activeTabId() {
+					return session.activeTabId
+				},
+				leaveTabs: session.leaveTabs,
 				takeNavigation: session.takeNavigation,
 				get quitRequested() {
 					return session.quitRequested
@@ -272,7 +346,11 @@ export const openActSession = () =>
 				),
 				interaction,
 				show: session.show,
-				close: () => Effect.promise(session.close),
+				close: () =>
+					Effect.promise(() => {
+						supervisor?.bind(null)
+						return session.close()
+					}),
 			}
 		},
 		catch: (cause) =>
@@ -290,12 +368,45 @@ const slug = (text: string) =>
 		.slice(0, 60)
 		.replace(/-$/, "")
 
+/**
+ * Inputs collected by input ID. Each `text`, `id`, or `repository` prompt
+ * answers the next declared input, so a wizard can be prefilled from, and
+ * report, the same values `agency act --json` templates use.
+ */
+interface ActionFields {
+	readonly inputs: readonly { readonly id: string }[]
+	/** Prefilled answers, offered as each prompt's default. */
+	readonly defaults: Readonly<Record<string, string>>
+	/** Filled with each answered input's final value. */
+	readonly values: Record<string, string>
+	/** Each prompt's input ID in order; null for a prompt past the inputs. */
+	readonly answered: (string | null)[]
+}
+
 export const actionPrompts = (
 	interaction: ActInteraction,
 	repositories: readonly string[],
 	keys: readonly string[],
 	chooser?: readonly string[],
+	fields?: ActionFields,
 ) => {
+	let cursor = 0
+	/** Answer the next declared input with a prompt, prefilled from its default. */
+	const field = <A extends string>(
+		ask: (prefill: string | undefined) => Effect.Effect<A, Error>,
+	) =>
+		Effect.suspend(() => {
+			const input = fields?.inputs[cursor++]
+			return ask(input ? fields?.defaults[input.id] : undefined).pipe(
+				Effect.tap((value) =>
+					Effect.sync(() => {
+						if (!fields) return
+						fields.answered.push(input?.id ?? null)
+						if (input) fields.values[input.id] = value
+					}),
+				),
+			)
+		})
 	const text = (label: string, fallback = "", required = true) =>
 		Effect.gen(function* () {
 			const value = yield* (interaction.text ?? readText)(
@@ -310,7 +421,8 @@ export const actionPrompts = (
 			return answer
 		})
 	return {
-		text,
+		text: (label: string, fallback = "", required = true) =>
+			field((prefill) => text(label, prefill ?? fallback, required)),
 		confirm: (prompt: string, label = "Confirm") =>
 			Effect.gen(function* () {
 				const confirmed = yield* interaction.select(
@@ -320,49 +432,57 @@ export const actionPrompts = (
 						{ key: "cancel", label: "Cancel", value: false },
 					],
 					chooser,
+					true,
 				)
 				if (!confirmed) return yield* Effect.fail(new ActCancelled())
 			}),
-		id: (label: string, suggestion: string, prefix = "") => {
-			const base = slug(suggestion)
-			let candidate = base
-			let suffix = 2
-			while (candidate && keys.includes(prefix + candidate))
-				candidate = `${base}-${suffix++}`
-			return text(label, candidate).pipe(
-				Effect.flatMap((value) => {
-					if (!isEntityId(value))
-						return Effect.fail(
-							new ActInputError({
-								message: `${label} must start with a letter or number and contain only letters, numbers, dots, underscores, or hyphens`,
-							}),
-						)
-					if (keys.includes(prefix + value))
-						return Effect.fail(
-							new ActInputError({
-								message: `${label} '${value}' is already in use`,
-							}),
-						)
-					return Effect.succeed(value)
-				}),
-			)
-		},
-		repository: (preferred?: string) =>
-			Effect.gen(function* () {
-				if (!repositories.length)
-					return yield* Effect.fail(new Error("Add or link a repository first"))
-				if (repositories.length === 1) return repositories[0]!
-				const ordered = preferred
-					? [preferred, ...repositories.filter((repo) => repo !== preferred)]
-					: repositories
-				const selected = yield* interaction.select(
-					"Repository alias",
-					ordered.map((value) => ({ key: value, label: value, value })),
-					chooser,
+		id: (label: string, suggestion: string, prefix = "") =>
+			field((prefill) => {
+				const base = slug(suggestion)
+				let candidate = base
+				let suffix = 2
+				while (candidate && keys.includes(prefix + candidate))
+					candidate = `${base}-${suffix++}`
+				return text(label, prefill ?? candidate).pipe(
+					Effect.flatMap((value) => {
+						if (!isEntityId(value))
+							return Effect.fail(
+								new ActInputError({
+									message: `${label} must start with a letter or number and contain only letters, numbers, dots, underscores, or hyphens`,
+								}),
+							)
+						if (keys.includes(prefix + value))
+							return Effect.fail(
+								new ActInputError({
+									message: `${label} '${value}' is already in use`,
+								}),
+							)
+						return Effect.succeed(value)
+					}),
 				)
-				if (selected === null) return yield* Effect.fail(new ActCancelled())
-				return selected
 			}),
+		repository: (preferred?: string) =>
+			field((prefill) =>
+				Effect.gen(function* () {
+					if (!repositories.length)
+						return yield* Effect.fail(
+							new Error("Add or link a repository first"),
+						)
+					if (repositories.length === 1) return repositories[0]!
+					const first =
+						prefill && repositories.includes(prefill) ? prefill : preferred
+					const ordered = first
+						? [first, ...repositories.filter((repo) => repo !== first)]
+						: repositories
+					const selected = yield* interaction.select(
+						"Repository alias",
+						ordered.map((value) => ({ key: value, label: value, value })),
+						chooser,
+					)
+					if (selected === null) return yield* Effect.fail(new ActCancelled())
+					return selected
+				}),
+			),
 	}
 }
 
