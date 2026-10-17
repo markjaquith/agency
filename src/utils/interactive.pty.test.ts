@@ -338,6 +338,9 @@ await runTestEffect(act({ cwd: ${JSON.stringify(root)}, inputAllowed: true, tab:
 			await wait("WORK_")
 			expect(output).toContain("WORK_AFTER_ACTION")
 			expect(output).not.toContain("WORK_BEFORE_ACTION")
+			// Work returns with the terminal restored. Wait for the replacement
+			// session to accept input before sending Ctrl-C, not the old frame.
+			await wait("type to filter", output.indexOf("WORK_AFTER_ACTION"))
 			terminal.write("\x03")
 			expect(await waitForExit(subprocess, () => output)).toBe(0)
 		} finally {
