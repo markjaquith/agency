@@ -238,13 +238,17 @@ export const loadSupervisorSurface = (
 			const { loadSupervisorTab } = await import("../utils/interactive-loader")
 			return (await loadSupervisorTab()).createSupervisorSurface(options)
 		},
-		catch: (cause) => new Error("Failed to load the Supervise tab", { cause }),
+		catch: (cause) =>
+			new Error(
+				`Failed to load the Supervise tab: ${cause instanceof Error ? cause.message : String(cause)}`,
+				{ cause },
+			),
 	})
 
 export const openActSession = (
 	options: {
 		readonly supervisor?: SupervisorSurface
-		readonly onTabChange?: (id: string) => void
+		readonly onTabChange?: (id: string, previous: string | undefined) => void
 	} = {},
 ) =>
 	Effect.tryPromise({
@@ -375,6 +379,8 @@ interface ActionFields {
 	readonly defaults: Readonly<Record<string, string>>
 	/** Filled with each answered input's final value. */
 	readonly values: Record<string, string>
+	/** Each prompt's input ID in order; null for a prompt past the inputs. */
+	readonly answered: (string | null)[]
 }
 
 export const actionPrompts = (
@@ -394,7 +400,9 @@ export const actionPrompts = (
 			return ask(input ? fields?.defaults[input.id] : undefined).pipe(
 				Effect.tap((value) =>
 					Effect.sync(() => {
-						if (input && fields) fields.values[input.id] = value
+						if (!fields) return
+						fields.answered.push(input?.id ?? null)
+						if (input) fields.values[input.id] = value
 					}),
 				),
 			)

@@ -578,7 +578,7 @@ export const act = (
 				Effect.suspend(() => {
 					for (const handoff of state.handoffs.splice(0))
 						handoff.resolve({ kind: "cancelled" })
-					return state.engine?.stop ?? Effect.void
+					return stopSupervisor(state)
 				}),
 			),
 			Effect.ensuring(
@@ -604,9 +604,12 @@ export const act = (
 /** Ask the act loop to collect a supervised Agency action's inputs. */
 const requestHandoff = (state: ActState, action: AgencyAction) =>
 	new Promise<CollectedInputs>((resolve) => {
-		state.handoffs.push({ action, resolve })
-		if (state.session?.leaveTabs()) return
-		state.handoffs.pop()
+		// Only from Supervise itself, so a late request can't take over a tab.
+		if (state.session?.activeTabId === "supervise") {
+			state.handoffs.push({ action, resolve })
+			if (state.session.leaveTabs()) return
+			state.handoffs.pop()
+		}
 		resolve({
 			kind: "unavailable",
 			reason: "finish the open Workstream or Workbase step first",
@@ -669,13 +672,34 @@ const forkSupervisor = (
 		}
 	})
 
-/** Switching tabs: Supervise starts its supervisor; the others follow its item. */
-const tabChanged = (state: ActState, id: string) => {
+/**
+ * Stop the supervisor, letting a running action finish and ending triage. The
+ * next session starts a fresh one when Supervise is shown again.
+ */
+const stopSupervisor = (state: ActState) =>
+	Effect.suspend(() => {
+		const engine = state.engine
+		state.engine = undefined
+		return engine?.stop ?? Effect.void
+	})
+
+/**
+ * Switching tabs: Supervise starts its supervisor; leaving it, the others
+ * follow the item the user selected there.
+ */
+const tabChanged = (
+	state: ActState,
+	id: string,
+	previous: string | undefined,
+) => {
 	if (id === "supervise") {
 		state.engine?.start()
 		return
 	}
-	const moved = state.supervisedRoot && state.supervisedRoot !== state.root
+	const moved =
+		previous === "supervise" &&
+		state.supervisedRoot &&
+		state.supervisedRoot !== state.root
 	if (moved) state.root = state.supervisedRoot
 	// Reload the front screen in place of showing stale or another workbase's work.
 	if (moved || state.stale) state.session?.leaveTabs()
@@ -713,7 +737,7 @@ const openSession = (
 				? yield* Effect.acquireRelease(
 						openActSession({
 							supervisor: state.supervisor,
-							onTabChange: (id) => tabChanged(state, id),
+							onTabChange: (id, previous) => tabChanged(state, id, previous),
 						}),
 						(session) => session.close(),
 					)
@@ -1223,6 +1247,8 @@ const actStep = (
 		session?.show(`󰔟  ${action.label}…`)
 		// An interactive worker must receive a restored terminal.
 		if (action.id === "work" && session) {
+			// Work replaces this process: a running Supervise action finishes first.
+			yield* stopSupervisor(state)
 			yield* session.close()
 			state.session = undefined
 		}
@@ -1285,6 +1311,7 @@ const actStep = (
 			])
 			if (next === "work") {
 				if (session) {
+					yield* stopSupervisor(state)
 					yield* session.close()
 					state.session = undefined
 				}

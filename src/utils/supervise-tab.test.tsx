@@ -183,12 +183,14 @@ describe("supervisor view", () => {
 					rationale: "Done.",
 					risk: "destructive",
 					preview: ["herdr: close tab w1:t1"],
+					cwd: "/work",
 					destructive: true,
 				},
 				resolve: (value) => answers.push(value),
 			})
 			const first = await view.frame()
 			expect(first).toContain("herdr: close tab w1:t1")
+			expect(first).toContain("in /work")
 			expect(first).toContain("enter continue")
 			// The Enter guard also counts from when the panel was shown.
 			await Bun.sleep(CONFIRM_DELAY_MS + 10)
@@ -454,9 +456,11 @@ describe("Supervise tab in the act frame", () => {
 			frame = await view.frame()
 			expect(frame).toContain("alpha summary")
 			expect(view.changes).toEqual([2])
+			// The automatic first selection is not the user's choice.
+			expect(selected).toEqual([])
 			view.mockInput.typeText("j")
 			await view.frame()
-			expect(selected.at(-1)).toBe("beta")
+			expect(selected).toEqual(["beta"])
 			// A refresh that reorders items keeps the selection on the same item.
 			surface.ui.update({
 				...model,
@@ -470,6 +474,8 @@ describe("Supervise tab in the act frame", () => {
 			frame = await view.frame()
 			expect(frame).toMatch(/▌ Needs You\s+beta/)
 			expect(frame).not.toContain("is gone")
+			// Refreshes never report a selection, so they never move workbases.
+			expect(selected).toEqual(["beta"])
 			view.mockInput.pressTab()
 			frame = await view.frame()
 			expect(view.changes).toEqual([2, 0])

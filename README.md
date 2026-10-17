@@ -1078,8 +1078,11 @@ directly on it, so a long-lived Herdr tab can run it; `agency act` starts the
 supervisor only when Supervise is first shown, then keeps it refreshing in the
 background without disturbing the focus, selection, or text input of the tab in
 view. Supervise covers every registered workbase (or `--workbase`) wherever the
-TUI was opened; selecting an entry switches Workstream and Workbase to that
-entry's workbase, and they reload after Supervise runs an action. Tab and
+TUI was opened. When you leave Supervise after selecting an entry, Workstream
+and Workbase switch to that entry's workbase (refreshes never move them), and
+they reload after Supervise runs an action. Opened outside every workbase,
+they list the registered workbases to choose from. Starting Work from act
+waits for a running Supervise action and stops triage first. Tab and
 Shift-Tab switch tabs (except while a Supervise dialog is open). It groups everything needing
 attention by workbase, plus an Unmanaged group for agent panes outside any item.
 Each entry shows a status badge (such as Needs You, Blocked, Ready to Merge,
@@ -1125,7 +1128,9 @@ action already running finish, then stops triage.
 | `?` / `Esc` / `C-c`           | Help / close one dialog or help (never quits) / quit                   |
 
 Before running, the supervisor shows exactly what will run: the argv, runtime
-operation, or prompt. Enter is ignored for a moment after a dialog opens and
+operation, or prompt, and the directory it runs in. Agency and command actions
+run only inside a registered or current workbase; a cwd anywhere else is
+refused. Enter is ignored for a moment after a dialog opens and
 held keys never act, so a double press cannot confirm; further actions are
 ignored while one is pending. After confirmation it rechecks every precondition
 against fresh state (document revisions, item status, pull request state and

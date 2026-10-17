@@ -65,6 +65,8 @@ export interface SupervisorHandlers {
 export interface ConfirmRequest {
 	/** Where the action came from; model-written actions are flagged. */
 	readonly source?: "signal" | "triage" | "model"
+	/** The directory the action runs in, when it has one. */
+	readonly cwd?: string | null
 	readonly title: string
 	readonly rationale: string
 	readonly risk: SupervisorAction["risk"]
@@ -248,6 +250,7 @@ export const SupervisorApp = (props: {
 	readonly active?: boolean
 	/** Rows above and below the panel that belong to the surrounding frame. */
 	readonly reservedRows?: number
+	/** The user selected an item or action. */
 	readonly onSelect?: (item: SuperviseItem | null) => void
 }) => {
 	const dimensions = useTerminalDimensions()
@@ -277,7 +280,6 @@ export const SupervisorApp = (props: {
 				actionTitle: selectedAction()?.title ?? null,
 			}
 	})
-	createEffect(() => props.onSelect?.(selected()))
 	// Keep the selection on the same item and action across refreshes; when
 	// either disappears, move to a neighbour and say so.
 	createEffect(() => {
@@ -328,9 +330,11 @@ export const SupervisorApp = (props: {
 	createEffect(() => {
 		if (isActive()) shownAt = Date.now()
 	})
+	/** Only the user's own choices are reported, never a refresh's. */
 	const userMoved = () => {
 		selection.setGuard(false)
 		selection.setNotice(null)
+		props.onSelect?.(selected())
 	}
 	const select = (index: number) => {
 		const list = items()
@@ -734,6 +738,13 @@ export const SupervisorApp = (props: {
 					</text>
 				)}
 			</For>
+			<Show when={confirmProps.modal.request.cwd}>
+				{(cwd) => (
+					<text fg={macchiato.overlay1} wrapMode="char">
+						{`  in ${cwd()}`}
+					</text>
+				)}
+			</Show>
 			<box height={1} flexShrink={0} />
 			<text height={1} wrapMode="none">
 				{confirmProps.modal.stage === 2
@@ -894,7 +905,7 @@ interface SupervisorHost {
  */
 export const createSupervisorSurface = (
 	options: {
-		/** The selected item changed (null when nothing is selected). */
+		/** The user selected an item or action (refreshes never report). */
 		readonly onSelect?: (item: SuperviseItem | null) => void
 	} = {},
 ) => {

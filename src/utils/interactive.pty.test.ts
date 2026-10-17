@@ -209,6 +209,146 @@ describe("interactive CLI terminal restoration", () => {
 		}, 12_000)
 	}
 
+	test("Work waits for a running Supervise action before replacing the TUI", async () => {
+		const root = await realpath(await createTempDir())
+		tempDirs.push(root)
+		const source = join(root, "source")
+		const marker = join(root, "focus-finished")
+		// A fake Herdr whose focus takes a while, then leaves a marker.
+		const herdr = join(root, "fake-herdr.sh")
+		await Bun.write(
+			herdr,
+			`#!/bin/sh
+if [ "$1 $2" = "api snapshot" ]; then
+cat <<'JSON'
+${JSON.stringify({
+	id: "cli:api:snapshot",
+	result: {
+		snapshot: {
+			workspaces: [{ workspace_id: "w1" }],
+			tabs: [{ tab_id: "w1:t7", workspace_id: "w1" }],
+			panes: [
+				{
+					pane_id: "w1:p7",
+					tab_id: "w1:t7",
+					workspace_id: "w1",
+					agent: "opencode",
+					agent_status: "idle",
+					cwd: source,
+				},
+			],
+		},
+	},
+})}
+JSON
+exit 0
+fi
+sleep 1.5
+touch ${JSON.stringify(marker)}
+exit 1
+`,
+		)
+		const env = isolatedEnv({
+			HERDR_ENV: "1",
+			HERDR_BIN_PATH: herdr,
+			HERDR_SOCKET_PATH: join(root, "missing.sock"),
+		})
+		for (const command of [
+			["chmod", "+x", herdr],
+			[process.execPath, cliPath, "init", root, "--silent"],
+			["git", "init", "-b", "main", source],
+			[
+				"git",
+				"-C",
+				source,
+				"remote",
+				"add",
+				"origin",
+				"https://example.com/demo.git",
+			],
+			[process.execPath, cliPath, "repo", "link", "demo", source, "--silent"],
+			[
+				process.execPath,
+				cliPath,
+				"task",
+				"create",
+				"alpha",
+				"--repo",
+				"demo",
+				"--base",
+				"main",
+				"--description",
+				"First item",
+				"--silent",
+			],
+		]) {
+			const result = Bun.spawnSync(command, {
+				cwd: root,
+				env,
+				stdout: "pipe",
+				stderr: "pipe",
+			})
+			if (result.exitCode !== 0)
+				throw new Error(new TextDecoder().decode(result.stderr))
+		}
+		const entry = join(root, "work-fixture.ts")
+		await Bun.write(
+			entry,
+			`
+import { Effect } from ${JSON.stringify(effectEntry)}
+import { existsSync } from "node:fs"
+import { runTestEffect } from ${JSON.stringify(join(projectRoot, "src/test-utils.ts"))}
+import { act } from ${JSON.stringify(join(projectRoot, "src/commands/act.ts"))}
+import { RuntimeService } from ${JSON.stringify(join(projectRoot, "src/services/RuntimeService.ts"))}
+// The real runtime service, so Supervise sees the fake Herdr.
+await runTestEffect(act({ cwd: ${JSON.stringify(root)}, inputAllowed: true, tab: "supervise" }, undefined, () => Effect.sync(() => console.log(existsSync(${JSON.stringify(marker)}) ? "WORK_AFTER_ACTION" : "WORK_BEFORE_ACTION"))).pipe(Effect.provide(RuntimeService.layer)))
+`,
+		)
+		let output = ""
+		const decoder = new TextDecoder()
+		const terminal = new Bun.Terminal({
+			cols: 120,
+			rows: 30,
+			data: (_, bytes) => {
+				output += decoder.decode(bytes, { stream: true })
+			},
+		})
+		const subprocess = Bun.spawn([process.execPath, entry], {
+			cwd: root,
+			env,
+			terminal,
+		})
+		const wait = (text: string, from = 0) =>
+			waitFor(
+				() => output.includes(text, from),
+				() => output,
+			)
+		try {
+			await wait("Focus pane w1:p7")
+			// Focus runs for a while; leave for Workstream and start Work meanwhile.
+			terminal.write("f")
+			await wait("working…")
+			terminal.write("\t")
+			await wait("alpha")
+			terminal.write("\r")
+			await wait("Act on task alpha")
+			terminal.write("Work on this item")
+			await Bun.sleep(50)
+			terminal.write("\r")
+			await wait("WORK_")
+			expect(output).toContain("WORK_AFTER_ACTION")
+			expect(output).not.toContain("WORK_BEFORE_ACTION")
+			terminal.write("\x03")
+			expect(await waitForExit(subprocess, () => output)).toBe(0)
+		} finally {
+			if (subprocess.exitCode === null) {
+				subprocess.kill("SIGKILL")
+				await subprocess.exited
+			}
+			terminal.close()
+		}
+	}, 30_000)
+
 	test("supervise opens outside every workbase with no default and offers registered workbases", async () => {
 		const home = await realpath(await createTempDir())
 		tempDirs.push(home)
@@ -401,6 +541,49 @@ exit 1
 			terminal.close()
 		}
 	}, 30_000)
+
+	for (const signal of ["SIGTERM", "SIGHUP"] as const) {
+		test(`act with Supervise running restores the terminal and exits cleanly on ${signal}`, async () => {
+			const root = await createWorkbase()
+			let output = ""
+			const decoder = new TextDecoder()
+			const terminal = new Bun.Terminal({
+				cols: 100,
+				rows: 24,
+				data: (_, bytes) => {
+					output += decoder.decode(bytes, { stream: true })
+				},
+			})
+			const initialModes = modes(terminal)
+			const subprocess = Bun.spawn([process.execPath, cliPath, "act"], {
+				cwd: root,
+				env: isolatedEnv(),
+				terminal,
+			})
+			try {
+				await waitFor(
+					() => output.includes("No tasks or phases yet"),
+					() => output,
+				)
+				// Shift-Tab reaches Supervise and starts its supervisor.
+				terminal.write("\x1b[Z")
+				await waitFor(
+					() => output.includes("e prompt"),
+					() => output,
+				)
+				subprocess.kill(signal)
+				expect(await waitForExit(subprocess, () => output)).toBe(0)
+				expect(modes(terminal)).toEqual(initialModes)
+				expect(output.match(/\x1b\[\?1049l/g)?.length).toBeGreaterThan(0)
+			} finally {
+				if (subprocess.exitCode === null) {
+					subprocess.kill("SIGKILL")
+					await subprocess.exited
+				}
+				terminal.close()
+			}
+		}, 12_000)
+	}
 
 	for (const shutdown of ["ctrl-c", "SIGTERM"] as const) {
 		test(`persistent session cancels in-flight work and restores the terminal (${shutdown})`, async () => {

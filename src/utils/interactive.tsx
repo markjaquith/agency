@@ -871,8 +871,8 @@ type SessionView =
 interface SessionOptions {
 	/** Tabs rendered by their owner, by tab ID; they stay mounted on the front screen. */
 	readonly panels?: Readonly<Record<string, InteractivePanel>>
-	/** Called with the tab ID whenever the user switches tabs. */
-	readonly onTabChange?: (id: string) => void
+	/** Called with the new and previous tab IDs whenever the user switches tabs. */
+	readonly onTabChange?: (id: string, previous: string | undefined) => void
 }
 
 /** One terminal owner for a complete guided flow, rather than one per prompt. */
@@ -894,9 +894,10 @@ export const createInteractiveSession = async (
 	const tabSelections = new Map<string, string>()
 	let navigationRequested = false
 	const tabChanged = (index: number) => {
+		const previous = frameTabs[activeTab]?.id
 		activeTab = index
 		const id = frameTabs[index]?.id
-		if (id) options.onTabChange?.(id)
+		if (id) options.onTabChange?.(id, previous)
 	}
 	const navigate = (index: number) => {
 		navigationRequested = true

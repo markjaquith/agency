@@ -1375,7 +1375,7 @@ export const actActions = (
 						`${node.key}/`,
 					)
 					const firstPhase =
-						"phases" in node.data
+						node.kind !== "task" || "phases" in node.data
 							? undefined
 							: yield* p.text(
 									"Name for the existing work's first phase",

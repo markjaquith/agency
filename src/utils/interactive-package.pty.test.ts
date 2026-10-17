@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdir, symlink } from "node:fs/promises"
+import { copyFile, mkdir, symlink } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { cleanupTempDir, createTempDir } from "../test-utils"
 
@@ -17,9 +17,35 @@ const run = (command: string[], cwd: string) => {
 
 beforeAll(async () => {
 	root = await createTempDir()
+	// Pack an isolated copy: the pack hooks write and remove compiled views,
+	// which must never race other tests reading the checkout. npm bundles
+	// dependencies only from real files, so copy those a read-only dry run lists.
+	const pkg = join(root, "pkg")
+	const bundled = (
+		JSON.parse(
+			run(
+				["npm", "pack", "--dry-run", "--json", "--ignore-scripts"],
+				projectRoot,
+			),
+		) as { files: { path: string }[] }[]
+	)[0]!.files
+		.map((file) => file.path)
+		.filter((path) => path.startsWith("node_modules/"))
+	const files = [
+		...run(["git", "ls-files", "-co", "--exclude-standard", "-z"], projectRoot)
+			.split("\0")
+			.filter(Boolean),
+		...bundled,
+	]
+	for (const file of files) {
+		const source = join(projectRoot, file)
+		if (!(await Bun.file(source).exists())) continue
+		await mkdir(dirname(join(pkg, file)), { recursive: true })
+		await copyFile(source, join(pkg, file))
+	}
 	const filename = run(
 		["npm", "pack", "--pack-destination", root, "--silent"],
-		projectRoot,
+		pkg,
 	)
 	const archive = join(root, filename)
 	// Exercise the actual published files beneath node_modules, without the
@@ -33,6 +59,9 @@ beforeAll(async () => {
 	expect(
 		await Bun.file(join(installed, "src/utils/interactive.tsx")).exists(),
 	).toBe(false)
+	expect(
+		await Bun.file(join(installed, "src/utils/supervise-tab.js")).exists(),
+	).toBe(true)
 	// Keep tarball-bundled dependencies intact and supply the remaining runtime
 	// dependencies from the parent scope without requiring a network install.
 	const manifest = await Bun.file(join(projectRoot, "package.json")).json()

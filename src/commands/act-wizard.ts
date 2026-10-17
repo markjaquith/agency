@@ -99,10 +99,12 @@ export const collectActionInputs = (
 		const inputs = action.inputs ?? []
 		if (!inputs.length) return {}
 		const values: Record<string, string> = {}
+		const answered: (string | null)[] = []
 		yield* wizardInputs(
 			interaction,
 			(ui) => {
 				for (const key of Object.keys(values)) delete values[key]
+				answered.length = 0
 				return action.prepare(
 					actionPrompts(
 						ui,
@@ -111,12 +113,27 @@ export const collectActionInputs = (
 							.map((candidate) => candidate.key),
 						nodes.filter(isEntity).map((candidate) => candidate.key),
 						config.chooserCommand,
-						{ inputs, defaults: request.values, values },
+						{ inputs, defaults: request.values, values, answered },
 					),
 				)
 			},
 			options.canGoBack ?? (() => true),
 			options.onInputError,
 		)
+		// Prompts answer inputs by position; never let a drift misplace a value.
+		if (!answersInputs(answered, inputs))
+			return yield* Effect.fail(
+				new Error(
+					`The act wizard's prompts for '${action.id}' no longer match its inputs`,
+				),
+			)
 		return { ...values }
 	})
+
+/** Every declared input was answered exactly once, and nothing else was. */
+const answersInputs = (
+	answered: readonly (string | null)[],
+	inputs: readonly { readonly id: string }[],
+) =>
+	answered.length === inputs.length &&
+	inputs.every((input) => answered.filter((id) => id === input.id).length === 1)

@@ -35,7 +35,16 @@ beforeEach(async () => {
 	tempDir = await realpath(await createTempDir())
 	root = join(tempDir, "workbase")
 	configDirectory = join(tempDir, "config")
-	env = { ...process.env, AGENCY_STATE_DIR: join(tempDir, "state") }
+	// Never reach the live Herdr session or the user's registered workbases.
+	env = {
+		...Object.fromEntries(
+			Object.entries(process.env).filter(
+				([name]) => !name.startsWith("HERDR_"),
+			),
+		),
+		XDG_CONFIG_HOME: configDirectory,
+		AGENCY_STATE_DIR: join(tempDir, "state"),
+	}
 	await write(join(root, "agency.json"), '{"version":2}\n')
 	await mkdir(join(root, "repos/agency"), { recursive: true })
 	await runTestEffect(
@@ -473,7 +482,7 @@ describe("supervisor engine", () => {
 				runtimePane({ paneId: "w1:p7", cwd: join(tempDir, "elsewhere") }),
 			],
 		})
-		const verify = (item: { subject: unknown }) => ({
+		const verify = (item: { subject: unknown }, cwd: string) => ({
 			version: 1,
 			id: "triage:verify",
 			type: "agency",
@@ -489,11 +498,11 @@ describe("supervisor engine", () => {
 				commandTemplate: ["agency", "repo", "verify", "<repo>"],
 				inputs: [{ id: "repo", label: "Repository alias", required: true }],
 				values: {},
-				cwd: root,
+				cwd,
 				bindRuntime: null,
 			},
 		})
-		const run = async (collect: CollectedInputs) => {
+		const run = async (collect: CollectedInputs, cwd = root) => {
 			const ui = fakeUi({ confirm: false, collect })
 			const done = runTestEffect(
 				runSupervisor(
@@ -528,7 +537,7 @@ describe("supervisor engine", () => {
 											status: "needs_input",
 											summary: "Verify first",
 											question: null,
-											actions: [verify(item)],
+											actions: [verify(item, cwd)],
 											modelActionIds: [],
 										},
 										suppressed: null,
@@ -579,6 +588,7 @@ describe("supervisor engine", () => {
 			expect.objectContaining({
 				title: "Verify the repository",
 				preview: ["agency repo verify agency"],
+				cwd: root,
 			}),
 		])
 
@@ -595,6 +605,13 @@ describe("supervisor engine", () => {
 		expect(unavailable.notices).toContain(
 			"Verify the repository is unavailable: Add or link a repository first",
 		)
+		// A model-written cwd outside every supervised workbase never runs.
+		const outside = await run({ kind: "values", values: {} }, tempDir)
+		expect(outside.collected).toEqual([])
+		expect(outside.confirmations).toEqual([])
+		expect(outside.notices).toContain(
+			`Verify the repository is unavailable: ${tempDir} is not inside a supervised workbase`,
+		)
 		const log = await runTestEffect(
 			Effect.flatMap(SupervisionStateService, (state) =>
 				state.actions({}, env),
@@ -603,6 +620,7 @@ describe("supervisor engine", () => {
 		expect(log.map((entry) => entry.outcome)).toEqual([
 			"cancelled",
 			"cancelled",
+			"failed",
 		])
 	}, 30_000)
 

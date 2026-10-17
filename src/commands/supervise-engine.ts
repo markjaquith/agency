@@ -7,7 +7,7 @@ import {
 	Schema,
 	Stream,
 } from "effect"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { SupervisorAction, type AttentionReport } from "../attention-schema"
 import { FileSystemService } from "../services/FileSystemService"
 import { RuntimeService } from "../services/RuntimeService"
@@ -35,6 +35,8 @@ type NoticeTone = "info" | "success" | "warning" | "error"
 interface ConfirmRequest {
 	/** Where the action came from; model-written actions are flagged. */
 	readonly source?: ActionSource
+	/** The directory the action runs in, when it has one. */
+	readonly cwd?: string | null
 	readonly title: string
 	readonly rationale: string
 	readonly risk: SupervisorAction["risk"]
@@ -180,6 +182,17 @@ const elapsed = (since: Date) => {
 	return seconds < 60
 		? `${seconds}s`
 		: `${Math.floor(seconds / 60)}m${seconds % 60}s`
+}
+
+/** The directory an Agency or command action runs in, if it names one. */
+const actionCwd = (action: SupervisorAction) =>
+	action.type === "agency" || action.type === "command"
+		? action.payload.cwd
+		: null
+
+const within = (root: string, path: string) => {
+	const local = relative(resolve(root), resolve(path))
+	return !local || (!local.startsWith("..") && !isAbsolute(local))
 }
 
 const defaultAgencyCommand = () =>
@@ -537,6 +550,7 @@ export const runSupervisor = (
 				const confirmation = yield* ask(() =>
 					surface.confirm({
 						source,
+						cwd: actionCwd(action),
 						title: action.title,
 						rationale: reason
 							? `${reason}. ${action.rationale}`
@@ -588,6 +602,28 @@ export const runSupervisor = (
 				while (true) {
 					const current = action
 					let values: Record<string, string> = {}
+					// A model can write any cwd: run only inside a workbase that is
+					// registered or the current one, never one seen only in a pane.
+					const cwd = actionCwd(current)
+					if (
+						cwd !== null &&
+						!(view.report?.workbases ?? []).some(
+							(workbase) =>
+								workbase.available &&
+								workbase.source !== "runtime" &&
+								within(workbase.root, cwd),
+						)
+					) {
+						const reason = `${cwd} is not inside a supervised workbase`
+						warnLog(
+							yield* executor.record(current, item.key, "failed", reason, env),
+						)
+						surface.notice(
+							`${current.title} is unavailable: ${reason}`,
+							"error",
+						)
+						return
+					}
 					// Agency actions collect their inputs in the act wizard; the
 					// executor still re-resolves, previews, confirms, and runs them.
 					if (current.type === "agency") {

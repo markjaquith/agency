@@ -23,11 +23,7 @@ describe("npm package", () => {
 			new Response(process.stderr).text(),
 			process.exited,
 		])
-		// The pack hooks still add and remove compiled views meanwhile; npm
-		// retries a file that changed while it was read, and says so.
-		expect(
-			stderr.replace(/^npm warn tarball .* seems to be corrupted.*\n?/gm, ""),
-		).toBe("")
+		expect(stderr).toBe("")
 		expect(exitCode).toBe(0)
 
 		const results = JSON.parse(stdout) as PackResult[]
