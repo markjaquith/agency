@@ -273,12 +273,22 @@ export const SupervisorApp = (props: {
 	}
 	createEffect(() => {
 		const item = selected()
-		if (item)
-			selection.last = {
-				index: selectedIndex(),
-				label: item.label,
-				actionTitle: selectedAction()?.title ?? null,
-			}
+		if (!item) return
+		const actionId = selection.actionId()
+		const pinned =
+			actionId === null
+				? (item.actions[0] ?? null)
+				: item.actions.find((action) => action.id === actionId)
+		selection.last = {
+			index: selectedIndex(),
+			label: item.label,
+			// A pinned action missing after a refresh keeps its title, so the
+			// notice names the action that vanished rather than its replacement.
+			actionTitle:
+				pinned === undefined
+					? selection.last.actionTitle
+					: (pinned?.title ?? null),
+		}
 	})
 	// Keep the selection on the same item and action across refreshes; when
 	// either disappears, move to a neighbour and say so.
