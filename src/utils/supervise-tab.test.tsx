@@ -310,6 +310,37 @@ describe("supervisor view", () => {
 		}
 	})
 
+	test("names the vanished action, not its replacement, after a refresh", async () => {
+		const view = await setup()
+		try {
+			view.mockInput.pressArrow("right")
+			await view.frame()
+			const alpha = model.groups[0]!.items[0]!
+			view.setCurrent({
+				...model,
+				groups: [
+					{
+						...model.groups[0]!,
+						items: [
+							{ ...alpha, actions: [action("t1"), alpha.actions[0]!] },
+							model.groups[0]!.items[1]!,
+						],
+					},
+				],
+			})
+			const frame = await view.frame()
+			expect(frame).toContain("Action a2 is no longer offered")
+			expect(frame).not.toContain("Action t1 is no longer offered")
+			view.mockInput.pressEnter()
+			expect(await view.frame()).toContain("Action t1. Press Enter again")
+			view.mockInput.pressEnter()
+			await view.waitFor(() => view.events.length > 0)
+			expect(view.events).toEqual(["run alpha t1"])
+		} finally {
+			view.renderer.destroy()
+		}
+	})
+
 	test("ignores held-key repeats", async () => {
 		const view = await setup()
 		try {
