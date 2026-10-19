@@ -78,4 +78,33 @@ describe("FileSystemService", () => {
 			},
 		})
 	})
+
+	test("says why a command could not run", async () => {
+		const root = await createTempDir()
+		roots.push(root)
+		const runCommand = (
+			args: readonly string[],
+			options: { cwd?: string; timeoutMs?: number },
+		) =>
+			runFileSystem(
+				FileSystemService.pipe(
+					Effect.flatMap((service) =>
+						service.runCommand(args, { captureOutput: true, ...options }),
+					),
+					Effect.flip,
+				),
+			)
+
+		const timedOut = await runCommand(["sh", "-c", "sleep 30 & wait"], {
+			timeoutMs: 25,
+		})
+		expect(timedOut.message).toMatch(
+			/^Command timed out after \d+ ms: sh -c sleep 30 & wait$/,
+		)
+
+		const unstarted = await runCommand(["true"], {
+			cwd: join(root, "missing"),
+		})
+		expect(unstarted.message).toStartWith("Failed to run command: true (")
+	})
 })

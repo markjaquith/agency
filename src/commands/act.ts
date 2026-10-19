@@ -182,6 +182,26 @@ const pathEntityKey = (root: string, path: string) => {
 		? `phase:${parts[1]}/${parts[3]}`
 		: `task:${parts[1]}`
 }
+/** Actions whose availability depends on checkout dirtiness or conflicts. */
+const CHECKOUT_STATE_ACTIONS = new Set(["worktree-remove", "rebase"])
+/** The item a selector, task ID, or item path names, if any. */
+const requestedKey = (
+	options: ActOptions,
+	root: string,
+	path: string,
+	isPath: boolean,
+) =>
+	options.epicId
+		? `epic:${options.epicId}`
+		: options.phaseId
+			? `phase:${options.taskId}/${options.phaseId}`
+			: options.taskId
+				? `task:${options.taskId}`
+				: options.directory
+					? isPath
+						? pathEntityKey(root, path)
+						: `task:${options.directory}`
+					: pathEntityKey(root, path)
 const creationDefaults = (config: {
 	readonly branchNameCommand?: readonly string[]
 }) => ({
@@ -854,16 +874,34 @@ const actStep = (
 		state.loaded = { root, nodes: graph.nodes, snapshot }
 		if (!cached) state.stale = false
 		const checkoutStates = materializedCheckouts(graph.nodes)
-		if (options.json && checkoutStates.size > 0) {
-			checkoutStates.clear()
-			for (const inspection of yield* worktrees.list(root, {
-				materializedOnly: true,
-			})) {
-				const id =
-					inspection.owner.kind === "phase"
-						? `phase:${inspection.owner.taskId}/${inspection.owner.phaseId}`
-						: `task:${inspection.owner.taskId}`
-				checkoutStates.set(id, checkoutState(inspection))
+		// Inspecting a checkout runs a full `git status`, which is slow in large
+		// repositories, so JSON discovery inspects only checkouts whose reported
+		// actions depend on more than materialization.
+		if (
+			options.json &&
+			checkoutStates.size > 0 &&
+			(!options.action || CHECKOUT_STATE_ACTIONS.has(options.action))
+		) {
+			const selected = requestedKey(options, root, path, isPath)
+			if (selected === undefined) {
+				checkoutStates.clear()
+				for (const inspection of yield* worktrees.list(root, {
+					materializedOnly: true,
+				})) {
+					const id =
+						inspection.owner.kind === "phase"
+							? `phase:${inspection.owner.taskId}/${inspection.owner.phaseId}`
+							: `task:${inspection.owner.taskId}`
+					checkoutStates.set(id, checkoutState(inspection))
+				}
+			} else if (checkoutStates.has(selected)) {
+				const [taskId, phaseId] = selected
+					.slice(selected.indexOf(":") + 1)
+					.split("/")
+				checkoutStates.set(
+					selected,
+					checkoutState(yield* worktrees.inspect(taskId!, phaseId, root)),
+				)
 			}
 		}
 		const pendingRebases = new Set<string>()
@@ -952,17 +990,7 @@ const actStep = (
 			)
 		}
 		load()
-		let selectedKey = options.epicId
-			? `epic:${options.epicId}`
-			: options.phaseId
-				? `phase:${options.taskId}/${options.phaseId}`
-				: options.taskId
-					? `task:${options.taskId}`
-					: options.directory
-						? isPath
-							? pathEntityKey(root, path)
-							: `task:${options.directory}`
-						: pathEntityKey(root, path)
+		let selectedKey = requestedKey(options, root, path, isPath)
 		let actionId = options.action
 		if (session && options.directory && isPath && !selectedKey && !actionId)
 			session.activateTab("workbase")
