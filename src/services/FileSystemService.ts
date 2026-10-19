@@ -371,7 +371,9 @@ export class FileSystemService extends Context.Service<FileSystemService>()(
 							new FileSystemError({
 								message: options?.passthrough
 									? processError.message
-									: `Failed to run command: ${args.join(" ")}`,
+									: processError.timedOut
+										? `Command timed out after ${processError.elapsedMs ?? processError.timeoutMs} ms: ${args.join(" ")}`
+										: `Failed to run command: ${args.join(" ")}${processError.stderr ? ` (${processError.stderr})` : ""}`,
 								cause: processError,
 							}),
 					),

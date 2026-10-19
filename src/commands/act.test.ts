@@ -1153,6 +1153,51 @@ describe("act command", () => {
 		expect(listCalls).toBe(0)
 	})
 
+	test("discovers a selected item by inspecting only its checkout", async () => {
+		await seedRepository()
+		await createTask("cleanup")
+		await materializeTask("cleanup")
+		await createTask("other")
+		await materializeTask("other")
+		await Bun.write(join(root, "tasks/cleanup/code/agency/dirty.txt"), "x\n")
+		let listCalls = 0
+		const inspected: string[] = []
+		const discover = (action: string) =>
+			captureLogs(() =>
+				runTestEffect(
+					WorktreeService.pipe(
+						Effect.flatMap((worktrees) =>
+							act({ cwd: root, taskId: "cleanup", action, json: true }).pipe(
+								Effect.provideService(WorktreeService, {
+									...worktrees,
+									list: (...args: Parameters<typeof worktrees.list>) => {
+										listCalls++
+										return worktrees.list(...args)
+									},
+									inspect: (...args: Parameters<typeof worktrees.inspect>) => {
+										inspected.push(args[0])
+										return worktrees.inspect(...args)
+									},
+								} as WorktreeService["Service"]),
+							),
+						),
+					),
+				),
+			)
+
+		const removal = await discover("worktree-remove")
+		expect(listCalls).toBe(0)
+		expect(inspected).toEqual(["cleanup"])
+		expect(
+			JSON.parse(removal[0]!).targets[0].blockedActions[0].blockedReason,
+		).toBe("Local checkout has uncommitted changes")
+
+		const drop = await discover("drop")
+		expect(listCalls).toBe(0)
+		expect(inspected).toEqual(["cleanup"])
+		expect(JSON.parse(drop[0]!).targets[0].actions[0].id).toBe("drop")
+	})
+
 	test("confirms checkout paths, dispatches removal, and refreshes availability", async () => {
 		await seedRepository()
 		await createTask("cleanup")
