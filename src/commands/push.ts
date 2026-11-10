@@ -42,6 +42,8 @@ export const push = (
 			)
 		if (showProgress)
 			progress.succeed(`Published ${result.branch} to ${result.remote}`)
+		if (!options.json)
+			for (const warning of result.warnings) log(`Warning: ${warning}`)
 		log(
 			options.json
 				? JSON.stringify(result, null, 2)
@@ -56,6 +58,8 @@ Validate and publish the current Agency execution unit without creating a pull
 request. The command uses the durable base and branch declarations, requires the
 managed writable checkout and working status, refreshes remote state, validates
 every outgoing commit, and rejects non-fast-forward publication by default.
+The branch must be built on its base but need not contain the base's latest
+commits; being behind the base is reported as a warning, not a failure.
 
 After rewriting published history (amend, rebase, or squash), publish with
 --force-with-lease instead of a raw git push. The lease is the remote branch tip

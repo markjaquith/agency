@@ -1,6 +1,11 @@
 import { Schema, Data, Effect, Result, Context, Layer } from "effect"
 import { open, rename, rm } from "node:fs/promises"
 import { dirname, join, relative } from "node:path"
+import {
+	describeForeignBranches,
+	inspectBaseRelationship,
+	shortRef,
+} from "./base-relationship"
 import { EpicService, type EpicRecord } from "./EpicService"
 import { FileSystemService } from "./FileSystemService"
 import { PhaseService, type PhaseRecord } from "./PhaseService"
@@ -379,19 +384,30 @@ const materializedTopologyChange = (
 			return yield* refuse(
 				`neither '${remote}/${base}' nor local branch '${base}' resolves to a commit; fetch it first`,
 			)
-		const ancestor = yield* git([
-			"merge-base",
-			"--is-ancestor",
-			baseRef,
-			"HEAD",
-		])
-		if (ancestor.exitCode === 1)
+		// Being behind the new base is fine; the branch must be built on it, so
+		// leaving a previous base requires dropping that base's commits first.
+		const relationship = yield* inspectBaseRelationship(fs, checkout, {
+			head: "HEAD",
+			baseRevision: baseRef,
+			candidates: [`refs/remotes/${remote}/`, `refs/heads/${current.base}`],
+			ignore: [
+				`refs/remotes/${remote}/${base}`,
+				`refs/remotes/${remote}/${current.branch}`,
+			],
+		}).pipe(
+			Effect.mapError((cause) =>
+				refuse(
+					`failed to inspect its relationship to the base: ${cause.message}`,
+				),
+			),
+		)
+		if (relationship.kind === "unrelated")
 			return yield* refuse(
-				`'${baseRef}' is not an ancestor of HEAD; rebase the branch onto it first`,
+				`HEAD shares no history with '${shortRef(baseRef)}'; rebase the branch onto it first`,
 			)
-		if (ancestor.exitCode !== 0)
+		if (relationship.kind === "foreign")
 			return yield* refuse(
-				`failed to inspect ancestry: ${ancestor.stderr.trim()}`,
+				`HEAD contains ${describeForeignBranches(relationship.foreign)}, which '${shortRef(baseRef)}' does not contain; rebase the branch onto it first (agency rebase --onto ${base})`,
 			)
 	})
 
