@@ -1453,9 +1453,11 @@ and pull request URLs, or replace writable repository, branch, and base metadata
 Repository, reference, and branch changes refuse to run while code is
 materialized. A base change is allowed on a materialized task or phase only when
 its checkout is on the declared branch, clean, has no rebase or merge in
-progress, and HEAD already descends from the new base (the delivery remote's
-tracking ref, or the local branch when no tracking ref exists). Rebase the
-branch first, then record the new base. Moving a
+progress, and HEAD is built on the new base (the delivery remote's tracking
+ref, or the local branch when no tracking ref exists) by the same rule as
+`agency push`: HEAD shares history with it and contains no other branch tip,
+including the previous base, that it lacks. HEAD may be behind the new base.
+Rebase the branch first, then record the new base. Moving a
 task with scoped incoming or outgoing dependencies also refuses until those
 dependencies are removed.
 
@@ -1704,7 +1706,7 @@ ref; use a commit SHA as `ref` when reproducibility matters.
 `agency push` publishes the execution unit identified by current Agency context
 without creating a pull request. It requires a valid, registered writable
 checkout in `working` state, fetches the configured delivery remote, verifies
-that the declared base is in the publication history, validates every outgoing
+that the branch is built on the declared base, validates every outgoing
 commit's description, author, and conflict state, and refuses non-fast-forward
 updates unless `--force-with-lease` is given. Local commit validation runs before network access when cached remote
 state is available, and the network fetch is limited to the declared base and
@@ -1721,6 +1723,23 @@ one retry for transient failures; push defaults to a 120-second deadline. Set
 values to override them. After a failed or timed-out push, Agency compares the
 exact remote delivery ref with the expected tip before reporting success, a safe
 retryable failure, or an unknown publication outcome.
+
+The declared base resolves to the freshly fetched `<remote>/<base>` tracking
+ref, reported with its commit as `baseRef` and `baseRevision`. The branch does
+not need to contain the base's current tip: a base that advanced after the
+branch was cut is normal, so publication proceeds without a rebase or force
+push. The result reports the fork point (`git merge-base`) as `forkPoint`, the
+number of base commits the branch lacks as `behind`, and a non-fatal entry in
+`warnings` when `behind` is positive. The branch is built on its base when the
+fork point exists and no other `<remote>/*` branch tip lies in
+`<base>..HEAD`. Otherwise publication fails with `PUSH_BASE_MISMATCH`: either
+HEAD shares no history with the base, or it contains another branch's tip that
+the base lacks (it was cut from that branch). The remediation names the exact
+`agency task update --base` (or `agency phase update --base`) command to record
+the branch it is built on, or the `agency rebase --onto <base> --from <commit>`
+command that drops the other branch's commits. Detection relies on remote
+tracking refs, so a branch cut from a since-moved or deleted branch is not
+flagged.
 
 A non-fast-forward update fails with `PUSH_REMOTE_DIVERGENCE`. When the local
 branch rewrote the remote tip it last observed (after an amend, rebase, or

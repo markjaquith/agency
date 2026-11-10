@@ -315,10 +315,31 @@ describe("GraphMutationService", () => {
 				}),
 			)
 
-		test("rejects a base that is not an ancestor of HEAD", async () => {
+		test("rejects a base while HEAD still contains the previous base", async () => {
 			await expect(updateBase("main")).rejects.toThrow(
-				"is not an ancestor of HEAD",
+				"HEAD contains 'stacked'",
 			)
+		})
+
+		test("rejects a base that shares no history with HEAD", async () => {
+			git(checkout, "checkout", "-q", "--orphan", "unrelated")
+			commit(checkout, "unrelated.txt")
+			git(checkout, "checkout", "-q", "main")
+			git(checkout, "branch", "-q", "-D", "task/alpha")
+			git(checkout, "branch", "-q", "-m", "unrelated", "task/alpha")
+			git(checkout, "checkout", "-q", "task/alpha")
+			await expect(updateBase("main")).rejects.toThrow(
+				"HEAD shares no history with 'main'",
+			)
+		})
+
+		test("records a base that advanced after the branch was rebased onto it", async () => {
+			git(checkout, "rebase", "-q", "--onto", "main", "stacked")
+			git(checkout, "checkout", "-q", "main")
+			commit(checkout, "later.txt")
+			git(checkout, "checkout", "-q", "task/alpha")
+			const output = await updateBase("main")
+			expect(output).toMatchObject({ operation: "task.update", changed: true })
 		})
 
 		test("records a base that HEAD already descends from", async () => {

@@ -53,4 +53,37 @@ describe("push command", () => {
 			"succeed:Published task/example to origin",
 		])
 	})
+
+	test("prints non-fatal warnings in human mode", async () => {
+		const result = {
+			vcs: "git" as const,
+			taskId: "example",
+			branch: "task/example",
+			base: "main",
+			remote: "origin",
+			tip: "abc123",
+			warnings: ["Branch is 2 commits behind origin/main"],
+		}
+		const logs = await captureLogs(() =>
+			Effect.runPromise(
+				push(
+					{ cwd: "/workbase", silent: false },
+					{
+						start: () => {},
+						succeed: () => {},
+						fail: () => {},
+					},
+				).pipe(
+					Effect.provideService(PushService, {
+						publish: () => Effect.succeed(result),
+					} as never),
+				) as Effect.Effect<void, unknown, never>,
+			),
+		)
+
+		expect(logs).toEqual([
+			"Warning: Branch is 2 commits behind origin/main",
+			"Published git task/example at abc123 to origin",
+		])
+	})
 })

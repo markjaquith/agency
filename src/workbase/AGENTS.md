@@ -261,6 +261,10 @@ resolve its reported commits and remediation commands before retrying.
 A `PUSH_REMOTE_DIVERGENCE` failure with `rewritten: true` means local history
 was intentionally rewritten; retry with `--force-with-lease`. Without it, the
 remote has commits this checkout has not integrated; integrate them first.
+Do not rebase merely because the base advanced: being behind the base is a
+non-fatal `warnings` entry, and rebasing an open pull request rewrites reviewed
+history. `PUSH_BASE_MISMATCH` means the branch is not built on its declared base;
+follow its remediation.
 
 `agency work` is the human launch flow: it reconciles managed integration,
 selects work, checks readiness, prepares checkouts, marks execution work

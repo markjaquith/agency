@@ -4,12 +4,17 @@ import { FileSystemService } from "./FileSystemService"
 import { PhaseService } from "./PhaseService"
 import { TaskService } from "./TaskService"
 import { WorkbaseService } from "./WorkbaseService"
+import {
+	describeForeignBranches,
+	inspectBaseRelationship,
+} from "./base-relationship"
 import { integrateRemoteRemediation, reflogIncludes } from "./git-publication"
 import { parseGitCommits, type PushCommitMetadata } from "./push-validation"
 import { isDirtyGitStatus } from "./VersionControlService"
 
 type PushCategory =
 	| "precondition"
+	| "base_mismatch"
 	| "commit_validation"
 	| "remote_divergence"
 	| "hook_rejection"
@@ -27,6 +32,12 @@ const categoryMetadata: Record<
 		code: "PUSH_PRECONDITION",
 		retryable: false,
 		remediation: "Resolve the local publication precondition and retry.",
+	},
+	base_mismatch: {
+		code: "PUSH_BASE_MISMATCH",
+		retryable: false,
+		remediation:
+			"Rebuild the branch on its declared base or record the base it is actually built on, then retry.",
 	},
 	commit_validation: {
 		code: "PUSH_COMMIT_VALIDATION",
@@ -100,9 +111,25 @@ interface PushResult {
 	readonly base: string
 	readonly remote: string
 	readonly tip: string
+	/** Freshly fetched ref the declared base resolved to, and its commit. */
+	readonly baseRef: string
+	readonly baseRevision: string
+	/** Merge base of the published tip and the declared base. */
+	readonly forkPoint: string
+	/** Base commits the published tip does not contain; informational only. */
+	readonly behind: number
 	/** Remote tip replaced by a --force-with-lease publication. */
 	readonly forcedOver?: string
+	readonly warnings: readonly string[]
 }
+
+interface ExecutionSelector {
+	readonly taskId: string
+	readonly phaseId?: string
+}
+
+const selectorArgs = ({ taskId, phaseId }: ExecutionSelector) =>
+	phaseId ? `${taskId} ${phaseId}` : taskId
 
 type PushStage =
 	| "context"
@@ -137,6 +164,16 @@ const pushError = (
 		protocolCode: categoryMetadata[category].code,
 		retryable: categoryMetadata[category].retryable,
 		remediation: categoryMetadata[category].remediation,
+	})
+
+const baseMismatchError = (message: string, remediation: string) =>
+	new PushError({
+		message,
+		category: "base_mismatch",
+		stage: "validate",
+		protocolCode: categoryMetadata.base_mismatch.code,
+		retryable: categoryMetadata.base_mismatch.retryable,
+		remediation,
 	})
 
 const divergenceError = (
@@ -370,6 +407,7 @@ const publishGit = (
 	remote: string,
 	branch: string,
 	base: string,
+	selector: ExecutionSelector,
 	options: PushOptions,
 ) =>
 	Effect.gen(function* () {
@@ -495,13 +533,54 @@ const publishGit = (
 				"validate",
 			)
 		}
-		if (!(yield* gitAncestor(fs, checkout, baseRevision, tip, "validate"))) {
-			return yield* pushError(
-				`Declared base '${base}' (${baseRevision}) is not an ancestor of Git HEAD (${tip})`,
-				"precondition",
-				"validate",
+		const baseRef = `refs/remotes/${remote}/${base}`
+		const baseLabel = `${remote}/${base}`
+		const relationship = yield* inspectBaseRelationship(fs, checkout, {
+			head: tip,
+			baseRevision,
+			candidates: [`refs/remotes/${remote}/`],
+			ignore: [baseRef, `refs/remotes/${remote}/${branch}`],
+			timeoutMs: fetchTimeoutMs,
+		}).pipe(
+			Effect.mapError((error) => {
+				const timeout = processTimeout(error)
+				return timeout
+					? pushError(
+							`Declared base inspection timed out after ${timeout.elapsedMs ?? fetchTimeoutMs} ms`,
+							"timeout",
+							"validate",
+							timeout.elapsedMs,
+						)
+					: classifyGitFailure(
+							`Failed to inspect the declared base: ${error.message}`,
+							"validate",
+						)
+			}),
+		)
+		const unit = selectorArgs(selector)
+		const updateCommand = selector.phaseId
+			? `agency phase update ${unit}`
+			: `agency task update ${unit}`
+		if (relationship.kind === "unrelated") {
+			return yield* baseMismatchError(
+				`Git HEAD (${tip}) shares no history with declared base '${base}' (${baseLabel} at ${baseRevision})`,
+				`Confirm the checkout holds this execution unit's work, or record the base it is built on with: ${updateCommand} --base <branch>.`,
 			)
 		}
+		if (relationship.kind === "foreign") {
+			const latest = relationship.foreign[0]!
+			const other = latest.ref.slice(`refs/remotes/${remote}/`.length)
+			return yield* baseMismatchError(
+				`Git HEAD (${tip}) contains ${describeForeignBranches(relationship.foreign)}, which declared base '${base}' (${baseLabel} at ${baseRevision}) does not contain; the branch is built on another branch rather than its declared base`,
+				`If this work should build on '${other}', record that base with: ${updateCommand} --base ${other}. Otherwise drop that branch's commits with: agency rebase ${unit} --onto ${base} --from ${latest.commit}, then republish with agency push --force-with-lease.`,
+			)
+		}
+		const warnings =
+			relationship.behind > 0
+				? [
+						`Branch is ${relationship.behind} commit${relationship.behind === 1 ? "" : "s"} behind ${baseLabel} (forked at ${relationship.forkPoint.slice(0, 12)}). This does not block publication; rebase only if the work needs those changes (agency rebase ${unit}).`,
+					]
+				: []
 
 		onProgress?.("validate")
 		const log = yield* git(
@@ -571,7 +650,15 @@ const publishGit = (
 			}
 		}
 
-		const published = forced ? { tip, forcedOver: remoteTip } : { tip }
+		const published = {
+			tip,
+			baseRef,
+			baseRevision,
+			forkPoint: relationship.forkPoint,
+			behind: relationship.behind,
+			...(forced && remoteTip ? { forcedOver: remoteTip } : {}),
+			warnings,
+		}
 		onProgress?.("publish")
 		yield* git(
 			fs,
@@ -749,6 +836,7 @@ export class PushService extends Context.Service<PushService>()("PushService", {
 					remote,
 					execution.branch,
 					execution.base,
+					{ taskId, ...(phaseId ? { phaseId } : {}) },
 					options,
 				)
 				return {

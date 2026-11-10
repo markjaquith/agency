@@ -467,9 +467,83 @@ describe("PushService", () => {
 			["git", "branch", "-M", "task/example"],
 			unrelated.checkout,
 		)
-		await expect(publish(unrelated.taskPath)).rejects.toThrow(
-			"is not an ancestor of Git HEAD",
+		const failure = await publish(unrelated.taskPath).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_BASE_MISMATCH",
+			message: expect.stringContaining("shares no history with declared base"),
+			remediation: expect.stringContaining(
+				"agency task update example --base <branch>",
+			),
+		})
+	})
+
+	test("publishes a fast-forward when the base advanced after the branch was cut", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+		const first = await publish(fixture.taskPath)
+		expect(first).toMatchObject({ behind: 0, warnings: [] })
+
+		const seed = join(fixture.root, "seed")
+		await commitFile(seed, "upstream.txt", "Upstream change")
+		await requireCommand(["git", "push", "origin", "main"], seed)
+		const upstream = (await requireCommand(["git", "rev-parse", "HEAD"], seed))
+			.stdout
+		await commitFile(fixture.checkout, "more.txt", "Second change")
+
+		const result = await publish(fixture.taskPath)
+		expect(result).toMatchObject({
+			baseRef: "refs/remotes/origin/main",
+			baseRevision: upstream,
+			forkPoint: (
+				await requireCommand(["git", "rev-parse", "HEAD~2"], fixture.checkout)
+			).stdout,
+			behind: 1,
+			warnings: [expect.stringContaining("1 commit behind origin/main")],
+		})
+		expect(result.forcedOver).toBeUndefined()
+		expect(await remoteBranch(fixture.remote)).toBe(result.tip)
+	})
+
+	test("rejects a branch built on another remote branch", async () => {
+		const fixture = await setup()
+		await configureAuthor(fixture.checkout)
+		const seed = join(fixture.root, "seed")
+		await requireCommand(["git", "checkout", "-b", "feature/other"], seed)
+		await commitFile(seed, "other.txt", "Other feature")
+		await requireCommand(["git", "push", "origin", "feature/other"], seed)
+		const other = (await requireCommand(["git", "rev-parse", "HEAD"], seed))
+			.stdout
+		await requireCommand(
+			[
+				"git",
+				"fetch",
+				"origin",
+				"+refs/heads/feature/other:refs/remotes/origin/feature/other",
+			],
+			fixture.checkout,
 		)
+		await requireCommand(
+			["git", "reset", "--hard", "origin/feature/other"],
+			fixture.checkout,
+		)
+		await commitFile(fixture.checkout, "feature.txt", "First change")
+
+		const failure = await publish(fixture.taskPath).catch((error) => error)
+		expect(errorEnvelope(failure).error).toMatchObject({
+			code: "PUSH_BASE_MISMATCH",
+			fields: { category: "base_mismatch", stage: "validate" },
+			message: expect.stringContaining(
+				`contains 'origin/feature/other' (${other.slice(0, 12)})`,
+			),
+			remediation: expect.stringContaining(
+				`agency rebase example --onto main --from ${other}`,
+			),
+		})
+		expect(errorEnvelope(failure).error.remediation).toContain(
+			"agency task update example --base feature/other",
+		)
+		await expect(remoteBranch(fixture.remote)).rejects.toThrow()
 	})
 
 	test("rejects invalid Git authors", async () => {
